@@ -31,11 +31,11 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
-    /// Import OAuth App credentials and save them to config
+    /// Import OAuth App client ID and secret and save them to config
     Setup {
         /// Path to the client_secret_*.json file downloaded from GCP Console
         #[arg(long)]
-        credentials: Option<String>,
+        client_secret_file: Option<String>,
     },
     /// Authorize a Google Account via a browser-based OAuth flow
     Login {
@@ -105,18 +105,21 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::Auth {
-                command: AuthCommand::Setup { credentials: None }
+                command: AuthCommand::Setup {
+                    client_secret_file: None
+                }
             }
         ));
     }
 
     #[test]
-    fn auth_setup_with_credentials_flag() {
-        let cli = parse(&["auth", "setup", "--credentials", "/tmp/client_secret.json"]).unwrap();
+    fn auth_setup_with_client_secret_file_flag() {
+        let cli = parse(&["auth", "setup", "--client-secret-file", "/tmp/client_secret.json"])
+            .unwrap();
         match cli.command {
             Command::Auth {
                 command: AuthCommand::Setup {
-                    credentials: Some(path),
+                    client_secret_file: Some(path),
                 },
             } => assert_eq!(path, "/tmp/client_secret.json"),
             _ => panic!("unexpected parse result"),

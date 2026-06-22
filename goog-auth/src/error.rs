@@ -11,8 +11,8 @@ pub enum AuthError {
     #[error("OAuth App file is missing required field: {field}")]
     OAuthAppMissingField { field: String },
 
-    #[error("OAuth App file has an unrecognised structure (expected 'installed' or 'web' key)")]
-    OAuthAppUnrecognisedStructure,
+    #[error("OAuth App file has an unrecognized structure (expected 'installed' or 'web' key)")]
+    OAuthAppUnrecognizedStructure,
 
     #[error("failed to read OAuth App file: {0}")]
     OAuthAppIo(std::io::Error),

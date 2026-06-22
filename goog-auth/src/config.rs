@@ -28,11 +28,14 @@ pub fn config_path() -> Result<PathBuf, AuthError> {
 }
 
 pub fn load_config() -> Result<Config, AuthError> {
-    let path = config_path()?;
+    load_config_from_path(&config_path()?)
+}
+
+fn load_config_from_path(path: &std::path::Path) -> Result<Config, AuthError> {
     if !path.exists() {
         return Ok(Config::default());
     }
-    let contents = std::fs::read_to_string(&path).map_err(AuthError::ConfigReadIo)?;
+    let contents = std::fs::read_to_string(path).map_err(AuthError::ConfigReadIo)?;
     toml::from_str(&contents).map_err(|e| AuthError::ConfigMalformed(e.to_string()))
 }
 
@@ -108,10 +111,11 @@ output = "json"
 
     #[test]
     fn returns_default_config_when_file_missing() {
-        let path = PathBuf::from("/tmp/goog-nonexistent-path/config.toml");
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("config.toml");
         assert!(!path.exists());
 
-        let config = Config::default();
+        let config = load_config_from_path(&path).unwrap();
         assert!(config.oauth_app.is_none());
         assert!(config.settings.is_none());
     }

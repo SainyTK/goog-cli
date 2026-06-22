@@ -15,12 +15,12 @@ struct OAuthAppFields {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct OAuthAppCredentials {
+pub struct OAuthAppSecrets {
     pub client_id: String,
     pub client_secret: String,
 }
 
-pub fn parse_credentials_file(path: &str) -> Result<OAuthAppCredentials, AuthError> {
+pub fn parse_client_secret_file(path: &str) -> Result<OAuthAppSecrets, AuthError> {
     let path_buf = std::path::PathBuf::from(path);
     if !path_buf.exists() {
         return Err(AuthError::OAuthAppFileNotFound {
@@ -34,7 +34,7 @@ pub fn parse_credentials_file(path: &str) -> Result<OAuthAppCredentials, AuthErr
     let fields = file
         .installed
         .or(file.web)
-        .ok_or(AuthError::OAuthAppUnrecognisedStructure)?;
+        .ok_or(AuthError::OAuthAppUnrecognizedStructure)?;
 
     let client_id = fields
         .client_id
@@ -50,7 +50,7 @@ pub fn parse_credentials_file(path: &str) -> Result<OAuthAppCredentials, AuthErr
             field: "client_secret".into(),
         })?;
 
-    Ok(OAuthAppCredentials {
+    Ok(OAuthAppSecrets {
         client_id,
         client_secret,
     })
@@ -73,7 +73,7 @@ mod tests {
         let file = write_json(
             r#"{"installed":{"client_id":"id123","client_secret":"sec456","redirect_uris":["http://localhost"]}}"#,
         );
-        let creds = parse_credentials_file(file.path().to_str().unwrap()).unwrap();
+        let creds = parse_client_secret_file(file.path().to_str().unwrap()).unwrap();
         assert_eq!(creds.client_id, "id123");
         assert_eq!(creds.client_secret, "sec456");
     }
@@ -83,35 +83,35 @@ mod tests {
         let file = write_json(
             r#"{"web":{"client_id":"web-id","client_secret":"web-sec","redirect_uris":["https://example.com"]}}"#,
         );
-        let creds = parse_credentials_file(file.path().to_str().unwrap()).unwrap();
+        let creds = parse_client_secret_file(file.path().to_str().unwrap()).unwrap();
         assert_eq!(creds.client_id, "web-id");
         assert_eq!(creds.client_secret, "web-sec");
     }
 
     #[test]
     fn errors_on_missing_file() {
-        let err = parse_credentials_file("/nonexistent/path/client_secret.json").unwrap_err();
+        let err = parse_client_secret_file("/nonexistent/path/client_secret.json").unwrap_err();
         assert!(matches!(err, AuthError::OAuthAppFileNotFound { .. }));
     }
 
     #[test]
     fn errors_on_invalid_json() {
         let file = write_json("not json at all");
-        let err = parse_credentials_file(file.path().to_str().unwrap()).unwrap_err();
+        let err = parse_client_secret_file(file.path().to_str().unwrap()).unwrap_err();
         assert!(matches!(err, AuthError::OAuthAppInvalidJson(_)));
     }
 
     #[test]
     fn errors_on_unrecognised_structure() {
         let file = write_json(r#"{"something_else":{}}"#);
-        let err = parse_credentials_file(file.path().to_str().unwrap()).unwrap_err();
-        assert!(matches!(err, AuthError::OAuthAppUnrecognisedStructure));
+        let err = parse_client_secret_file(file.path().to_str().unwrap()).unwrap_err();
+        assert!(matches!(err, AuthError::OAuthAppUnrecognizedStructure));
     }
 
     #[test]
     fn errors_on_missing_client_id() {
         let file = write_json(r#"{"installed":{"client_secret":"sec"}}"#);
-        let err = parse_credentials_file(file.path().to_str().unwrap()).unwrap_err();
+        let err = parse_client_secret_file(file.path().to_str().unwrap()).unwrap_err();
         assert!(
             matches!(&err, AuthError::OAuthAppMissingField { field } if field == "client_id")
         );
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn errors_on_missing_client_secret() {
         let file = write_json(r#"{"installed":{"client_id":"id"}}"#);
-        let err = parse_credentials_file(file.path().to_str().unwrap()).unwrap_err();
+        let err = parse_client_secret_file(file.path().to_str().unwrap()).unwrap_err();
         assert!(
             matches!(&err, AuthError::OAuthAppMissingField { field } if field == "client_secret")
         );
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn errors_on_empty_client_id() {
         let file = write_json(r#"{"installed":{"client_id":"","client_secret":"sec"}}"#);
-        let err = parse_credentials_file(file.path().to_str().unwrap()).unwrap_err();
+        let err = parse_client_secret_file(file.path().to_str().unwrap()).unwrap_err();
         assert!(
             matches!(&err, AuthError::OAuthAppMissingField { field } if field == "client_id")
         );
