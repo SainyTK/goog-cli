@@ -1,0 +1,15 @@
+[package]
+name = "goog"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "goog"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+anyhow = { workspace = true }
+dialoguer = { workspace = true }
+goog-auth = { path = "../goog-auth" }
+goog-drive = { path = "../goog-drive" }
