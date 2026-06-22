@@ -1,5 +1,7 @@
 # Cargo Workspace with One Crate Per Google API
 
+> **Superseded by ADR-0006** (`0006-single-crate-layout.md`)
+
 The project is a Cargo workspace. Each Google API surface (`goog-auth`, `goog-drive`, `goog-docs`, `goog-sheets`, etc.) is its own library crate. A thin `goog` binary crate composes them.
 
 ## Considered Options
