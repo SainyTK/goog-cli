@@ -20,7 +20,9 @@ pub const DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive";
 pub const DRIVE_SCOPES: &[&str] = &[DRIVE_SCOPE];
 const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
-pub(super) const DRIVE_FILES_FIELDS: &str = "nextPageToken,files(id,name,mimeType,modifiedTime)";
+pub(super) const DRIVE_FILES_FIELDS: &str =
+    "nextPageToken,files(id,name,parents,mimeType,modifiedTime)";
+const DRIVE_FILES_QUERY: &str = "mimeType != 'application/vnd.google-apps.folder'";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
@@ -49,6 +51,8 @@ impl UploadType {
 pub struct DriveFile {
     pub name: String,
     pub id: String,
+    #[serde(default, rename(serialize = "parentIds", deserialize = "parents"))]
+    pub parent_ids: Vec<String>,
     #[serde(rename = "mimeType")]
     pub mime_type: String,
     #[serde(rename = "modifiedTime")]
@@ -176,6 +180,7 @@ struct UploadMetadata {
 pub struct ListFilesOptions {
     pub page_size: u32,
     pub page_token: Option<String>,
+    pub folder: Option<String>,
     files_url: String,
 }
 
@@ -184,12 +189,18 @@ impl ListFilesOptions {
         Self {
             page_size,
             page_token: None,
+            folder: None,
             files_url: DRIVE_FILES_URL.to_string(),
         }
     }
 
     pub fn with_page_token(mut self, page_token: impl Into<String>) -> Self {
         self.page_token = Some(page_token.into());
+        self
+    }
+
+    pub fn with_folder(mut self, folder: impl Into<String>) -> Self {
+        self.folder = Some(folder.into());
         self
     }
 
@@ -205,13 +216,28 @@ impl ListFilesOptions {
             query
                 .append_pair("pageSize", &self.page_size.to_string())
                 .append_pair("orderBy", "modifiedTime desc")
-                .append_pair("fields", DRIVE_FILES_FIELDS);
+                .append_pair("fields", DRIVE_FILES_FIELDS)
+                .append_pair("q", &self.query());
             if let Some(page_token) = &self.page_token {
                 query.append_pair("pageToken", page_token);
             }
         }
         Ok(url)
     }
+
+    fn query(&self) -> String {
+        match self.folder.as_deref() {
+            Some(folder) => format!(
+                "'{}' in parents and {DRIVE_FILES_QUERY}",
+                escape_query_literal(folder)
+            ),
+            None => DRIVE_FILES_QUERY.to_string(),
+        }
+    }
+}
+
+fn escape_query_literal(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
 pub async fn list_files<S: AccountStore>(

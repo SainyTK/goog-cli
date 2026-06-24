@@ -110,6 +110,7 @@ fn drive_list_defaults() {
             command: DriveCommand::List {
                 limit: None,
                 all: false,
+                folder: None,
                 json: false
             }
         }
@@ -118,13 +119,29 @@ fn drive_list_defaults() {
 
 #[test]
 fn drive_list_with_flags() {
-    let cli = parse(&["drive", "list", "--limit", "100", "--all", "--json"]).unwrap();
+    let cli = parse(&[
+        "drive",
+        "list",
+        "--limit",
+        "100",
+        "--all",
+        "--folder",
+        "folder123",
+        "--json",
+    ])
+    .unwrap();
     match cli.command {
         Command::Drive {
-            command: DriveCommand::List { limit, all, json },
+            command: DriveCommand::List {
+                limit,
+                all,
+                folder,
+                json,
+            },
         } => {
             assert_eq!(limit, Some(100));
             assert!(all);
+            assert_eq!(folder.as_deref(), Some("folder123"));
             assert!(json);
         }
         _ => panic!("unexpected parse result"),

@@ -66,6 +66,9 @@ pub enum DriveCommand {
         /// Fetch all files across all pages
         #[arg(long)]
         all: bool,
+        /// Drive folder ID to list files from
+        #[arg(long)]
+        folder: Option<String>,
         /// Emit newline-delimited JSON
         #[arg(long)]
         json: bool,
