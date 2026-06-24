@@ -50,35 +50,18 @@ async fn run_list_to<S: AccountStore>(
     quiet: bool,
     out: &mut impl Write,
     err: &mut impl Write,
-    files_url: Option<&str>,
+    #[cfg_attr(not(test), allow(unused_variables))] files_url: Option<&str>,
 ) -> Result<()> {
-    #[cfg(not(test))]
-    let _ = files_url;
-
-    let max_results = if all {
-        limit
-    } else {
-        Some(limit.unwrap_or(DEFAULT_LIST_LIMIT))
-    };
-    let mut remaining = max_results;
+    let mut remaining = requested_result_count(limit, all);
     let mut page_token = None;
     let mut wrote_table_header = false;
     let mut total = 0_u32;
 
     loop {
-        let page_size = remaining.unwrap_or(ALL_PAGE_SIZE).min(ALL_PAGE_SIZE);
-        if page_size == 0 {
+        let Some(page_size) = next_page_size(remaining) else {
             break;
-        }
-
-        let mut options = ListFilesOptions::new(page_size);
-        if let Some(token) = page_token.take() {
-            options = options.with_page_token(token);
-        }
-        #[cfg(test)]
-        if let Some(files_url) = files_url {
-            options = options.with_files_url(files_url);
-        }
+        };
+        let options = list_options(page_size, page_token.take(), files_url);
 
         let page = list_files(client, &options)
             .await
@@ -101,7 +84,7 @@ async fn run_list_to<S: AccountStore>(
         }
 
         match page.next_page_token {
-            Some(token) if remaining.map_or(all, |left| left > 0) => {
+            Some(token) if should_fetch_next_page(remaining, all) => {
                 page_token = Some(token);
             }
             _ => break,
@@ -109,6 +92,39 @@ async fn run_list_to<S: AccountStore>(
     }
 
     Ok(())
+}
+
+fn requested_result_count(limit: Option<u32>, all: bool) -> Option<u32> {
+    if all {
+        limit
+    } else {
+        Some(limit.unwrap_or(DEFAULT_LIST_LIMIT))
+    }
+}
+
+fn next_page_size(remaining: Option<u32>) -> Option<u32> {
+    let page_size = remaining.unwrap_or(ALL_PAGE_SIZE).min(ALL_PAGE_SIZE);
+    (page_size > 0).then_some(page_size)
+}
+
+fn should_fetch_next_page(remaining: Option<u32>, all: bool) -> bool {
+    remaining.map_or(all, |left| left > 0)
+}
+
+fn list_options(
+    page_size: u32,
+    page_token: Option<String>,
+    #[cfg_attr(not(test), allow(unused_variables))] files_url: Option<&str>,
+) -> ListFilesOptions {
+    let mut options = ListFilesOptions::new(page_size);
+    if let Some(page_token) = page_token {
+        options = options.with_page_token(page_token);
+    }
+    #[cfg(test)]
+    if let Some(files_url) = files_url {
+        options = options.with_files_url(files_url);
+    }
+    options
 }
 
 fn write_ndjson(files: &[DriveFile], out: &mut impl Write) -> Result<()> {

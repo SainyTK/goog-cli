@@ -2,7 +2,7 @@ pub mod error;
 
 pub use error::DriveError;
 
-use reqwest::StatusCode;
+use reqwest::{Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -58,34 +58,46 @@ impl ListFilesOptions {
         self.files_url = files_url.into();
         self
     }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        {
+            let mut query = url.query_pairs_mut();
+            query
+                .append_pair("pageSize", &self.page_size.to_string())
+                .append_pair("orderBy", "modifiedTime desc")
+                .append_pair("fields", DRIVE_FILES_FIELDS);
+            if let Some(page_token) = &self.page_token {
+                query.append_pair("pageToken", page_token);
+            }
+        }
+        Ok(url)
+    }
 }
 
 pub async fn list_files<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ListFilesOptions,
 ) -> Result<FilesPage, DriveError> {
-    let mut url = Url::parse(&options.files_url)?;
-    {
-        let mut query = url.query_pairs_mut();
-        query
-            .append_pair("pageSize", &options.page_size.to_string())
-            .append_pair("orderBy", "modifiedTime desc")
-            .append_pair("fields", DRIVE_FILES_FIELDS);
-        if let Some(page_token) = &options.page_token {
-            query.append_pair("pageToken", page_token);
-        }
-    }
-
+    let url = options.request_url()?;
     let response = client
         .send_with_scopes(client.get(url), DRIVE_SCOPES)
         .await
         .map_err(DriveError::Auth)?;
 
-    match response.status() {
-        status if status.is_success() => response
+    parse_files_response(response).await
+}
+
+async fn parse_files_response(response: Response) -> Result<FilesPage, DriveError> {
+    let status = response.status();
+    if status.is_success() {
+        return response
             .json::<FilesPage>()
             .await
-            .map_err(|e| DriveError::InvalidResponse(e.to_string())),
+            .map_err(|e| DriveError::InvalidResponse(e.to_string()));
+    }
+
+    match status {
         StatusCode::NOT_FOUND => Err(DriveError::NotFound),
         StatusCode::FORBIDDEN => Err(DriveError::PermissionDenied),
         status => {
