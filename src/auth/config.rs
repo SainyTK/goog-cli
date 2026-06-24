@@ -8,9 +8,11 @@ use super::error::AuthError;
 pub struct Config {
     pub oauth_app: Option<OAuthAppConfig>,
     pub settings: Option<SettingsConfig>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub accounts: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OAuthAppConfig {
     pub client_id: String,
     pub client_secret: String,
@@ -72,6 +74,7 @@ mod tests {
                 client_secret: "my-client-secret".into(),
             }),
             settings: None,
+            accounts: Vec::new(),
         };
 
         let contents = toml::to_string_pretty(&config).unwrap();
@@ -128,6 +131,7 @@ output = "json"
                 client_secret: "sec".into(),
             }),
             settings: None,
+            accounts: Vec::new(),
         };
         let s = toml::to_string_pretty(&config).unwrap();
         assert!(s.contains("client_id"));

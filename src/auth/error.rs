@@ -28,4 +28,19 @@ pub enum AuthError {
 
     #[error("config file is malformed: {0}")]
     ConfigMalformed(String),
+
+    #[error("system keychain error: {0}")]
+    Keyring(String),
+
+    #[error("OAuth App is not configured -- run `goog auth setup` first")]
+    OAuthAppNotConfigured,
+
+    #[error("OAuth flow failed: {0}")]
+    OAuthFlow(String),
+
+    #[error("token exchange failed: {0}")]
+    TokenExchange(String),
+
+    #[error("network error: {0}")]
+    Network(String),
 }
