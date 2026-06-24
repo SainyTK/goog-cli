@@ -198,6 +198,32 @@ async fn run_batch_update_returns_clear_error_for_invalid_request_json() {
 }
 
 #[tokio::test]
+async fn run_batch_update_invalid_file_json_names_request_file() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let request_path = temp_dir.path().join("requests.json");
+    std::fs::write(&request_path, "{not json").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+
+    let result = run_batch_update_to(
+        &client,
+        "document-123".into(),
+        request_path.to_string_lossy().into_owned(),
+        &mut input,
+        &mut out,
+        Some("https://example.test/docs/v1/documents"),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to parse Google Docs Batch Update request body"));
+    assert!(message.contains(request_path.to_string_lossy().as_ref()));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
 async fn run_get_returns_clear_error_for_not_found_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

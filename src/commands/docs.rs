@@ -89,19 +89,22 @@ pub(super) async fn run_batch_update_to<S: AccountStore>(
 }
 
 fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde_json::Value> {
-    let body = if path_or_stdin == "-" {
+    let (body, source) = if path_or_stdin == "-" {
         let mut body = String::new();
         input
             .read_to_string(&mut body)
             .context("failed to read Google Docs Batch Update request body from stdin")?;
-        body
+        (body, "stdin".to_string())
     } else {
-        std::fs::read_to_string(path_or_stdin).with_context(|| {
+        let body = std::fs::read_to_string(path_or_stdin).with_context(|| {
             format!("failed to read Google Docs Batch Update request body: {path_or_stdin}")
-        })?
+        })?;
+        (body, path_or_stdin.to_string())
     };
 
-    serde_json::from_str(&body).context("failed to parse Google Docs Batch Update request body")
+    serde_json::from_str(&body).with_context(|| {
+        format!("failed to parse Google Docs Batch Update request body from {source}")
+    })
 }
 
 fn get_document_options(
