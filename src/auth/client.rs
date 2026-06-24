@@ -1,7 +1,5 @@
-#![allow(dead_code)]
-
 use chrono::{Duration, Utc};
-use reqwest::{IntoUrl, Method, RequestBuilder, Response};
+use reqwest::{IntoUrl, Method, RequestBuilder, Response, StatusCode};
 
 use super::account::{AccountStore, Token};
 use super::config::{Config, OAuthAppConfig};
@@ -10,6 +8,7 @@ use super::login::GOOGLE_TOKEN_URL;
 
 const DEFAULT_REFRESH_THRESHOLD_SECS: i64 = 60;
 
+#[allow(dead_code)]
 pub struct AuthClient<'a, S> {
     http: reqwest::Client,
     store: &'a S,
@@ -19,6 +18,7 @@ pub struct AuthClient<'a, S> {
     refresh_threshold: Duration,
 }
 
+#[allow(dead_code)]
 impl<'a, S: AccountStore> AuthClient<'a, S> {
     pub fn from_config(
         config: Config,
@@ -72,25 +72,17 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
     pub async fn send(&self, request: RequestBuilder) -> Result<Response, AuthError> {
         let token = self.current_token().await?;
         let retry_request = request.try_clone();
-        let response = request
-            .bearer_auth(&token.access_token)
-            .send()
-            .await
-            .map_err(|e| AuthError::Network(e.to_string()))?;
+        let response = send_with_access_token(request, &token.access_token).await?;
 
-        if response.status() != reqwest::StatusCode::UNAUTHORIZED {
+        if response.status() != StatusCode::UNAUTHORIZED {
             return Ok(response);
         }
 
         let retry_request = retry_request.ok_or(AuthError::RequestNotRetryable)?;
         let token = self.refresh_token(&token).await?;
-        let response = retry_request
-            .bearer_auth(&token.access_token)
-            .send()
-            .await
-            .map_err(|e| AuthError::Network(e.to_string()))?;
+        let response = send_with_access_token(retry_request, &token.access_token).await?;
 
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        if response.status() == StatusCode::UNAUTHORIZED {
             return Err(AuthError::Unauthorized(
                 "request returned 401 after refreshing the token".into(),
             ));
@@ -166,6 +158,17 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
     }
 }
 
+async fn send_with_access_token(
+    request: RequestBuilder,
+    access_token: &str,
+) -> Result<Response, AuthError> {
+    request
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| AuthError::Network(e.to_string()))
+}
+
 fn resolve_account(config: &Config, account_override: Option<&str>) -> Result<String, AuthError> {
     if let Some(account) = account_override {
         return Ok(account.to_string());
@@ -174,7 +177,8 @@ fn resolve_account(config: &Config, account_override: Option<&str>) -> Result<St
     config
         .settings
         .as_ref()
-        .and_then(|settings| settings.active_account.clone())
+        .and_then(|settings| settings.active_account.as_deref())
+        .map(str::to_string)
         .ok_or(AuthError::ActiveAccountNotConfigured)
 }
 
