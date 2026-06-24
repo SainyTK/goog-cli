@@ -20,6 +20,8 @@ pub const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const GOOGLE_USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
+const DEFAULT_DEVICE_POLL_INTERVAL_SECS: u64 = 5;
+const SLOW_DOWN_INTERVAL_SECS: u64 = 5;
 
 pub fn random_state() -> String {
     let nanos = SystemTime::now()
@@ -80,6 +82,11 @@ struct DeviceAuthorizationResponse {
 struct DeviceTokenError {
     error: String,
     error_description: Option<String>,
+}
+
+enum DevicePollOutcome {
+    Continue,
+    SlowDown,
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,7 +188,7 @@ pub async fn request_device_authorization(
         user_code: parsed.user_code,
         verification_url: parsed.verification_url,
         expires_in: parsed.expires_in,
-        interval: parsed.interval.unwrap_or(5),
+        interval: parsed.interval.unwrap_or(DEFAULT_DEVICE_POLL_INTERVAL_SECS),
     })
 }
 
@@ -222,37 +229,11 @@ pub async fn poll_device_token(
             return token_from_response(response).await;
         }
 
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        if let Some(token_error) = serde_json::from_str::<DeviceTokenError>(&body).ok() {
-            let DeviceTokenError {
-                error,
-                error_description,
-            } = token_error;
-            match error.as_str() {
-                "authorization_pending" => {}
-                "slow_down" => {
-                    interval += StdDuration::from_secs(5);
-                }
-                "access_denied" => {
-                    return Err(AuthError::OAuthFlow(
-                        "device authorization was denied by the user".into(),
-                    ));
-                }
-                "expired_token" => {
-                    return Err(AuthError::OAuthFlow("device authorization timed out".into()));
-                }
-                error => {
-                    let description = error_description.unwrap_or_else(|| body.clone());
-                    return Err(AuthError::TokenExchange(format!(
-                        "device token error {error}: {description}"
-                    )));
-                }
+        match device_poll_outcome(response).await? {
+            DevicePollOutcome::Continue => {}
+            DevicePollOutcome::SlowDown => {
+                interval += StdDuration::from_secs(SLOW_DOWN_INTERVAL_SECS);
             }
-        } else {
-            return Err(AuthError::TokenExchange(format!(
-                "device token HTTP {status}: {body}"
-            )));
         }
 
         if tokio::time::Instant::now() >= deadline {
@@ -260,6 +241,34 @@ pub async fn poll_device_token(
         }
 
         tokio::time::sleep(interval).await;
+    }
+}
+
+async fn device_poll_outcome(response: reqwest::Response) -> Result<DevicePollOutcome, AuthError> {
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    let token_error = serde_json::from_str::<DeviceTokenError>(&body).map_err(|_| {
+        AuthError::TokenExchange(format!("device token HTTP {status}: {body}"))
+    })?;
+
+    let DeviceTokenError {
+        error,
+        error_description,
+    } = token_error;
+
+    match error.as_str() {
+        "authorization_pending" => Ok(DevicePollOutcome::Continue),
+        "slow_down" => Ok(DevicePollOutcome::SlowDown),
+        "access_denied" => Err(AuthError::OAuthFlow(
+            "device authorization was denied by the user".into(),
+        )),
+        "expired_token" => Err(AuthError::OAuthFlow("device authorization timed out".into())),
+        error => {
+            let description = error_description.unwrap_or(body);
+            Err(AuthError::TokenExchange(format!(
+                "device token error {error}: {description}"
+            )))
+        }
     }
 }
 
