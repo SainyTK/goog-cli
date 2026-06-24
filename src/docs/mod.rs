@@ -121,7 +121,9 @@ pub async fn batch_update_document<S: AccountStore>(
 ) -> Result<BatchUpdateResponse, DocsError> {
     let response = client
         .send_with_scopes(
-            client.post(options.request_url()?).json(&options.request_body),
+            client
+                .post(options.request_url()?)
+                .json(&options.request_body),
             DOCS_SCOPES,
         )
         .await

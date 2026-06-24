@@ -24,7 +24,11 @@ fn setup_guide_describes_direct_client_id_and_secret_entry() {
         "guide is missing GCP Console URL"
     );
 
-    let result = run_setup_to(Some("/nonexistent/client_secret.json".into()), None, &mut out);
+    let result = run_setup_to(
+        Some("/nonexistent/client_secret.json".into()),
+        None,
+        &mut out,
+    );
     assert!(result.is_err(), "expected error for nonexistent file");
     assert!(
         out.is_empty(),

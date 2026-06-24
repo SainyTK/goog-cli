@@ -86,6 +86,10 @@ _Avoid_: Search term, filter, query string
 The Gmail label used by `goog mail list` to show current inbox Messages by default.
 _Avoid_: Default mailbox, mail list, received mail
 
+**Attachment**:
+A file-like payload part associated with a Message and retrieved separately from the Message body.
+_Avoid_: File, mail file, payload
+
 ### File Transfer
 
 **Resumable Upload**:

@@ -35,7 +35,9 @@ fn docs_token() -> Token {
 }
 
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
-    store.save_token("alice@example.com", &docs_token()).unwrap();
+    store
+        .save_token("alice@example.com", &docs_token())
+        .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 

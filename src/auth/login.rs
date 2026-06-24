@@ -326,9 +326,8 @@ pub async fn poll_device_token(
 async fn device_poll_outcome(response: reqwest::Response) -> Result<DevicePollOutcome, AuthError> {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    let error = parse_oauth_error(&body).ok_or_else(|| {
-        AuthError::TokenExchange(format!("device token HTTP {status}: {body}"))
-    })?;
+    let error = parse_oauth_error(&body)
+        .ok_or_else(|| AuthError::TokenExchange(format!("device token HTTP {status}: {body}")))?;
 
     let OAuthErrorResponse {
         error,

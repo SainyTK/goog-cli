@@ -78,7 +78,9 @@ fn profile_token() -> Token {
 }
 
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
-    store.save_token("alice@example.com", &docs_token()).unwrap();
+    store
+        .save_token("alice@example.com", &docs_token())
+        .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
@@ -211,7 +213,9 @@ async fn batch_update_posts_full_google_request_body() {
         .await;
 
     let store = MemoryStore::default();
-    store.save_token("alice@example.com", &docs_write_token()).unwrap();
+    store
+        .save_token("alice@example.com", &docs_write_token())
+        .unwrap();
     let client = AuthClient::from_config(test_config(), &store, None).unwrap();
     let options = BatchUpdateDocumentOptions::new("document-123", request_body)
         .with_documents_url(format!("{}/docs/v1/documents", server.uri()));
@@ -252,7 +256,10 @@ async fn get_document_requests_only_readonly_docs_scope_when_missing() {
     let scopes_seen = Arc::new(Mutex::new(Vec::new()));
     let client = AuthClient::from_config(test_config(), &store, None)
         .unwrap()
-        .with_auth_urls_for_tests("https://example.test/auth", format!("{}/token", server.uri()))
+        .with_auth_urls_for_tests(
+            "https://example.test/auth",
+            format!("{}/token", server.uri()),
+        )
         .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
             scopes_seen: scopes_seen.clone(),
         }));
@@ -299,11 +306,16 @@ async fn batch_update_requests_write_docs_scope_when_missing() {
         .await;
 
     let store = MemoryStore::default();
-    store.save_token("alice@example.com", &profile_token()).unwrap();
+    store
+        .save_token("alice@example.com", &profile_token())
+        .unwrap();
     let scopes_seen = Arc::new(Mutex::new(Vec::new()));
     let client = AuthClient::from_config(test_config(), &store, None)
         .unwrap()
-        .with_auth_urls_for_tests("https://example.test/auth", format!("{}/token", server.uri()))
+        .with_auth_urls_for_tests(
+            "https://example.test/auth",
+            format!("{}/token", server.uri()),
+        )
         .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
             scopes_seen: scopes_seen.clone(),
         }));

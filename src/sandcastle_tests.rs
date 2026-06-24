@@ -33,10 +33,8 @@ fn sandcastle_rust_workflow_verifier_runs_expected_commands() {
     let package_json = fs::read_to_string(repo_root.join("package.json")).unwrap();
     let verifier =
         fs::read_to_string(repo_root.join(".sandcastle/verify-rust-workflow.mts")).unwrap();
-    let notes = fs::read_to_string(
-        repo_root.join(".sandcastle/verify-rust-workflow-notes.md"),
-    )
-    .unwrap();
+    let notes =
+        fs::read_to_string(repo_root.join(".sandcastle/verify-rust-workflow-notes.md")).unwrap();
 
     assert_contains(
         &package_json,

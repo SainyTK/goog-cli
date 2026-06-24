@@ -194,9 +194,8 @@ fn write_table_includes_expected_columns() {
 
     let rendered = String::from_utf8(out).unwrap();
     assert!(rendered.contains("NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED"));
-    assert!(rendered.contains(
-        "Roadmap\tfile-1\tfolder-123,folder-456\tapplication/vnd.google-apps.document"
-    ));
+    assert!(rendered
+        .contains("Roadmap\tfile-1\tfolder-123,folder-456\tapplication/vnd.google-apps.document"));
 }
 
 #[test]
@@ -292,7 +291,10 @@ fn sort_browse_items_orders_folders_first_then_files_by_name() {
     sort_browse_items(&mut files);
 
     let ordered_ids: Vec<_> = files.iter().map(|file| file.id.as_str()).collect();
-    assert_eq!(ordered_ids, vec!["folder-a", "folder-b", "file-a", "file-z"]);
+    assert_eq!(
+        ordered_ids,
+        vec!["folder-a", "folder-b", "file-a", "file-z"]
+    );
 }
 
 #[test]

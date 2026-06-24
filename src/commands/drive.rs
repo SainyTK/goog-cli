@@ -10,8 +10,7 @@ use crate::auth::client::AuthClient;
 use crate::cli::{DriveCommand, DriveFolderCommand};
 use crate::drive::{
     download, list_files, upload, DownloadFileOptions, DriveFile, ListFilesOptions,
-    DRIVE_FOLDER_MIME_TYPE,
-    UploadFileOptions,
+    UploadFileOptions, DRIVE_FOLDER_MIME_TYPE,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;

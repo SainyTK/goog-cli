@@ -54,12 +54,7 @@ pub(super) async fn run_get_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
-    let options = get_document_options(
-        document_id,
-        fields,
-        include_tabs_content,
-        documents_url,
-    );
+    let options = get_document_options(document_id, fields, include_tabs_content, documents_url);
 
     let document = get_document(client, &options)
         .await
