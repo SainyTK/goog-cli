@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::io::{Read, Write};
 
 use anyhow::{Context, Result};
@@ -25,9 +26,7 @@ pub fn run<S: AccountStore>(cmd: SheetsCommand, client: &AuthClient<'_, S>) -> R
             include_grid_data,
             ranges,
         } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_get_to(
+            run_with_runtime(run_get_to(
                 client,
                 spreadsheet_id,
                 fields,
@@ -38,10 +37,8 @@ pub fn run<S: AccountStore>(cmd: SheetsCommand, client: &AuthClient<'_, S>) -> R
             ))
         }
         SheetsCommand::Values { command } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             let mut stdin = std::io::stdin();
-            runtime.block_on(run_values_to(
+            run_with_runtime(run_values_to(
                 client,
                 command,
                 &mut stdin,
@@ -53,10 +50,8 @@ pub fn run<S: AccountStore>(cmd: SheetsCommand, client: &AuthClient<'_, S>) -> R
             spreadsheet_id,
             requests,
         } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             let mut stdin = std::io::stdin();
-            runtime.block_on(run_batch_update_to(
+            run_with_runtime(run_batch_update_to(
                 client,
                 spreadsheet_id,
                 requests,
@@ -66,6 +61,11 @@ pub fn run<S: AccountStore>(cmd: SheetsCommand, client: &AuthClient<'_, S>) -> R
             ))
         }
     }
+}
+
+fn run_with_runtime(future: impl Future<Output = Result<()>>) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+    runtime.block_on(future)
 }
 
 pub(super) async fn run_get_to<S: AccountStore>(

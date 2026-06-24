@@ -2,7 +2,7 @@ pub mod error;
 
 pub use error::SheetsError;
 
-use reqwest::{Response, StatusCode};
+use reqwest::{RequestBuilder, Response, StatusCode};
 use serde_json::Value;
 use url::Url;
 
@@ -460,134 +460,129 @@ pub async fn get_spreadsheet<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetSpreadsheetOptions,
 ) -> Result<Spreadsheet, SheetsError> {
-    let response = client
-        .send_with_scopes(client.get(options.request_url()?), SHEETS_READONLY_SCOPES)
-        .await
-        .map_err(SheetsError::Auth)?;
-
-    parse_json_response(response).await
+    send_json_request(
+        client,
+        client.get(options.request_url()?),
+        SHEETS_READONLY_SCOPES,
+    )
+    .await
 }
 
 pub async fn get_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetValuesOptions,
 ) -> Result<ValueRange, SheetsError> {
-    let response = client
-        .send_with_scopes(client.get(options.request_url()?), SHEETS_READONLY_SCOPES)
-        .await
-        .map_err(SheetsError::Auth)?;
-
-    parse_json_response(response).await
+    send_json_request(
+        client,
+        client.get(options.request_url()?),
+        SHEETS_READONLY_SCOPES,
+    )
+    .await
 }
 
 pub async fn batch_get_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchGetValuesOptions,
 ) -> Result<BatchGetValuesResponse, SheetsError> {
-    let response = client
-        .send_with_scopes(client.get(options.request_url()?), SHEETS_READONLY_SCOPES)
-        .await
-        .map_err(SheetsError::Auth)?;
-
-    parse_json_response(response).await
+    send_json_request(
+        client,
+        client.get(options.request_url()?),
+        SHEETS_READONLY_SCOPES,
+    )
+    .await
 }
 
 pub async fn update_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &UpdateValuesOptions,
 ) -> Result<UpdateValuesResponse, SheetsError> {
-    let response = client
-        .send_with_scopes(
-            client
-                .put(options.request_url()?)
-                .json(&options.request_body),
-            SHEETS_SCOPES,
-        )
-        .await
-        .map_err(SheetsError::Auth)?;
-
-    parse_json_response(response).await
+    send_json_request(
+        client,
+        client
+            .put(options.request_url()?)
+            .json(&options.request_body),
+        SHEETS_SCOPES,
+    )
+    .await
 }
 
 pub async fn batch_update_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchUpdateValuesOptions,
 ) -> Result<BatchUpdateValuesResponse, SheetsError> {
-    let response = client
-        .send_with_scopes(
-            client
-                .post(options.request_url()?)
-                .json(&options.request_body),
-            SHEETS_SCOPES,
-        )
-        .await
-        .map_err(SheetsError::Auth)?;
-
-    parse_json_response(response).await
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+        SHEETS_SCOPES,
+    )
+    .await
 }
 
 pub async fn append_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &AppendValuesOptions,
 ) -> Result<AppendValuesResponse, SheetsError> {
-    let response = client
-        .send_with_scopes(
-            client
-                .post(options.request_url()?)
-                .json(&options.request_body),
-            SHEETS_SCOPES,
-        )
-        .await
-        .map_err(SheetsError::Auth)?;
-
-    parse_json_response(response).await
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+        SHEETS_SCOPES,
+    )
+    .await
 }
 
 pub async fn clear_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ClearValuesOptions,
 ) -> Result<ClearValuesResponse, SheetsError> {
-    let response = client
-        .send_with_scopes(
-            client
-                .post(options.request_url()?)
-                .json(&serde_json::json!({})),
-            SHEETS_SCOPES,
-        )
-        .await
-        .map_err(SheetsError::Auth)?;
-
-    parse_json_response(response).await
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&serde_json::json!({})),
+        SHEETS_SCOPES,
+    )
+    .await
 }
 
 pub async fn batch_clear_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchClearValuesOptions,
 ) -> Result<BatchClearValuesResponse, SheetsError> {
-    let response = client
-        .send_with_scopes(
-            client
-                .post(options.request_url()?)
-                .json(&serde_json::json!({ "ranges": &options.ranges })),
-            SHEETS_SCOPES,
-        )
-        .await
-        .map_err(SheetsError::Auth)?;
-
-    parse_json_response(response).await
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&serde_json::json!({ "ranges": &options.ranges })),
+        SHEETS_SCOPES,
+    )
+    .await
 }
 
 pub async fn batch_update_spreadsheet<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchUpdateSpreadsheetOptions,
 ) -> Result<BatchUpdateSpreadsheetResponse, SheetsError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+        SHEETS_SCOPES,
+    )
+    .await
+}
+
+async fn send_json_request<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    request: RequestBuilder,
+    scopes: &[&str],
+) -> Result<Value, SheetsError> {
     let response = client
-        .send_with_scopes(
-            client
-                .post(options.request_url()?)
-                .json(&options.request_body),
-            SHEETS_SCOPES,
-        )
+        .send_with_scopes(request, scopes)
         .await
         .map_err(SheetsError::Auth)?;
 
