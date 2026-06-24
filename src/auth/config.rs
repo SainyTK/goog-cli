@@ -17,22 +17,19 @@ pub struct Config {
 pub struct OAuthAppConfig {
     pub client_id: String,
     pub client_secret: String,
-    #[serde(default = "default_oauth_app_type")]
+    #[serde(default)]
     pub app_type: OAuthAppType,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
 #[serde(rename_all = "kebab-case")]
 pub enum OAuthAppType {
     Desktop,
     Web,
     Device,
+    #[default]
     #[value(skip)]
     Unknown,
-}
-
-fn default_oauth_app_type() -> OAuthAppType {
-    OAuthAppType::Unknown
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]

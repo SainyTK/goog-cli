@@ -18,6 +18,10 @@ use crate::auth::login::{
 use crate::auth::setup::parse_client_secret_file;
 use crate::cli::AuthCommand;
 
+const DEVICE_OAUTH_CLIENT_TYPE: &str = "TVs and Limited Input devices";
+const DEVICE_OAUTH_SETUP_COMMAND: &str =
+    "`goog auth setup --client-secret-file <path> --app-type device`";
+
 const SETUP_GUIDE: &str = "\
 Setting up your OAuth App. Follow these steps in the Google Cloud Console:
 
@@ -205,7 +209,7 @@ fn require_device_oauth_app(oauth_app: &OAuthAppConfig) -> Result<()> {
     }
 
     Err(AuthError::OAuthFlow(format!(
-        "device login requires an OAuth client of type \"TVs and Limited Input devices\". Run `goog auth setup --client-secret-file <path> --app-type device` with that client."
+        "device login requires an OAuth client of type \"{DEVICE_OAUTH_CLIENT_TYPE}\". Run {DEVICE_OAUTH_SETUP_COMMAND} with that client."
     ))
     .into())
 }
