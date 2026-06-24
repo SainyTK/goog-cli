@@ -62,11 +62,36 @@ pub fn resolve_account(
     }
 }
 
-pub fn switch_active_account(config: &mut Config, email: &str) -> Result<(), AuthError> {
-    ensure_logged_in(config, email)?;
+pub fn switch_active_account(config: &mut Config, selector: &str) -> Result<String, AuthError> {
+    let email = resolve_account_selector(config, selector)?;
     let settings = config.settings.get_or_insert_with(SettingsConfig::default);
-    settings.active_account = Some(email.to_string());
-    Ok(())
+    settings.active_account = Some(email.clone());
+    Ok(email)
+}
+
+fn resolve_account_selector(config: &Config, selector: &str) -> Result<String, AuthError> {
+    let selector = selector.trim();
+    if selector.is_empty() {
+        return Err(AuthError::AccountNotFound {
+            email: selector.to_string(),
+        });
+    }
+
+    let selector_key = selector.to_lowercase();
+    config
+        .accounts
+        .iter()
+        .find(|account| account.to_lowercase() == selector_key)
+        .or_else(|| {
+            config
+                .accounts
+                .iter()
+                .find(|account| account.to_lowercase().contains(&selector_key))
+        })
+        .cloned()
+        .ok_or_else(|| AuthError::AccountNotFound {
+            email: selector.to_string(),
+        })
 }
 
 fn ensure_logged_in(config: &Config, email: &str) -> Result<(), AuthError> {
@@ -88,8 +113,8 @@ fn save_config_to_path(config: &Config, path: &std::path::Path) -> Result<(), Au
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(AuthError::ConfigWriteIo)?;
     }
-    let contents = toml::to_string_pretty(config)
-        .map_err(|e| AuthError::ConfigMalformed(e.to_string()))?;
+    let contents =
+        toml::to_string_pretty(config).map_err(|e| AuthError::ConfigMalformed(e.to_string()))?;
     std::fs::write(path, contents).map_err(AuthError::ConfigWriteIo)
 }
 
@@ -198,9 +223,82 @@ output = "json"
             &["alice@example.com", "bob@example.com"],
         );
 
-        switch_active_account(&mut config, "bob@example.com").unwrap();
+        let email = switch_active_account(&mut config, "bob@example.com").unwrap();
 
+        assert_eq!(email, "bob@example.com");
         assert_eq!(config.active_account(), Some("bob@example.com"));
+    }
+
+    #[test]
+    fn switch_active_account_accepts_partial_selector() {
+        let mut config = config_with_accounts(
+            Some("alice@example.com"),
+            &["alice@example.com", "bob@example.com"],
+        );
+
+        let email = switch_active_account(&mut config, "bo").unwrap();
+
+        assert_eq!(email, "bob@example.com");
+        assert_eq!(config.active_account(), Some("bob@example.com"));
+    }
+
+    #[test]
+    fn switch_active_account_prefers_exact_match_before_partial_match() {
+        let mut config = config_with_accounts(
+            None,
+            &["sales@example.com", "al@example.com", "alice@example.com"],
+        );
+
+        let email = switch_active_account(&mut config, "al@example.com").unwrap();
+
+        assert_eq!(email, "al@example.com");
+        assert_eq!(config.active_account(), Some("al@example.com"));
+    }
+
+    #[test]
+    fn switch_active_account_uses_first_partial_match_in_account_order() {
+        let mut config = config_with_accounts(
+            None,
+            &["alice@example.com", "alina@example.com", "bob@example.com"],
+        );
+
+        let email = switch_active_account(&mut config, "ali").unwrap();
+
+        assert_eq!(email, "alice@example.com");
+        assert_eq!(config.active_account(), Some("alice@example.com"));
+    }
+
+    #[test]
+    fn switch_active_account_matches_case_insensitively() {
+        let mut config = config_with_accounts(None, &["alice@example.com"]);
+
+        let email = switch_active_account(&mut config, "ALI").unwrap();
+
+        assert_eq!(email, "alice@example.com");
+        assert_eq!(config.active_account(), Some("alice@example.com"));
+    }
+
+    #[test]
+    fn switch_active_account_trims_selector() {
+        let mut config = config_with_accounts(None, &["alice@example.com"]);
+
+        let email = switch_active_account(&mut config, "  ali  ").unwrap();
+
+        assert_eq!(email, "alice@example.com");
+        assert_eq!(config.active_account(), Some("alice@example.com"));
+    }
+
+    #[test]
+    fn switch_active_account_rejects_blank_selector() {
+        let mut config = config_with_accounts(None, &["alice@example.com"]);
+
+        let err = switch_active_account(&mut config, "   ").unwrap_err();
+
+        assert!(matches!(
+            err,
+            AuthError::AccountNotFound { email } if email.is_empty()
+        ));
+        assert!(config.settings.is_none());
     }
 
     #[test]

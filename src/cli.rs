@@ -51,7 +51,7 @@ pub enum AuthCommand {
     },
     /// Switch the active account
     Switch {
-        /// Email address of the account to activate
+        /// Email address or partial email of the account to activate
         email: String,
     },
 }

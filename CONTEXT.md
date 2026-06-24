@@ -18,6 +18,10 @@ _Avoid_: User, profile, identity
 The Account that commands target by default when no `--account` flag is provided. Stored in config. Switched explicitly via `goog auth switch`.
 _Avoid_: Current account, default account, selected account
 
+**Account Selector**:
+A command argument that identifies an Account for account-management commands. It may be a full email address or a case-insensitive partial email match when the command explicitly supports partial matching; when multiple Accounts match, the first Account in list order is selected.
+_Avoid_: Account query, account search, email prefix
+
 **Token**:
 The pair of (access token, refresh token) issued by Google for a specific Account and set of Scopes. Stored in the system keychain, never in config files.
 _Avoid_: Credentials (overloaded), auth token, OAuth token

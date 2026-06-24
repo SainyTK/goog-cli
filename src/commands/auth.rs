@@ -257,9 +257,10 @@ fn run_switch(email: String) -> Result<()> {
 
 fn run_switch_to(email: &str, out: &mut impl std::io::Write) -> Result<()> {
     let mut config = load_config().context("failed to load config")?;
-    switch_active_account(&mut config, email)?;
+    let active_account = switch_active_account(&mut config, email)?;
     save_config(&config).context("failed to save config")?;
-    writeln!(out, "Active Account switched to {email}").context("failed to write output")?;
+    writeln!(out, "Active Account switched to {active_account}")
+        .context("failed to write output")?;
     Ok(())
 }
 
