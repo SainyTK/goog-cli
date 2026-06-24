@@ -820,6 +820,66 @@ fn sheets_values_update_defaults_to_user_entered() {
 }
 
 #[test]
+fn sheets_values_update_requires_values() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "update",
+        "spreadsheet-123",
+        "Sheet1!A1:B2",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_values_append_defaults_to_user_entered_and_insert_rows() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "append",
+        "spreadsheet-123",
+        "Sheet1!A:B",
+        "--values",
+        "values.json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::Append {
+                            spreadsheet_id,
+                            range,
+                            values,
+                            value_input_option,
+                            insert_data_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!A:B");
+            assert_eq!(values, "values.json");
+            assert_eq!(value_input_option, SheetsValueInputOption::UserEntered);
+            assert_eq!(insert_data_option, SheetsInsertDataOption::InsertRows);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_append_requires_values() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "append",
+        "spreadsheet-123",
+        "Sheet1!A:B",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_values_append_accepts_raw_and_overwrite_options() {
     let cli = parse(&[
         "sheets",
