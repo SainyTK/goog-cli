@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::{Duration, Utc};
+use url::Url;
 use wiremock::matchers::{body_string_contains, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -66,6 +67,38 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
+fn spreadsheets_url(server: &MockServer) -> String {
+    format!("{}/sheets/v4/spreadsheets", server.uri())
+}
+
+fn spreadsheet_options(server: &MockServer, spreadsheet_id: &str) -> GetSpreadsheetOptions {
+    GetSpreadsheetOptions::new(spreadsheet_id).with_spreadsheets_url(spreadsheets_url(server))
+}
+
+async fn received_url(server: &MockServer) -> Url {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap()
+        .url
+}
+
+fn query_value(url: &Url, name: &str) -> Option<String> {
+    url.query_pairs()
+        .find(|(query_name, _)| query_name == name)
+        .map(|(_, value)| value.into_owned())
+}
+
+fn query_values(url: &Url, name: &str) -> Vec<String> {
+    url.query_pairs()
+        .filter(|(query_name, _)| query_name == name)
+        .map(|(_, value)| value.into_owned())
+        .collect()
+}
+
 struct StaticAuthorizationCodeFlow {
     scopes_seen: Arc<Mutex<Vec<String>>>,
 }
@@ -102,8 +135,7 @@ async fn get_spreadsheet_fetches_raw_google_sheets_spreadsheet() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetSpreadsheetOptions::new("spreadsheet-123")
-        .with_spreadsheets_url(format!("{}/sheets/v4/spreadsheets", server.uri()));
+    let options = spreadsheet_options(&server, "spreadsheet-123");
 
     let spreadsheet = get_spreadsheet(&client, &options).await.unwrap();
 
@@ -125,35 +157,24 @@ async fn get_spreadsheet_passes_google_query_options() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetSpreadsheetOptions::new("spreadsheet-123")
+    let options = spreadsheet_options(&server, "spreadsheet-123")
         .with_fields("spreadsheetId,properties.title")
         .with_include_grid_data(true)
-        .with_ranges(vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()])
-        .with_spreadsheets_url(format!("{}/sheets/v4/spreadsheets", server.uri()));
+        .with_ranges(vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()]);
 
     get_spreadsheet(&client, &options).await.unwrap();
 
-    let requests = server.received_requests().await.unwrap();
-    let request = requests.first().unwrap();
-    let pairs: Vec<(String, String)> = request
-        .url
-        .query_pairs()
-        .map(|(name, value)| (name.to_string(), value.to_string()))
-        .collect();
-    assert!(pairs.contains(&(
-        "fields".to_string(),
-        "spreadsheetId,properties.title".to_string()
-    )));
-    assert!(pairs.contains(&(
-        "includeGridData".to_string(),
-        "true".to_string()
-    )));
+    let url = received_url(&server).await;
     assert_eq!(
-        pairs
-            .iter()
-            .filter(|(name, _)| name == "ranges")
-            .map(|(_, value)| value.to_string())
-            .collect::<Vec<_>>(),
+        query_value(&url, "fields").as_deref(),
+        Some("spreadsheetId,properties.title")
+    );
+    assert_eq!(
+        query_value(&url, "includeGridData").as_deref(),
+        Some("true")
+    );
+    assert_eq!(
+        query_values(&url, "ranges"),
         vec!["Sheet1!A1:B2".to_string(), "Summary!A:A".to_string()]
     );
 }
@@ -171,17 +192,12 @@ async fn get_spreadsheet_excludes_grid_data_by_default() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetSpreadsheetOptions::new("spreadsheet-123")
-        .with_spreadsheets_url(format!("{}/sheets/v4/spreadsheets", server.uri()));
+    let options = spreadsheet_options(&server, "spreadsheet-123");
 
     get_spreadsheet(&client, &options).await.unwrap();
 
-    let requests = server.received_requests().await.unwrap();
-    let request = requests.first().unwrap();
-    assert!(!request
-        .url
-        .query_pairs()
-        .any(|(name, _)| name == "includeGridData"));
+    let url = received_url(&server).await;
+    assert_eq!(query_value(&url, "includeGridData"), None);
 }
 
 #[tokio::test]
@@ -221,8 +237,7 @@ async fn get_spreadsheet_requests_only_readonly_sheets_scope_when_missing() {
         .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
             scopes_seen: scopes_seen.clone(),
         }));
-    let options = GetSpreadsheetOptions::new("spreadsheet-123")
-        .with_spreadsheets_url(format!("{}/sheets/v4/spreadsheets", server.uri()));
+    let options = spreadsheet_options(&server, "spreadsheet-123");
 
     get_spreadsheet(&client, &options).await.unwrap();
 
@@ -249,8 +264,7 @@ async fn get_spreadsheet_returns_sheets_error_for_not_found_response() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetSpreadsheetOptions::new("missing-spreadsheet")
-        .with_spreadsheets_url(format!("{}/sheets/v4/spreadsheets", server.uri()));
+    let options = spreadsheet_options(&server, "missing-spreadsheet");
 
     let err = get_spreadsheet(&client, &options).await.unwrap_err();
 
@@ -269,8 +283,7 @@ async fn get_spreadsheet_returns_sheets_error_for_permission_denied_response() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetSpreadsheetOptions::new("private-spreadsheet")
-        .with_spreadsheets_url(format!("{}/sheets/v4/spreadsheets", server.uri()));
+    let options = spreadsheet_options(&server, "private-spreadsheet");
 
     let err = get_spreadsheet(&client, &options).await.unwrap_err();
 
@@ -300,8 +313,7 @@ async fn get_spreadsheet_returns_invalid_response_error_for_malformed_json() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetSpreadsheetOptions::new("spreadsheet-123")
-        .with_spreadsheets_url(format!("{}/sheets/v4/spreadsheets", server.uri()));
+    let options = spreadsheet_options(&server, "spreadsheet-123");
 
     let err = get_spreadsheet(&client, &options).await.unwrap_err();
 
