@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::cli::{AuthCommand, Cli, Command, DriveCommand};
+use crate::cli::{AuthCommand, Cli, Command, DriveCommand, DriveFolderCommand};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("goog").chain(args.iter().copied()))
@@ -142,6 +142,42 @@ fn drive_list_with_flags() {
             assert_eq!(limit, Some(100));
             assert!(all);
             assert_eq!(folder.as_deref(), Some("folder123"));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn drive_folder_list_with_flags() {
+    let cli = parse(&[
+        "drive",
+        "folder",
+        "list",
+        "--limit",
+        "100",
+        "--all",
+        "--parent",
+        "folder123",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Drive {
+            command:
+                DriveCommand::Folder {
+                    command:
+                        DriveFolderCommand::List {
+                            limit,
+                            all,
+                            parent,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(limit, Some(100));
+            assert!(all);
+            assert_eq!(parent.as_deref(), Some("folder123"));
             assert!(json);
         }
         _ => panic!("unexpected parse result"),

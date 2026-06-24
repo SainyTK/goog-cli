@@ -15,6 +15,43 @@ const SINGLE_PAGE_RESPONSE: &str =
 const FIRST_PAGE_RESPONSE: &str = include_str!("../../tests/fixtures/drive/files_page_first.json");
 const SECOND_PAGE_RESPONSE: &str =
     include_str!("../../tests/fixtures/drive/files_page_second.json");
+const FOLDER_SINGLE_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "folder-1",
+      "name": "Projects",
+      "parents": ["root"],
+      "mimeType": "application/vnd.google-apps.folder",
+      "modifiedTime": "2026-06-24T11:15:00.000Z"
+    }
+  ]
+}"#;
+const FOLDER_FIRST_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "nextPageToken": "token-2",
+  "files": [
+    {
+      "id": "folder-1",
+      "name": "First",
+      "parents": ["root"],
+      "mimeType": "application/vnd.google-apps.folder",
+      "modifiedTime": "2026-06-24T11:15:00.000Z"
+    }
+  ]
+}"#;
+const FOLDER_SECOND_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "folder-2",
+      "name": "Second",
+      "parents": ["root"],
+      "mimeType": "application/vnd.google-apps.folder",
+      "modifiedTime": "2026-06-24T11:16:00.000Z"
+    }
+  ]
+}"#;
 
 fn test_config() -> Config {
     Config {
@@ -101,6 +138,29 @@ fn write_table_includes_expected_columns() {
     assert!(rendered.contains(
         "Roadmap\tfile-1\tfolder-123,folder-456\tapplication/vnd.google-apps.document"
     ));
+}
+
+#[test]
+fn write_folder_table_includes_expected_columns() {
+    let mut out = Vec::new();
+    let mut wrote_header = false;
+    write_folder_table(
+        &[DriveFile {
+            name: "Projects".into(),
+            id: "folder-1".into(),
+            parent_ids: vec!["root".into()],
+            mime_type: "application/vnd.google-apps.folder".into(),
+            modified_time: "2026-06-24T11:15:00.000Z".into(),
+        }],
+        &mut out,
+        &mut wrote_header,
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED"));
+    assert!(rendered.contains("Projects\tfolder-1\troot\t2026-06-24T11:15:00.000Z"));
+    assert!(!rendered.contains("MIME TYPE"));
 }
 
 #[test]
@@ -191,6 +251,188 @@ async fn run_list_filters_to_folder_when_requested() {
     let rendered = String::from_utf8(out).unwrap();
     assert!(rendered.contains("Roadmap\tfile-1\t"));
     assert!(err.is_empty());
+}
+
+#[tokio::test]
+async fn run_folder_list_defaults_to_drive_root() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param(
+            "q",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_folder_list_to(
+        &client,
+        None,
+        false,
+        None,
+        false,
+        false,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED"));
+    assert!(rendered.contains("Projects\tfolder-1\troot\t2026-06-24T11:15:00.000Z"));
+    assert!(err.is_empty());
+}
+
+#[tokio::test]
+async fn run_folder_list_filters_to_parent_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_folder_list_to(
+        &client,
+        None,
+        false,
+        Some("folder-123".into()),
+        false,
+        false,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("Projects\tfolder-1\troot\t"));
+    assert!(err.is_empty());
+}
+
+#[tokio::test]
+async fn run_folder_list_emits_ndjson_with_parent_ids() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param(
+            "q",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_folder_list_to(
+        &client,
+        None,
+        false,
+        None,
+        true,
+        false,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"name\":\"Projects\",\"id\":\"folder-1\",\"parentIds\":[\"root\"],\"mimeType\":\"application/vnd.google-apps.folder\",\"modifiedTime\":\"2026-06-24T11:15:00.000Z\"}\n"
+    );
+    assert!(err.is_empty());
+}
+
+#[tokio::test]
+async fn run_folder_list_all_fetches_following_pages_and_reports_progress() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param("pageSize", "2"))
+        .and(query_param(
+            "q",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_FIRST_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param("pageSize", "1"))
+        .and(query_param("pageToken", "token-2"))
+        .and(query_param(
+            "q",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SECOND_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_folder_list_to(
+        &client,
+        Some(2),
+        true,
+        None,
+        false,
+        false,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("First\tfolder-1\troot\t"));
+    assert!(rendered.contains("Second\tfolder-2\troot\t"));
+    assert_eq!(
+        String::from_utf8(err).unwrap(),
+        "Fetched 1 folders...\nFetched 2 folders...\n"
+    );
 }
 
 #[tokio::test]

@@ -22,7 +22,7 @@ const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
 pub(super) const DRIVE_FILES_FIELDS: &str =
     "nextPageToken,files(id,name,parents,mimeType,modifiedTime)";
-const DRIVE_FILES_QUERY: &str = "mimeType != 'application/vnd.google-apps.folder'";
+const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
@@ -181,7 +181,14 @@ pub struct ListFilesOptions {
     pub page_size: u32,
     pub page_token: Option<String>,
     pub folder: Option<String>,
+    mode: ListFilesMode,
     files_url: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListFilesMode {
+    Files,
+    Folders,
 }
 
 impl ListFilesOptions {
@@ -190,7 +197,15 @@ impl ListFilesOptions {
             page_size,
             page_token: None,
             folder: None,
+            mode: ListFilesMode::Files,
             files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub fn folders(page_size: u32) -> Self {
+        Self {
+            mode: ListFilesMode::Folders,
+            ..Self::new(page_size)
         }
     }
 
@@ -226,12 +241,21 @@ impl ListFilesOptions {
     }
 
     fn query(&self) -> String {
-        match self.folder.as_deref() {
-            Some(folder) => format!(
-                "'{}' in parents and {DRIVE_FILES_QUERY}",
+        match (self.mode, self.folder.as_deref()) {
+            (ListFilesMode::Files, Some(folder)) => format!(
+                "'{}' in parents and mimeType != '{DRIVE_FOLDER_MIME_TYPE}'",
                 escape_query_literal(folder)
             ),
-            None => DRIVE_FILES_QUERY.to_string(),
+            (ListFilesMode::Files, None) => {
+                format!("mimeType != '{DRIVE_FOLDER_MIME_TYPE}'")
+            }
+            (ListFilesMode::Folders, Some(folder)) => format!(
+                "'{}' in parents and mimeType = '{DRIVE_FOLDER_MIME_TYPE}'",
+                escape_query_literal(folder)
+            ),
+            (ListFilesMode::Folders, None) => {
+                format!("'root' in parents and mimeType = '{DRIVE_FOLDER_MIME_TYPE}'")
+            }
         }
     }
 }

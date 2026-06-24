@@ -73,6 +73,11 @@ pub enum DriveCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Manage Google Drive folders
+    Folder {
+        #[command(subcommand)]
+        command: DriveFolderCommand,
+    },
     /// Download a file from Google Drive
     Download {
         /// Drive file ID to download
@@ -88,5 +93,24 @@ pub enum DriveCommand {
         /// Drive folder ID to upload into
         #[arg(long)]
         folder: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DriveFolderCommand {
+    /// List folders in Google Drive
+    List {
+        /// Maximum number of folders to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all folders across all pages
+        #[arg(long)]
+        all: bool,
+        /// Drive parent folder ID to list folders from
+        #[arg(long)]
+        parent: Option<String>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
     },
 }

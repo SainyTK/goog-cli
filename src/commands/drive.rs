@@ -6,7 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::cli::DriveCommand;
+use crate::cli::{DriveCommand, DriveFolderCommand};
 use crate::drive::{
     download, list_files, upload, DownloadFileOptions, DriveFile, ListFilesOptions,
     UploadFileOptions,
@@ -15,6 +15,22 @@ use crate::drive::{
 const DEFAULT_LIST_LIMIT: u32 = 50;
 const ALL_PAGE_SIZE: u32 = 1000;
 const TABLE_HEADER: &str = "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED";
+const FOLDER_TABLE_HEADER: &str = "NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DriveListKind {
+    Files,
+    Folders,
+}
+
+impl DriveListKind {
+    fn item_name(self) -> &'static str {
+        match self {
+            Self::Files => "files",
+            Self::Folders => "folders",
+        }
+    }
+}
 
 pub fn run<S: AccountStore>(
     cmd: DriveCommand,
@@ -44,6 +60,29 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DriveCommand::Folder { command } => match command {
+            DriveFolderCommand::List {
+                limit,
+                all,
+                parent,
+                json,
+            } => {
+                let json = should_emit_json(json, output_json_by_default);
+                let runtime =
+                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+                runtime.block_on(run_folder_list_to(
+                    client,
+                    limit,
+                    all,
+                    parent,
+                    json,
+                    quiet,
+                    &mut std::io::stdout(),
+                    &mut std::io::stderr(),
+                    None,
+                ))
+            }
+        },
         DriveCommand::Download { file_id, output } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -199,6 +238,59 @@ pub(super) async fn run_list_to<S: AccountStore>(
     err: &mut impl Write,
     files_url: Option<&str>,
 ) -> Result<()> {
+    run_list_items_to(
+        client,
+        DriveListKind::Files,
+        limit,
+        all,
+        folder,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+pub(super) async fn run_folder_list_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    run_list_items_to(
+        client,
+        DriveListKind::Folders,
+        limit,
+        all,
+        parent,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+async fn run_list_items_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    kind: DriveListKind,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
     let mut remaining = requested_result_count(limit, all);
     let mut page_token = None;
     let mut wrote_table_header = false;
@@ -208,7 +300,13 @@ pub(super) async fn run_list_to<S: AccountStore>(
         let Some(page_size) = next_page_size(remaining) else {
             break;
         };
-        let options = list_options(page_size, page_token.take(), folder.as_deref(), files_url);
+        let options = list_options(
+            page_size,
+            page_token.take(),
+            parent.as_deref(),
+            files_url,
+            kind,
+        );
 
         let page = list_files(client, &options)
             .await
@@ -217,7 +315,12 @@ pub(super) async fn run_list_to<S: AccountStore>(
         if json {
             write_ndjson(&page.files, out)?;
         } else {
-            write_table(&page.files, out, &mut wrote_table_header)?;
+            match kind {
+                DriveListKind::Files => write_table(&page.files, out, &mut wrote_table_header)?,
+                DriveListKind::Folders => {
+                    write_folder_table(&page.files, out, &mut wrote_table_header)?
+                }
+            }
         }
 
         let page_count = page.files.len() as u32;
@@ -227,7 +330,8 @@ pub(super) async fn run_list_to<S: AccountStore>(
         }
 
         if all && !quiet {
-            writeln!(err, "Fetched {total} files...").context("failed to write progress")?;
+            writeln!(err, "Fetched {total} {}...", kind.item_name())
+                .context("failed to write progress")?;
         }
 
         match page.next_page_token {
@@ -261,15 +365,19 @@ pub(super) fn should_fetch_next_page(remaining: Option<u32>, all: bool) -> bool 
 pub(super) fn list_options(
     page_size: u32,
     page_token: Option<String>,
-    folder: Option<&str>,
+    parent: Option<&str>,
     files_url: Option<&str>,
+    kind: DriveListKind,
 ) -> ListFilesOptions {
-    let mut options = ListFilesOptions::new(page_size);
+    let mut options = match kind {
+        DriveListKind::Files => ListFilesOptions::new(page_size),
+        DriveListKind::Folders => ListFilesOptions::folders(page_size),
+    };
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);
     }
-    if let Some(folder) = folder {
-        options = options.with_folder(folder);
+    if let Some(parent) = parent {
+        options = options.with_folder(parent);
     }
     if let Some(files_url) = files_url {
         options = options.with_files_url(files_url);
@@ -303,6 +411,31 @@ pub(super) fn write_table(
             file.id,
             file.parent_ids.join(","),
             file.mime_type,
+            file.modified_time
+        )
+        .context("failed to write output")?;
+    }
+
+    Ok(())
+}
+
+pub(super) fn write_folder_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+) -> Result<()> {
+    if !*wrote_header {
+        writeln!(out, "{FOLDER_TABLE_HEADER}").context("failed to write output")?;
+        *wrote_header = true;
+    }
+
+    for file in files {
+        writeln!(
+            out,
+            "{}\t{}\t{}\t{}",
+            file.name,
+            file.id,
+            file.parent_ids.join(","),
             file.modified_time
         )
         .context("failed to write output")?;

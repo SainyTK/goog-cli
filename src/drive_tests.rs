@@ -26,6 +26,18 @@ const FOLDER_PAGE_RESPONSE: &str = r#"{
     }
   ]
 }"#;
+const DRIVE_FOLDER_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "folder-456",
+      "name": "Projects",
+      "parents": ["root"],
+      "mimeType": "application/vnd.google-apps.folder",
+      "modifiedTime": "2026-06-24T11:15:00.000Z"
+    }
+  ]
+}"#;
 
 static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
 
@@ -156,6 +168,72 @@ async fn list_files_can_filter_to_files_inside_a_folder() {
             modified_time: "2026-06-24T10:15:00.000Z".into(),
         }]
     );
+}
+
+#[tokio::test]
+async fn list_folders_defaults_to_folders_in_drive_root() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ListFilesOptions::folders(50).with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(
+        page.files,
+        vec![DriveFile {
+            name: "Projects".into(),
+            id: "folder-456".into(),
+            parent_ids: vec!["root".into()],
+            mime_type: "application/vnd.google-apps.folder".into(),
+            modified_time: "2026-06-24T11:15:00.000Z".into(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn list_folders_can_filter_to_child_folders_inside_a_parent() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::folders(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "folder-456");
 }
 
 #[tokio::test]
