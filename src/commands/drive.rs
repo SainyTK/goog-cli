@@ -14,6 +14,7 @@ use crate::drive::{
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
 const ALL_PAGE_SIZE: u32 = 1000;
+const TABLE_HEADER: &str = "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED";
 
 pub fn run<S: AccountStore>(
     cmd: DriveCommand,
@@ -290,8 +291,7 @@ pub(super) fn write_table(
     wrote_header: &mut bool,
 ) -> Result<()> {
     if !*wrote_header {
-        writeln!(out, "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED")
-            .context("failed to write output")?;
+        writeln!(out, "{TABLE_HEADER}").context("failed to write output")?;
         *wrote_header = true;
     }
 

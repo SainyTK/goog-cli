@@ -159,6 +159,29 @@ async fn list_files_can_filter_to_files_inside_a_folder() {
 }
 
 #[tokio::test]
+async fn list_files_escapes_folder_id_in_query_literal() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param(
+            "q",
+            r#"'folder\\\'123' in parents and mimeType != 'application/vnd.google-apps.folder'"#,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::new(50)
+        .with_folder(r#"folder\'123"#)
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    list_files(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
 async fn list_files_sends_next_page_token_and_returns_next_page_token() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

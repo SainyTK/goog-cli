@@ -22,7 +22,7 @@ const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
 pub(super) const DRIVE_FILES_FIELDS: &str =
     "nextPageToken,files(id,name,parents,mimeType,modifiedTime)";
-const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
+const DRIVE_FILES_QUERY: &str = "mimeType != 'application/vnd.google-apps.folder'";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
@@ -226,12 +226,12 @@ impl ListFilesOptions {
     }
 
     fn query(&self) -> String {
-        let file_only = format!("mimeType != '{DRIVE_FOLDER_MIME_TYPE}'");
-        match &self.folder {
-            Some(folder) => {
-                format!("'{}' in parents and {file_only}", escape_query_literal(folder))
-            }
-            None => file_only,
+        match self.folder.as_deref() {
+            Some(folder) => format!(
+                "'{}' in parents and {DRIVE_FILES_QUERY}",
+                escape_query_literal(folder)
+            ),
+            None => DRIVE_FILES_QUERY.to_string(),
         }
     }
 }
