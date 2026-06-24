@@ -146,6 +146,17 @@ fn drive_list_defaults() {
 }
 
 #[test]
+fn drive_list_with_folder() {
+    let cli = parse(&["drive", "list", "--folder", "folder123"]).unwrap();
+    match cli.command {
+        Command::Drive {
+            command: DriveCommand::List { folder, .. },
+        } => assert_eq!(folder.as_deref(), Some("folder123")),
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn drive_list_with_flags() {
     let cli = parse(&[
         "drive",
@@ -206,6 +217,24 @@ fn drive_ls_with_flags() {
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn drive_folder_list_defaults() {
+    let cli = parse(&["drive", "folder", "list"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::Drive {
+            command: DriveCommand::Folder {
+                command: DriveFolderCommand::List {
+                    limit: None,
+                    all: false,
+                    parent: None,
+                    json: false
+                }
+            }
+        }
+    ));
 }
 
 #[test]
