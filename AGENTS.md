@@ -8,6 +8,8 @@ Issues live in GitHub Issues (`gh` CLI). External PRs are not a triage surface. 
 
 Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
+Whenever applying `ready-for-agent` to an issue, also apply the `Sandcastle` label.
+
 ### Domain docs
 
 Single-context repo: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

@@ -44,6 +44,22 @@ _Avoid_: Init, configure, bootstrap
 The command (`goog auth login`) that authorizes a new Account via a browser-based OAuth flow, issuing a Token for that Account.
 _Avoid_: Authenticate, connect, authorize
 
+### Drive
+
+**Folder**:
+A Google Drive resource that can contain files and other Folders.
+_Avoid_: Directory, collection
+
+### Docs
+
+**Document**:
+A Google Docs resource whose editable body, tabs, and structural elements are managed through the Docs API. A Document is stored as a Drive file, but Drive owns discovery and file lifecycle while Docs owns document content.
+_Avoid_: File, doc
+
+**Batch Update**:
+The Google Docs write operation that applies an ordered list of document mutation requests to a Document. High-level editing commands may be added later, but the first write surface exposes Batch Update directly.
+_Avoid_: Patch, edit, update
+
 ### File Transfer
 
 **Resumable Upload**:
