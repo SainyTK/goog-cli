@@ -60,6 +60,32 @@ _Avoid_: File, doc
 The Google Docs write operation that applies an ordered list of document mutation requests to a Document. High-level editing commands may be added later, but the first write surface exposes Batch Update directly.
 _Avoid_: Patch, edit, update
 
+### Mail
+
+**GoogleMail**:
+The Gmail-backed Google API surface exposed through the `goog mail` command namespace.
+_Avoid_: Gmail command, Google Mail command, email client
+
+**Message**:
+A single email item in GoogleMail, identified by a Gmail message ID and retrieved through the Gmail API.
+_Avoid_: Email, mail item, thread item
+
+**Message Summary**:
+A lightweight GoogleMail view of a Message for list and search output, containing the message ID and selected metadata headers without the full body.
+_Avoid_: Message preview, email row, search result
+
+**Thread**:
+A Gmail conversation that groups related Messages. Threads are not part of the first GoogleMail command slice.
+_Avoid_: Conversation, chain
+
+**Mailbox Query**:
+A Gmail search expression used to find Messages through GoogleMail.
+_Avoid_: Search term, filter, query string
+
+**Inbox**:
+The Gmail label used by `goog mail list` to show current inbox Messages by default.
+_Avoid_: Default mailbox, mail list, received mail
+
 ### File Transfer
 
 **Resumable Upload**:
