@@ -82,10 +82,14 @@ pub(super) async fn run_list_to<S: AccountStore>(
     messages_url: Option<&str>,
 ) -> Result<()> {
     let options = list_options(limit, messages_url);
-    let summaries = list_messages(client, &options)
-        .await
-        .context("failed to list GoogleMail Messages")?;
-    write_summaries(&summaries, json, out)
+    run_summary_to(
+        client,
+        &options,
+        json,
+        out,
+        "failed to list GoogleMail Messages",
+    )
+    .await
 }
 
 pub(super) async fn run_search_to<S: AccountStore>(
@@ -97,9 +101,26 @@ pub(super) async fn run_search_to<S: AccountStore>(
     messages_url: Option<&str>,
 ) -> Result<()> {
     let options = search_options(query, limit, messages_url);
+    run_summary_to(
+        client,
+        &options,
+        json,
+        out,
+        "failed to search GoogleMail Messages",
+    )
+    .await
+}
+
+async fn run_summary_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ListMessagesOptions,
+    json: bool,
+    out: &mut impl Write,
+    error_context: &'static str,
+) -> Result<()> {
     let summaries = list_messages(client, &options)
         .await
-        .context("failed to search GoogleMail Messages")?;
+        .context(error_context)?;
     write_summaries(&summaries, json, out)
 }
 

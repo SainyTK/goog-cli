@@ -4,9 +4,10 @@ pub use error::MailError;
 
 use base64::Engine;
 use reqwest::{Response, StatusCode};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
 use url::Url;
 
@@ -264,11 +265,7 @@ pub async fn download_attachment<S: AccountStore>(
         .send_with_scopes(client.get(options.attachment_url()?), GMAIL_READONLY_SCOPES)
         .await
         .map_err(MailError::Auth)?;
-    let response = ensure_success_response(response).await?;
-    let payload = response
-        .json::<AttachmentPayload>()
-        .await
-        .map_err(|e| MailError::InvalidResponse(e.to_string()))?;
+    let payload: AttachmentPayload = parse_json_response(response).await?;
     let bytes = decode_base64url(&payload.data)?;
 
     let mut file = tokio::fs::OpenOptions::new()
@@ -286,7 +283,7 @@ pub async fn download_attachment<S: AccountStore>(
     })
 }
 
-async fn ensure_destination_available(path: &PathBuf) -> Result<(), MailError> {
+async fn ensure_destination_available(path: &Path) -> Result<(), MailError> {
     if tokio::fs::try_exists(path).await.map_err(MailError::Io)? {
         return Err(MailError::Io(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
@@ -318,22 +315,14 @@ async fn fetch_attachment_filename_metadata<S: AccountStore>(
         .send_with_scopes(client.get(url), GMAIL_READONLY_SCOPES)
         .await
         .map_err(MailError::Auth)?;
-    let response = ensure_success_response(response).await?;
-    response
-        .json::<MetadataMessage>()
-        .await
-        .map_err(|e| MailError::InvalidResponse(e.to_string()))
+    parse_json_response(response).await
 }
 
 fn find_attachment_filename(payload: &MessagePayload, attachment_id: &str) -> Option<String> {
-    if payload
-        .body
-        .as_ref()
-        .and_then(|body| body.attachment_id.as_deref())
-        == Some(attachment_id)
-        && !payload.filename.is_empty()
+    if let Some(filename) =
+        matching_attachment_filename(&payload.filename, payload.body.as_ref(), attachment_id)
     {
-        return Some(payload.filename.clone());
+        return Some(filename);
     }
 
     payload
@@ -343,19 +332,30 @@ fn find_attachment_filename(payload: &MessagePayload, attachment_id: &str) -> Op
 }
 
 fn find_attachment_filename_in_part(part: &MessagePart, attachment_id: &str) -> Option<String> {
-    if part
-        .body
-        .as_ref()
-        .and_then(|body| body.attachment_id.as_deref())
-        == Some(attachment_id)
-        && !part.filename.is_empty()
+    if let Some(filename) =
+        matching_attachment_filename(&part.filename, part.body.as_ref(), attachment_id)
     {
-        return Some(part.filename.clone());
+        return Some(filename);
     }
 
     part.parts
         .iter()
         .find_map(|child| find_attachment_filename_in_part(child, attachment_id))
+}
+
+fn matching_attachment_filename(
+    filename: &str,
+    body: Option<&MessagePartBody>,
+    attachment_id: &str,
+) -> Option<String> {
+    let matches_attachment = body.and_then(|body| body.attachment_id.as_deref())
+        == Some(attachment_id);
+
+    if matches_attachment && !filename.is_empty() {
+        Some(filename.to_string())
+    } else {
+        None
+    }
 }
 
 fn decode_base64url(data: &str) -> Result<Vec<u8>, MailError> {
@@ -385,11 +385,7 @@ async fn fetch_message_metadata<S: AccountStore>(
         .send_with_scopes(client.get(url), GMAIL_READONLY_SCOPES)
         .await
         .map_err(MailError::Auth)?;
-    let response = ensure_success_response(response).await?;
-    response
-        .json::<MetadataMessage>()
-        .await
-        .map_err(|e| MailError::InvalidResponse(e.to_string()))
+    parse_json_response(response).await
 }
 
 fn summary_from_metadata(metadata: MetadataMessage) -> MessageSummary {
@@ -409,21 +405,17 @@ fn header_value(headers: &[MessageHeader], name: &str) -> Option<String> {
 }
 
 async fn parse_messages_page_response(response: Response) -> Result<MessagesPage, MailError> {
-    let response = ensure_success_response(response).await?;
-    response
-        .json::<MessagesPage>()
-        .await
-        .map_err(|e| MailError::InvalidResponse(e.to_string()))
+    parse_json_response(response).await
 }
 
 async fn parse_message_response(response: Response) -> Result<Message, MailError> {
     parse_json_response(response).await
 }
 
-async fn parse_json_response(response: Response) -> Result<Value, MailError> {
+async fn parse_json_response<T: DeserializeOwned>(response: Response) -> Result<T, MailError> {
     let response = ensure_success_response(response).await?;
     response
-        .json::<Value>()
+        .json::<T>()
         .await
         .map_err(|e| MailError::InvalidResponse(e.to_string()))
 }
