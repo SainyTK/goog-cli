@@ -27,9 +27,21 @@ RUN groupmod -o -g $AGENT_GID node && usermod -o -u $AGENT_UID -g $AGENT_GID -d 
 # Install Codex CLI (run as root before USER agent)
 RUN npm install -g @openai/codex
 
+ENV CARGO_HOME=/home/agent/.cargo \
+  RUSTUP_HOME=/home/agent/.rustup \
+  PATH=/home/agent/.cargo/bin:$PATH
+
 USER ${AGENT_UID}:${AGENT_GID}
 
 WORKDIR /home/agent
+
+# Rust is part of the sandbox baseline because this repo's package.json scripts run Cargo.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+  | sh -s -- -y --profile default --default-toolchain stable --component rustfmt \
+  && cargo --version \
+  && rustc --version \
+  && rustup --version \
+  && rustfmt --version
 
 # In worktree sandbox mode, Sandcastle bind-mounts the git worktree at /home/agent/workspace
 # and overrides the working directory to /home/agent/workspace at container start.

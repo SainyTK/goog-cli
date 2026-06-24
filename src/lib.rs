@@ -7,3 +7,5 @@ pub mod drive;
 mod cli_tests;
 #[cfg(test)]
 mod drive_tests;
+#[cfg(test)]
+mod sandcastle_tests;
