@@ -241,27 +241,37 @@ impl ListFilesOptions {
     }
 
     fn query(&self) -> String {
+        let mime_type_filter = self.mode.mime_type_filter();
+        match self.parent_filter() {
+            Some(parent_filter) => format!("{parent_filter} and {mime_type_filter}"),
+            None => mime_type_filter,
+        }
+    }
+
+    fn parent_filter(&self) -> Option<String> {
         match (self.mode, self.folder.as_deref()) {
-            (ListFilesMode::Files, Some(folder)) => format!(
-                "'{}' in parents and mimeType != '{DRIVE_FOLDER_MIME_TYPE}'",
-                escape_query_literal(folder)
-            ),
-            (ListFilesMode::Files, None) => {
-                format!("mimeType != '{DRIVE_FOLDER_MIME_TYPE}'")
-            }
-            (ListFilesMode::Folders, Some(folder)) => format!(
-                "'{}' in parents and mimeType = '{DRIVE_FOLDER_MIME_TYPE}'",
-                escape_query_literal(folder)
-            ),
-            (ListFilesMode::Folders, None) => {
-                format!("'root' in parents and mimeType = '{DRIVE_FOLDER_MIME_TYPE}'")
-            }
+            (_, Some(folder)) => Some(parent_query_filter(folder)),
+            (ListFilesMode::Folders, None) => Some(parent_query_filter("root")),
+            (ListFilesMode::Files, None) => None,
+        }
+    }
+}
+
+impl ListFilesMode {
+    fn mime_type_filter(self) -> String {
+        match self {
+            Self::Files => format!("mimeType != '{DRIVE_FOLDER_MIME_TYPE}'"),
+            Self::Folders => format!("mimeType = '{DRIVE_FOLDER_MIME_TYPE}'"),
         }
     }
 }
 
 fn escape_query_literal(value: &str) -> String {
     value.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+fn parent_query_filter(parent_id: &str) -> String {
+    format!("'{}' in parents", escape_query_literal(parent_id))
 }
 
 pub async fn list_files<S: AccountStore>(
