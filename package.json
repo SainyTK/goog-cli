@@ -8,6 +8,7 @@
     "@ai-hero/sandcastle": "^0.10.0"
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
     "zod": "^4.4.3"
   }
 }

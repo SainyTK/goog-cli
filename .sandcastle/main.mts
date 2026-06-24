@@ -23,7 +23,16 @@
 
 import * as sandcastle from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
+import { config as loadEnvFile } from "dotenv";
 import { z } from "zod";
+import os from "node:os";
+import path from "node:path";
+
+loadEnvFile({ path: ".sandcastle/.env", quiet: true });
+
+const hostCodexHome = path.join(os.homedir(), ".codex");
+const sandboxCodexMount = "/mnt/host-codex";
+const sandboxCodexHome = "/home/agent/.codex";
 
 // The planner emits its plan as JSON inside <plan> tags; Output.object extracts
 // and validates it against this schema. We use Zod here, but any Standard
@@ -46,13 +55,20 @@ const MAX_ITERATIONS = 10;
 // Hooks run inside the sandbox before the agent starts each iteration.
 // npm install ensures the sandbox always has fresh dependencies.
 const hooks = {
-  sandbox: { onSandboxReady: [{ command: "npm install" }] },
+  sandbox: {
+    onSandboxReady: [
+      {
+        command: [
+          `mkdir -p "${sandboxCodexHome}"`,
+          `test -f "${sandboxCodexMount}/auth.json"`,
+          `cp "${sandboxCodexMount}/auth.json" "${sandboxCodexHome}/auth.json"`,
+          `if [ -f "${sandboxCodexMount}/config.toml" ]; then cp "${sandboxCodexMount}/config.toml" "${sandboxCodexHome}/config.toml"; fi`,
+        ].join(" && "),
+      },
+      { command: "npm install" },
+    ],
+  },
 };
-
-// Copy node_modules from the host into the worktree before each sandbox
-// starts. Avoids a full npm install from scratch; the hook above handles
-// platform-specific binaries and any packages added since the last copy.
-const copyToWorktree = ["node_modules"];
 
 // ---------------------------------------------------------------------------
 // Main loop
@@ -72,13 +88,25 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // -------------------------------------------------------------------------
   const plan = await sandcastle.run({
     hooks,
-    sandbox: docker(),
+    sandbox: docker({
+      env: {
+        CODEX_HOME: sandboxCodexHome,
+        GH_TOKEN: process.env.GH_TOKEN ?? "",
+      },
+      mounts: [
+        {
+          hostPath: hostCodexHome,
+          sandboxPath: sandboxCodexMount,
+          readonly: true,
+        },
+      ],
+    }),
     name: "planner",
     // One iteration is enough: the planner just needs to read and reason,
     // not write code. (Structured output requires maxIterations: 1.)
     maxIterations: 1,
     // Opus for planning: dependency analysis benefits from deeper reasoning.
-    agent: sandcastle.claudeCode("claude-opus-4-7"),
+    agent: sandcastle.codex("gpt-5.5"),
     promptFile: "./.sandcastle/plan-prompt.md",
     // Extract and validate the <plan> JSON into a typed object. Throws
     // StructuredOutputError if the tag is missing, the JSON is malformed, or
@@ -115,9 +143,20 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     issues.map(async (issue) => {
       const sandbox = await sandcastle.createSandbox({
         branch: issue.branch,
-        sandbox: docker(),
+        sandbox: docker({
+          env: {
+            CODEX_HOME: sandboxCodexHome,
+            GH_TOKEN: process.env.GH_TOKEN ?? "",
+          },
+          mounts: [
+            {
+              hostPath: hostCodexHome,
+              sandboxPath: sandboxCodexMount,
+              readonly: true,
+            },
+          ],
+        }),
         hooks,
-        copyToWorktree,
       });
 
       try {
@@ -125,7 +164,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
         const implement = await sandbox.run({
           name: "implementer",
           maxIterations: 100,
-          agent: sandcastle.claudeCode("claude-opus-4-7"),
+          agent: sandcastle.codex("gpt-5.5"),
           promptFile: "./.sandcastle/implement-prompt.md",
           promptArgs: {
             TASK_ID: issue.id,
@@ -139,7 +178,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
           const review = await sandbox.run({
             name: "reviewer",
             maxIterations: 1,
-            agent: sandcastle.claudeCode("claude-opus-4-7"),
+            agent: sandcastle.codex("gpt-5.5"),
             promptFile: "./.sandcastle/review-prompt.md",
             promptArgs: {
               BRANCH: issue.branch,
@@ -207,10 +246,22 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   // -------------------------------------------------------------------------
   await sandcastle.run({
     hooks,
-    sandbox: docker(),
+    sandbox: docker({
+      env: {
+        CODEX_HOME: sandboxCodexHome,
+        GH_TOKEN: process.env.GH_TOKEN ?? "",
+      },
+      mounts: [
+        {
+          hostPath: hostCodexHome,
+          sandboxPath: sandboxCodexMount,
+          readonly: true,
+        },
+      ],
+    }),
     name: "merger",
     maxIterations: 1,
-    agent: sandcastle.claudeCode("claude-sonnet-4-6"),
+    agent: sandcastle.codex("gpt-5.5"),
     promptFile: "./.sandcastle/merge-prompt.md",
     promptArgs: {
       // A markdown list of branch names, one per line.
