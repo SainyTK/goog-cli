@@ -17,13 +17,16 @@ clap = { version = "4", features = ["derive"] }
 dirs = "5"
 dialoguer = "0.11"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "sync", "time", "fs"] }
+tokio-util = { version = "0.7", features = ["io"] }
 url = "2"
 webbrowser = "1"
 tiny_http = "0.12"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 indicatif = "0.17"
+bytes = "1"
+futures-util = "0.3"
 
 [dev-dependencies]
 tempfile = "3"

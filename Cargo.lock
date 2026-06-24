@@ -512,10 +512,12 @@ name = "goog"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "chrono",
  "clap",
  "dialoguer",
  "dirs",
+ "futures-util",
  "indicatif",
  "keyring",
  "reqwest",
@@ -525,6 +527,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tiny_http",
  "tokio",
+ "tokio-util",
  "toml",
  "url",
  "webbrowser",

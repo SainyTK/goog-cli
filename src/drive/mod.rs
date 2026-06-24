@@ -2,11 +2,15 @@ pub mod error;
 
 pub use error::DriveError;
 
+use bytes::Bytes;
+use futures_util::{stream, StreamExt};
+use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, LOCATION};
 use std::path::PathBuf;
 
-use reqwest::{Response, StatusCode};
+use reqwest::{Body, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_util::io::ReaderStream;
 use url::Url;
 
 use crate::auth::account::AccountStore;
@@ -15,7 +19,12 @@ use crate::auth::client::AuthClient;
 pub const DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive";
 pub const DRIVE_SCOPES: &[&str] = &[DRIVE_SCOPE];
 const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
+const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
 const DRIVE_FILES_FIELDS: &str = "nextPageToken,files(id,name,mimeType,modifiedTime)";
+const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
+const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
+const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
+const DEFAULT_UPLOAD_MIME_TYPE: &str = "application/octet-stream";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DriveFile {
@@ -39,6 +48,49 @@ pub struct FilesPage {
 pub struct DownloadedFile {
     pub path: PathBuf,
     pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct UploadedFile {
+    pub id: String,
+    #[serde(rename = "webViewLink")]
+    pub web_view_link: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UploadFileOptions {
+    pub path: PathBuf,
+    pub folder: Option<String>,
+    upload_url: String,
+}
+
+impl UploadFileOptions {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            path: path.into(),
+            folder: None,
+            upload_url: DRIVE_UPLOAD_URL.to_string(),
+        }
+    }
+
+    pub fn with_folder(mut self, folder: impl Into<String>) -> Self {
+        self.folder = Some(folder.into());
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_upload_url(mut self, upload_url: impl Into<String>) -> Self {
+        self.upload_url = upload_url.into();
+        self
+    }
+
+    fn upload_url(&self, upload_type: &str) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.upload_url)?;
+        url.query_pairs_mut()
+            .append_pair("uploadType", upload_type)
+            .append_pair("fields", UPLOAD_RESPONSE_FIELDS);
+        Ok(url)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +146,13 @@ impl DownloadFileOptions {
 #[derive(Debug, Deserialize)]
 struct FileMetadata {
     name: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UploadMetadata {
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parents: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,6 +249,173 @@ where
     Ok(DownloadedFile { path, bytes })
 }
 
+pub async fn upload<S, F>(
+    client: &AuthClient<'_, S>,
+    options: &UploadFileOptions,
+    progress: F,
+) -> Result<UploadedFile, DriveError>
+where
+    S: AccountStore,
+    F: FnMut(u64),
+{
+    let metadata = tokio::fs::metadata(&options.path)
+        .await
+        .map_err(DriveError::Io)?;
+    if metadata.len() <= MULTIPART_UPLOAD_LIMIT_BYTES {
+        upload_multipart(client, options, metadata.len(), progress).await
+    } else {
+        upload_resumable(client, options, metadata.len(), progress).await
+    }
+}
+
+async fn upload_multipart<S, F>(
+    client: &AuthClient<'_, S>,
+    options: &UploadFileOptions,
+    file_size: u64,
+    mut progress: F,
+) -> Result<UploadedFile, DriveError>
+where
+    S: AccountStore,
+    F: FnMut(u64),
+{
+    let boundary = "goog-drive-upload-boundary";
+    let metadata = upload_metadata(options)?;
+    let metadata_json =
+        serde_json::to_string(&metadata).map_err(|e| DriveError::InvalidResponse(e.to_string()))?;
+    let header = Bytes::from(format!(
+        "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata_json}\r\n--{boundary}\r\nContent-Type: {DEFAULT_UPLOAD_MIME_TYPE}\r\n\r\n"
+    ));
+    let footer = Bytes::from(format!("\r\n--{boundary}--\r\n"));
+    let content_length = header.len() as u64 + file_size + footer.len() as u64;
+    let file = tokio::fs::File::open(&options.path)
+        .await
+        .map_err(DriveError::Io)?;
+    let body = multipart_body(header, file, footer);
+
+    let response = client
+        .send_with_scopes(
+            client
+                .post(options.upload_url("multipart")?)
+                .header(CONTENT_TYPE, format!("multipart/related; boundary={boundary}"))
+                .header(CONTENT_LENGTH, content_length.to_string())
+                .body(body),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+
+    let uploaded = parse_uploaded_file_response(response).await?;
+    progress(file_size);
+    Ok(uploaded)
+}
+
+async fn upload_resumable<S, F>(
+    client: &AuthClient<'_, S>,
+    options: &UploadFileOptions,
+    file_size: u64,
+    mut progress: F,
+) -> Result<UploadedFile, DriveError>
+where
+    S: AccountStore,
+    F: FnMut(u64),
+{
+    let session_uri = initiate_resumable_upload(client, options, file_size).await?;
+    let mut file = tokio::fs::File::open(&options.path)
+        .await
+        .map_err(DriveError::Io)?;
+    let mut uploaded = 0_u64;
+    let mut buffer = vec![0_u8; RESUMABLE_CHUNK_SIZE_BYTES];
+
+    loop {
+        let read = file.read(&mut buffer).await.map_err(DriveError::Io)?;
+        if read == 0 {
+            break;
+        }
+
+        let start = uploaded;
+        let end = uploaded + read as u64 - 1;
+        let chunk = buffer[..read].to_vec();
+        let response = client
+            .send_with_scopes(
+                client
+                    .put(session_uri.as_str())
+                    .header(CONTENT_LENGTH, read.to_string())
+                    .header(CONTENT_RANGE, format!("bytes {start}-{end}/{file_size}"))
+                    .body(chunk),
+                DRIVE_SCOPES,
+            )
+            .await
+            .map_err(DriveError::Auth)?;
+
+        uploaded += read as u64;
+        progress(uploaded);
+
+        if uploaded == file_size {
+            return parse_uploaded_file_response(response).await;
+        }
+
+        let status = response.status();
+        if status != StatusCode::PERMANENT_REDIRECT {
+            return parse_uploaded_file_response(response).await;
+        }
+    }
+
+    Err(DriveError::InvalidResponse(
+        "resumable upload completed without a final response".into(),
+    ))
+}
+
+async fn initiate_resumable_upload<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UploadFileOptions,
+    file_size: u64,
+) -> Result<String, DriveError> {
+    let metadata = upload_metadata(options)?;
+    let response = client
+        .send_with_scopes(
+            client
+                .post(options.upload_url("resumable")?)
+                .header(CONTENT_TYPE, "application/json; charset=UTF-8")
+                .header("X-Upload-Content-Type", DEFAULT_UPLOAD_MIME_TYPE)
+                .header("X-Upload-Content-Length", file_size.to_string())
+                .json(&metadata),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+
+    let response = ensure_success_response(response).await?;
+    let location = response
+        .headers()
+        .get(LOCATION)
+        .ok_or_else(|| DriveError::InvalidResponse("missing resumable upload location".into()))?
+        .to_str()
+        .map_err(|e| DriveError::InvalidResponse(e.to_string()))?;
+
+    Ok(location.to_string())
+}
+
+fn upload_metadata(options: &UploadFileOptions) -> Result<UploadMetadata, DriveError> {
+    let name = options
+        .path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| DriveError::InvalidResponse("upload path has no file name".into()))?
+        .to_string();
+
+    Ok(UploadMetadata {
+        name,
+        parents: options.folder.as_ref().map(|folder| vec![folder.clone()]),
+    })
+}
+
+fn multipart_body(header: Bytes, file: tokio::fs::File, footer: Bytes) -> Body {
+    let header = stream::once(async move { Ok::<Bytes, std::io::Error>(header) });
+    let file = ReaderStream::new(file);
+    let footer = stream::once(async move { Ok::<Bytes, std::io::Error>(footer) });
+    Body::wrap_stream(header.chain(file).chain(footer))
+}
+
 async fn fetch_metadata<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DownloadFileOptions,
@@ -210,6 +436,14 @@ async fn parse_files_response(response: Response) -> Result<FilesPage, DriveErro
     let response = ensure_success_response(response).await?;
     response
         .json::<FilesPage>()
+        .await
+        .map_err(|e| DriveError::InvalidResponse(e.to_string()))
+}
+
+async fn parse_uploaded_file_response(response: Response) -> Result<UploadedFile, DriveError> {
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<UploadedFile>()
         .await
         .map_err(|e| DriveError::InvalidResponse(e.to_string()))
 }
@@ -236,6 +470,7 @@ mod tests {
 
     use chrono::{Duration, Utc};
     use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::{Match, Request};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
@@ -512,6 +747,165 @@ mod tests {
             .with_files_url(format!("{}/drive/v3/files", server.uri()));
 
         let err = download(&client, &options, |_| ()).await.unwrap_err();
+
+        assert!(matches!(err, DriveError::PermissionDenied));
+    }
+
+    struct BodyContains(&'static [u8]);
+
+    impl Match for BodyContains {
+        fn matches(&self, request: &Request) -> bool {
+            request.body.windows(self.0.len()).any(|chunk| chunk == self.0)
+        }
+    }
+
+    #[tokio::test]
+    async fn upload_small_file_uses_multipart_upload_and_returns_drive_location() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/upload/drive/v3/files"))
+            .and(header("authorization", "Bearer drive-access"))
+            .and(query_param("uploadType", "multipart"))
+            .and(query_param("fields", "id,webViewLink"))
+            .and(BodyContains(br#""name":"report.txt""#))
+            .and(BodyContains(b"hello drive"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "file-123",
+                "webViewLink": "https://drive.google.com/file/d/file-123/view"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("report.txt");
+        std::fs::write(&path, "hello drive").unwrap();
+
+        let store = MemoryStore::default();
+        let client = test_client(&store);
+        let options = UploadFileOptions::new(&path)
+            .with_upload_url(format!("{}/upload/drive/v3/files", server.uri()));
+        let mut progress = Vec::new();
+
+        let uploaded = upload(&client, &options, |bytes| progress.push(bytes))
+            .await
+            .unwrap();
+
+        assert_eq!(uploaded.id, "file-123");
+        assert_eq!(
+            uploaded.web_view_link,
+            "https://drive.google.com/file/d/file-123/view"
+        );
+        assert_eq!(progress, vec![11]);
+    }
+
+    #[tokio::test]
+    async fn upload_small_file_includes_parent_folder_in_metadata() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/upload/drive/v3/files"))
+            .and(query_param("uploadType", "multipart"))
+            .and(BodyContains(br#""parents":["folder-123"]"#))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "file-123",
+                "webViewLink": "https://drive.google.com/file/d/file-123/view"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("report.txt");
+        std::fs::write(&path, "hello drive").unwrap();
+
+        let store = MemoryStore::default();
+        let client = test_client(&store);
+        let options = UploadFileOptions::new(&path)
+            .with_folder("folder-123")
+            .with_upload_url(format!("{}/upload/drive/v3/files", server.uri()));
+
+        upload(&client, &options, |_| ()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn upload_large_file_uses_resumable_upload_chunks() {
+        let server = MockServer::start().await;
+        let session_uri = format!("{}/upload-session", server.uri());
+        Mock::given(method("POST"))
+            .and(path("/upload/drive/v3/files"))
+            .and(header("authorization", "Bearer drive-access"))
+            .and(query_param("uploadType", "resumable"))
+            .and(query_param("fields", "id,webViewLink"))
+            .and(header("x-upload-content-length", "5242883"))
+            .and(BodyContains(br#""name":"large.bin""#))
+            .respond_with(
+                ResponseTemplate::new(200).insert_header("Location", session_uri.clone()),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path("/upload-session"))
+            .and(header("authorization", "Bearer drive-access"))
+            .and(header("content-range", "bytes 0-5242879/5242883"))
+            .respond_with(ResponseTemplate::new(308))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path("/upload-session"))
+            .and(header("authorization", "Bearer drive-access"))
+            .and(header("content-range", "bytes 5242880-5242882/5242883"))
+            .and(BodyContains(b"end"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "large-file-123",
+                "webViewLink": "https://drive.google.com/file/d/large-file-123/view"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("large.bin");
+        let mut contents = vec![b'a'; MULTIPART_UPLOAD_LIMIT_BYTES as usize];
+        contents.extend_from_slice(b"end");
+        std::fs::write(&path, contents).unwrap();
+
+        let store = MemoryStore::default();
+        let client = test_client(&store);
+        let options = UploadFileOptions::new(&path)
+            .with_upload_url(format!("{}/upload/drive/v3/files", server.uri()));
+        let mut progress = Vec::new();
+
+        let uploaded = upload(&client, &options, |bytes| progress.push(bytes))
+            .await
+            .unwrap();
+
+        assert_eq!(uploaded.id, "large-file-123");
+        assert_eq!(progress, vec![5242880, 5242883]);
+    }
+
+    #[tokio::test]
+    async fn upload_returns_drive_error_for_permission_denied_response() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/upload/drive/v3/files"))
+            .and(query_param("uploadType", "multipart"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("report.txt");
+        std::fs::write(&path, "hello drive").unwrap();
+
+        let store = MemoryStore::default();
+        let client = test_client(&store);
+        let options = UploadFileOptions::new(&path)
+            .with_upload_url(format!("{}/upload/drive/v3/files", server.uri()));
+
+        let err = upload(&client, &options, |_| ()).await.unwrap_err();
 
         assert!(matches!(err, DriveError::PermissionDenied));
     }

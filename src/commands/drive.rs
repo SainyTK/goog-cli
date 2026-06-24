@@ -7,7 +7,10 @@ use indicatif::{ProgressBar, ProgressStyle};
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::cli::DriveCommand;
-use crate::drive::{download, list_files, DownloadFileOptions, DriveFile, ListFilesOptions};
+use crate::drive::{
+    download, list_files, upload, DownloadFileOptions, DriveFile, ListFilesOptions,
+    UploadFileOptions,
+};
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
 const ALL_PAGE_SIZE: u32 = 1000;
@@ -43,11 +46,65 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DriveCommand::Upload { .. } => {
-            println!("not yet implemented");
-            Ok(())
+        DriveCommand::Upload { path, folder } => {
+            let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_upload_to(
+                client,
+                PathBuf::from(path),
+                folder,
+                quiet,
+                &mut std::io::stdout(),
+                None,
+            ))
         }
     }
+}
+
+async fn run_upload_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    path: PathBuf,
+    folder: Option<String>,
+    quiet: bool,
+    out: &mut impl Write,
+    #[cfg_attr(not(test), allow(unused_variables))] upload_url: Option<&str>,
+) -> Result<()> {
+    let file_size = tokio::fs::metadata(&path)
+        .await
+        .with_context(|| format!("failed to read upload file metadata: {}", path.display()))?
+        .len();
+    let options = upload_options(path, folder, upload_url);
+    let progress = (!quiet).then(|| new_upload_progress(file_size));
+    let uploaded = upload(client, &options, |bytes| {
+        if let Some(progress) = &progress {
+            progress.set_position(bytes);
+        }
+    })
+    .await
+    .context("failed to upload Google Drive file")?;
+
+    if let Some(progress) = progress {
+        progress.finish_and_clear();
+    }
+
+    writeln!(out, "{}\t{}", uploaded.id, uploaded.web_view_link)
+        .context("failed to write output")?;
+    Ok(())
+}
+
+fn upload_options(
+    path: PathBuf,
+    folder: Option<String>,
+    #[cfg_attr(not(test), allow(unused_variables))] upload_url: Option<&str>,
+) -> UploadFileOptions {
+    let mut options = UploadFileOptions::new(path);
+    if let Some(folder) = folder {
+        options = options.with_folder(folder);
+    }
+    #[cfg(test)]
+    if let Some(upload_url) = upload_url {
+        options = options.with_upload_url(upload_url);
+    }
+    options
 }
 
 async fn run_download_to<S: AccountStore>(
@@ -101,6 +158,17 @@ fn new_download_progress() -> ProgressBar {
             .expect("download progress template is valid"),
     );
     progress.enable_steady_tick(std::time::Duration::from_millis(100));
+    progress
+}
+
+fn new_upload_progress(total_bytes: u64) -> ProgressBar {
+    let progress = ProgressBar::new(total_bytes);
+    progress.set_style(
+        ProgressStyle::with_template(
+            "{bar:40.cyan/blue} {bytes}/{total_bytes} uploaded ({bytes_per_sec})",
+        )
+        .expect("upload progress template is valid"),
+    );
     progress
 }
 
@@ -227,7 +295,7 @@ fn write_table(
 mod tests {
     use chrono::{Duration, Utc};
     use wiremock::matchers::{header, method, path, query_param};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
 
     use super::*;
     use crate::auth::account::{testing::MemoryStore, AccountStore, Token};
@@ -267,6 +335,14 @@ mod tests {
     fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
         store.save_token("alice@example.com", &drive_token()).unwrap();
         AuthClient::from_config(test_config(), store, None).unwrap()
+    }
+
+    struct BodyContains(&'static [u8]);
+
+    impl Match for BodyContains {
+        fn matches(&self, request: &Request) -> bool {
+            request.body.windows(self.0.len()).any(|chunk| chunk == self.0)
+        }
     }
 
     #[test]
@@ -516,5 +592,39 @@ mod tests {
         assert!(message.contains("failed to list Google Drive files"));
         assert!(message.contains("Google Drive permission denied"));
         assert!(out.is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_upload_prints_uploaded_file_id_and_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/upload/drive/v3/files"))
+            .and(header("authorization", "Bearer drive-access"))
+            .and(query_param("uploadType", "multipart"))
+            .and(BodyContains(br#""name":"report.txt""#))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": "file-123",
+                "webViewLink": "https://drive.google.com/file/d/file-123/view"
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("report.txt");
+        std::fs::write(&path, "hello drive").unwrap();
+        let store = MemoryStore::default();
+        let client = test_client(&store);
+        let mut out = Vec::new();
+        let upload_url = format!("{}/upload/drive/v3/files", server.uri());
+
+        run_upload_to(&client, path, None, true, &mut out, Some(&upload_url))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "file-123\thttps://drive.google.com/file/d/file-123/view\n"
+        );
     }
 }
