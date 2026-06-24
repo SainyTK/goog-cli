@@ -64,6 +64,7 @@ fn write_ndjson_uses_drive_api_field_names() {
         &[DriveFile {
             name: "Roadmap".into(),
             id: "file-1".into(),
+            parent_ids: vec!["folder-123".into(), "folder-456".into()],
             mime_type: "application/vnd.google-apps.document".into(),
             modified_time: "2026-06-24T10:15:00.000Z".into(),
         }],
@@ -74,7 +75,7 @@ fn write_ndjson_uses_drive_api_field_names() {
     let rendered = String::from_utf8(out).unwrap();
     assert_eq!(
         rendered,
-        "{\"name\":\"Roadmap\",\"id\":\"file-1\",\"mimeType\":\"application/vnd.google-apps.document\",\"modifiedTime\":\"2026-06-24T10:15:00.000Z\"}\n"
+        "{\"name\":\"Roadmap\",\"id\":\"file-1\",\"parentIds\":[\"folder-123\",\"folder-456\"],\"mimeType\":\"application/vnd.google-apps.document\",\"modifiedTime\":\"2026-06-24T10:15:00.000Z\"}\n"
     );
 }
 
@@ -86,6 +87,7 @@ fn write_table_includes_expected_columns() {
         &[DriveFile {
             name: "Roadmap".into(),
             id: "file-1".into(),
+            parent_ids: vec!["folder-123".into(), "folder-456".into()],
             mime_type: "application/vnd.google-apps.document".into(),
             modified_time: "2026-06-24T10:15:00.000Z".into(),
         }],
@@ -95,8 +97,10 @@ fn write_table_includes_expected_columns() {
     .unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains("NAME\tFILE ID\tMIME TYPE\tMODIFIED"));
-    assert!(rendered.contains("Roadmap\tfile-1\tapplication/vnd.google-apps.document"));
+    assert!(rendered.contains("NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED"));
+    assert!(rendered.contains(
+        "Roadmap\tfile-1\tfolder-123,folder-456\tapplication/vnd.google-apps.document"
+    ));
 }
 
 #[test]
@@ -131,6 +135,7 @@ async fn run_list_uses_json_when_config_default_requests_json() {
         &client,
         None,
         false,
+        None,
         true,
         false,
         &mut out,
@@ -142,8 +147,49 @@ async fn run_list_uses_json_when_config_default_requests_json() {
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
-        "{\"name\":\"Roadmap\",\"id\":\"file-1\",\"mimeType\":\"application/vnd.google-apps.document\",\"modifiedTime\":\"2026-06-24T10:15:00.000Z\"}\n"
+        "{\"name\":\"Roadmap\",\"id\":\"file-1\",\"parentIds\":[],\"mimeType\":\"application/vnd.google-apps.document\",\"modifiedTime\":\"2026-06-24T10:15:00.000Z\"}\n"
     );
+    assert!(err.is_empty());
+}
+
+#[tokio::test]
+async fn run_list_filters_to_folder_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_list_to(
+        &client,
+        None,
+        false,
+        Some("folder-123".into()),
+        false,
+        false,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("Roadmap\tfile-1\t"));
     assert!(err.is_empty());
 }
 
@@ -153,6 +199,10 @@ async fn run_list_all_fetches_following_pages_and_reports_progress() {
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "2"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -161,6 +211,10 @@ async fn run_list_all_fetches_following_pages_and_reports_progress() {
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SECOND_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -176,6 +230,7 @@ async fn run_list_all_fetches_following_pages_and_reports_progress() {
         &client,
         Some(2),
         true,
+        None,
         false,
         false,
         &mut out,
@@ -186,8 +241,8 @@ async fn run_list_all_fetches_following_pages_and_reports_progress() {
     .unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains("First\tfile-1\ttext/plain"));
-    assert!(rendered.contains("Second\tfile-2\ttext/plain"));
+    assert!(rendered.contains("First\tfile-1\t\ttext/plain"));
+    assert!(rendered.contains("Second\tfile-2\t\ttext/plain"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
         "Fetched 1 files...\nFetched 2 files...\n"
@@ -200,6 +255,10 @@ async fn run_list_limit_can_span_multiple_pages_without_all() {
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "2"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -208,6 +267,10 @@ async fn run_list_limit_can_span_multiple_pages_without_all() {
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SECOND_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -223,6 +286,7 @@ async fn run_list_limit_can_span_multiple_pages_without_all() {
         &client,
         Some(2),
         false,
+        None,
         false,
         false,
         &mut out,
@@ -233,8 +297,8 @@ async fn run_list_limit_can_span_multiple_pages_without_all() {
     .unwrap();
 
     let rendered = String::from_utf8(out).unwrap();
-    assert!(rendered.contains("First\tfile-1\ttext/plain"));
-    assert!(rendered.contains("Second\tfile-2\ttext/plain"));
+    assert!(rendered.contains("First\tfile-1\t\ttext/plain"));
+    assert!(rendered.contains("Second\tfile-2\t\ttext/plain"));
     assert!(err.is_empty());
 }
 
@@ -258,6 +322,7 @@ async fn run_list_returns_clear_error_for_not_found_response() {
         &client,
         None,
         false,
+        None,
         false,
         false,
         &mut out,
@@ -292,6 +357,7 @@ async fn run_list_returns_clear_error_for_permission_denied_response() {
         &client,
         None,
         false,
+        None,
         false,
         false,
         &mut out,

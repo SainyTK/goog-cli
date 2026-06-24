@@ -14,6 +14,18 @@ use crate::drive::*;
 const SINGLE_PAGE_RESPONSE: &str = include_str!("../tests/fixtures/drive/files_page_single.json");
 const EMPTY_PAGE_WITH_TOKEN_RESPONSE: &str =
     include_str!("../tests/fixtures/drive/files_page_empty_with_token.json");
+const FOLDER_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "file-1",
+      "name": "Roadmap",
+      "parents": ["folder-123"],
+      "mimeType": "application/vnd.google-apps.document",
+      "modifiedTime": "2026-06-24T10:15:00.000Z"
+    }
+  ]
+}"#;
 
 static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
 
@@ -79,6 +91,10 @@ async fn list_files_deserializes_a_single_page_response() {
         .and(query_param("pageSize", "50"))
         .and(query_param("orderBy", "modifiedTime desc"))
         .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -97,6 +113,45 @@ async fn list_files_deserializes_a_single_page_response() {
         vec![DriveFile {
             name: "Roadmap".into(),
             id: "file-1".into(),
+            parent_ids: vec![],
+            mime_type: "application/vnd.google-apps.document".into(),
+            modified_time: "2026-06-24T10:15:00.000Z".into(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn list_files_can_filter_to_files_inside_a_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::new(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(
+        page.files,
+        vec![DriveFile {
+            name: "Roadmap".into(),
+            id: "file-1".into(),
+            parent_ids: vec!["folder-123".into()],
             mime_type: "application/vnd.google-apps.document".into(),
             modified_time: "2026-06-24T10:15:00.000Z".into(),
         }]
@@ -111,6 +166,10 @@ async fn list_files_sends_next_page_token_and_returns_next_page_token() {
         .and(header("authorization", "Bearer drive-access"))
         .and(query_param("pageSize", "25"))
         .and(query_param("pageToken", "token-1"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(EMPTY_PAGE_WITH_TOKEN_RESPONSE))
         .expect(1)
         .mount(&server)

@@ -22,7 +22,12 @@ pub fn run<S: AccountStore>(
     quiet: bool,
 ) -> Result<()> {
     match cmd {
-        DriveCommand::List { limit, all, json } => {
+        DriveCommand::List {
+            limit,
+            all,
+            folder,
+            json,
+        } => {
             let json = should_emit_json(json, output_json_by_default);
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -30,6 +35,7 @@ pub fn run<S: AccountStore>(
                 client,
                 limit,
                 all,
+                folder,
                 json,
                 quiet,
                 &mut std::io::stdout(),
@@ -185,6 +191,7 @@ pub(super) async fn run_list_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     limit: Option<u32>,
     all: bool,
+    folder: Option<String>,
     json: bool,
     quiet: bool,
     out: &mut impl Write,
@@ -200,7 +207,7 @@ pub(super) async fn run_list_to<S: AccountStore>(
         let Some(page_size) = next_page_size(remaining) else {
             break;
         };
-        let options = list_options(page_size, page_token.take(), files_url);
+        let options = list_options(page_size, page_token.take(), folder.as_deref(), files_url);
 
         let page = list_files(client, &options)
             .await
@@ -253,11 +260,15 @@ pub(super) fn should_fetch_next_page(remaining: Option<u32>, all: bool) -> bool 
 pub(super) fn list_options(
     page_size: u32,
     page_token: Option<String>,
+    folder: Option<&str>,
     files_url: Option<&str>,
 ) -> ListFilesOptions {
     let mut options = ListFilesOptions::new(page_size);
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);
+    }
+    if let Some(folder) = folder {
+        options = options.with_folder(folder);
     }
     if let Some(files_url) = files_url {
         options = options.with_files_url(files_url);
@@ -279,15 +290,20 @@ pub(super) fn write_table(
     wrote_header: &mut bool,
 ) -> Result<()> {
     if !*wrote_header {
-        writeln!(out, "NAME\tFILE ID\tMIME TYPE\tMODIFIED").context("failed to write output")?;
+        writeln!(out, "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED")
+            .context("failed to write output")?;
         *wrote_header = true;
     }
 
     for file in files {
         writeln!(
             out,
-            "{}\t{}\t{}\t{}",
-            file.name, file.id, file.mime_type, file.modified_time
+            "{}\t{}\t{}\t{}\t{}",
+            file.name,
+            file.id,
+            file.parent_ids.join(","),
+            file.mime_type,
+            file.modified_time
         )
         .context("failed to write output")?;
     }
