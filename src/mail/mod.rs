@@ -35,12 +35,18 @@ impl GetMessageOptions {
     }
 
     fn request_url(&self) -> Result<Url, MailError> {
-        let mut url = Url::parse(&self.messages_url)?;
-        url.path_segments_mut()
-            .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
-            .push(&self.message_id);
-        Ok(url)
+        message_url(&self.messages_url, &self.message_id)
     }
+}
+
+fn message_url(messages_url: &str, message_id: &str) -> Result<Url, MailError> {
+    let mut url = Url::parse(messages_url)?;
+    url.path_segments_mut()
+        .map_err(|_| {
+            MailError::InvalidResponse("GoogleMail API URL cannot be a base".into())
+        })?
+        .push(message_id);
+    Ok(url)
 }
 
 pub async fn get_message<S: AccountStore>(
@@ -56,6 +62,10 @@ pub async fn get_message<S: AccountStore>(
 }
 
 async fn parse_message_response(response: Response) -> Result<Message, MailError> {
+    parse_json_response(response).await
+}
+
+async fn parse_json_response(response: Response) -> Result<Value, MailError> {
     let response = ensure_success_response(response).await?;
     response
         .json::<Value>()
