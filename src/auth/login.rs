@@ -110,30 +110,10 @@ pub async fn exchange_code(
     redirect_uri: &str,
     code: &str,
 ) -> Result<Token, AuthError> {
-    let client = reqwest::Client::new();
-    let params = [
-        ("code", code),
-        ("client_id", client_id),
-        ("client_secret", client_secret),
-        ("redirect_uri", redirect_uri),
-        ("grant_type", "authorization_code"),
-    ];
-    let response = client
-        .post(token_url)
-        .form(&params)
-        .send()
-        .await
-        .map_err(|e| AuthError::Network(e.to_string()))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(AuthError::TokenExchange(format!(
-            "HTTP {status}: {body}"
-        )));
-    }
-
-    token_from_response(response).await
+    token_from_parsed_response(
+        request_authorization_code_token(token_url, client_id, client_secret, redirect_uri, code)
+            .await?,
+    )
 }
 
 pub async fn exchange_code_for_scopes(
@@ -143,6 +123,19 @@ pub async fn exchange_code_for_scopes(
     redirect_uri: &str,
     code: &str,
 ) -> Result<ScopedToken, AuthError> {
+    Ok(scoped_token_from_parsed_response(
+        request_authorization_code_token(token_url, client_id, client_secret, redirect_uri, code)
+            .await?,
+    ))
+}
+
+async fn request_authorization_code_token(
+    token_url: &str,
+    client_id: &str,
+    client_secret: &str,
+    redirect_uri: &str,
+    code: &str,
+) -> Result<TokenResponse, AuthError> {
     let client = reqwest::Client::new();
     let params = [
         ("code", code),
@@ -166,25 +159,18 @@ pub async fn exchange_code_for_scopes(
         )));
     }
 
-    scoped_token_from_response(response).await
+    parse_token_response(response).await
 }
 
 async fn token_from_response(response: reqwest::Response) -> Result<Token, AuthError> {
-    let parsed: TokenResponse = response
-        .json()
-        .await
-        .map_err(|e| AuthError::TokenExchange(format!("invalid token response: {e}")))?;
-
-    token_from_parsed_response(parsed)
+    token_from_parsed_response(parse_token_response(response).await?)
 }
 
-async fn scoped_token_from_response(response: reqwest::Response) -> Result<ScopedToken, AuthError> {
-    let parsed: TokenResponse = response
+async fn parse_token_response(response: reqwest::Response) -> Result<TokenResponse, AuthError> {
+    response
         .json()
         .await
-        .map_err(|e| AuthError::TokenExchange(format!("invalid token response: {e}")))?;
-
-    Ok(scoped_token_from_parsed_response(parsed))
+        .map_err(|e| AuthError::TokenExchange(format!("invalid token response: {e}")))
 }
 
 fn token_from_parsed_response(parsed: TokenResponse) -> Result<Token, AuthError> {
@@ -192,33 +178,25 @@ fn token_from_parsed_response(parsed: TokenResponse) -> Result<Token, AuthError>
         .refresh_token
         .ok_or_else(|| AuthError::TokenExchange("response missing refresh_token".into()))?;
 
-    let scopes = parsed
-        .scope
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect();
-
     Ok(Token {
         access_token: parsed.access_token,
         refresh_token,
         expiry: Utc::now() + Duration::seconds(parsed.expires_in),
-        scopes,
+        scopes: parse_scopes(&parsed.scope),
     })
 }
 
 fn scoped_token_from_parsed_response(parsed: TokenResponse) -> ScopedToken {
-    let scopes = parsed
-        .scope
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect();
-
     ScopedToken {
         access_token: parsed.access_token,
         refresh_token: parsed.refresh_token,
         expiry: Utc::now() + Duration::seconds(parsed.expires_in),
-        scopes,
+        scopes: parse_scopes(&parsed.scope),
     }
+}
+
+fn parse_scopes(scope: &str) -> Vec<String> {
+    scope.split_whitespace().map(str::to_string).collect()
 }
 
 pub async fn request_device_authorization(
