@@ -89,7 +89,7 @@ pub(super) async fn run_batch_update_to<S: AccountStore>(
 }
 
 fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde_json::Value> {
-    let (body, source) = if path_or_stdin == "-" {
+    let (body, request_source) = if path_or_stdin == "-" {
         let mut body = String::new();
         input
             .read_to_string(&mut body)
@@ -103,7 +103,7 @@ fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde
     };
 
     serde_json::from_str(&body).with_context(|| {
-        format!("failed to parse Google Docs Batch Update request body from {source}")
+        format!("failed to parse Google Docs Batch Update request body from {request_source}")
     })
 }
 

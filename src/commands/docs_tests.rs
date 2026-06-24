@@ -202,6 +202,7 @@ async fn run_batch_update_invalid_file_json_names_request_file() {
     let temp_dir = tempfile::tempdir().unwrap();
     let request_path = temp_dir.path().join("requests.json");
     std::fs::write(&request_path, "{not json").unwrap();
+    let request_path_arg = request_path.to_string_lossy().into_owned();
     let store = MemoryStore::default();
     let client = test_client(&store);
     let mut input = std::io::empty();
@@ -210,7 +211,7 @@ async fn run_batch_update_invalid_file_json_names_request_file() {
     let result = run_batch_update_to(
         &client,
         "document-123".into(),
-        request_path.to_string_lossy().into_owned(),
+        request_path_arg.clone(),
         &mut input,
         &mut out,
         Some("https://example.test/docs/v1/documents"),
@@ -219,7 +220,7 @@ async fn run_batch_update_invalid_file_json_names_request_file() {
 
     let message = format!("{:#}", result.unwrap_err());
     assert!(message.contains("failed to parse Google Docs Batch Update request body"));
-    assert!(message.contains(request_path.to_string_lossy().as_ref()));
+    assert!(message.contains(&request_path_arg));
     assert!(out.is_empty());
 }
 
