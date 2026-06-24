@@ -244,10 +244,77 @@ fn docs_get_with_document_id() {
     let cli = parse(&["docs", "get", "document-123"]).unwrap();
     match cli.command {
         Command::Docs {
-            command: DocsCommand::Get { document_id },
-        } => assert_eq!(document_id, "document-123"),
+            command:
+                DocsCommand::Get {
+                    document_id,
+                    fields,
+                    include_tabs_content,
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert!(fields.is_none());
+            assert!(!include_tabs_content);
+        }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn docs_get_with_google_query_flags() {
+    let cli = parse(&[
+        "docs",
+        "get",
+        "document-123",
+        "--fields",
+        "documentId,title",
+        "--include-tabs-content",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::Get {
+                    document_id,
+                    fields,
+                    include_tabs_content,
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert_eq!(fields.as_deref(), Some("documentId,title"));
+            assert!(include_tabs_content);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn docs_batch_update_with_requests_path() {
+    let cli = parse(&[
+        "docs",
+        "batch-update",
+        "document-123",
+        "--requests",
+        "requests.json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::BatchUpdate {
+                    document_id,
+                    requests,
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert_eq!(requests, "requests.json");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn docs_batch_update_requires_requests() {
+    assert!(parse(&["docs", "batch-update", "document-123"]).is_err());
 }
 
 #[test]

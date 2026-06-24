@@ -126,5 +126,19 @@ pub enum DocsCommand {
     Get {
         /// Google Docs Document ID to fetch
         document_id: String,
+        /// Google partial response field selector
+        #[arg(long)]
+        fields: Option<String>,
+        /// Include tab-aware content in the returned Document
+        #[arg(long)]
+        include_tabs_content: bool,
+    },
+    /// Apply a raw Google Docs Batch Update request body
+    BatchUpdate {
+        /// Google Docs Document ID to update
+        document_id: String,
+        /// Path to a full documents.batchUpdate JSON request body, or - for stdin
+        #[arg(long)]
+        requests: String,
     },
 }
