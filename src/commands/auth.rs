@@ -5,7 +5,7 @@ use dialoguer::Input;
 
 use crate::auth::account::{AccountStore, KeyringStore};
 use crate::auth::config::{
-    config_path, load_config, save_config, Config, OAuthAppConfig, SettingsConfig,
+    config_path, load_config, save_config, Config, OAuthAppConfig, OAuthAppType, SettingsConfig,
 };
 use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};
@@ -33,7 +33,8 @@ Setting up your OAuth App. Follow these steps in the Google Cloud Console:
   6. Click \"Create Credentials\" > \"OAuth client ID\".
   7. Choose \"Desktop app\" as the application type.
      - If you need `goog auth login --no-browser`, choose
-       \"TVs and Limited Input devices\" instead.
+       \"TVs and Limited Input devices\" instead and pass
+       `--app-type device` to setup.
   8. Click \"Create\", then download the JSON file (client_secret_*.json).
 
 Enter the path to the downloaded file below.
@@ -41,18 +42,25 @@ Enter the path to the downloaded file below.
 
 pub fn run(cmd: AuthCommand) -> Result<()> {
     match cmd {
-        AuthCommand::Setup { client_secret_file } => run_setup(client_secret_file),
+        AuthCommand::Setup {
+            client_secret_file,
+            app_type,
+        } => run_setup(client_secret_file, app_type),
         AuthCommand::Login { no_browser } => run_login(no_browser),
         AuthCommand::List { json } => run_list(json),
         AuthCommand::Switch { .. } => not_yet_implemented(),
     }
 }
 
-fn run_setup(client_secret_file: Option<String>) -> Result<()> {
-    run_setup_to(client_secret_file, &mut std::io::stdout())
+fn run_setup(client_secret_file: Option<String>, app_type: Option<OAuthAppType>) -> Result<()> {
+    run_setup_to(client_secret_file, app_type, &mut std::io::stdout())
 }
 
-fn run_setup_to(client_secret_file: Option<String>, out: &mut impl std::io::Write) -> Result<()> {
+fn run_setup_to(
+    client_secret_file: Option<String>,
+    app_type: Option<OAuthAppType>,
+    out: &mut impl std::io::Write,
+) -> Result<()> {
     let path = match client_secret_file {
         Some(p) => p,
         None => {
@@ -71,6 +79,7 @@ fn run_setup_to(client_secret_file: Option<String>, out: &mut impl std::io::Writ
     config.oauth_app = Some(OAuthAppConfig {
         client_id: secrets.client_id,
         client_secret: secrets.client_secret,
+        app_type: app_type.unwrap_or(secrets.app_type),
     });
     save_config(&config).context("failed to save config")?;
 
@@ -153,6 +162,8 @@ fn perform_loopback_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore)
 }
 
 fn perform_device_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -> Result<String> {
+    require_device_oauth_app(oauth_app)?;
+
     let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
     let (token, email) = runtime.block_on(async {
         let authorization = request_device_authorization(
@@ -186,6 +197,17 @@ fn perform_device_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -
         .save_token(&email, &token)
         .context("failed to save token to keychain")?;
     Ok(email)
+}
+
+fn require_device_oauth_app(oauth_app: &OAuthAppConfig) -> Result<()> {
+    if oauth_app.app_type == OAuthAppType::Device {
+        return Ok(());
+    }
+
+    Err(AuthError::OAuthFlow(format!(
+        "device login requires an OAuth client of type \"TVs and Limited Input devices\". Run `goog auth setup --client-secret-file <path> --app-type device` with that client."
+    ))
+    .into())
 }
 
 fn add_account_to_config(config: &mut Config, email: &str) {
@@ -244,9 +266,29 @@ mod tests {
             "guide is missing GCP Console URL"
         );
 
-        let result = run_setup_to(Some("/nonexistent/client_secret.json".into()), &mut out);
+        let result = run_setup_to(
+            Some("/nonexistent/client_secret.json".into()),
+            None,
+            &mut out,
+        );
         assert!(result.is_err(), "expected error for nonexistent file");
         assert!(out.is_empty(), "guide must not be printed when --client-secret-file is given");
+    }
+
+    #[test]
+    fn device_login_rejects_non_device_oauth_app_before_network_request() {
+        let app = OAuthAppConfig {
+            client_id: "client-123".into(),
+            client_secret: "secret-456".into(),
+            app_type: OAuthAppType::Desktop,
+        };
+        let store = crate::auth::account::testing::MemoryStore::default();
+
+        let err = perform_device_login(&app, &store).unwrap_err();
+
+        let msg = err.to_string();
+        assert!(msg.contains("TVs and Limited Input devices"));
+        assert!(msg.contains("--app-type device"));
     }
 
     #[test]

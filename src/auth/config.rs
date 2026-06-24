@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use super::error::AuthError;
@@ -16,6 +17,22 @@ pub struct Config {
 pub struct OAuthAppConfig {
     pub client_id: String,
     pub client_secret: String,
+    #[serde(default = "default_oauth_app_type")]
+    pub app_type: OAuthAppType,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum OAuthAppType {
+    Desktop,
+    Web,
+    Device,
+    #[value(skip)]
+    Unknown,
+}
+
+fn default_oauth_app_type() -> OAuthAppType {
+    OAuthAppType::Unknown
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -72,6 +89,7 @@ mod tests {
             oauth_app: Some(OAuthAppConfig {
                 client_id: "my-client-id".into(),
                 client_secret: "my-client-secret".into(),
+                app_type: OAuthAppType::Desktop,
             }),
             settings: None,
             accounts: Vec::new(),
@@ -106,6 +124,7 @@ output = "json"
         let app = config.oauth_app.unwrap();
         assert_eq!(app.client_id, "abc123");
         assert_eq!(app.client_secret, "secret456");
+        assert_eq!(app.app_type, OAuthAppType::Unknown);
 
         let settings = config.settings.unwrap();
         assert_eq!(settings.active_account.as_deref(), Some("user@example.com"));
@@ -129,12 +148,27 @@ output = "json"
             oauth_app: Some(OAuthAppConfig {
                 client_id: "id".into(),
                 client_secret: "sec".into(),
+                app_type: OAuthAppType::Device,
             }),
             settings: None,
             accounts: Vec::new(),
         };
         let s = toml::to_string_pretty(&config).unwrap();
         assert!(s.contains("client_id"));
+        assert!(s.contains("app_type = \"device\""));
         assert!(!s.contains("settings"));
+    }
+
+    #[test]
+    fn defaults_missing_oauth_app_type_to_unknown() {
+        let contents = r#"
+[oauth_app]
+client_id = "abc123"
+client_secret = "secret456"
+"#;
+
+        let config: Config = toml::from_str(contents).unwrap();
+
+        assert_eq!(config.oauth_app.unwrap().app_type, OAuthAppType::Unknown);
     }
 }

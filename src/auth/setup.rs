@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use super::config::OAuthAppType;
 use super::error::AuthError;
 
 #[derive(Debug, Deserialize)]
@@ -18,6 +19,7 @@ struct OAuthAppFields {
 pub struct OAuthAppSecrets {
     pub client_id: String,
     pub client_secret: String,
+    pub app_type: OAuthAppType,
 }
 
 pub fn parse_client_secret_file(path: &str) -> Result<OAuthAppSecrets, AuthError> {
@@ -31,10 +33,11 @@ pub fn parse_client_secret_file(path: &str) -> Result<OAuthAppSecrets, AuthError
     let contents = std::fs::read_to_string(&path_buf).map_err(AuthError::OAuthAppIo)?;
     let file: ClientSecretFile = serde_json::from_str(&contents)?;
 
-    let fields = file
-        .installed
-        .or(file.web)
-        .ok_or(AuthError::OAuthAppUnrecognizedStructure)?;
+    let (fields, app_type) = match (file.installed, file.web) {
+        (Some(fields), None) => (fields, OAuthAppType::Desktop),
+        (None, Some(fields)) => (fields, OAuthAppType::Web),
+        _ => return Err(AuthError::OAuthAppUnrecognizedStructure),
+    };
 
     let client_id = fields
         .client_id
@@ -53,6 +56,7 @@ pub fn parse_client_secret_file(path: &str) -> Result<OAuthAppSecrets, AuthError
     Ok(OAuthAppSecrets {
         client_id,
         client_secret,
+        app_type,
     })
 }
 
@@ -76,6 +80,7 @@ mod tests {
         let creds = parse_client_secret_file(file.path().to_str().unwrap()).unwrap();
         assert_eq!(creds.client_id, "id123");
         assert_eq!(creds.client_secret, "sec456");
+        assert_eq!(creds.app_type, OAuthAppType::Desktop);
     }
 
     #[test]
@@ -86,6 +91,16 @@ mod tests {
         let creds = parse_client_secret_file(file.path().to_str().unwrap()).unwrap();
         assert_eq!(creds.client_id, "web-id");
         assert_eq!(creds.client_secret, "web-sec");
+        assert_eq!(creds.app_type, OAuthAppType::Web);
+    }
+
+    #[test]
+    fn errors_when_file_contains_multiple_app_shapes() {
+        let file = write_json(
+            r#"{"installed":{"client_id":"id","client_secret":"sec"},"web":{"client_id":"web-id","client_secret":"web-sec"}}"#,
+        );
+        let err = parse_client_secret_file(file.path().to_str().unwrap()).unwrap_err();
+        assert!(matches!(err, AuthError::OAuthAppUnrecognizedStructure));
     }
 
     #[test]

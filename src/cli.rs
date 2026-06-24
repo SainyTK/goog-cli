@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+use crate::auth::config::OAuthAppType;
+
 #[derive(Debug, Parser)]
 #[command(name = "goog", about = "A CLI for Google APIs")]
 pub struct Cli {
@@ -36,6 +38,10 @@ pub enum AuthCommand {
         /// Path to the client_secret_*.json file downloaded from GCP Console
         #[arg(long)]
         client_secret_file: Option<String>,
+
+        /// OAuth App type to store when the JSON shape is not specific enough
+        #[arg(long, value_enum)]
+        app_type: Option<OAuthAppType>,
     },
     /// Authorize a Google Account via a browser-based OAuth flow
     Login {
@@ -106,7 +112,8 @@ mod tests {
             cli.command,
             Command::Auth {
                 command: AuthCommand::Setup {
-                    client_secret_file: None
+                    client_secret_file: None,
+                    app_type: None
                 }
             }
         ));
@@ -120,7 +127,31 @@ mod tests {
             Command::Auth {
                 command: AuthCommand::Setup {
                     client_secret_file: Some(path),
+                    app_type: None,
                 },
+            } => assert_eq!(path, "/tmp/client_secret.json"),
+            _ => panic!("unexpected parse result"),
+        }
+    }
+
+    #[test]
+    fn auth_setup_with_app_type_flag() {
+        let cli = parse(&[
+            "auth",
+            "setup",
+            "--client-secret-file",
+            "/tmp/client_secret.json",
+            "--app-type",
+            "device",
+        ])
+        .unwrap();
+        match cli.command {
+            Command::Auth {
+                command:
+                    AuthCommand::Setup {
+                        client_secret_file: Some(path),
+                        app_type: Some(OAuthAppType::Device),
+                    },
             } => assert_eq!(path, "/tmp/client_secret.json"),
             _ => panic!("unexpected parse result"),
         }
