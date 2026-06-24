@@ -39,9 +39,9 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
-struct MissingQueryParam(&'static str);
+struct AbsentQueryParam(&'static str);
 
-impl Match for MissingQueryParam {
+impl Match for AbsentQueryParam {
     fn matches(&self, request: &Request) -> bool {
         !request.url.query_pairs().any(|(name, _)| name == self.0)
     }
@@ -188,7 +188,7 @@ async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table
         .and(query_param("maxResults", "10"))
         .and(query_param("q", "from:alice@example.com"))
         .and(query_param("fields", "messages(id),nextPageToken"))
-        .and(MissingQueryParam("labelIds"))
+        .and(AbsentQueryParam("labelIds"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "messages": [
                 { "id": "message-1" }
