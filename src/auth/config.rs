@@ -24,6 +24,14 @@ pub struct SettingsConfig {
     pub output: Option<String>,
 }
 
+impl Config {
+    pub(crate) fn active_account(&self) -> Option<&str> {
+        self.settings
+            .as_ref()
+            .and_then(|settings| settings.active_account.as_deref())
+    }
+}
+
 pub fn config_path() -> Result<PathBuf, AuthError> {
     let dir = dirs::config_dir().ok_or(AuthError::ConfigDirNotFound)?;
     Ok(dir.join("goog").join("config.toml"))
@@ -46,11 +54,11 @@ pub fn resolve_account(
     account_override: Option<&str>,
 ) -> Result<Option<String>, AuthError> {
     match account_override {
-        Some(email) => ensure_logged_in(config, email).map(|()| Some(email.to_string())),
-        None => Ok(config
-            .settings
-            .as_ref()
-            .and_then(|settings| settings.active_account.clone())),
+        Some(email) => {
+            ensure_logged_in(config, email)?;
+            Ok(Some(email.to_string()))
+        }
+        None => Ok(config.active_account().map(str::to_string)),
     }
 }
 
@@ -95,6 +103,17 @@ mod tests {
         let path = dir.path().join("config.toml");
         fs::write(&path, contents).unwrap();
         path
+    }
+
+    fn config_with_accounts(active_account: Option<&str>, accounts: &[&str]) -> Config {
+        Config {
+            oauth_app: None,
+            settings: active_account.map(|email| SettingsConfig {
+                active_account: Some(email.to_string()),
+                output: None,
+            }),
+            accounts: accounts.iter().copied().map(str::to_string).collect(),
+        }
     }
 
     #[test]
@@ -174,30 +193,19 @@ output = "json"
 
     #[test]
     fn switch_active_account_updates_existing_account() {
-        let mut config = Config {
-            oauth_app: None,
-            settings: Some(SettingsConfig {
-                active_account: Some("alice@example.com".into()),
-                output: None,
-            }),
-            accounts: vec!["alice@example.com".into(), "bob@example.com".into()],
-        };
+        let mut config = config_with_accounts(
+            Some("alice@example.com"),
+            &["alice@example.com", "bob@example.com"],
+        );
 
         switch_active_account(&mut config, "bob@example.com").unwrap();
 
-        assert_eq!(
-            config.settings.unwrap().active_account.as_deref(),
-            Some("bob@example.com")
-        );
+        assert_eq!(config.active_account(), Some("bob@example.com"));
     }
 
     #[test]
     fn switch_active_account_rejects_unknown_account() {
-        let mut config = Config {
-            oauth_app: None,
-            settings: None,
-            accounts: vec!["alice@example.com".into()],
-        };
+        let mut config = config_with_accounts(None, &["alice@example.com"]);
 
         let err = switch_active_account(&mut config, "bob@example.com").unwrap_err();
 
@@ -210,14 +218,10 @@ output = "json"
 
     #[test]
     fn account_override_resolves_to_logged_in_account() {
-        let config = Config {
-            oauth_app: None,
-            settings: Some(SettingsConfig {
-                active_account: Some("alice@example.com".into()),
-                output: None,
-            }),
-            accounts: vec!["alice@example.com".into(), "bob@example.com".into()],
-        };
+        let config = config_with_accounts(
+            Some("alice@example.com"),
+            &["alice@example.com", "bob@example.com"],
+        );
 
         let account = resolve_account(&config, Some("bob@example.com")).unwrap();
 
@@ -226,30 +230,19 @@ output = "json"
 
     #[test]
     fn account_override_does_not_change_active_account() {
-        let config = Config {
-            oauth_app: None,
-            settings: Some(SettingsConfig {
-                active_account: Some("alice@example.com".into()),
-                output: None,
-            }),
-            accounts: vec!["alice@example.com".into(), "bob@example.com".into()],
-        };
+        let config = config_with_accounts(
+            Some("alice@example.com"),
+            &["alice@example.com", "bob@example.com"],
+        );
 
         let _ = resolve_account(&config, Some("bob@example.com")).unwrap();
 
-        assert_eq!(
-            config.settings.unwrap().active_account.as_deref(),
-            Some("alice@example.com")
-        );
+        assert_eq!(config.active_account(), Some("alice@example.com"));
     }
 
     #[test]
     fn account_override_rejects_unknown_account() {
-        let config = Config {
-            oauth_app: None,
-            settings: None,
-            accounts: vec!["alice@example.com".into()],
-        };
+        let config = config_with_accounts(None, &["alice@example.com"]);
 
         let err = resolve_account(&config, Some("bob@example.com")).unwrap_err();
 
@@ -261,14 +254,7 @@ output = "json"
 
     #[test]
     fn account_resolution_falls_back_to_active_account() {
-        let config = Config {
-            oauth_app: None,
-            settings: Some(SettingsConfig {
-                active_account: Some("alice@example.com".into()),
-                output: None,
-            }),
-            accounts: vec!["alice@example.com".into()],
-        };
+        let config = config_with_accounts(Some("alice@example.com"), &["alice@example.com"]);
 
         let account = resolve_account(&config, None).unwrap();
 
@@ -279,14 +265,10 @@ output = "json"
     fn save_config_creates_parent_dirs_and_round_trips_accounts() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("nested").join("config.toml");
-        let config = Config {
-            oauth_app: None,
-            settings: Some(SettingsConfig {
-                active_account: Some("alice@example.com".into()),
-                output: None,
-            }),
-            accounts: vec!["alice@example.com".into(), "bob@example.com".into()],
-        };
+        let config = config_with_accounts(
+            Some("alice@example.com"),
+            &["alice@example.com", "bob@example.com"],
+        );
 
         save_config_to_path(&config, &path).unwrap();
         let loaded = load_config_from_path(&path).unwrap();
