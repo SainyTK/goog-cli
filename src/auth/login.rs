@@ -21,6 +21,7 @@ pub const GOOGLE_DEVICE_CODE_URL: &str = "https://oauth2.googleapis.com/device/c
 pub const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const GOOGLE_USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 
+const GOOGLE_DEVICE_AUTH_CLIENT_TYPE: &str = "TVs and Limited Input devices";
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_DEVICE_POLL_INTERVAL_SECS: u64 = 5;
 const SLOW_DOWN_INTERVAL_SECS: u64 = 5;
@@ -81,7 +82,7 @@ struct DeviceAuthorizationResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct DeviceTokenError {
+struct OAuthErrorResponse {
     error: String,
     error_description: Option<String>,
 }
@@ -196,7 +197,7 @@ pub async fn request_device_authorization(
 }
 
 fn describe_device_authorization_error(body: &str) -> String {
-    let Ok(error) = serde_json::from_str::<DeviceTokenError>(body) else {
+    let Ok(error) = serde_json::from_str::<OAuthErrorResponse>(body) else {
         return body.to_string();
     };
 
@@ -205,7 +206,7 @@ fn describe_device_authorization_error(body: &str) -> String {
             .error_description
             .unwrap_or_else(|| "Invalid client".to_string());
         return format!(
-            "{description}. Google device authorization requires an OAuth client of type \"TVs and Limited Input devices\"."
+            "{description}. Google device authorization requires an OAuth client of type \"{GOOGLE_DEVICE_AUTH_CLIENT_TYPE}\"."
         );
     }
 
@@ -270,11 +271,11 @@ pub async fn poll_device_token(
 async fn device_poll_outcome(response: reqwest::Response) -> Result<DevicePollOutcome, AuthError> {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    let token_error = serde_json::from_str::<DeviceTokenError>(&body).map_err(|_| {
+    let token_error = serde_json::from_str::<OAuthErrorResponse>(&body).map_err(|_| {
         AuthError::TokenExchange(format!("device token HTTP {status}: {body}"))
     })?;
 
-    let DeviceTokenError {
+    let OAuthErrorResponse {
         error,
         error_description,
     } = token_error;
