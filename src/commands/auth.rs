@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use anyhow::{Context, Result};
 use dialoguer::Input;
 
@@ -8,8 +10,10 @@ use crate::auth::config::{
 use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};
 use crate::auth::login::{
-    build_authorize_url, exchange_code, fetch_email, random_state, LoopbackServer,
-    DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL,
+    build_authorize_url, exchange_code, fetch_email, poll_device_token,
+    render_device_authorization_prompt, request_device_authorization, random_state,
+    LoopbackServer, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL, GOOGLE_DEVICE_CODE_URL,
+    GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL,
 };
 use crate::auth::setup::parse_client_secret_file;
 use crate::cli::AuthCommand;
@@ -97,6 +101,14 @@ fn perform_login(
     store: &impl AccountStore,
     no_browser: bool,
 ) -> Result<String> {
+    if no_browser {
+        return perform_device_login(oauth_app, store);
+    }
+
+    perform_loopback_login(oauth_app, store)
+}
+
+fn perform_loopback_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -> Result<String> {
     let server = LoopbackServer::bind().context("failed to bind loopback server")?;
     let redirect_uri = server.redirect_uri();
     let state = random_state();
@@ -109,13 +121,9 @@ fn perform_login(
     )
     .context("failed to build authorize URL")?;
 
-    if no_browser {
-        println!("Open this URL in a browser to authorize:\n  {url}");
-    } else {
-        println!("Opening browser for Google sign-in...");
-        if webbrowser::open(&url).is_err() {
-            println!("Could not open a browser automatically. Open this URL manually:\n  {url}");
-        }
+    println!("Opening browser for Google sign-in...");
+    if webbrowser::open(&url).is_err() {
+        println!("Could not open a browser automatically. Open this URL manually:\n  {url}");
     }
 
     let code = server
@@ -130,6 +138,42 @@ fn perform_login(
             &oauth_app.client_secret,
             &redirect_uri,
             &code,
+        )
+        .await?;
+        let email = fetch_email(GOOGLE_USERINFO_URL, &token.access_token).await?;
+        Ok::<_, AuthError>((token, email))
+    })?;
+
+    store
+        .save_token(&email, &token)
+        .context("failed to save token to keychain")?;
+    Ok(email)
+}
+
+fn perform_device_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -> Result<String> {
+    let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+    let (token, email) = runtime.block_on(async {
+        let authorization = request_device_authorization(
+            GOOGLE_DEVICE_CODE_URL,
+            &oauth_app.client_id,
+            DEFAULT_LOGIN_SCOPES,
+        )
+        .await?;
+
+        print!("{}", render_device_authorization_prompt(&authorization));
+        std::io::stdout()
+            .flush()
+            .map_err(|e| AuthError::OAuthFlow(format!(
+                "failed to flush device authorization prompt: {e}"
+            )))?;
+
+        let token = poll_device_token(
+            GOOGLE_TOKEN_URL,
+            &oauth_app.client_id,
+            &oauth_app.client_secret,
+            &authorization.device_code,
+            authorization.interval,
+            authorization.expires_in,
         )
         .await?;
         let email = fetch_email(GOOGLE_USERINFO_URL, &token.access_token).await?;
