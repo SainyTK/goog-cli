@@ -1,10 +1,14 @@
-import { createWorktree } from "@ai-hero/sandcastle";
+import {
+  createWorktree,
+  type BindMountCreateOptions,
+  type BindMountSandboxHandle,
+} from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 
 const sandboxWorkspace = "/home/agent/workspace";
 const verificationBranch = "sandcastle/verify-rust-workflow";
 
-const setupCommands = [{ command: "npm install" }];
+const setupCommands = ["npm install"];
 const workflowCommands = [
   "rustup --version",
   "cargo fmt",
@@ -12,30 +16,24 @@ const workflowCommands = [
   "npm run test",
 ];
 
-type ExecResult = {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
+type DockerBindMountProvider = {
+  create(options: BindMountCreateOptions): Promise<BindMountSandboxHandle>;
 };
 
-type ExecHandle = {
-  close(): Promise<void>;
-  exec(
-    command: string,
-    options?: { cwd?: string; onLine?: (line: string) => void },
-  ): Promise<ExecResult>;
+const logCommands = (heading: string, commands: readonly string[]) => {
+  console.log(heading);
+  for (const command of commands) {
+    console.log(`- ${command}`);
+  }
 };
 
-type BindMountProvider = {
-  create(options: {
-    worktreePath: string;
-    hostRepoPath: string;
-    mounts: Array<{ hostPath: string; sandboxPath: string; readonly?: boolean }>;
-    env: Record<string, string>;
-  }): Promise<ExecHandle>;
-};
+const createDockerSandbox = (options: BindMountCreateOptions) =>
+  (docker() as unknown as DockerBindMountProvider).create(options);
 
-const runCommand = async (sandbox: ExecHandle, command: string) => {
+const runCommand = async (
+  sandbox: BindMountSandboxHandle,
+  command: string,
+) => {
   console.log(`\n$ ${command}`);
   const result = await sandbox.exec(command, {
     cwd: sandboxWorkspace,
@@ -51,27 +49,19 @@ const runCommand = async (sandbox: ExecHandle, command: string) => {
 };
 
 console.log("Sandcastle Rust workflow verifier");
-console.log(`Host command: npm run sandcastle:verify-rust-workflow`);
-console.log("Sandbox setup hook:");
-for (const { command } of setupCommands) {
-  console.log(`- ${command}`);
-}
-console.log("Sandbox workflow commands:");
-for (const command of workflowCommands) {
-  console.log(`- ${command}`);
-}
-console.log(
-  "Runtime Rust installer commands are intentionally forbidden.",
-);
+console.log("Host command: npm run sandcastle:verify-rust-workflow");
+logCommands("Sandbox setup hook:", setupCommands);
+logCommands("Sandbox workflow commands:", workflowCommands);
+console.log("Runtime Rust installer commands are intentionally forbidden.");
 
 const worktree = await createWorktree({
   branchStrategy: { type: "branch", branch: verificationBranch },
 });
 
-let sandbox: ExecHandle | undefined;
+let sandbox: BindMountSandboxHandle | undefined;
 
 try {
-  sandbox = await (docker() as unknown as BindMountProvider).create({
+  const activeSandbox = await createDockerSandbox({
     worktreePath: worktree.worktreePath,
     hostRepoPath: process.cwd(),
     mounts: [
@@ -82,13 +72,14 @@ try {
     ],
     env: {},
   });
+  sandbox = activeSandbox;
 
-  for (const { command } of setupCommands) {
-    await runCommand(sandbox, command);
+  for (const command of setupCommands) {
+    await runCommand(activeSandbox, command);
   }
 
   for (const command of workflowCommands) {
-    await runCommand(sandbox, command);
+    await runCommand(activeSandbox, command);
   }
 
   console.log("\nSandcastle Rust workflow verification passed.");

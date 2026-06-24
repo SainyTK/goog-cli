@@ -45,7 +45,7 @@ fn sandcastle_rust_workflow_verifier_runs_expected_commands() {
 
     for expected in [
         "docker()",
-        r#"command: "npm install""#,
+        r#""npm install""#,
         r#"rustup --version"#,
         r#"cargo fmt"#,
         r#"npm run typecheck"#,
@@ -62,7 +62,7 @@ fn sandcastle_rust_workflow_verifier_runs_expected_commands() {
     assert_ordered(
         &verifier,
         &[
-            r#"command: "npm install""#,
+            r#""npm install""#,
             r#"rustup --version"#,
             r#"cargo fmt"#,
             r#"npm run typecheck"#,
