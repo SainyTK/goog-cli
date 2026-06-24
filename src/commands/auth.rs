@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use anyhow::{Context, Result};
-use dialoguer::Input;
+use dialoguer::{Input, Password};
 
 use crate::auth::account::{AccountStore, KeyringStore};
 use crate::auth::config::{
@@ -11,12 +11,12 @@ use crate::auth::config::{
 use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};
 use crate::auth::login::{
-    build_authorize_url, exchange_code, fetch_email, poll_device_token,
-    render_device_authorization_prompt, request_device_authorization, random_state,
-    LoopbackServer, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL, GOOGLE_DEVICE_CODE_URL,
-    GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL,
+    build_authorize_url, exchange_code, fetch_email, poll_device_token, random_state,
+    render_device_authorization_prompt, request_device_authorization, LoopbackServer,
+    DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL, GOOGLE_DEVICE_CODE_URL, GOOGLE_TOKEN_URL,
+    GOOGLE_USERINFO_URL,
 };
-use crate::auth::setup::parse_client_secret_file;
+use crate::auth::setup::{parse_client_secret_file, OAuthAppSecrets};
 use crate::cli::AuthCommand;
 
 const SETUP_GUIDE: &str = "\
@@ -33,9 +33,9 @@ Setting up your OAuth App. Follow these steps in the Google Cloud Console:
   5. Go to \"APIs & Services\" > \"Credentials\".
   6. Click \"Create Credentials\" > \"OAuth client ID\".
   7. Choose \"Desktop app\" as the application type.
-  8. Click \"Create\", then download the JSON file (client_secret_*.json).
+  8. Click \"Create\", then copy the client ID and client secret.
 
-Enter the path to the downloaded file below.
+Enter those values below.
 ";
 
 pub fn run(cmd: AuthCommand, resolved_account: Option<String>) -> Result<()> {
@@ -52,19 +52,14 @@ fn run_setup(client_secret_file: Option<String>) -> Result<()> {
 }
 
 fn run_setup_to(client_secret_file: Option<String>, out: &mut impl std::io::Write) -> Result<()> {
-    let path = match client_secret_file {
-        Some(p) => p,
+    let secrets = match client_secret_file {
+        Some(path) => parse_client_secret_file(&path)
+            .with_context(|| format!("failed to load OAuth App from {path}"))?,
         None => {
             write!(out, "{SETUP_GUIDE}").context("failed to write setup guide")?;
-            Input::new()
-                .with_prompt("Path to client_secret_*.json")
-                .interact_text()
-                .context("failed to read client secret file path from stdin")?
+            prompt_for_oauth_app()?
         }
     };
-
-    let secrets = parse_client_secret_file(&path)
-        .with_context(|| format!("failed to load OAuth App from {path}"))?;
 
     let mut config = load_config().context("failed to load config")?;
     config.oauth_app = Some(OAuthAppConfig {
@@ -74,10 +69,47 @@ fn run_setup_to(client_secret_file: Option<String>, out: &mut impl std::io::Writ
     save_config(&config).context("failed to save config")?;
 
     let saved_to = config_path().context("could not determine config path")?;
-    writeln!(out, "OAuth App saved to {}", saved_to.display())
-        .context("failed to write output")?;
+    writeln!(out, "OAuth App saved to {}", saved_to.display()).context("failed to write output")?;
 
     Ok(())
+}
+
+fn prompt_for_oauth_app() -> Result<OAuthAppSecrets> {
+    let client_id = Input::new()
+        .with_prompt("OAuth client ID")
+        .interact_text()
+        .context("failed to read OAuth client ID from stdin")?;
+
+    let client_secret = Password::new()
+        .with_prompt("OAuth client secret")
+        .interact()
+        .context("failed to read OAuth client secret from stdin")?;
+
+    build_oauth_app_secrets(client_id, client_secret)
+}
+
+fn build_oauth_app_secrets(client_id: String, client_secret: String) -> Result<OAuthAppSecrets> {
+    let client_id = client_id.trim().to_string();
+    let client_secret = client_secret.trim().to_string();
+
+    if client_id.is_empty() {
+        return Err(AuthError::OAuthAppMissingField {
+            field: "client_id".into(),
+        }
+        .into());
+    }
+
+    if client_secret.is_empty() {
+        return Err(AuthError::OAuthAppMissingField {
+            field: "client_secret".into(),
+        }
+        .into());
+    }
+
+    Ok(OAuthAppSecrets {
+        client_id,
+        client_secret,
+    })
 }
 
 fn run_login(no_browser: bool) -> Result<()> {
@@ -162,11 +194,9 @@ fn perform_device_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -
         .await?;
 
         print!("{}", render_device_authorization_prompt(&authorization));
-        std::io::stdout()
-            .flush()
-            .map_err(|e| AuthError::OAuthFlow(format!(
-                "failed to flush device authorization prompt: {e}"
-            )))?;
+        std::io::stdout().flush().map_err(|e| {
+            AuthError::OAuthFlow(format!("failed to flush device authorization prompt: {e}"))
+        })?;
 
         let token = poll_device_token(
             GOOGLE_TOKEN_URL,
@@ -238,13 +268,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn setup_guide_is_printed_when_no_file_given_and_guide_contains_all_steps() {
+    fn setup_guide_describes_direct_client_id_and_secret_entry() {
         let mut out: Vec<u8> = Vec::new();
         assert!(SETUP_GUIDE.contains("1."), "guide is missing step 1");
         assert!(SETUP_GUIDE.contains("8."), "guide is missing step 8");
         assert!(
-            SETUP_GUIDE.contains("client_secret_*.json"),
-            "guide is missing filename hint"
+            SETUP_GUIDE.contains("client ID and client secret"),
+            "guide is missing direct entry hint"
+        );
+        assert!(
+            SETUP_GUIDE.contains("Desktop app"),
+            "guide is missing Desktop app hint"
         );
         assert!(
             SETUP_GUIDE.contains("console.cloud.google.com"),
@@ -253,7 +287,36 @@ mod tests {
 
         let result = run_setup_to(Some("/nonexistent/client_secret.json".into()), &mut out);
         assert!(result.is_err(), "expected error for nonexistent file");
-        assert!(out.is_empty(), "guide must not be printed when --client-secret-file is given");
+        assert!(
+            out.is_empty(),
+            "guide must not be printed when --client-secret-file is given"
+        );
+    }
+
+    #[test]
+    fn build_oauth_app_secrets_trims_values() {
+        let secrets = build_oauth_app_secrets("  id123  ".into(), "  sec456  ".into()).unwrap();
+
+        assert_eq!(secrets.client_id, "id123");
+        assert_eq!(secrets.client_secret, "sec456");
+    }
+
+    #[test]
+    fn build_oauth_app_secrets_rejects_blank_client_id() {
+        let err = build_oauth_app_secrets("  ".into(), "sec456".into()).unwrap_err();
+
+        assert!(
+            matches!(&err.downcast_ref::<AuthError>(), Some(AuthError::OAuthAppMissingField { field }) if field == "client_id")
+        );
+    }
+
+    #[test]
+    fn build_oauth_app_secrets_rejects_blank_client_secret() {
+        let err = build_oauth_app_secrets("id123".into(), "  ".into()).unwrap_err();
+
+        assert!(
+            matches!(&err.downcast_ref::<AuthError>(), Some(AuthError::OAuthAppMissingField { field }) if field == "client_secret")
+        );
     }
 
     #[test]
@@ -271,7 +334,10 @@ mod tests {
         add_account_to_config(&mut config, "bob@example.com");
         assert_eq!(
             config.accounts,
-            vec!["alice@example.com".to_string(), "bob@example.com".to_string()]
+            vec![
+                "alice@example.com".to_string(),
+                "bob@example.com".to_string()
+            ]
         );
     }
 

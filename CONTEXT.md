@@ -33,7 +33,7 @@ _Avoid_: Lazy auth, on-demand auth, progressive scopes
 ### Commands
 
 **Setup**:
-The one-time command (`goog auth setup`) that imports an OAuth App's credentials from a `client_secret_*.json` file downloaded from the GCP Console.
+The one-time command (`goog auth setup`) that records the OAuth App's client ID and client secret in config. It may collect those values directly or import them from a `client_secret_*.json` file.
 _Avoid_: Init, configure, bootstrap
 
 **Login**:

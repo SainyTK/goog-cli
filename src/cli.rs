@@ -31,9 +31,9 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
-    /// Import OAuth App client ID and secret and save them to config
+    /// Set up the OAuth App client ID and secret
     Setup {
-        /// Path to the client_secret_*.json file downloaded from GCP Console
+        /// Import OAuth App values from a client_secret_*.json file
         #[arg(long)]
         client_secret_file: Option<String>,
     },
@@ -114,16 +114,24 @@ mod tests {
 
     #[test]
     fn auth_setup_with_client_secret_file_flag() {
-        let cli = parse(&["auth", "setup", "--client-secret-file", "/tmp/client_secret.json"])
-            .unwrap();
-        match cli.command {
-            Command::Auth {
-                command: AuthCommand::Setup {
-                    client_secret_file: Some(path),
-                },
-            } => assert_eq!(path, "/tmp/client_secret.json"),
-            _ => panic!("unexpected parse result"),
-        }
+        let cli = parse(&[
+            "auth",
+            "setup",
+            "--client-secret-file",
+            "/tmp/client_secret.json",
+        ])
+        .unwrap();
+        let Command::Auth { command } = cli.command else {
+            panic!("unexpected parse result");
+        };
+        let AuthCommand::Setup {
+            client_secret_file: Some(path),
+        } = command
+        else {
+            panic!("unexpected parse result");
+        };
+
+        assert_eq!(path, "/tmp/client_secret.json");
     }
 
     // --- auth login ---
