@@ -5,7 +5,8 @@ use dialoguer::Input;
 
 use crate::auth::account::{AccountStore, KeyringStore};
 use crate::auth::config::{
-    config_path, load_config, save_config, Config, OAuthAppConfig, SettingsConfig,
+    config_path, load_config, save_config, switch_active_account, Config, OAuthAppConfig,
+    SettingsConfig,
 };
 use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};
@@ -37,12 +38,12 @@ Setting up your OAuth App. Follow these steps in the Google Cloud Console:
 Enter the path to the downloaded file below.
 ";
 
-pub fn run(cmd: AuthCommand) -> Result<()> {
+pub fn run(cmd: AuthCommand, resolved_account: Option<String>) -> Result<()> {
     match cmd {
         AuthCommand::Setup { client_secret_file } => run_setup(client_secret_file),
         AuthCommand::Login { no_browser } => run_login(no_browser),
-        AuthCommand::List { json } => run_list(json),
-        AuthCommand::Switch { .. } => not_yet_implemented(),
+        AuthCommand::List { json } => run_list(json, resolved_account),
+        AuthCommand::Switch { email } => run_switch(email),
     }
 }
 
@@ -197,16 +198,17 @@ fn add_account_to_config(config: &mut Config, email: &str) {
     }
 }
 
-fn run_list(json: bool) -> Result<()> {
-    run_list_to(json, &mut std::io::stdout())
+fn run_list(json: bool, active_account: Option<String>) -> Result<()> {
+    run_list_to(json, active_account.as_deref(), &mut std::io::stdout())
 }
 
-fn run_list_to(json: bool, out: &mut impl std::io::Write) -> Result<()> {
+fn run_list_to(
+    json: bool,
+    active_account: Option<&str>,
+    out: &mut impl std::io::Write,
+) -> Result<()> {
     let config = load_config().context("failed to load config")?;
-    let active = config
-        .settings
-        .as_ref()
-        .and_then(|s| s.active_account.as_deref());
+    let active = active_account.or_else(|| config.active_account());
     let rows = rows_from_config(&config.accounts, active);
 
     let rendered = if json {
@@ -219,8 +221,15 @@ fn run_list_to(json: bool, out: &mut impl std::io::Write) -> Result<()> {
     Ok(())
 }
 
-fn not_yet_implemented() -> Result<()> {
-    println!("not yet implemented");
+fn run_switch(email: String) -> Result<()> {
+    run_switch_to(&email, &mut std::io::stdout())
+}
+
+fn run_switch_to(email: &str, out: &mut impl std::io::Write) -> Result<()> {
+    let mut config = load_config().context("failed to load config")?;
+    switch_active_account(&mut config, email)?;
+    save_config(&config).context("failed to save config")?;
+    writeln!(out, "Active Account switched to {email}").context("failed to write output")?;
     Ok(())
 }
 
@@ -286,5 +295,4 @@ mod tests {
             Some("alice@example.com")
         );
     }
-
 }

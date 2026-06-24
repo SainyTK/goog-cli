@@ -35,6 +35,9 @@ pub enum AuthError {
     #[error("OAuth App is not configured -- run `goog auth setup` first")]
     OAuthAppNotConfigured,
 
+    #[error("account is not logged in: {email}")]
+    AccountNotFound { email: String },
+
     #[error("OAuth flow failed: {0}")]
     OAuthFlow(String),
 
