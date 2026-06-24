@@ -13,13 +13,13 @@ use crate::auth::list::{render_ndjson, render_table, rows_from_config};
 use crate::auth::login::{
     build_authorize_url, exchange_code, fetch_email, poll_device_token, random_state,
     render_device_authorization_prompt, request_device_authorization, LoopbackServer,
-    DEFAULT_DEVICE_LOGIN_SCOPES, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL,
-    GOOGLE_DEVICE_CODE_URL, GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL,
+    DEFAULT_DEVICE_LOGIN_SCOPES, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL, GOOGLE_DEVICE_CODE_URL,
+    GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL,
 };
 use crate::auth::setup::{parse_client_secret_file, OAuthAppSecrets};
 use crate::cli::AuthCommand;
 
-const SETUP_GUIDE: &str = "\
+pub(super) const SETUP_GUIDE: &str = "\
 Setting up your OAuth App. Follow these steps in the Google Cloud Console:
 
   1. Open https://console.cloud.google.com and sign in.
@@ -53,7 +53,10 @@ fn run_setup(client_secret_file: Option<String>) -> Result<()> {
     run_setup_to(client_secret_file, &mut std::io::stdout())
 }
 
-fn run_setup_to(client_secret_file: Option<String>, out: &mut impl std::io::Write) -> Result<()> {
+pub(super) fn run_setup_to(
+    client_secret_file: Option<String>,
+    out: &mut impl std::io::Write,
+) -> Result<()> {
     let secrets = match client_secret_file {
         Some(path) => parse_client_secret_file(&path)
             .with_context(|| format!("failed to load OAuth App from {path}"))?,
@@ -90,7 +93,10 @@ fn prompt_for_oauth_app() -> Result<OAuthAppSecrets> {
     build_oauth_app_secrets(client_id, client_secret)
 }
 
-fn build_oauth_app_secrets(client_id: String, client_secret: String) -> Result<OAuthAppSecrets> {
+pub(super) fn build_oauth_app_secrets(
+    client_id: String,
+    client_secret: String,
+) -> Result<OAuthAppSecrets> {
     let client_id = client_id.trim().to_string();
     let client_secret = client_secret.trim().to_string();
 
@@ -219,7 +225,7 @@ fn perform_device_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -
     Ok(email)
 }
 
-fn add_account_to_config(config: &mut Config, email: &str) {
+pub(super) fn add_account_to_config(config: &mut Config, email: &str) {
     if !config.accounts.iter().any(|e| e == email) {
         config.accounts.push(email.to_string());
     }
@@ -264,104 +270,4 @@ fn run_switch_to(email: &str, out: &mut impl std::io::Write) -> Result<()> {
     writeln!(out, "Active Account switched to {active_account}")
         .context("failed to write output")?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn setup_guide_describes_direct_client_id_and_secret_entry() {
-        let mut out: Vec<u8> = Vec::new();
-        assert!(SETUP_GUIDE.contains("1."), "guide is missing step 1");
-        assert!(SETUP_GUIDE.contains("8."), "guide is missing step 8");
-        assert!(
-            SETUP_GUIDE.contains("client ID and client secret"),
-            "guide is missing direct entry hint"
-        );
-        assert!(
-            SETUP_GUIDE.contains("Desktop app"),
-            "guide is missing Desktop app hint"
-        );
-        assert!(
-            SETUP_GUIDE.contains("console.cloud.google.com"),
-            "guide is missing GCP Console URL"
-        );
-
-        let result = run_setup_to(Some("/nonexistent/client_secret.json".into()), &mut out);
-        assert!(result.is_err(), "expected error for nonexistent file");
-        assert!(
-            out.is_empty(),
-            "guide must not be printed when --client-secret-file is given"
-        );
-    }
-
-    #[test]
-    fn build_oauth_app_secrets_trims_values() {
-        let secrets = build_oauth_app_secrets("  id123  ".into(), "  sec456  ".into()).unwrap();
-
-        assert_eq!(secrets.client_id, "id123");
-        assert_eq!(secrets.client_secret, "sec456");
-    }
-
-    #[test]
-    fn build_oauth_app_secrets_rejects_blank_client_id() {
-        let err = build_oauth_app_secrets("  ".into(), "sec456".into()).unwrap_err();
-
-        assert!(
-            matches!(&err.downcast_ref::<AuthError>(), Some(AuthError::OAuthAppMissingField { field }) if field == "client_id")
-        );
-    }
-
-    #[test]
-    fn build_oauth_app_secrets_rejects_blank_client_secret() {
-        let err = build_oauth_app_secrets("id123".into(), "  ".into()).unwrap_err();
-
-        assert!(
-            matches!(&err.downcast_ref::<AuthError>(), Some(AuthError::OAuthAppMissingField { field }) if field == "client_secret")
-        );
-    }
-
-    #[test]
-    fn add_account_dedups_repeated_logins() {
-        let mut config = Config::default();
-        add_account_to_config(&mut config, "alice@example.com");
-        add_account_to_config(&mut config, "alice@example.com");
-        assert_eq!(config.accounts, vec!["alice@example.com".to_string()]);
-    }
-
-    #[test]
-    fn add_account_appends_a_second_distinct_email() {
-        let mut config = Config::default();
-        add_account_to_config(&mut config, "alice@example.com");
-        add_account_to_config(&mut config, "bob@example.com");
-        assert_eq!(
-            config.accounts,
-            vec![
-                "alice@example.com".to_string(),
-                "bob@example.com".to_string()
-            ]
-        );
-    }
-
-    #[test]
-    fn first_login_becomes_the_active_account() {
-        let mut config = Config::default();
-        add_account_to_config(&mut config, "alice@example.com");
-        assert_eq!(
-            config.settings.unwrap().active_account.as_deref(),
-            Some("alice@example.com")
-        );
-    }
-
-    #[test]
-    fn second_login_does_not_displace_active_account() {
-        let mut config = Config::default();
-        add_account_to_config(&mut config, "alice@example.com");
-        add_account_to_config(&mut config, "bob@example.com");
-        assert_eq!(
-            config.settings.unwrap().active_account.as_deref(),
-            Some("alice@example.com")
-        );
-    }
 }

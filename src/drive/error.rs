@@ -9,7 +9,10 @@ pub enum DriveError {
     PermissionDenied,
 
     #[error("Google Drive API error ({status}): {body}")]
-    Api { status: reqwest::StatusCode, body: String },
+    Api {
+        status: reqwest::StatusCode,
+        body: String,
+    },
 
     #[error("invalid Google Drive API response: {0}")]
     InvalidResponse(String),
