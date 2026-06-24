@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 
+use crate::auth::config::OAuthAppType;
+
 #[derive(Debug, Parser)]
 #[command(name = "goog", about = "A CLI for Google APIs")]
 pub struct Cli {
@@ -41,6 +43,9 @@ pub enum AuthCommand {
         /// Import OAuth App values from a client_secret_*.json file
         #[arg(long)]
         client_secret_file: Option<String>,
+        /// OAuth App type to store when the JSON shape is not specific enough
+        #[arg(long, value_enum)]
+        app_type: Option<OAuthAppType>,
     },
     /// Authorize a Google Account via a browser-based OAuth flow
     Login {

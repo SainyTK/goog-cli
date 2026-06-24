@@ -6,7 +6,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::account::{AccountStore, Token};
 use super::client::{AuthClient, AuthorizationCode, AuthorizationCodeFlow};
-use super::config::{Config, OAuthAppConfig, SettingsConfig};
+use super::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use super::error::AuthError;
 use super::testing::MemoryStore;
 
@@ -15,6 +15,7 @@ fn test_config() -> Config {
         oauth_app: Some(OAuthAppConfig {
             client_id: "client-123".into(),
             client_secret: "secret-456".into(),
+            app_type: OAuthAppType::Desktop,
         }),
         settings: Some(SettingsConfig {
             active_account: Some("alice@example.com".into()),

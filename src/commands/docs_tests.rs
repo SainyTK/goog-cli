@@ -4,7 +4,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
 use crate::auth::client::AuthClient;
-use crate::auth::config::{Config, OAuthAppConfig, SettingsConfig};
+use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::testing::MemoryStore;
 use crate::docs::{DOCS_READONLY_SCOPE, DOCS_SCOPE};
 
@@ -15,6 +15,7 @@ fn test_config() -> Config {
         oauth_app: Some(OAuthAppConfig {
             client_id: "client-123".into(),
             client_secret: "secret-456".into(),
+            app_type: OAuthAppType::Desktop,
         }),
         settings: Some(SettingsConfig {
             active_account: Some("alice@example.com".into()),

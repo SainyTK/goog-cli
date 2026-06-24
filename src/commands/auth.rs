@@ -6,7 +6,7 @@ use dialoguer::{Input, Password};
 use crate::auth::account::{AccountStore, KeyringStore};
 use crate::auth::config::{
     config_path, load_config, save_config, switch_active_account, Config, OAuthAppConfig,
-    SettingsConfig,
+    OAuthAppType, SettingsConfig,
 };
 use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};
@@ -18,6 +18,10 @@ use crate::auth::login::{
 };
 use crate::auth::setup::{parse_client_secret_file, OAuthAppSecrets};
 use crate::cli::AuthCommand;
+
+const DEVICE_OAUTH_CLIENT_TYPE: &str = "TVs and Limited Input devices";
+const DEVICE_OAUTH_SETUP_COMMAND: &str =
+    "`goog auth setup --client-secret-file <path> --app-type device`";
 
 pub(super) const SETUP_GUIDE: &str = "\
 Setting up your OAuth App. Follow these steps in the Google Cloud Console:
@@ -34,7 +38,8 @@ Setting up your OAuth App. Follow these steps in the Google Cloud Console:
   6. Click \"Create Credentials\" > \"OAuth client ID\".
   7. Choose \"Desktop app\" as the application type.
      - If you need `goog auth login --no-browser`, choose
-       \"TVs and Limited Input devices\" instead.
+       \"TVs and Limited Input devices\" instead and pass
+       `--app-type device` to setup.
   8. Click \"Create\", then copy the client ID and client secret.
 
 Enter those values below.
@@ -42,19 +47,23 @@ Enter those values below.
 
 pub fn run(cmd: AuthCommand, resolved_account: Option<String>) -> Result<()> {
     match cmd {
-        AuthCommand::Setup { client_secret_file } => run_setup(client_secret_file),
+        AuthCommand::Setup {
+            client_secret_file,
+            app_type,
+        } => run_setup(client_secret_file, app_type),
         AuthCommand::Login { no_browser } => run_login(no_browser),
         AuthCommand::List { json } => run_list(json, resolved_account),
         AuthCommand::Switch { email } => run_switch(email),
     }
 }
 
-fn run_setup(client_secret_file: Option<String>) -> Result<()> {
-    run_setup_to(client_secret_file, &mut std::io::stdout())
+fn run_setup(client_secret_file: Option<String>, app_type: Option<OAuthAppType>) -> Result<()> {
+    run_setup_to(client_secret_file, app_type, &mut std::io::stdout())
 }
 
 pub(super) fn run_setup_to(
     client_secret_file: Option<String>,
+    app_type: Option<OAuthAppType>,
     out: &mut impl std::io::Write,
 ) -> Result<()> {
     let secrets = match client_secret_file {
@@ -70,6 +79,7 @@ pub(super) fn run_setup_to(
     config.oauth_app = Some(OAuthAppConfig {
         client_id: secrets.client_id,
         client_secret: secrets.client_secret,
+        app_type: app_type.unwrap_or(secrets.app_type),
     });
     save_config(&config).context("failed to save config")?;
 
@@ -117,6 +127,7 @@ pub(super) fn build_oauth_app_secrets(
     Ok(OAuthAppSecrets {
         client_id,
         client_secret,
+        app_type: OAuthAppType::Desktop,
     })
 }
 
@@ -191,7 +202,12 @@ fn perform_loopback_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore)
     Ok(email)
 }
 
-fn perform_device_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -> Result<String> {
+pub(super) fn perform_device_login(
+    oauth_app: &OAuthAppConfig,
+    store: &impl AccountStore,
+) -> Result<String> {
+    require_device_oauth_app(oauth_app)?;
+
     let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
     let (token, email) = runtime.block_on(async {
         let authorization = request_device_authorization(
@@ -223,6 +239,17 @@ fn perform_device_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -
         .save_token(&email, &token)
         .context("failed to save token to keychain")?;
     Ok(email)
+}
+
+fn require_device_oauth_app(oauth_app: &OAuthAppConfig) -> Result<()> {
+    if oauth_app.app_type == OAuthAppType::Device {
+        return Ok(());
+    }
+
+    Err(AuthError::OAuthFlow(format!(
+        "device login requires an OAuth client of type \"{DEVICE_OAUTH_CLIENT_TYPE}\". Run {DEVICE_OAUTH_SETUP_COMMAND} with that client."
+    ))
+    .into())
 }
 
 pub(super) fn add_account_to_config(config: &mut Config, email: &str) {

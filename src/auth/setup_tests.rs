@@ -2,6 +2,7 @@ use std::fs;
 
 use tempfile::NamedTempFile;
 
+use super::config::OAuthAppType;
 use super::error::AuthError;
 use super::setup::parse_client_secret_file;
 
@@ -19,6 +20,7 @@ fn parses_installed_app_credentials() {
     let creds = parse_client_secret_file(file.path().to_str().unwrap()).unwrap();
     assert_eq!(creds.client_id, "id123");
     assert_eq!(creds.client_secret, "sec456");
+    assert_eq!(creds.app_type, OAuthAppType::Desktop);
 }
 
 #[test]
@@ -29,6 +31,16 @@ fn parses_web_app_credentials() {
     let creds = parse_client_secret_file(file.path().to_str().unwrap()).unwrap();
     assert_eq!(creds.client_id, "web-id");
     assert_eq!(creds.client_secret, "web-sec");
+    assert_eq!(creds.app_type, OAuthAppType::Web);
+}
+
+#[test]
+fn errors_when_file_contains_multiple_app_shapes() {
+    let file = write_json(
+        r#"{"installed":{"client_id":"id","client_secret":"sec"},"web":{"client_id":"web-id","client_secret":"web-sec"}}"#,
+    );
+    let err = parse_client_secret_file(file.path().to_str().unwrap()).unwrap_err();
+    assert!(matches!(err, AuthError::OAuthAppUnrecognizedStructure));
 }
 
 #[test]

@@ -24,7 +24,7 @@ pub const GOOGLE_USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/u
 const GOOGLE_DEVICE_AUTH_CLIENT_TYPE: &str = "TVs and Limited Input devices";
 const GOOGLE_DEVICE_AUTH_SETUP_COMMAND: &str = concat!(
     "Create a new OAuth client of that type, download its JSON, then run ",
-    "`goog auth setup --client-secret-file <path>` with that file."
+    "`goog auth setup --client-secret-file <path> --app-type device` with that file."
 );
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const INVALID_CLIENT_ERROR: &str = "invalid_client";

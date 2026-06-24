@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use super::config::OAuthAppType;
 use super::error::AuthError;
 
 #[derive(Debug, Deserialize)]
@@ -18,6 +19,7 @@ struct OAuthAppFields {
 pub struct OAuthAppSecrets {
     pub client_id: String,
     pub client_secret: String,
+    pub app_type: OAuthAppType,
 }
 
 pub fn parse_client_secret_file(path: &str) -> Result<OAuthAppSecrets, AuthError> {
@@ -31,10 +33,11 @@ pub fn parse_client_secret_file(path: &str) -> Result<OAuthAppSecrets, AuthError
     let contents = std::fs::read_to_string(&path_buf).map_err(AuthError::OAuthAppIo)?;
     let file: ClientSecretFile = serde_json::from_str(&contents)?;
 
-    let fields = file
-        .installed
-        .or(file.web)
-        .ok_or(AuthError::OAuthAppUnrecognizedStructure)?;
+    let (fields, app_type) = match (file.installed, file.web) {
+        (Some(fields), None) => (fields, OAuthAppType::Desktop),
+        (None, Some(fields)) => (fields, OAuthAppType::Web),
+        _ => return Err(AuthError::OAuthAppUnrecognizedStructure),
+    };
 
     let client_id = fields.client_id.filter(|s| !s.is_empty()).ok_or_else(|| {
         AuthError::OAuthAppMissingField {
@@ -52,5 +55,6 @@ pub fn parse_client_secret_file(path: &str) -> Result<OAuthAppSecrets, AuthError
     Ok(OAuthAppSecrets {
         client_id,
         client_secret,
+        app_type,
     })
 }

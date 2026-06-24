@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use super::error::AuthError;
@@ -16,6 +17,19 @@ pub struct Config {
 pub struct OAuthAppConfig {
     pub client_id: String,
     pub client_secret: String,
+    #[serde(default)]
+    pub app_type: OAuthAppType,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum OAuthAppType {
+    Desktop,
+    Web,
+    Device,
+    #[default]
+    #[value(skip)]
+    Unknown,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]

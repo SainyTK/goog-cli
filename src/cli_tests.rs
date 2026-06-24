@@ -1,5 +1,6 @@
 use clap::Parser;
 
+use crate::auth::config::OAuthAppType;
 use crate::cli::{AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -13,7 +14,8 @@ fn auth_setup_no_flags() {
         cli.command,
         Command::Auth {
             command: AuthCommand::Setup {
-                client_secret_file: None
+                client_secret_file: None,
+                app_type: None
             }
         }
     ));
@@ -33,6 +35,32 @@ fn auth_setup_with_client_secret_file_flag() {
     };
     let AuthCommand::Setup {
         client_secret_file: Some(path),
+        app_type: None,
+    } = command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(path, "/tmp/client_secret.json");
+}
+
+#[test]
+fn auth_setup_with_app_type_flag() {
+    let cli = parse(&[
+        "auth",
+        "setup",
+        "--client-secret-file",
+        "/tmp/client_secret.json",
+        "--app-type",
+        "device",
+    ])
+    .unwrap();
+    let Command::Auth { command } = cli.command else {
+        panic!("unexpected parse result");
+    };
+    let AuthCommand::Setup {
+        client_secret_file: Some(path),
+        app_type: Some(OAuthAppType::Device),
     } = command
     else {
         panic!("unexpected parse result");
