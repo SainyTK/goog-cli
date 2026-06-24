@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use dialoguer::Input;
+
 use crate::auth::{
-    config::{load_config, save_config, OAuthAppConfig},
+    config::{config_path, load_config, save_config, OAuthAppConfig},
     setup::parse_client_secret_file,
 };
-
 use crate::cli::AuthCommand;
 
 const SETUP_GUIDE: &str = "\
@@ -61,9 +61,8 @@ fn run_setup_to(client_secret_file: Option<String>, out: &mut impl std::io::Writ
     });
     save_config(&config).context("failed to save config")?;
 
-    let config_path =
-        crate::auth::config::config_path().context("could not determine config path")?;
-    writeln!(out, "OAuth App saved to {}", config_path.display())
+    let saved_to = config_path().context("could not determine config path")?;
+    writeln!(out, "OAuth App saved to {}", saved_to.display())
         .context("failed to write output")?;
 
     Ok(())
