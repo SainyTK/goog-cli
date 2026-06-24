@@ -154,6 +154,32 @@ async fn get_document_passes_google_query_options() {
 }
 
 #[tokio::test]
+async fn get_document_omits_include_tabs_content_by_default() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DOCUMENT_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = GetDocumentOptions::new("document-123")
+        .with_documents_url(format!("{}/docs/v1/documents", server.uri()));
+
+    get_document(&client, &options).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    let request = requests.first().unwrap();
+    assert!(request
+        .url
+        .query_pairs()
+        .all(|(name, _)| name != "includeTabsContent"));
+}
+
+#[tokio::test]
 async fn batch_update_posts_full_google_request_body() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
