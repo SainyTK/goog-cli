@@ -39,6 +39,11 @@ pub enum Command {
         #[command(subcommand)]
         command: MailCommand,
     },
+    /// Interact with Google Sheets
+    Sheets {
+        #[command(subcommand)]
+        command: SheetsCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -216,5 +221,23 @@ pub enum MailCommand {
     Read {
         /// GoogleMail Message ID to fetch
         message_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SheetsCommand {
+    /// Fetch raw Google Sheets Spreadsheet metadata
+    Get {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google partial response field selector
+        #[arg(long)]
+        fields: Option<String>,
+        /// Include grid data in the returned Spreadsheet
+        #[arg(long)]
+        include_grid_data: bool,
+        /// Limit returned grid data to a Google Sheets A1 Range
+        #[arg(long = "ranges")]
+        ranges: Vec<String>,
     },
 }

@@ -4,6 +4,7 @@ pub mod commands;
 pub mod docs;
 pub mod drive;
 pub mod mail;
+pub mod sheets;
 
 #[cfg(test)]
 mod cli_tests;
@@ -15,3 +16,5 @@ mod drive_tests;
 mod mail_tests;
 #[cfg(test)]
 mod sandcastle_tests;
+#[cfg(test)]
+mod sheets_tests;
