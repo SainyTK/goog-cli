@@ -1,12 +1,13 @@
 use chrono::{Duration, Utc};
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
 use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::testing::MemoryStore;
-use crate::sheets::SHEETS_READONLY_SCOPE;
+use crate::cli::{SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand};
+use crate::sheets::{SHEETS_READONLY_SCOPE, SHEETS_SCOPE};
 
 use super::sheets::*;
 
@@ -34,9 +35,25 @@ fn sheets_token() -> Token {
     }
 }
 
+fn sheets_write_token() -> Token {
+    Token {
+        access_token: "sheets-write-access".into(),
+        refresh_token: "refresh-123".into(),
+        expiry: Utc::now() + Duration::hours(1),
+        scopes: vec![SHEETS_READONLY_SCOPE.into(), SHEETS_SCOPE.into()],
+    }
+}
+
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     store
         .save_token("alice@example.com", &sheets_token())
+        .unwrap();
+    AuthClient::from_config(test_config(), store, None).unwrap()
+}
+
+fn write_test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
+    store
+        .save_token("alice@example.com", &sheets_write_token())
         .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
@@ -109,5 +126,245 @@ async fn run_get_returns_clear_error_for_not_found_response() {
     let message = format!("{:#}", result.unwrap_err());
     assert!(message.contains("failed to fetch Google Sheets Spreadsheet"));
     assert!(message.contains("Google Sheets Spreadsheet was not found"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_values_get_prints_value_range_json_to_stdout() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(header("authorization", "Bearer sheets-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "range": "Sheet1!A1:B2",
+            "values": [["Name", "Score"], ["Ada", "42"]]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::Get {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:B2".into(),
+            value_render_option: SheetsValueRenderOption::FormattedValue,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"range\":\"Sheet1!A1:B2\",\"values\":[[\"Name\",\"Score\"],[\"Ada\",\"42\"]]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_values_update_reads_values_from_file_and_prints_response_json() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "range": "DoesNotNeedToMatch!A1:B2",
+        "values": [["Ada", 42]]
+    });
+    Mock::given(method("PUT"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "updatedRange": "Sheet1!A1:B2"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let values_path = temp_dir.path().join("values.json");
+    std::fs::write(&values_path, request_body.to_string()).unwrap();
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::Update {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:B2".into(),
+            values: values_path.to_string_lossy().into_owned(),
+            value_input_option: SheetsValueInputOption::UserEntered,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"spreadsheetId\":\"spreadsheet-123\",\"updatedRange\":\"Sheet1!A1:B2\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_values_update_reads_values_from_stdin() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "values": [["Ada", 42]]
+    });
+    Mock::given(method("PUT"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "updatedCells": 2
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new(request_body.to_string());
+    let mut out = Vec::new();
+    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::Update {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:B2".into(),
+            values: "-".into(),
+            value_input_option: SheetsValueInputOption::Raw,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "{\"updatedCells\":2}\n");
+}
+
+#[tokio::test]
+async fn run_values_batch_clear_prints_response_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&serde_json::json!({
+            "ranges": ["Sheet1!A1:B2", "Summary!A:A"]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "clearedRanges": ["Sheet1!A1:B2", "Summary!A:A"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::BatchClear {
+            spreadsheet_id: "spreadsheet-123".into(),
+            ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"clearedRanges\":[\"Sheet1!A1:B2\",\"Summary!A:A\"]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_batch_update_reads_requests_from_stdin() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "addSheet": {
+                    "properties": {
+                        "title": "New sheet"
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new(request_body.to_string());
+    let mut out = Vec::new();
+    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+
+    run_batch_update_to(
+        &client,
+        "spreadsheet-123".into(),
+        "-".into(),
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_values_update_returns_clear_error_for_invalid_request_json() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new("{not json");
+    let mut out = Vec::new();
+
+    let result = run_values_to(
+        &client,
+        SheetsValuesCommand::Update {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:B2".into(),
+            values: "-".into(),
+            value_input_option: SheetsValueInputOption::UserEntered,
+        },
+        &mut input,
+        &mut out,
+        Some("https://example.test/sheets/v4/spreadsheets"),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to parse Google Sheets Values request body from stdin"));
     assert!(out.is_empty());
 }

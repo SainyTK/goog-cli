@@ -3,7 +3,8 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand,
-    MailAttachmentCommand, MailCommand, SheetsCommand,
+    MailAttachmentCommand, MailCommand, SheetsCommand, SheetsInsertDataOption,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -684,6 +685,227 @@ fn sheets_get_with_google_query_flags() {
             assert_eq!(fields.as_deref(), Some("spreadsheetId,properties.title"));
             assert!(include_grid_data);
             assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_get_defaults_to_formatted_values() {
+    let cli = parse(&["sheets", "values", "get", "spreadsheet-123", "Sheet1!A1:B2"]).unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::Get {
+                            spreadsheet_id,
+                            range,
+                            value_render_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!A1:B2");
+            assert_eq!(value_render_option, SheetsValueRenderOption::FormattedValue);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "batch-get",
+        "spreadsheet-123",
+        "--range",
+        "Sheet1!A1:B2",
+        "--range",
+        "Summary!A:A",
+        "--value-render-option",
+        "unformatted-value",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::BatchGet {
+                            spreadsheet_id,
+                            ranges,
+                            value_render_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
+            assert_eq!(value_render_option, SheetsValueRenderOption::UnformattedValue);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_update_defaults_to_user_entered() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "update",
+        "spreadsheet-123",
+        "Sheet1!A1:B2",
+        "--values",
+        "values.json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::Update {
+                            spreadsheet_id,
+                            range,
+                            values,
+                            value_input_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!A1:B2");
+            assert_eq!(values, "values.json");
+            assert_eq!(value_input_option, SheetsValueInputOption::UserEntered);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_append_accepts_raw_and_overwrite_options() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "append",
+        "spreadsheet-123",
+        "Sheet1!A:B",
+        "--values",
+        "-",
+        "--value-input-option",
+        "raw",
+        "--insert-data-option",
+        "overwrite",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::Append {
+                            spreadsheet_id,
+                            range,
+                            values,
+                            value_input_option,
+                            insert_data_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!A:B");
+            assert_eq!(values, "-");
+            assert_eq!(value_input_option, SheetsValueInputOption::Raw);
+            assert_eq!(insert_data_option, SheetsInsertDataOption::Overwrite);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_clear_with_range() {
+    let cli = parse(&["sheets", "values", "clear", "spreadsheet-123", "Sheet1!A1:B2"]).unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::Clear {
+                            spreadsheet_id,
+                            range,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!A1:B2");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_batch_clear_requires_range() {
+    assert!(parse(&["sheets", "values", "batch-clear", "spreadsheet-123"]).is_err());
+}
+
+#[test]
+fn sheets_values_rejects_unknown_enum_values() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "get",
+        "spreadsheet-123",
+        "Sheet1!A1:B2",
+        "--value-render-option",
+        "displayed",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "update",
+        "spreadsheet-123",
+        "Sheet1!A1:B2",
+        "--values",
+        "-",
+        "--value-input-option",
+        "typed",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "append",
+        "spreadsheet-123",
+        "Sheet1!A:B",
+        "--values",
+        "-",
+        "--insert-data-option",
+        "replace",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_batch_update_with_requests_path() {
+    let cli = parse(&[
+        "sheets",
+        "batch-update",
+        "spreadsheet-123",
+        "--requests",
+        "requests.json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::BatchUpdate {
+                    spreadsheet_id,
+                    requests,
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(requests, "requests.json");
         }
         _ => panic!("unexpected parse result"),
     }
