@@ -1,11 +1,9 @@
-mod auth;
-mod cli;
-mod commands;
-mod drive;
-
 use clap::Parser;
 
-use cli::{Cli, Command};
+use goog::{
+    cli::{Cli, Command},
+    commands,
+};
 
 fn main() {
     let cli = Cli::parse();
