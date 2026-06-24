@@ -34,7 +34,7 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
         let oauth_app = config.oauth_app.ok_or(AuthError::OAuthAppNotConfigured)?;
 
         Ok(Self {
-            http: reqwest::Client::new(),
+            http: new_http_client()?,
             store,
             account_email,
             oauth_app,
@@ -235,6 +235,13 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
         self.store.save_token(&self.account_email, &refreshed)?;
         Ok(refreshed)
     }
+}
+
+fn new_http_client() -> Result<reqwest::Client, AuthError> {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| AuthError::Network(e.to_string()))
 }
 
 pub trait AuthorizationCodeFlow {

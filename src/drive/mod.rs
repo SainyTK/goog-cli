@@ -25,6 +25,25 @@ const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
 const DEFAULT_UPLOAD_MIME_TYPE: &str = "application/octet-stream";
+const JSON_CONTENT_TYPE: &str = "application/json; charset=UTF-8";
+const MULTIPART_UPLOAD_BOUNDARY: &str = "goog-drive-upload-boundary";
+const UPLOAD_CONTENT_TYPE_HEADER: &str = "X-Upload-Content-Type";
+const UPLOAD_CONTENT_LENGTH_HEADER: &str = "X-Upload-Content-Length";
+
+#[derive(Debug, Clone, Copy)]
+enum UploadType {
+    Multipart,
+    Resumable,
+}
+
+impl UploadType {
+    fn as_query_value(self) -> &'static str {
+        match self {
+            Self::Multipart => "multipart",
+            Self::Resumable => "resumable",
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DriveFile {
@@ -84,10 +103,10 @@ impl UploadFileOptions {
         self
     }
 
-    fn upload_url(&self, upload_type: &str) -> Result<Url, DriveError> {
+    fn upload_url(&self, upload_type: UploadType) -> Result<Url, DriveError> {
         let mut url = Url::parse(&self.upload_url)?;
         url.query_pairs_mut()
-            .append_pair("uploadType", upload_type)
+            .append_pair("uploadType", upload_type.as_query_value())
             .append_pair("fields", UPLOAD_RESPONSE_FIELDS);
         Ok(url)
     }
@@ -261,10 +280,12 @@ where
     let metadata = tokio::fs::metadata(&options.path)
         .await
         .map_err(DriveError::Io)?;
-    if metadata.len() <= MULTIPART_UPLOAD_LIMIT_BYTES {
-        upload_multipart(client, options, metadata.len(), progress).await
+    let file_size = metadata.len();
+
+    if file_size <= MULTIPART_UPLOAD_LIMIT_BYTES {
+        upload_multipart(client, options, file_size, progress).await
     } else {
-        upload_resumable(client, options, metadata.len(), progress).await
+        upload_resumable(client, options, file_size, progress).await
     }
 }
 
@@ -278,14 +299,17 @@ where
     S: AccountStore,
     F: FnMut(u64),
 {
-    let boundary = "goog-drive-upload-boundary";
     let metadata = upload_metadata(options)?;
     let metadata_json =
         serde_json::to_string(&metadata).map_err(|e| DriveError::InvalidResponse(e.to_string()))?;
     let header = Bytes::from(format!(
-        "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata_json}\r\n--{boundary}\r\nContent-Type: {DEFAULT_UPLOAD_MIME_TYPE}\r\n\r\n"
+        "--{MULTIPART_UPLOAD_BOUNDARY}\r\n\
+         Content-Type: {JSON_CONTENT_TYPE}\r\n\r\n\
+         {metadata_json}\r\n\
+         --{MULTIPART_UPLOAD_BOUNDARY}\r\n\
+         Content-Type: {DEFAULT_UPLOAD_MIME_TYPE}\r\n\r\n"
     ));
-    let footer = Bytes::from(format!("\r\n--{boundary}--\r\n"));
+    let footer = Bytes::from(format!("\r\n--{MULTIPART_UPLOAD_BOUNDARY}--\r\n"));
     let content_length = header.len() as u64 + file_size + footer.len() as u64;
     let file = tokio::fs::File::open(&options.path)
         .await
@@ -295,8 +319,11 @@ where
     let response = client
         .send_with_scopes(
             client
-                .post(options.upload_url("multipart")?)
-                .header(CONTENT_TYPE, format!("multipart/related; boundary={boundary}"))
+                .post(options.upload_url(UploadType::Multipart)?)
+                .header(
+                    CONTENT_TYPE,
+                    format!("multipart/related; boundary={MULTIPART_UPLOAD_BOUNDARY}"),
+                )
                 .header(CONTENT_LENGTH, content_length.to_string())
                 .body(body),
             DRIVE_SCOPES,
@@ -327,7 +354,9 @@ where
     let mut buffer = vec![0_u8; RESUMABLE_CHUNK_SIZE_BYTES];
 
     loop {
-        let read = file.read(&mut buffer).await.map_err(DriveError::Io)?;
+        let read = read_upload_chunk(&mut file, &mut buffer)
+            .await
+            .map_err(DriveError::Io)?;
         if read == 0 {
             break;
         }
@@ -350,12 +379,9 @@ where
         uploaded += read as u64;
         progress(uploaded);
 
-        if uploaded == file_size {
-            return parse_uploaded_file_response(response).await;
-        }
-
-        let status = response.status();
-        if status != StatusCode::PERMANENT_REDIRECT {
+        let upload_complete = uploaded == file_size;
+        let server_expects_more_chunks = response.status() == StatusCode::PERMANENT_REDIRECT;
+        if upload_complete || !server_expects_more_chunks {
             return parse_uploaded_file_response(response).await;
         }
     }
@@ -363,6 +389,23 @@ where
     Err(DriveError::InvalidResponse(
         "resumable upload completed without a final response".into(),
     ))
+}
+
+async fn read_upload_chunk(
+    file: &mut tokio::fs::File,
+    buffer: &mut [u8],
+) -> Result<usize, std::io::Error> {
+    let mut filled = 0;
+
+    while filled < buffer.len() {
+        let read = file.read(&mut buffer[filled..]).await?;
+        if read == 0 {
+            break;
+        }
+        filled += read;
+    }
+
+    Ok(filled)
 }
 
 async fn initiate_resumable_upload<S: AccountStore>(
@@ -374,10 +417,10 @@ async fn initiate_resumable_upload<S: AccountStore>(
     let response = client
         .send_with_scopes(
             client
-                .post(options.upload_url("resumable")?)
-                .header(CONTENT_TYPE, "application/json; charset=UTF-8")
-                .header("X-Upload-Content-Type", DEFAULT_UPLOAD_MIME_TYPE)
-                .header("X-Upload-Content-Length", file_size.to_string())
+                .post(options.upload_url(UploadType::Resumable)?)
+                .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
+                .header(UPLOAD_CONTENT_TYPE_HEADER, DEFAULT_UPLOAD_MIME_TYPE)
+                .header(UPLOAD_CONTENT_LENGTH_HEADER, file_size.to_string())
                 .json(&metadata),
             DRIVE_SCOPES,
         )
