@@ -298,6 +298,14 @@ impl Match for BodyContains {
     }
 }
 
+struct BodyLength(usize);
+
+impl Match for BodyLength {
+    fn matches(&self, request: &Request) -> bool {
+        request.body.len() == self.0
+    }
+}
+
 #[tokio::test]
 async fn upload_small_file_uses_multipart_upload_and_returns_drive_location() {
     let server = MockServer::start().await;
@@ -385,6 +393,7 @@ async fn upload_large_file_uses_resumable_upload_chunks() {
         .and(path("/upload-session"))
         .and(header("authorization", "Bearer drive-access"))
         .and(header("content-range", "bytes 0-5242879/5242883"))
+        .and(BodyLength(RESUMABLE_CHUNK_SIZE_BYTES))
         .respond_with(ResponseTemplate::new(308))
         .expect(1)
         .mount(&server)
@@ -393,6 +402,7 @@ async fn upload_large_file_uses_resumable_upload_chunks() {
         .and(path("/upload-session"))
         .and(header("authorization", "Bearer drive-access"))
         .and(header("content-range", "bytes 5242880-5242882/5242883"))
+        .and(BodyLength(3))
         .and(BodyContains(b"end"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "large-file-123",
