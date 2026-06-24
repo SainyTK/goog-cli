@@ -5,7 +5,7 @@ pub use error::DriveError;
 use bytes::Bytes;
 use futures_util::{stream, StreamExt};
 use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, LOCATION};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use reqwest::{Body, Response, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -350,15 +350,15 @@ where
     let mut uploaded = 0_u64;
 
     while uploaded < file_size {
-        let read = next_resumable_chunk_size(uploaded, file_size);
+        let chunk_size = next_resumable_chunk_size(uploaded, file_size);
         let start = uploaded;
-        let end = uploaded + read as u64 - 1;
-        let body = resumable_chunk_body(&options.path, start, read).await?;
+        let end = uploaded + chunk_size as u64 - 1;
+        let body = resumable_chunk_body(&options.path, start, chunk_size).await?;
         let response = client
             .send_with_scopes(
                 client
                     .put(session_uri.as_str())
-                    .header(CONTENT_LENGTH, read.to_string())
+                    .header(CONTENT_LENGTH, chunk_size.to_string())
                     .header(CONTENT_RANGE, format!("bytes {start}-{end}/{file_size}"))
                     .body(body),
                 DRIVE_SCOPES,
@@ -366,7 +366,7 @@ where
             .await
             .map_err(DriveError::Auth)?;
 
-        uploaded += read as u64;
+        uploaded += chunk_size as u64;
         progress(uploaded);
 
         let upload_complete = uploaded == file_size;
@@ -387,7 +387,7 @@ fn next_resumable_chunk_size(uploaded: u64, file_size: u64) -> usize {
 }
 
 async fn resumable_chunk_body(
-    path: &std::path::Path,
+    path: &Path,
     start: u64,
     length: usize,
 ) -> Result<Body, DriveError> {
