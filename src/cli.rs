@@ -34,6 +34,11 @@ pub enum Command {
         #[command(subcommand)]
         command: DocsCommand,
     },
+    /// Interact with GoogleMail
+    Mail {
+        #[command(subcommand)]
+        command: MailCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -202,5 +207,14 @@ Example:
         /// Path to a full documents.batchUpdate JSON request body, or - for stdin
         #[arg(long)]
         requests: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MailCommand {
+    /// Fetch a raw GoogleMail Message
+    Read {
+        /// GoogleMail Message ID to fetch
+        message_id: String,
     },
 }

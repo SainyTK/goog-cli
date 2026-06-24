@@ -1,7 +1,9 @@
 use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
-use crate::cli::{AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand};
+use crate::cli::{
+    AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand, MailCommand,
+};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("goog").chain(args.iter().copied()))
@@ -473,6 +475,28 @@ fn docs_get_accepts_global_account_flag() {
     ])
     .unwrap();
     assert_eq!(cli.account.as_deref(), Some("docs@example.com"));
+}
+
+#[test]
+fn mail_read_with_message_id() {
+    let cli = parse(&["mail", "read", "message-123"]).unwrap();
+    match cli.command {
+        Command::Mail {
+            command: MailCommand::Read { message_id },
+        } => assert_eq!(message_id, "message-123"),
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_read_requires_message_id() {
+    assert!(parse(&["mail", "read"]).is_err());
+}
+
+#[test]
+fn mail_read_accepts_global_account_flag() {
+    let cli = parse(&["mail", "read", "message-123", "--account", "mail@example.com"]).unwrap();
+    assert_eq!(cli.account.as_deref(), Some("mail@example.com"));
 }
 
 #[test]
