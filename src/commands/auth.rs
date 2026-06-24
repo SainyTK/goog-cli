@@ -12,8 +12,8 @@ use crate::auth::list::{render_ndjson, render_table, rows_from_config};
 use crate::auth::login::{
     build_authorize_url, exchange_code, fetch_email, poll_device_token,
     render_device_authorization_prompt, request_device_authorization, random_state,
-    LoopbackServer, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL, GOOGLE_DEVICE_CODE_URL,
-    GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL,
+    LoopbackServer, DEFAULT_DEVICE_LOGIN_SCOPES, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL,
+    GOOGLE_DEVICE_CODE_URL, GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL,
 };
 use crate::auth::setup::parse_client_secret_file;
 use crate::cli::AuthCommand;
@@ -32,6 +32,8 @@ Setting up your OAuth App. Follow these steps in the Google Cloud Console:
   5. Go to \"APIs & Services\" > \"Credentials\".
   6. Click \"Create Credentials\" > \"OAuth client ID\".
   7. Choose \"Desktop app\" as the application type.
+     - If you need `goog auth login --no-browser`, choose
+       \"TVs and Limited Input devices\" instead.
   8. Click \"Create\", then download the JSON file (client_secret_*.json).
 
 Enter the path to the downloaded file below.
@@ -156,7 +158,7 @@ fn perform_device_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -
         let authorization = request_device_authorization(
             GOOGLE_DEVICE_CODE_URL,
             &oauth_app.client_id,
-            DEFAULT_LOGIN_SCOPES,
+            DEFAULT_DEVICE_LOGIN_SCOPES,
         )
         .await?;
 
