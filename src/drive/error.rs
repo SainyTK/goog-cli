@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum DriveError {
     #[error("file not found: {id}")]
@@ -9,5 +10,5 @@ pub enum DriveError {
     PermissionDenied { id: String },
 
     #[error("auth error: {0}")]
-    Auth(#[from] goog_auth::error::AuthError),
+    Auth(#[from] crate::auth::error::AuthError),
 }

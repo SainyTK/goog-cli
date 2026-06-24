@@ -220,28 +220,12 @@ dependencies = [
  "anyhow",
  "clap",
  "dialoguer",
- "goog-auth",
- "goog-drive",
-]
-
-[[package]]
-name = "goog-auth"
-version = "0.1.0"
-dependencies = [
  "dirs",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
  "toml",
-]
-
-[[package]]
-name = "goog-drive"
-version = "0.1.0"
-dependencies = [
- "goog-auth",
- "thiserror",
 ]
 
 [[package]]

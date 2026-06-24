@@ -1,5 +1,7 @@
+mod auth;
 mod cli;
 mod commands;
+mod drive;
 
 use clap::Parser;
 

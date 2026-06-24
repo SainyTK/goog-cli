@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::error::AuthError;
+use super::error::AuthError;
 
 #[derive(Debug, Deserialize)]
 struct ClientSecretFile {

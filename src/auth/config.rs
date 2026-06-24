@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::AuthError;
+use super::error::AuthError;
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Config {
