@@ -22,6 +22,10 @@ pub const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const GOOGLE_USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 
 const GOOGLE_DEVICE_AUTH_CLIENT_TYPE: &str = "TVs and Limited Input devices";
+const GOOGLE_DEVICE_AUTH_SETUP_COMMAND: &str = concat!(
+    "Create a new OAuth client of that type, download its JSON, then run ",
+    "`goog auth setup --client-secret-file <path>` with that file."
+);
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_DEVICE_POLL_INTERVAL_SECS: u64 = 5;
 const SLOW_DOWN_INTERVAL_SECS: u64 = 5;
@@ -202,18 +206,20 @@ fn describe_device_authorization_error(body: &str) -> String {
     };
 
     if error.error == "invalid_client" {
-        let description = error
-            .error_description
-            .unwrap_or_else(|| "Invalid client".to_string());
-        return format!(
-            "{description}. Google device authorization requires an OAuth client of type \"{GOOGLE_DEVICE_AUTH_CLIENT_TYPE}\"."
-        );
+        return device_client_type_guidance(error.error_description);
     }
 
     match error.error_description {
         Some(description) => format!("{}: {description}", error.error),
         None => error.error,
     }
+}
+
+fn device_client_type_guidance(error_description: Option<String>) -> String {
+    let description = error_description.unwrap_or_else(|| "Invalid client".to_string());
+    format!(
+        "{description}. Google device authorization requires an OAuth client of type \"{GOOGLE_DEVICE_AUTH_CLIENT_TYPE}\". {GOOGLE_DEVICE_AUTH_SETUP_COMMAND}"
+    )
 }
 
 pub fn render_device_authorization_prompt(authorization: &DeviceAuthorization) -> String {
@@ -287,6 +293,9 @@ async fn device_poll_outcome(response: reqwest::Response) -> Result<DevicePollOu
             "device authorization was denied by the user".into(),
         )),
         "expired_token" => Err(AuthError::OAuthFlow("device authorization timed out".into())),
+        "invalid_client" => Err(AuthError::OAuthFlow(device_client_type_guidance(
+            error_description,
+        ))),
         error => {
             let description = error_description.unwrap_or(body);
             Err(AuthError::TokenExchange(format!(
@@ -513,6 +522,7 @@ mod tests {
             AuthError::OAuthFlow(msg) => {
                 assert!(msg.contains("Invalid client type"));
                 assert!(msg.contains("TVs and Limited Input devices"));
+                assert!(msg.contains("goog auth setup"));
             }
             other => panic!("expected OAuthFlow, got {other:?}"),
         }
@@ -605,6 +615,39 @@ mod tests {
 
         match err {
             AuthError::OAuthFlow(msg) => assert!(msg.contains("denied")),
+            other => panic!("expected OAuthFlow, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn poll_device_token_explains_invalid_client_type() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": "invalid_client",
+                "error_description": "Invalid client type.",
+            })))
+            .mount(&server)
+            .await;
+
+        let err = poll_device_token(
+            &format!("{}/token", server.uri()),
+            "client-123",
+            "shh",
+            "device-code-123",
+            0,
+            60,
+        )
+        .await
+        .unwrap_err();
+
+        match err {
+            AuthError::OAuthFlow(msg) => {
+                assert!(msg.contains("Invalid client type"));
+                assert!(msg.contains("TVs and Limited Input devices"));
+                assert!(msg.contains("goog auth setup"));
+            }
             other => panic!("expected OAuthFlow, got {other:?}"),
         }
     }
