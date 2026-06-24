@@ -217,10 +217,49 @@ Example:
 
 #[derive(Debug, Subcommand)]
 pub enum MailCommand {
+    /// List recent Inbox GoogleMail Messages
+    List {
+        /// Maximum number of messages to return (default: 10)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Search GoogleMail Messages with a Gmail Mailbox Query
+    Search {
+        /// Gmail Mailbox Query to pass through to GoogleMail
+        query: String,
+        /// Maximum number of messages to return (default: 10)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Fetch a raw GoogleMail Message
     Read {
         /// GoogleMail Message ID to fetch
         message_id: String,
+    },
+    /// Manage GoogleMail Attachments
+    Attachment {
+        #[command(subcommand)]
+        command: MailAttachmentCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MailAttachmentCommand {
+    /// Download a GoogleMail Attachment
+    Download {
+        /// GoogleMail Message ID containing the Attachment
+        message_id: String,
+        /// GoogleMail Attachment ID to download
+        attachment_id: String,
+        /// Destination path (defaults to Attachment filename)
+        #[arg(long, short)]
+        output: Option<String>,
     },
 }
 

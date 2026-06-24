@@ -2,8 +2,8 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand, MailCommand,
-    SheetsCommand,
+    AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand,
+    MailAttachmentCommand, MailCommand, SheetsCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -479,6 +479,77 @@ fn docs_get_accepts_global_account_flag() {
 }
 
 #[test]
+fn mail_list_defaults_to_table_with_no_explicit_limit() {
+    let cli = parse(&["mail", "list"]).unwrap();
+    match cli.command {
+        Command::Mail {
+            command: MailCommand::List { limit, json },
+        } => {
+            assert!(limit.is_none());
+            assert!(!json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_list_accepts_limit_and_json() {
+    let cli = parse(&["mail", "list", "--limit", "25", "--json"]).unwrap();
+    match cli.command {
+        Command::Mail {
+            command: MailCommand::List { limit, json },
+        } => {
+            assert_eq!(limit, Some(25));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_list_does_not_accept_all() {
+    assert!(parse(&["mail", "list", "--all"]).is_err());
+}
+
+#[test]
+fn mail_search_with_query_limit_and_json() {
+    let cli = parse(&[
+        "mail",
+        "search",
+        "from:alice@example.com",
+        "--limit",
+        "25",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Mail {
+            command:
+                MailCommand::Search {
+                    query,
+                    limit,
+                    json,
+                },
+        } => {
+            assert_eq!(query, "from:alice@example.com");
+            assert_eq!(limit, Some(25));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_search_requires_query() {
+    assert!(parse(&["mail", "search"]).is_err());
+}
+
+#[test]
+fn mail_search_does_not_accept_all() {
+    assert!(parse(&["mail", "search", "has:attachment", "--all"]).is_err());
+}
+
+#[test]
 fn mail_read_with_message_id() {
     let cli = parse(&["mail", "read", "message-123"]).unwrap();
     match cli.command {
@@ -498,6 +569,68 @@ fn mail_read_requires_message_id() {
 fn mail_read_accepts_global_account_flag() {
     let cli = parse(&["mail", "read", "message-123", "--account", "mail@example.com"]).unwrap();
     assert_eq!(cli.account.as_deref(), Some("mail@example.com"));
+}
+
+#[test]
+fn mail_attachment_download_with_explicit_output() {
+    let cli = parse(&[
+        "mail",
+        "attachment",
+        "download",
+        "message-123",
+        "attachment-456",
+        "--output",
+        "report.pdf",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Mail {
+            command:
+                MailCommand::Attachment {
+                    command:
+                        MailAttachmentCommand::Download {
+                            message_id,
+                            attachment_id,
+                            output,
+                        },
+                },
+        } => {
+            assert_eq!(message_id, "message-123");
+            assert_eq!(attachment_id, "attachment-456");
+            assert_eq!(output.as_deref(), Some("report.pdf"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_attachment_download_output_is_optional() {
+    let cli = parse(&[
+        "mail",
+        "attachment",
+        "download",
+        "message-123",
+        "attachment-456",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Mail {
+            command:
+                MailCommand::Attachment {
+                    command:
+                        MailAttachmentCommand::Download {
+                            message_id,
+                            attachment_id,
+                            output,
+                        },
+                },
+        } => {
+            assert_eq!(message_id, "message-123");
+            assert_eq!(attachment_id, "attachment-456");
+            assert!(output.is_none());
+        }
+        _ => panic!("unexpected parse result"),
+    }
 }
 
 #[test]

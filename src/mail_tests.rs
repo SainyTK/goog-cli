@@ -1,7 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use chrono::{Duration, Utc};
-use wiremock::matchers::{body_string_contains, header, method, path};
+use wiremock::matchers::{body_string_contains, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
@@ -10,6 +10,31 @@ use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 use crate::mail::*;
+
+static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
+
+struct CurrentDirGuard {
+    original: std::path::PathBuf,
+    _lock: MutexGuard<'static, ()>,
+}
+
+impl CurrentDirGuard {
+    fn enter(path: impl AsRef<std::path::Path>) -> Self {
+        let lock = CURRENT_DIR_LOCK.lock().unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(path).unwrap();
+        Self {
+            original,
+            _lock: lock,
+        }
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.original).unwrap();
+    }
+}
 
 fn test_config() -> Config {
     Config {
@@ -70,6 +95,257 @@ impl AuthorizationCodeFlow for StaticAuthorizationCodeFlow {
             code: "mail-code".into(),
         })
     }
+}
+
+#[tokio::test]
+async fn list_messages_defaults_to_inbox_and_hydrates_summary_metadata() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "10"))
+        .and(query_param("labelIds", "INBOX"))
+        .and(query_param("fields", "messages(id),nextPageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [
+                { "id": "message-1" },
+                { "id": "message-2" }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .and(query_param("format", "metadata"))
+        .and(query_param("metadataHeaders", "Date"))
+        .and(query_param("metadataHeaders", "From"))
+        .and(query_param("metadataHeaders", "Subject"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "message-1",
+            "payload": {
+                "headers": [
+                    { "name": "Date", "value": "Wed, 24 Jun 2026 10:00:00 +0000" },
+                    { "name": "From", "value": "Alice <alice@example.com>" },
+                    { "name": "Subject", "value": "Roadmap" }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-2"))
+        .and(query_param("format", "metadata"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "message-2",
+            "payload": {
+                "headers": [
+                    { "name": "date", "value": "Wed, 24 Jun 2026 11:00:00 +0000" },
+                    { "name": "from", "value": "Bob <bob@example.com>" },
+                    { "name": "subject", "value": "Status" }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListMessagesOptions::inbox(10)
+        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+
+    let summaries = list_messages(&client, &options).await.unwrap();
+
+    assert_eq!(
+        summaries,
+        vec![
+            MessageSummary {
+                id: "message-1".into(),
+                date: "Wed, 24 Jun 2026 10:00:00 +0000".into(),
+                from: "Alice <alice@example.com>".into(),
+                subject: "Roadmap".into(),
+            },
+            MessageSummary {
+                id: "message-2".into(),
+                date: "Wed, 24 Jun 2026 11:00:00 +0000".into(),
+                from: "Bob <bob@example.com>".into(),
+                subject: "Status".into(),
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn search_messages_passes_mailbox_query_through() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "25"))
+        .and(query_param("q", "from:alice@example.com has:attachment"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [
+                { "id": "message-1" }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .and(query_param("format", "metadata"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "message-1",
+            "payload": {
+                "headers": [
+                    { "name": "Date", "value": "Wed, 24 Jun 2026 10:00:00 +0000" },
+                    { "name": "From", "value": "Alice <alice@example.com>" },
+                    { "name": "Subject", "value": "Roadmap" }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListMessagesOptions::search("from:alice@example.com has:attachment", 25)
+        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+
+    let summaries = list_messages(&client, &options).await.unwrap();
+
+    assert_eq!(summaries[0].id, "message-1");
+}
+
+#[tokio::test]
+async fn download_attachment_decodes_base64url_to_explicit_output_path() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/gmail/v1/users/me/messages/message-1/attachments/attachment-1",
+        ))
+        .and(header("authorization", "Bearer mail-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": "aGVsbG8gbWFpbA"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("report.txt");
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DownloadAttachmentOptions::new("message-1", "attachment-1")
+        .with_output(output.clone())
+        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+
+    let downloaded = download_attachment(&client, &options).await.unwrap();
+
+    assert_eq!(downloaded.path, output);
+    assert_eq!(downloaded.bytes, 10);
+    assert_eq!(std::fs::read(downloaded.path).unwrap(), b"hello mail");
+}
+
+#[tokio::test]
+async fn download_attachment_uses_message_part_filename_when_output_is_omitted() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .and(query_param(
+            "fields",
+            "payload(filename,body/attachmentId,parts(filename,body/attachmentId,parts))",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "report.txt",
+                        "body": { "attachmentId": "attachment-1" }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/gmail/v1/users/me/messages/message-1/attachments/attachment-1",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": "cmVwb3J0"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DownloadAttachmentOptions::new("message-1", "attachment-1")
+        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+
+    let downloaded = download_attachment(&client, &options).await.unwrap();
+
+    assert_eq!(
+        downloaded.path.canonicalize().unwrap(),
+        temp.path().join("report.txt").canonicalize().unwrap()
+    );
+    assert_eq!(std::fs::read(downloaded.path).unwrap(), b"report");
+}
+
+#[tokio::test]
+async fn download_attachment_fails_when_destination_exists() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("existing.txt");
+    std::fs::write(&output, "keep").unwrap();
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        DownloadAttachmentOptions::new("message-1", "attachment-1").with_output(output.clone());
+
+    let err = download_attachment(&client, &options).await.unwrap_err();
+
+    match err {
+        MailError::Io(io) => assert_eq!(io.kind(), std::io::ErrorKind::AlreadyExists),
+        _ => panic!("unexpected error: {err}"),
+    }
+    assert_eq!(std::fs::read_to_string(output).unwrap(), "keep");
+}
+
+#[tokio::test]
+async fn download_attachment_requires_output_when_filename_is_missing() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "",
+                        "body": { "attachmentId": "attachment-1" }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DownloadAttachmentOptions::new("message-1", "attachment-1")
+        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+
+    let err = download_attachment(&client, &options).await.unwrap_err();
+
+    assert!(matches!(err, MailError::MissingAttachmentFilename));
 }
 
 #[tokio::test]
