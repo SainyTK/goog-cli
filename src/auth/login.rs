@@ -22,7 +22,12 @@ pub const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const GOOGLE_USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 
 const GOOGLE_DEVICE_AUTH_CLIENT_TYPE: &str = "TVs and Limited Input devices";
+const GOOGLE_DEVICE_AUTH_SETUP_COMMAND: &str = concat!(
+    "Create a new OAuth client of that type, download its JSON, then run ",
+    "`goog auth setup --client-secret-file <path>` with that file."
+);
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
+const INVALID_CLIENT_ERROR: &str = "invalid_client";
 const DEFAULT_DEVICE_POLL_INTERVAL_SECS: u64 = 5;
 const SLOW_DOWN_INTERVAL_SECS: u64 = 5;
 
@@ -239,23 +244,29 @@ pub async fn request_device_authorization(
 }
 
 fn describe_device_authorization_error(body: &str) -> String {
-    let Ok(error) = serde_json::from_str::<OAuthErrorResponse>(body) else {
+    let Some(error) = parse_oauth_error(body) else {
         return body.to_string();
     };
 
-    if error.error == "invalid_client" {
-        let description = error
-            .error_description
-            .unwrap_or_else(|| "Invalid client".to_string());
-        return format!(
-            "{description}. Google device authorization requires an OAuth client of type \"{GOOGLE_DEVICE_AUTH_CLIENT_TYPE}\"."
-        );
+    if error.error == INVALID_CLIENT_ERROR {
+        return device_client_type_guidance(error.error_description.as_deref());
     }
 
     match error.error_description {
         Some(description) => format!("{}: {description}", error.error),
         None => error.error,
     }
+}
+
+fn parse_oauth_error(body: &str) -> Option<OAuthErrorResponse> {
+    serde_json::from_str(body).ok()
+}
+
+fn device_client_type_guidance(error_description: Option<&str>) -> String {
+    let description = error_description.unwrap_or("Invalid client");
+    format!(
+        "{description}. Google device authorization requires an OAuth client of type \"{GOOGLE_DEVICE_AUTH_CLIENT_TYPE}\". {GOOGLE_DEVICE_AUTH_SETUP_COMMAND}"
+    )
 }
 
 pub fn render_device_authorization_prompt(authorization: &DeviceAuthorization) -> String {
@@ -315,13 +326,14 @@ pub async fn poll_device_token(
 async fn device_poll_outcome(response: reqwest::Response) -> Result<DevicePollOutcome, AuthError> {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    let token_error = serde_json::from_str::<OAuthErrorResponse>(&body)
-        .map_err(|_| AuthError::TokenExchange(format!("device token HTTP {status}: {body}")))?;
+    let error = parse_oauth_error(&body).ok_or_else(|| {
+        AuthError::TokenExchange(format!("device token HTTP {status}: {body}"))
+    })?;
 
     let OAuthErrorResponse {
         error,
         error_description,
-    } = token_error;
+    } = error;
 
     match error.as_str() {
         "authorization_pending" => Ok(DevicePollOutcome::Continue),
@@ -332,6 +344,9 @@ async fn device_poll_outcome(response: reqwest::Response) -> Result<DevicePollOu
         "expired_token" => Err(AuthError::OAuthFlow(
             "device authorization timed out".into(),
         )),
+        INVALID_CLIENT_ERROR => Err(AuthError::OAuthFlow(device_client_type_guidance(
+            error_description.as_deref(),
+        ))),
         error => {
             let description = error_description.unwrap_or(body);
             Err(AuthError::TokenExchange(format!(
