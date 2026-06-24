@@ -22,7 +22,7 @@ const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
 pub(super) const DRIVE_FILES_FIELDS: &str =
     "nextPageToken,files(id,name,parents,mimeType,modifiedTime)";
-const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
+pub(crate) const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
@@ -189,6 +189,7 @@ pub struct ListFilesOptions {
 enum ListFilesMode {
     Files,
     Folders,
+    Browse,
 }
 
 impl ListFilesOptions {
@@ -205,6 +206,13 @@ impl ListFilesOptions {
     pub fn folders(page_size: u32) -> Self {
         Self {
             mode: ListFilesMode::Folders,
+            ..Self::new(page_size)
+        }
+    }
+
+    pub fn browse(page_size: u32) -> Self {
+        Self {
+            mode: ListFilesMode::Browse,
             ..Self::new(page_size)
         }
     }
@@ -230,7 +238,7 @@ impl ListFilesOptions {
             let mut query = url.query_pairs_mut();
             query
                 .append_pair("pageSize", &self.page_size.to_string())
-                .append_pair("orderBy", "modifiedTime desc")
+                .append_pair("orderBy", self.mode.order_by())
                 .append_pair("fields", DRIVE_FILES_FIELDS)
                 .append_pair("q", &self.query());
             if let Some(page_token) = &self.page_token {
@@ -241,10 +249,13 @@ impl ListFilesOptions {
     }
 
     fn query(&self) -> String {
-        let mime_type_filter = self.mode.mime_type_filter();
-        match self.parent_filter() {
-            Some(parent_filter) => format!("{parent_filter} and {mime_type_filter}"),
-            None => mime_type_filter,
+        match (self.parent_filter(), self.mode.mime_type_filter()) {
+            (Some(parent_filter), Some(mime_type_filter)) => {
+                format!("{parent_filter} and {mime_type_filter}")
+            }
+            (Some(parent_filter), None) => parent_filter,
+            (None, Some(mime_type_filter)) => mime_type_filter,
+            (None, None) => String::new(),
         }
     }
 
@@ -252,16 +263,25 @@ impl ListFilesOptions {
         match (self.mode, self.folder.as_deref()) {
             (_, Some(folder)) => Some(parent_query_filter(folder)),
             (ListFilesMode::Folders, None) => Some(parent_query_filter("root")),
+            (ListFilesMode::Browse, None) => Some(parent_query_filter("root")),
             (ListFilesMode::Files, None) => None,
         }
     }
 }
 
 impl ListFilesMode {
-    fn mime_type_filter(self) -> String {
+    fn mime_type_filter(self) -> Option<String> {
         match self {
-            Self::Files => format!("mimeType != '{DRIVE_FOLDER_MIME_TYPE}'"),
-            Self::Folders => format!("mimeType = '{DRIVE_FOLDER_MIME_TYPE}'"),
+            Self::Files => Some(format!("mimeType != '{DRIVE_FOLDER_MIME_TYPE}'")),
+            Self::Folders => Some(format!("mimeType = '{DRIVE_FOLDER_MIME_TYPE}'")),
+            Self::Browse => None,
+        }
+    }
+
+    fn order_by(self) -> &'static str {
+        match self {
+            Self::Browse => "name",
+            Self::Files | Self::Folders => "modifiedTime desc",
         }
     }
 }

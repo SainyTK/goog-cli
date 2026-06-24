@@ -149,6 +149,38 @@ fn drive_list_with_flags() {
 }
 
 #[test]
+fn drive_ls_with_flags() {
+    let cli = parse(&[
+        "drive",
+        "ls",
+        "--limit",
+        "100",
+        "--all",
+        "--folder",
+        "folder123",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Drive {
+            command:
+                DriveCommand::Ls {
+                    limit,
+                    all,
+                    folder,
+                    json,
+                },
+        } => {
+            assert_eq!(limit, Some(100));
+            assert!(all);
+            assert_eq!(folder.as_deref(), Some("folder123"));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn drive_folder_list_with_flags() {
     let cli = parse(&[
         "drive",
