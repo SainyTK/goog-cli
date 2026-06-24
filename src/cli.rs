@@ -143,6 +143,19 @@ pub enum DriveFolderCommand {
 #[derive(Debug, Subcommand)]
 pub enum DocsCommand {
     /// Fetch a raw Google Docs Document
+    #[command(after_long_help = "Output shape:
+  Emits the Google Docs API Document JSON unchanged.
+  Top-level metadata includes documentId, title, revisionId, and documentStyle.
+  Body content is under body.content as ordered structural elements.
+  Common structural elements include paragraph, table, sectionBreak, and tableOfContents.
+  Paragraph text is split across paragraph.elements[].textRun.content; indexes are UTF-16 positions used by batch-update requests.
+  Tab-aware documents can also return tabs[].documentTab.body.content when --include-tabs-content is set.
+
+Tips:
+  Use --fields to fetch only the paths you need, for example:
+    goog docs get DOCUMENT_ID --fields 'title,body(content(paragraph(elements(textRun(content)))))'
+  Use jq to inspect text runs:
+    goog docs get DOCUMENT_ID | jq -r '.body.content[]?.paragraph?.elements[]?.textRun?.content // empty'")]
     Get {
         /// Google Docs Document ID to fetch
         document_id: String,
@@ -154,6 +167,35 @@ pub enum DocsCommand {
         include_tabs_content: bool,
     },
     /// Apply a raw Google Docs Batch Update request body
+    #[command(after_long_help = "Request shape:
+  --requests reads the full Google Docs documents.batchUpdate JSON body, not only the requests array.
+  The body usually contains requests: an ordered array of mutation objects.
+  It may also contain writeControl when you need revision-aware writes.
+  Locations and ranges use the UTF-16 indexes returned by docs get.
+
+Common request types:
+  Text: insertText, replaceAllText, deleteContentRange
+  Text and paragraph style: updateTextStyle, updateParagraphStyle, createParagraphBullets, deleteParagraphBullets
+  Tables and images: insertTable, insertTableRow, insertTableColumn, deleteTableRow, deleteTableColumn, insertInlineImage, replaceImage
+  Document structure: insertPageBreak, insertSectionBreak, updateDocumentStyle, updateSectionStyle, createHeader, createFooter, createFootnote
+  Tabs: addDocumentTab, deleteTab, updateDocumentTabProperties
+
+Full request type reference:
+  https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/request
+
+Example:
+  goog docs batch-update DOCUMENT_ID --requests - <<'JSON'
+  {
+    \"requests\": [
+      {
+        \"insertText\": {
+          \"location\": { \"index\": 1 },
+          \"text\": \"Hello from goog-cli\\n\"
+        }
+      }
+    ]
+  }
+  JSON")]
     BatchUpdate {
         /// Google Docs Document ID to update
         document_id: String,

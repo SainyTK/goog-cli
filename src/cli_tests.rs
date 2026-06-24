@@ -7,6 +7,11 @@ fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("goog").chain(args.iter().copied()))
 }
 
+fn help(args: &[&str]) -> String {
+    let err = parse(args).unwrap_err();
+    err.to_string()
+}
+
 #[test]
 fn auth_setup_no_flags() {
     let cli = parse(&["auth", "setup"]).unwrap();
@@ -182,12 +187,13 @@ fn drive_list_with_flags() {
     .unwrap();
     match cli.command {
         Command::Drive {
-            command: DriveCommand::List {
-                limit,
-                all,
-                folder,
-                json,
-            },
+            command:
+                DriveCommand::List {
+                    limit,
+                    all,
+                    folder,
+                    json,
+                },
         } => {
             assert_eq!(limit, Some(100));
             assert!(all);
@@ -425,13 +431,47 @@ fn docs_batch_update_requires_requests() {
 }
 
 #[test]
+fn docs_get_help_explains_raw_document_shape() {
+    let help = help(&["docs", "get", "--help"]);
+
+    assert!(help.contains("Emits the Google Docs API Document JSON unchanged."));
+    assert!(help.contains("body.content as ordered structural elements"));
+    assert!(help.contains("paragraph.elements[].textRun.content"));
+    assert!(help.contains("--include-tabs-content"));
+}
+
+#[test]
+fn docs_batch_update_help_explains_request_shape() {
+    let help = help(&["docs", "batch-update", "--help"]);
+
+    assert!(help.contains("--requests reads the full Google Docs documents.batchUpdate JSON body"));
+    assert!(help.contains("not only the requests array"));
+    assert!(help.contains("writeControl"));
+    assert!(help.contains("Common request types:"));
+    assert!(help.contains("insertText"));
+    assert!(help.contains("updateParagraphStyle"));
+    assert!(help.contains("insertTable"));
+    assert!(help.contains("addDocumentTab"));
+    assert!(help
+        .contains("developers.google.com/workspace/docs/api/reference/rest/v1/documents/request"));
+    assert!(help.contains("location"));
+}
+
+#[test]
 fn docs_get_does_not_accept_output_flag() {
     assert!(parse(&["docs", "get", "document-123", "--output", "document.json"]).is_err());
 }
 
 #[test]
 fn docs_get_accepts_global_account_flag() {
-    let cli = parse(&["docs", "get", "document-123", "--account", "docs@example.com"]).unwrap();
+    let cli = parse(&[
+        "docs",
+        "get",
+        "document-123",
+        "--account",
+        "docs@example.com",
+    ])
+    .unwrap();
     assert_eq!(cli.account.as_deref(), Some("docs@example.com"));
 }
 
