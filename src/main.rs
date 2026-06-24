@@ -1,6 +1,8 @@
 use clap::Parser;
 
 use goog::{
+    auth::account::KeyringStore,
+    auth::client::AuthClient,
     auth::config::{load_config, resolve_account},
     cli::{Cli, Command},
     commands,
@@ -19,6 +21,15 @@ fn run(cli: Cli) -> anyhow::Result<()> {
 
     match cli.command {
         Command::Auth { command } => commands::auth::run(command, resolved_account),
-        Command::Drive { command } => commands::drive::run(command, resolved_account),
+        Command::Drive { command } => {
+            let output_json_by_default = config
+                .settings
+                .as_ref()
+                .and_then(|settings| settings.output.as_deref())
+                == Some("json");
+            let store = KeyringStore;
+            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
+            commands::drive::run(command, &client, output_json_by_default, cli.quiet)
+        }
     }
 }
