@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
 use wiremock::matchers::{header, method, path, query_param};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
 use crate::auth::client::AuthClient;
@@ -37,6 +37,14 @@ fn mail_token() -> Token {
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     store.save_token("alice@example.com", &mail_token()).unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
+}
+
+struct MissingQueryParam(&'static str);
+
+impl Match for MissingQueryParam {
+    fn matches(&self, request: &Request) -> bool {
+        !request.url.query_pairs().any(|(name, _)| name == self.0)
+    }
 }
 
 #[tokio::test]
@@ -168,6 +176,67 @@ async fn run_search_emits_ndjson_summary_rows() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"messageId\":\"message-1\",\"date\":\"Wed, 24 Jun 2026 10:00:00 +0000\",\"from\":\"Alice <alice@example.com>\",\"subject\":\"Roadmap\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "10"))
+        .and(query_param("q", "from:alice@example.com"))
+        .and(query_param("fields", "messages(id),nextPageToken"))
+        .and(MissingQueryParam("labelIds"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [
+                { "id": "message-1" }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .and(query_param("format", "metadata"))
+        .and(query_param("metadataHeaders", "Date"))
+        .and(query_param("metadataHeaders", "From"))
+        .and(query_param("metadataHeaders", "Subject"))
+        .and(query_param("fields", "id,payload(headers(name,value))"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "message-1",
+            "payload": {
+                "headers": [
+                    { "name": "Date", "value": "Wed, 24 Jun 2026 10:00:00 +0000" },
+                    { "name": "From", "value": "Alice <alice@example.com>" },
+                    { "name": "Subject", "value": "Roadmap" }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_search_to(
+        &client,
+        "from:alice@example.com".into(),
+        None,
+        false,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "DATE\tFROM\tSUBJECT\tMESSAGE ID\nWed, 24 Jun 2026 10:00:00 +0000\tAlice <alice@example.com>\tRoadmap\tmessage-1\n"
     );
 }
 
