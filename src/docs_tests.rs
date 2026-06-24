@@ -173,10 +173,10 @@ async fn get_document_omits_include_tabs_content_by_default() {
 
     let requests = server.received_requests().await.unwrap();
     let request = requests.first().unwrap();
-    assert!(request
+    assert!(!request
         .url
         .query_pairs()
-        .all(|(name, _)| name != "includeTabsContent"));
+        .any(|(name, _)| name == "includeTabsContent"));
 }
 
 #[tokio::test]
