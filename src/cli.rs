@@ -63,6 +63,21 @@ pub enum AuthCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DriveCommand {
+    /// Browse files and folders in Google Drive
+    Ls {
+        /// Maximum number of items to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all items across all pages
+        #[arg(long)]
+        all: bool,
+        /// Drive folder ID to browse
+        #[arg(long)]
+        folder: Option<String>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// List files in Google Drive
     List {
         /// Maximum number of files to return (default: 50)

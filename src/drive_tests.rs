@@ -38,6 +38,25 @@ const DRIVE_FOLDER_PAGE_RESPONSE: &str = r#"{
     }
   ]
 }"#;
+const DRIVE_BROWSE_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "folder-456",
+      "name": "Projects",
+      "parents": ["root"],
+      "mimeType": "application/vnd.google-apps.folder",
+      "modifiedTime": "2026-06-24T11:15:00.000Z"
+    },
+    {
+      "id": "file-1",
+      "name": "Roadmap",
+      "parents": ["root"],
+      "mimeType": "application/vnd.google-apps.document",
+      "modifiedTime": "2026-06-24T10:15:00.000Z"
+    }
+  ]
+}"#;
 
 static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
 
@@ -234,6 +253,52 @@ async fn list_folders_can_filter_to_child_folders_inside_a_parent() {
     let page = list_files(&client, &options).await.unwrap();
 
     assert_eq!(page.files[0].id, "folder-456");
+}
+
+#[tokio::test]
+async fn browse_files_defaults_to_drive_root_without_mime_filter() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "name"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param("q", "'root' in parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ListFilesOptions::browse(50).with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "folder-456");
+    assert_eq!(page.files[1].id, "file-1");
+}
+
+#[tokio::test]
+async fn browse_files_can_filter_to_children_inside_a_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param("q", "'folder-123' in parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::browse(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    list_files(&client, &options).await.unwrap();
 }
 
 #[tokio::test]
