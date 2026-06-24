@@ -50,6 +50,26 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_auth_urls_for_tests(
+        mut self,
+        auth_url: impl Into<String>,
+        token_url: impl Into<String>,
+    ) -> Self {
+        self.auth_url = auth_url.into();
+        self.token_url = token_url.into();
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_authorization_code_flow_for_tests(
+        mut self,
+        authorization_code_flow: Box<dyn AuthorizationCodeFlow + 'a>,
+    ) -> Self {
+        self.authorization_code_flow = authorization_code_flow;
+        self
+    }
+
     pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
         self.http.request(method, url)
     }

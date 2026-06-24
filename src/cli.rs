@@ -27,6 +27,11 @@ pub enum Command {
         #[command(subcommand)]
         command: DriveCommand,
     },
+    /// Interact with Google Docs
+    Docs {
+        #[command(subcommand)]
+        command: DocsCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -112,5 +117,14 @@ pub enum DriveFolderCommand {
         /// Emit newline-delimited JSON
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsCommand {
+    /// Fetch a raw Google Docs Document
+    Get {
+        /// Google Docs Document ID to fetch
+        document_id: String,
     },
 }

@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::cli::{AuthCommand, Cli, Command, DriveCommand, DriveFolderCommand};
+use crate::cli::{AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("goog").chain(args.iter().copied()))
@@ -237,6 +237,28 @@ fn drive_upload_with_folder() {
         } => assert_eq!(folder.as_deref(), Some("folder123")),
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn docs_get_with_document_id() {
+    let cli = parse(&["docs", "get", "document-123"]).unwrap();
+    match cli.command {
+        Command::Docs {
+            command: DocsCommand::Get { document_id },
+        } => assert_eq!(document_id, "document-123"),
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn docs_get_does_not_accept_output_flag() {
+    assert!(parse(&["docs", "get", "document-123", "--output", "document.json"]).is_err());
+}
+
+#[test]
+fn docs_get_accepts_global_account_flag() {
+    let cli = parse(&["docs", "get", "document-123", "--account", "docs@example.com"]).unwrap();
+    assert_eq!(cli.account.as_deref(), Some("docs@example.com"));
 }
 
 #[test]
