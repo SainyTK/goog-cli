@@ -41,6 +41,21 @@ pub enum AuthError {
     #[error("token exchange failed: {0}")]
     TokenExchange(String),
 
+    #[error("token for account {email} was not found -- run `goog auth login` again")]
+    TokenNotFound { email: String },
+
+    #[error("no active account configured -- run `goog auth login` or pass `--account`")]
+    ActiveAccountNotConfigured,
+
+    #[error("token was revoked or expired: {0}")]
+    TokenRevoked(String),
+
+    #[error("request was unauthorized after token refresh: {0}")]
+    Unauthorized(String),
+
+    #[error("request cannot be retried after an authorization failure")]
+    RequestNotRetryable,
+
     #[error("network error: {0}")]
     Network(String),
 }
