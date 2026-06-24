@@ -1,6 +1,8 @@
 {
   "scripts": {
-    "sandcastle": "npx tsx .sandcastle/main.mts"
+    "sandcastle": "npx tsx .sandcastle/main.mts",
+    "typecheck": "cargo check",
+    "test": "cargo test"
   },
   "devDependencies": {
     "@ai-hero/sandcastle": "^0.10.0"
