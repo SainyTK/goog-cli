@@ -1,4 +1,5 @@
 use chrono::{Duration, Utc};
+use url::Url;
 use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -58,6 +59,34 @@ fn write_test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
+fn spreadsheets_url(server: &MockServer) -> String {
+    format!("{}/sheets/v4/spreadsheets", server.uri())
+}
+
+async fn received_url(server: &MockServer) -> Url {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap()
+        .url
+}
+
+fn query_value(url: &Url, name: &str) -> Option<String> {
+    url.query_pairs()
+        .find(|(query_name, _)| query_name == name)
+        .map(|(_, value)| value.into_owned())
+}
+
+fn query_values(url: &Url, name: &str) -> Vec<String> {
+    url.query_pairs()
+        .filter(|(query_name, _)| query_name == name)
+        .map(|(_, value)| value.into_owned())
+        .collect()
+}
+
 #[tokio::test]
 async fn run_get_prints_spreadsheet_json_to_stdout() {
     let server = MockServer::start().await;
@@ -77,7 +106,7 @@ async fn run_get_prints_spreadsheet_json_to_stdout() {
     let store = MemoryStore::default();
     let client = test_client(&store);
     let mut out = Vec::new();
-    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+    let spreadsheets_url = spreadsheets_url(&server);
 
     run_get_to(
         &client,
@@ -110,7 +139,7 @@ async fn run_get_returns_clear_error_for_not_found_response() {
     let store = MemoryStore::default();
     let client = test_client(&store);
     let mut out = Vec::new();
-    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+    let spreadsheets_url = spreadsheets_url(&server);
 
     let result = run_get_to(
         &client,
@@ -146,7 +175,7 @@ async fn run_values_get_prints_value_range_json_to_stdout() {
     let client = test_client(&store);
     let mut input = std::io::empty();
     let mut out = Vec::new();
-    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+    let spreadsheets_url = spreadsheets_url(&server);
 
     run_values_to(
         &client,
@@ -194,7 +223,7 @@ async fn run_values_batch_get_prints_batch_response_json_to_stdout() {
     let client = test_client(&store);
     let mut input = std::io::empty();
     let mut out = Vec::new();
-    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+    let spreadsheets_url = spreadsheets_url(&server);
 
     run_values_to(
         &client,
@@ -221,25 +250,18 @@ async fn run_values_batch_get_prints_batch_response_json_to_stdout() {
         )
     );
 
-    let requests = server.received_requests().await.unwrap();
-    let url = &requests[0].url;
+    let url = received_url(&server).await;
     assert!(url
         .path()
         .ends_with("/spreadsheets/spreadsheet-123/values/:batchGet"));
-    let ranges: Vec<_> = url
-        .query_pairs()
-        .filter(|(name, _)| name == "ranges")
-        .map(|(_, value)| value.into_owned())
-        .collect();
     assert_eq!(
-        ranges,
+        query_values(&url, "ranges"),
         vec!["Sheet1!A1:B2".to_string(), "Summary!A:A".to_string()]
     );
-    let render_option = url
-        .query_pairs()
-        .find(|(name, _)| name == "valueRenderOption")
-        .map(|(_, value)| value.into_owned());
-    assert_eq!(render_option.as_deref(), Some("FORMULA"));
+    assert_eq!(
+        query_value(&url, "valueRenderOption").as_deref(),
+        Some("FORMULA")
+    );
 }
 
 #[tokio::test]
@@ -267,7 +289,7 @@ async fn run_values_update_reads_values_from_file_and_prints_response_json() {
     let client = write_test_client(&store);
     let mut input = std::io::empty();
     let mut out = Vec::new();
-    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+    let spreadsheets_url = spreadsheets_url(&server);
 
     run_values_to(
         &client,
@@ -309,7 +331,7 @@ async fn run_values_update_reads_values_from_stdin() {
     let client = write_test_client(&store);
     let mut input = std::io::Cursor::new(request_body.to_string());
     let mut out = Vec::new();
-    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+    let spreadsheets_url = spreadsheets_url(&server);
 
     run_values_to(
         &client,
@@ -348,7 +370,7 @@ async fn run_values_batch_clear_prints_response_json() {
     let client = write_test_client(&store);
     let mut input = std::io::empty();
     let mut out = Vec::new();
-    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+    let spreadsheets_url = spreadsheets_url(&server);
 
     run_values_to(
         &client,
@@ -398,7 +420,7 @@ async fn run_batch_update_reads_requests_from_stdin() {
     let client = write_test_client(&store);
     let mut input = std::io::Cursor::new(request_body.to_string());
     let mut out = Vec::new();
-    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+    let spreadsheets_url = spreadsheets_url(&server);
 
     run_batch_update_to(
         &client,
