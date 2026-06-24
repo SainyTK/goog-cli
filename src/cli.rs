@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::auth::config::OAuthAppType;
 
@@ -224,6 +224,32 @@ pub enum MailCommand {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsValueRenderOption {
+    /// Return values formatted as displayed in Google Sheets
+    FormattedValue,
+    /// Return underlying unformatted values
+    UnformattedValue,
+    /// Return formulas instead of calculated values
+    Formula,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsValueInputOption {
+    /// Store values exactly as provided
+    Raw,
+    /// Parse values as if entered by a user
+    UserEntered,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsInsertDataOption {
+    /// Insert new rows for appended values
+    InsertRows,
+    /// Overwrite existing data where possible
+    Overwrite,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Fetch raw Google Sheets Spreadsheet metadata
@@ -238,6 +264,96 @@ pub enum SheetsCommand {
         include_grid_data: bool,
         /// Limit returned grid data to a Google Sheets A1 Range
         #[arg(long = "ranges")]
+        ranges: Vec<String>,
+    },
+    /// Read and write Google Sheets cell values
+    Values {
+        #[command(subcommand)]
+        command: SheetsValuesCommand,
+    },
+    /// Apply a raw Google Sheets structural Batch Update request body
+    BatchUpdate {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Path to a full spreadsheets.batchUpdate JSON request body, or - for stdin
+        #[arg(long)]
+        requests: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SheetsValuesCommand {
+    /// Fetch a raw Google Sheets ValueRange
+    Get {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to fetch
+        range: String,
+        /// How values should be represented in the response
+        #[arg(long, value_enum, default_value = "formatted-value")]
+        value_render_option: SheetsValueRenderOption,
+    },
+    /// Fetch raw Google Sheets values from multiple ranges
+    BatchGet {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to fetch
+        #[arg(long = "range", required = true)]
+        ranges: Vec<String>,
+        /// How values should be represented in the response
+        #[arg(long, value_enum, default_value = "formatted-value")]
+        value_render_option: SheetsValueRenderOption,
+    },
+    /// Update a Google Sheets ValueRange
+    Update {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to update
+        range: String,
+        /// Path to a Google ValueRange JSON request body, or - for stdin
+        #[arg(long)]
+        values: String,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+    },
+    /// Batch update Google Sheets values
+    BatchUpdate {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Path to a full spreadsheets.values.batchUpdate JSON request body, or - for stdin
+        #[arg(long)]
+        values: String,
+    },
+    /// Append values to a Google Sheets Range
+    Append {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to append into
+        range: String,
+        /// Path to a Google ValueRange JSON request body, or - for stdin
+        #[arg(long)]
+        values: String,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+        /// How Google Sheets should insert appended data
+        #[arg(long, value_enum, default_value = "insert-rows")]
+        insert_data_option: SheetsInsertDataOption,
+    },
+    /// Clear values from a Google Sheets Range
+    Clear {
+        /// Google Sheets Spreadsheet ID to clear
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to clear
+        range: String,
+    },
+    /// Clear values from multiple Google Sheets Ranges
+    BatchClear {
+        /// Google Sheets Spreadsheet ID to clear
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to clear
+        #[arg(long = "range", required = true)]
         ranges: Vec<String>,
     },
 }
