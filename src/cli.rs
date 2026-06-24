@@ -27,6 +27,11 @@ pub enum Command {
         #[command(subcommand)]
         command: DriveCommand,
     },
+    /// Interact with Google Docs
+    Docs {
+        #[command(subcommand)]
+        command: DocsCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -88,5 +93,14 @@ pub enum DriveCommand {
         /// Drive folder ID to upload into
         #[arg(long)]
         folder: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsCommand {
+    /// Fetch a raw Google Docs Document
+    Get {
+        /// Google Docs Document ID to fetch
+        document_id: String,
     },
 }
