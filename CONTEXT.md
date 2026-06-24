@@ -90,6 +90,28 @@ _Avoid_: Default mailbox, mail list, received mail
 A file-like payload part associated with a Message and retrieved separately from the Message body.
 _Avoid_: File, mail file, payload
 
+### Sheets
+
+**Spreadsheet**:
+A Google Sheets file-level resource containing Spreadsheet properties, Sheets, grid metadata, cell data when explicitly requested, named ranges, and other workbook-level structure.
+_Avoid_: Workbook, sheet file
+
+**Sheet**:
+An individual tab within a Spreadsheet. A Sheet has its own properties, grid dimensions, and optional grid data.
+_Avoid_: Tab, worksheet
+
+**Range**:
+A Google Sheets A1 notation selector that identifies cells within a Spreadsheet, optionally scoped to a Sheet name such as `Sheet1!A1:B2`.
+_Avoid_: Cell selector, address
+
+**ValueRange**:
+The native Google Sheets values API JSON shape for reading or writing cell values in one Range, including `range`, `majorDimension`, and `values`.
+_Avoid_: Rows payload, cells payload
+
+**Structural Batch Update**:
+The Google Sheets `spreadsheets.batchUpdate` operation that applies ordered structural mutation requests to a Spreadsheet, such as adding Sheets, formatting cells, resizing dimensions, filters, merges, and protected ranges.
+_Avoid_: Values batch update, patch, edit
+
 ### File Transfer
 
 **Resumable Upload**:

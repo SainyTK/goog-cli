@@ -1,7 +1,9 @@
 use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
-use crate::cli::{AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand};
+use crate::cli::{
+    AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand, SheetsCommand,
+};
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
     Cli::try_parse_from(std::iter::once("goog").chain(args.iter().copied()))
@@ -473,6 +475,62 @@ fn docs_get_accepts_global_account_flag() {
     ])
     .unwrap();
     assert_eq!(cli.account.as_deref(), Some("docs@example.com"));
+}
+
+#[test]
+fn sheets_get_with_spreadsheet_id() {
+    let cli = parse(&["sheets", "get", "spreadsheet-123"]).unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Get {
+                    spreadsheet_id,
+                    fields,
+                    include_grid_data,
+                    ranges,
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert!(fields.is_none());
+            assert!(!include_grid_data);
+            assert!(ranges.is_empty());
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_get_with_google_query_flags() {
+    let cli = parse(&[
+        "sheets",
+        "get",
+        "spreadsheet-123",
+        "--fields",
+        "spreadsheetId,properties.title",
+        "--include-grid-data",
+        "--ranges",
+        "Sheet1!A1:B2",
+        "--ranges",
+        "Summary!A:A",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Get {
+                    spreadsheet_id,
+                    fields,
+                    include_grid_data,
+                    ranges,
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(fields.as_deref(), Some("spreadsheetId,properties.title"));
+            assert!(include_grid_data);
+            assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
 }
 
 #[test]

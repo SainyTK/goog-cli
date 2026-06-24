@@ -36,5 +36,10 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
             commands::docs::run(command, &client)
         }
+        Command::Sheets { command } => {
+            let store = KeyringStore;
+            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
+            commands::sheets::run(command, &client)
+        }
     }
 }
