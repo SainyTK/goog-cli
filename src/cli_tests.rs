@@ -714,6 +714,38 @@ fn sheets_values_get_defaults_to_formatted_values() {
 }
 
 #[test]
+fn sheets_values_get_accepts_formula_render_option() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "get",
+        "spreadsheet-123",
+        "Sheet1!C1:C3",
+        "--value-render-option",
+        "formula",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::Get {
+                            spreadsheet_id,
+                            range,
+                            value_render_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!C1:C3");
+            assert_eq!(value_render_option, SheetsValueRenderOption::Formula);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
     let cli = parse(&[
         "sheets",
@@ -746,6 +778,11 @@ fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn sheets_values_batch_get_requires_range() {
+    assert!(parse(&["sheets", "values", "batch-get", "spreadsheet-123"]).is_err());
 }
 
 #[test]

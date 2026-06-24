@@ -169,6 +169,80 @@ async fn run_values_get_prints_value_range_json_to_stdout() {
 }
 
 #[tokio::test]
+async fn run_values_batch_get_prints_batch_response_json_to_stdout() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(header("authorization", "Bearer sheets-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "valueRanges": [
+                {
+                    "range": "Sheet1!A1:B2",
+                    "values": [["Name", "Score"], ["Ada", "=40+2"]]
+                },
+                {
+                    "range": "Summary!A:A",
+                    "values": [["Total"], ["=SUM(Sheet1!B:B)"]]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = format!("{}/sheets/v4/spreadsheets", server.uri());
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::BatchGet {
+            spreadsheet_id: "spreadsheet-123".into(),
+            ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
+            value_render_option: SheetsValueRenderOption::Formula,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        concat!(
+            "{\"spreadsheetId\":\"spreadsheet-123\",",
+            "\"valueRanges\":[",
+            "{\"range\":\"Sheet1!A1:B2\",\"values\":[[\"Name\",\"Score\"],[\"Ada\",\"=40+2\"]]},",
+            "{\"range\":\"Summary!A:A\",\"values\":[[\"Total\"],[\"=SUM(Sheet1!B:B)\"]]}",
+            "]}\n"
+        )
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    let url = &requests[0].url;
+    assert!(url
+        .path()
+        .ends_with("/spreadsheets/spreadsheet-123/values/:batchGet"));
+    let ranges: Vec<_> = url
+        .query_pairs()
+        .filter(|(name, _)| name == "ranges")
+        .map(|(_, value)| value.into_owned())
+        .collect();
+    assert_eq!(
+        ranges,
+        vec!["Sheet1!A1:B2".to_string(), "Summary!A:A".to_string()]
+    );
+    let render_option = url
+        .query_pairs()
+        .find(|(name, _)| name == "valueRenderOption")
+        .map(|(_, value)| value.into_owned());
+    assert_eq!(render_option.as_deref(), Some("FORMULA"));
+}
+
+#[tokio::test]
 async fn run_values_update_reads_values_from_file_and_prints_response_json() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
