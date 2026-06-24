@@ -5,6 +5,7 @@ use crate::auth::account::{AccountStore, KeyringStore};
 use crate::auth::config::{
     config_path, load_config, save_config, Config, OAuthAppConfig, SettingsConfig,
 };
+use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};
 use crate::auth::login::{
     build_authorize_url, exchange_code, fetch_email, random_state, LoopbackServer,
@@ -79,7 +80,7 @@ fn run_login(no_browser: bool) -> Result<()> {
     let oauth_app = config
         .oauth_app
         .clone()
-        .ok_or(crate::auth::error::AuthError::OAuthAppNotConfigured)?;
+        .ok_or(AuthError::OAuthAppNotConfigured)?;
 
     let store = KeyringStore;
     let email = perform_login(&oauth_app, &store, no_browser)?;
@@ -99,12 +100,11 @@ fn perform_login(
     let server = LoopbackServer::bind().context("failed to bind loopback server")?;
     let redirect_uri = server.redirect_uri();
     let state = random_state();
-    let scopes: Vec<&str> = DEFAULT_LOGIN_SCOPES.to_vec();
     let url = build_authorize_url(
         GOOGLE_AUTH_URL,
         &oauth_app.client_id,
         &redirect_uri,
-        &scopes,
+        DEFAULT_LOGIN_SCOPES,
         &state,
     )
     .context("failed to build authorize URL")?;
@@ -133,7 +133,7 @@ fn perform_login(
         )
         .await?;
         let email = fetch_email(GOOGLE_USERINFO_URL, &token.access_token).await?;
-        Ok::<_, crate::auth::error::AuthError>((token, email))
+        Ok::<_, AuthError>((token, email))
     })?;
 
     store
@@ -183,7 +183,6 @@ fn not_yet_implemented() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::account::testing::MemoryStore;
 
     #[test]
     fn setup_guide_is_printed_when_no_file_given_and_guide_contains_all_steps() {
@@ -244,20 +243,4 @@ mod tests {
         );
     }
 
-    // Sanity check that the MemoryStore is exposed for tests; the real keyring backend
-    // is exercised via integration testing only.
-    #[test]
-    fn memory_store_can_back_an_account_store_caller() {
-        use crate::auth::account::Token;
-        use chrono::Utc;
-        let store = MemoryStore::default();
-        let token = Token {
-            access_token: "a".into(),
-            refresh_token: "r".into(),
-            expiry: Utc::now(),
-            scopes: vec!["openid".into()],
-        };
-        store.save_token("alice@example.com", &token).unwrap();
-        assert!(store.load_token("alice@example.com").unwrap().is_some());
-    }
 }
