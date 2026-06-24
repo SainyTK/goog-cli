@@ -88,6 +88,36 @@ async fn run_list_defaults_to_inbox_limit_10_and_renders_summary_table() {
 }
 
 #[tokio::test]
+async fn run_list_uses_explicit_limit_for_inbox_messages() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "25"))
+        .and(query_param("labelIds", "INBOX"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": []
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_list_to(&client, Some(25), false, &mut out, Some(&messages_url))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "DATE\tFROM\tSUBJECT\tMESSAGE ID\n"
+    );
+}
+
+#[tokio::test]
 async fn run_search_emits_ndjson_summary_rows() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
