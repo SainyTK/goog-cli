@@ -4,7 +4,10 @@ use reqwest::{IntoUrl, Method, RequestBuilder, Response, StatusCode};
 use super::account::{AccountStore, Token};
 use super::config::{Config, OAuthAppConfig};
 use super::error::AuthError;
-use super::login::GOOGLE_TOKEN_URL;
+use super::login::{
+    build_authorize_url, exchange_code_for_scopes, random_state, LoopbackServer, GOOGLE_AUTH_URL,
+    GOOGLE_TOKEN_URL,
+};
 
 const DEFAULT_REFRESH_THRESHOLD_SECS: i64 = 60;
 
@@ -14,8 +17,10 @@ pub struct AuthClient<'a, S> {
     store: &'a S,
     account_email: String,
     oauth_app: OAuthAppConfig,
+    auth_url: String,
     token_url: String,
     refresh_threshold: Duration,
+    authorization_code_flow: Box<dyn AuthorizationCodeFlow + 'a>,
 }
 
 #[allow(dead_code)]
@@ -33,14 +38,31 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
             store,
             account_email,
             oauth_app,
+            auth_url: GOOGLE_AUTH_URL.to_string(),
             token_url: GOOGLE_TOKEN_URL.to_string(),
             refresh_threshold: Duration::seconds(DEFAULT_REFRESH_THRESHOLD_SECS),
+            authorization_code_flow: Box::new(LoopbackAuthorizationCodeFlow),
         })
     }
 
     #[cfg(test)]
     fn with_token_url(mut self, token_url: impl Into<String>) -> Self {
         self.token_url = token_url.into();
+        self
+    }
+
+    #[cfg(test)]
+    fn with_auth_url(mut self, auth_url: impl Into<String>) -> Self {
+        self.auth_url = auth_url.into();
+        self
+    }
+
+    #[cfg(test)]
+    fn with_authorization_code_flow(
+        mut self,
+        authorization_code_flow: impl AuthorizationCodeFlow + 'a,
+    ) -> Self {
+        self.authorization_code_flow = Box::new(authorization_code_flow);
         self
     }
 
@@ -70,7 +92,15 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
     }
 
     pub async fn send(&self, request: RequestBuilder) -> Result<Response, AuthError> {
-        let token = self.current_token().await?;
+        self.send_with_scopes(request, &[]).await
+    }
+
+    pub async fn send_with_scopes(
+        &self,
+        request: RequestBuilder,
+        required_scopes: &[&str],
+    ) -> Result<Response, AuthError> {
+        let token = self.current_token_with_scopes(required_scopes).await?;
         let retry_request = request.try_clone();
         let response = send_with_access_token(request, &token.access_token).await?;
 
@@ -91,6 +121,11 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
         Ok(response)
     }
 
+    async fn current_token_with_scopes(&self, required_scopes: &[&str]) -> Result<Token, AuthError> {
+        let token = self.current_token().await?;
+        self.ensure_scopes(token, required_scopes).await
+    }
+
     async fn current_token(&self) -> Result<Token, AuthError> {
         let token = self
             .store
@@ -104,6 +139,50 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
         } else {
             Ok(token)
         }
+    }
+
+    async fn ensure_scopes(
+        &self,
+        token: Token,
+        required_scopes: &[&str],
+    ) -> Result<Token, AuthError> {
+        let missing_scopes: Vec<&str> = required_scopes
+            .iter()
+            .copied()
+            .filter(|scope| !token.scopes.iter().any(|granted| granted == scope))
+            .collect();
+
+        if missing_scopes.is_empty() {
+            return Ok(token);
+        }
+
+        let state = random_state();
+        let authorization = self.authorization_code_flow.authorize(
+            &self.auth_url,
+            &self.oauth_app.client_id,
+            &state,
+            &missing_scopes,
+        )?;
+
+        let granted = exchange_code_for_scopes(
+            &self.token_url,
+            &self.oauth_app.client_id,
+            &self.oauth_app.client_secret,
+            &authorization.redirect_uri,
+            &authorization.code,
+        )
+        .await?;
+
+        let mut merged = token;
+        merged.access_token = granted.access_token;
+        if let Some(refresh_token) = granted.refresh_token {
+            merged.refresh_token = refresh_token;
+        }
+        merged.expiry = granted.expiry;
+        merge_scopes(&mut merged.scopes, granted.scopes);
+
+        self.store.save_token(&self.account_email, &merged)?;
+        Ok(merged)
     }
 
     async fn refresh_token(&self, token: &Token) -> Result<Token, AuthError> {
@@ -158,6 +237,53 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
     }
 }
 
+pub trait AuthorizationCodeFlow {
+    fn authorize(
+        &self,
+        auth_url: &str,
+        client_id: &str,
+        state: &str,
+        scopes: &[&str],
+    ) -> Result<AuthorizationCode, AuthError>;
+}
+
+pub struct AuthorizationCode {
+    pub redirect_uri: String,
+    pub code: String,
+}
+
+struct LoopbackAuthorizationCodeFlow;
+
+impl AuthorizationCodeFlow for LoopbackAuthorizationCodeFlow {
+    fn authorize(
+        &self,
+        auth_url: &str,
+        client_id: &str,
+        state: &str,
+        scopes: &[&str],
+    ) -> Result<AuthorizationCode, AuthError> {
+        let server = LoopbackServer::bind()?;
+        let redirect_uri = server.redirect_uri();
+        let authorize_url = build_authorize_url(auth_url, client_id, &redirect_uri, scopes, state)?;
+
+        println!("Opening browser for additional Google consent...");
+        if webbrowser::open(&authorize_url).is_err() {
+            println!("Could not open a browser automatically. Open this URL manually:\n  {authorize_url}");
+        }
+
+        let code = server.wait_for_callback(state)?;
+        Ok(AuthorizationCode { redirect_uri, code })
+    }
+}
+
+fn merge_scopes(existing: &mut Vec<String>, granted: Vec<String>) {
+    for scope in granted {
+        if !existing.iter().any(|known| known == &scope) {
+            existing.push(scope);
+        }
+    }
+}
+
 async fn send_with_access_token(
     request: RequestBuilder,
     access_token: &str,
@@ -185,6 +311,7 @@ fn resolve_account(config: &Config, account_override: Option<&str>) -> Result<St
 #[cfg(test)]
 mod tests {
     use chrono::{Duration, Utc};
+    use std::sync::{Arc, Mutex};
     use wiremock::matchers::{body_string_contains, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -232,6 +359,56 @@ mod tests {
         }
     }
 
+    struct StaticAuthorizationCodeFlow {
+        redirect_uri: String,
+        code: String,
+        scopes_seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl StaticAuthorizationCodeFlow {
+        fn new(scopes_seen: Arc<Mutex<Vec<String>>>) -> Self {
+            Self {
+                redirect_uri: "http://127.0.0.1:54321/".into(),
+                code: "drive-code".into(),
+                scopes_seen,
+            }
+        }
+    }
+
+    impl AuthorizationCodeFlow for StaticAuthorizationCodeFlow {
+        fn authorize(
+            &self,
+            auth_url: &str,
+            client_id: &str,
+            _state: &str,
+            scopes: &[&str],
+        ) -> Result<AuthorizationCode, AuthError> {
+            assert_eq!(auth_url, "https://example.test/auth");
+            assert_eq!(client_id, "client-123");
+            *self.scopes_seen.lock().unwrap() =
+                scopes.iter().map(|scope| scope.to_string()).collect();
+
+            Ok(AuthorizationCode {
+                redirect_uri: self.redirect_uri.clone(),
+                code: self.code.clone(),
+            })
+        }
+    }
+
+    struct UnexpectedAuthorizationCodeFlow;
+
+    impl AuthorizationCodeFlow for UnexpectedAuthorizationCodeFlow {
+        fn authorize(
+            &self,
+            _auth_url: &str,
+            _client_id: &str,
+            _state: &str,
+            _scopes: &[&str],
+        ) -> Result<AuthorizationCode, AuthError> {
+            panic!("already-granted scopes must not trigger incremental authorization");
+        }
+    }
+
     #[tokio::test]
     async fn sends_bearer_authorization_header() {
         let server = MockServer::start().await;
@@ -254,6 +431,119 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), reqwest::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn authorizes_missing_scopes_then_sends_request_and_saves_merged_token() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .and(body_string_contains("code=drive-code"))
+            .and(body_string_contains("client_id=client-123"))
+            .and(body_string_contains("client_secret=secret-456"))
+            .and(body_string_contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A54321%2F"))
+            .and(body_string_contains("grant_type=authorization_code"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "drive-access",
+                "expires_in": 3600,
+                "scope": "https://www.googleapis.com/auth/drive",
+                "token_type": "Bearer",
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/drive/v3/files"))
+            .and(header("authorization", "Bearer drive-access"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let store = MemoryStore::default();
+        store
+            .save_token("alice@example.com", &test_token("profile-access"))
+            .unwrap();
+        let scopes_seen = Arc::new(Mutex::new(Vec::new()));
+
+        let client = AuthClient::from_config(test_config(), &store, None)
+            .unwrap()
+            .with_auth_url("https://example.test/auth")
+            .with_token_url(format!("{}/token", server.uri()))
+            .with_authorization_code_flow(StaticAuthorizationCodeFlow::new(scopes_seen.clone()));
+
+        let response = client
+            .send_with_scopes(
+                client.get(format!("{}/drive/v3/files", server.uri())),
+                &["https://www.googleapis.com/auth/drive"],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            scopes_seen.lock().unwrap().clone(),
+            vec!["https://www.googleapis.com/auth/drive".to_string()]
+        );
+        let saved = store.load_token("alice@example.com").unwrap().unwrap();
+        assert_eq!(saved.access_token, "drive-access");
+        assert_eq!(saved.refresh_token, "refresh-123");
+        assert_eq!(
+            saved.scopes,
+            vec![
+                "openid".to_string(),
+                "https://www.googleapis.com/auth/drive".to_string()
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn already_granted_scopes_do_not_trigger_incremental_authorization() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/drive/v3/files"))
+            .and(header("authorization", "Bearer drive-access"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let store = MemoryStore::default();
+        store
+            .save_token(
+                "alice@example.com",
+                &Token {
+                    scopes: vec![
+                        "openid".into(),
+                        "https://www.googleapis.com/auth/drive".into(),
+                    ],
+                    ..test_token("drive-access")
+                },
+            )
+            .unwrap();
+
+        let client = AuthClient::from_config(test_config(), &store, None)
+            .unwrap()
+            .with_token_url(format!("{}/token", server.uri()))
+            .with_authorization_code_flow(UnexpectedAuthorizationCodeFlow);
+
+        let response = client
+            .send_with_scopes(
+                client.get(format!("{}/drive/v3/files", server.uri())),
+                &["https://www.googleapis.com/auth/drive"],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            store
+                .load_token("alice@example.com")
+                .unwrap()
+                .unwrap()
+                .access_token,
+            "drive-access"
+        );
     }
 
     #[tokio::test]

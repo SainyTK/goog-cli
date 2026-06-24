@@ -47,6 +47,7 @@ pub fn build_authorize_url(
         .append_pair("scope", &scopes.join(" "))
         .append_pair("state", state)
         .append_pair("access_type", "offline")
+        .append_pair("include_granted_scopes", "true")
         .append_pair("prompt", "consent");
     Ok(url.to_string())
 }
@@ -57,6 +58,14 @@ struct TokenResponse {
     refresh_token: Option<String>,
     expires_in: i64,
     scope: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScopedToken {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    pub expiry: chrono::DateTime<Utc>,
+    pub scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +136,39 @@ pub async fn exchange_code(
     token_from_response(response).await
 }
 
+pub async fn exchange_code_for_scopes(
+    token_url: &str,
+    client_id: &str,
+    client_secret: &str,
+    redirect_uri: &str,
+    code: &str,
+) -> Result<ScopedToken, AuthError> {
+    let client = reqwest::Client::new();
+    let params = [
+        ("code", code),
+        ("client_id", client_id),
+        ("client_secret", client_secret),
+        ("redirect_uri", redirect_uri),
+        ("grant_type", "authorization_code"),
+    ];
+    let response = client
+        .post(token_url)
+        .form(&params)
+        .send()
+        .await
+        .map_err(|e| AuthError::Network(e.to_string()))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(AuthError::TokenExchange(format!(
+            "HTTP {status}: {body}"
+        )));
+    }
+
+    scoped_token_from_response(response).await
+}
+
 async fn token_from_response(response: reqwest::Response) -> Result<Token, AuthError> {
     let parsed: TokenResponse = response
         .json()
@@ -134,6 +176,15 @@ async fn token_from_response(response: reqwest::Response) -> Result<Token, AuthE
         .map_err(|e| AuthError::TokenExchange(format!("invalid token response: {e}")))?;
 
     token_from_parsed_response(parsed)
+}
+
+async fn scoped_token_from_response(response: reqwest::Response) -> Result<ScopedToken, AuthError> {
+    let parsed: TokenResponse = response
+        .json()
+        .await
+        .map_err(|e| AuthError::TokenExchange(format!("invalid token response: {e}")))?;
+
+    Ok(scoped_token_from_parsed_response(parsed))
 }
 
 fn token_from_parsed_response(parsed: TokenResponse) -> Result<Token, AuthError> {
@@ -153,6 +204,21 @@ fn token_from_parsed_response(parsed: TokenResponse) -> Result<Token, AuthError>
         expiry: Utc::now() + Duration::seconds(parsed.expires_in),
         scopes,
     })
+}
+
+fn scoped_token_from_parsed_response(parsed: TokenResponse) -> ScopedToken {
+    let scopes = parsed
+        .scope
+        .split_whitespace()
+        .map(|s| s.to_string())
+        .collect();
+
+    ScopedToken {
+        access_token: parsed.access_token,
+        refresh_token: parsed.refresh_token,
+        expiry: Utc::now() + Duration::seconds(parsed.expires_in),
+        scopes,
+    }
 }
 
 pub async fn request_device_authorization(
@@ -428,6 +494,7 @@ mod tests {
         assert_eq!(pairs.get("scope").unwrap(), "openid email");
         assert_eq!(pairs.get("state").unwrap(), "state-xyz");
         assert_eq!(pairs.get("access_type").unwrap(), "offline");
+        assert_eq!(pairs.get("include_granted_scopes").unwrap(), "true");
         assert_eq!(pairs.get("prompt").unwrap(), "consent");
         assert!(url.starts_with(GOOGLE_AUTH_URL));
     }
