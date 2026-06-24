@@ -1,6 +1,7 @@
 {
   "scripts": {
     "sandcastle": "npx tsx .sandcastle/main.mts",
+    "sandcastle:verify-rust-workflow": "npx tsx .sandcastle/verify-rust-workflow.mts",
     "typecheck": "cargo check",
     "test": "cargo test"
   },
