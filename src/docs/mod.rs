@@ -52,12 +52,7 @@ impl GetDocumentOptions {
     }
 
     fn request_url(&self) -> Result<Url, DocsError> {
-        let mut url = Url::parse(&self.documents_url)?;
-        url.path_segments_mut()
-            .map_err(|_| {
-                DocsError::InvalidResponse("Google Docs API URL cannot be a base".into())
-            })?
-            .push(&self.document_id);
+        let mut url = document_url(&self.documents_url, &self.document_id)?;
         {
             let mut query = url.query_pairs_mut();
             if let Some(fields) = &self.fields {
@@ -93,14 +88,19 @@ impl BatchUpdateDocumentOptions {
     }
 
     fn request_url(&self) -> Result<Url, DocsError> {
-        let mut url = Url::parse(&self.documents_url)?;
-        url.path_segments_mut()
-            .map_err(|_| {
-                DocsError::InvalidResponse("Google Docs API URL cannot be a base".into())
-            })?
-            .push(&format!("{}:batchUpdate", self.document_id));
-        Ok(url)
+        document_url(
+            &self.documents_url,
+            &format!("{}:batchUpdate", self.document_id),
+        )
     }
+}
+
+fn document_url(documents_url: &str, document_path: &str) -> Result<Url, DocsError> {
+    let mut url = Url::parse(documents_url)?;
+    url.path_segments_mut()
+        .map_err(|_| DocsError::InvalidResponse("Google Docs API URL cannot be a base".into()))?
+        .push(document_path);
+    Ok(url)
 }
 
 pub async fn get_document<S: AccountStore>(

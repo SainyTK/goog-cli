@@ -54,21 +54,17 @@ pub(super) async fn run_get_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
-    let mut options = GetDocumentOptions::new(document_id)
-        .with_include_tabs_content(include_tabs_content);
-    if let Some(fields) = fields {
-        options = options.with_fields(fields);
-    }
-    if let Some(documents_url) = documents_url {
-        options = options.with_documents_url(documents_url);
-    }
+    let options = get_document_options(
+        document_id,
+        fields,
+        include_tabs_content,
+        documents_url,
+    );
 
     let document = get_document(client, &options)
         .await
         .context("failed to fetch Google Docs Document")?;
-    serde_json::to_writer(&mut *out, &document).context("failed to serialize Docs Document")?;
-    writeln!(out).context("failed to write output")?;
-    Ok(())
+    write_json_line(out, &document, "failed to serialize Docs Document")
 }
 
 pub(super) async fn run_batch_update_to<S: AccountStore>(
@@ -80,18 +76,16 @@ pub(super) async fn run_batch_update_to<S: AccountStore>(
     documents_url: Option<&str>,
 ) -> Result<()> {
     let request_body = read_request_body(&requests, input)?;
-    let mut options = BatchUpdateDocumentOptions::new(document_id, request_body);
-    if let Some(documents_url) = documents_url {
-        options = options.with_documents_url(documents_url);
-    }
+    let options = batch_update_document_options(document_id, request_body, documents_url);
 
     let response = batch_update_document(client, &options)
         .await
         .context("failed to apply Google Docs Batch Update")?;
-    serde_json::to_writer(&mut *out, &response)
-        .context("failed to serialize Docs Batch Update response")?;
-    writeln!(out).context("failed to write output")?;
-    Ok(())
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Docs Batch Update response",
+    )
 }
 
 fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde_json::Value> {
@@ -108,4 +102,39 @@ fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde
     };
 
     serde_json::from_str(&body).context("failed to parse Google Docs Batch Update request body")
+}
+
+fn get_document_options(
+    document_id: String,
+    fields: Option<String>,
+    include_tabs_content: bool,
+    documents_url: Option<&str>,
+) -> GetDocumentOptions {
+    let mut options =
+        GetDocumentOptions::new(document_id).with_include_tabs_content(include_tabs_content);
+    if let Some(fields) = fields {
+        options = options.with_fields(fields);
+    }
+    if let Some(documents_url) = documents_url {
+        options = options.with_documents_url(documents_url);
+    }
+    options
+}
+
+fn batch_update_document_options(
+    document_id: String,
+    request_body: serde_json::Value,
+    documents_url: Option<&str>,
+) -> BatchUpdateDocumentOptions {
+    let mut options = BatchUpdateDocumentOptions::new(document_id, request_body);
+    if let Some(documents_url) = documents_url {
+        options = options.with_documents_url(documents_url);
+    }
+    options
+}
+
+fn write_json_line(out: &mut impl Write, value: &serde_json::Value, context: &str) -> Result<()> {
+    serde_json::to_writer(&mut *out, value).context(context.to_string())?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
 }
