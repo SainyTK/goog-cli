@@ -27,6 +27,7 @@ const GOOGLE_DEVICE_AUTH_SETUP_COMMAND: &str = concat!(
     "`goog auth setup --client-secret-file <path>` with that file."
 );
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
+const INVALID_CLIENT_ERROR: &str = "invalid_client";
 const DEFAULT_DEVICE_POLL_INTERVAL_SECS: u64 = 5;
 const SLOW_DOWN_INTERVAL_SECS: u64 = 5;
 
@@ -201,12 +202,12 @@ pub async fn request_device_authorization(
 }
 
 fn describe_device_authorization_error(body: &str) -> String {
-    let Ok(error) = serde_json::from_str::<OAuthErrorResponse>(body) else {
+    let Some(error) = parse_oauth_error(body) else {
         return body.to_string();
     };
 
-    if error.error == "invalid_client" {
-        return device_client_type_guidance(error.error_description);
+    if error.error == INVALID_CLIENT_ERROR {
+        return device_client_type_guidance(error.error_description.as_deref());
     }
 
     match error.error_description {
@@ -215,8 +216,12 @@ fn describe_device_authorization_error(body: &str) -> String {
     }
 }
 
-fn device_client_type_guidance(error_description: Option<String>) -> String {
-    let description = error_description.unwrap_or_else(|| "Invalid client".to_string());
+fn parse_oauth_error(body: &str) -> Option<OAuthErrorResponse> {
+    serde_json::from_str(body).ok()
+}
+
+fn device_client_type_guidance(error_description: Option<&str>) -> String {
+    let description = error_description.unwrap_or("Invalid client");
     format!(
         "{description}. Google device authorization requires an OAuth client of type \"{GOOGLE_DEVICE_AUTH_CLIENT_TYPE}\". {GOOGLE_DEVICE_AUTH_SETUP_COMMAND}"
     )
@@ -277,14 +282,14 @@ pub async fn poll_device_token(
 async fn device_poll_outcome(response: reqwest::Response) -> Result<DevicePollOutcome, AuthError> {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    let token_error = serde_json::from_str::<OAuthErrorResponse>(&body).map_err(|_| {
+    let error = parse_oauth_error(&body).ok_or_else(|| {
         AuthError::TokenExchange(format!("device token HTTP {status}: {body}"))
     })?;
 
     let OAuthErrorResponse {
         error,
         error_description,
-    } = token_error;
+    } = error;
 
     match error.as_str() {
         "authorization_pending" => Ok(DevicePollOutcome::Continue),
@@ -293,8 +298,8 @@ async fn device_poll_outcome(response: reqwest::Response) -> Result<DevicePollOu
             "device authorization was denied by the user".into(),
         )),
         "expired_token" => Err(AuthError::OAuthFlow("device authorization timed out".into())),
-        "invalid_client" => Err(AuthError::OAuthFlow(device_client_type_guidance(
-            error_description,
+        INVALID_CLIENT_ERROR => Err(AuthError::OAuthFlow(device_client_type_guidance(
+            error_description.as_deref(),
         ))),
         error => {
             let description = error_description.unwrap_or(body);
@@ -519,11 +524,7 @@ mod tests {
         .unwrap_err();
 
         match err {
-            AuthError::OAuthFlow(msg) => {
-                assert!(msg.contains("Invalid client type"));
-                assert!(msg.contains("TVs and Limited Input devices"));
-                assert!(msg.contains("goog auth setup"));
-            }
+            AuthError::OAuthFlow(msg) => assert_device_client_type_guidance(&msg),
             other => panic!("expected OAuthFlow, got {other:?}"),
         }
     }
@@ -643,13 +644,15 @@ mod tests {
         .unwrap_err();
 
         match err {
-            AuthError::OAuthFlow(msg) => {
-                assert!(msg.contains("Invalid client type"));
-                assert!(msg.contains("TVs and Limited Input devices"));
-                assert!(msg.contains("goog auth setup"));
-            }
+            AuthError::OAuthFlow(msg) => assert_device_client_type_guidance(&msg),
             other => panic!("expected OAuthFlow, got {other:?}"),
         }
+    }
+
+    fn assert_device_client_type_guidance(msg: &str) {
+        assert!(msg.contains("Invalid client type"));
+        assert!(msg.contains("TVs and Limited Input devices"));
+        assert!(msg.contains("goog auth setup"));
     }
 
     #[tokio::test]
