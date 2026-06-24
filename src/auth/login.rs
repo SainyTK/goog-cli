@@ -14,11 +14,14 @@ pub const DEFAULT_LOGIN_SCOPES: &[&str] = &[
     "https://www.googleapis.com/auth/userinfo.profile",
 ];
 
+pub const DEFAULT_DEVICE_LOGIN_SCOPES: &[&str] = &["openid", "email", "profile"];
+
 pub const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const GOOGLE_DEVICE_CODE_URL: &str = "https://oauth2.googleapis.com/device/code";
 pub const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const GOOGLE_USERINFO_URL: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 
+const GOOGLE_DEVICE_AUTH_CLIENT_TYPE: &str = "TVs and Limited Input devices";
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_DEVICE_POLL_INTERVAL_SECS: u64 = 5;
 const SLOW_DOWN_INTERVAL_SECS: u64 = 5;
@@ -88,7 +91,7 @@ struct DeviceAuthorizationResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct DeviceTokenError {
+struct OAuthErrorResponse {
     error: String,
     error_description: Option<String>,
 }
@@ -218,7 +221,8 @@ pub async fn request_device_authorization(
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         return Err(AuthError::OAuthFlow(format!(
-            "device authorization request failed with HTTP {status}: {body}"
+            "device authorization request failed with HTTP {status}: {}",
+            describe_device_authorization_error(&body)
         )));
     }
 
@@ -234,6 +238,26 @@ pub async fn request_device_authorization(
         expires_in: parsed.expires_in,
         interval: parsed.interval.unwrap_or(DEFAULT_DEVICE_POLL_INTERVAL_SECS),
     })
+}
+
+fn describe_device_authorization_error(body: &str) -> String {
+    let Ok(error) = serde_json::from_str::<OAuthErrorResponse>(body) else {
+        return body.to_string();
+    };
+
+    if error.error == "invalid_client" {
+        let description = error
+            .error_description
+            .unwrap_or_else(|| "Invalid client".to_string());
+        return format!(
+            "{description}. Google device authorization requires an OAuth client of type \"{GOOGLE_DEVICE_AUTH_CLIENT_TYPE}\"."
+        );
+    }
+
+    match error.error_description {
+        Some(description) => format!("{}: {description}", error.error),
+        None => error.error,
+    }
 }
 
 pub fn render_device_authorization_prompt(authorization: &DeviceAuthorization) -> String {
@@ -291,11 +315,11 @@ pub async fn poll_device_token(
 async fn device_poll_outcome(response: reqwest::Response) -> Result<DevicePollOutcome, AuthError> {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    let token_error = serde_json::from_str::<DeviceTokenError>(&body).map_err(|_| {
+    let token_error = serde_json::from_str::<OAuthErrorResponse>(&body).map_err(|_| {
         AuthError::TokenExchange(format!("device token HTTP {status}: {body}"))
     })?;
 
-    let DeviceTokenError {
+    let OAuthErrorResponse {
         error,
         error_description,
     } = token_error;
@@ -484,7 +508,7 @@ mod tests {
             .and(path("/device/code"))
             .and(header("content-type", "application/x-www-form-urlencoded"))
             .and(body_string_contains("client_id=client-123"))
-            .and(body_string_contains("scope=openid"))
+            .and(body_string_contains("scope=openid+email+profile"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "device_code": "device-code-123",
                 "user_code": "ABCD-EFGH",
@@ -498,7 +522,7 @@ mod tests {
         let authorization = request_device_authorization(
             &format!("{}/device/code", server.uri()),
             "client-123",
-            &["openid", "email"],
+            DEFAULT_DEVICE_LOGIN_SCOPES,
         )
         .await
         .unwrap();
@@ -508,6 +532,35 @@ mod tests {
         assert_eq!(authorization.verification_url, "https://www.google.com/device");
         assert_eq!(authorization.expires_in, 1800);
         assert_eq!(authorization.interval, 7);
+    }
+
+    #[tokio::test]
+    async fn request_device_authorization_explains_invalid_client_type() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/device/code"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": "invalid_client",
+                "error_description": "Invalid client type.",
+            })))
+            .mount(&server)
+            .await;
+
+        let err = request_device_authorization(
+            &format!("{}/device/code", server.uri()),
+            "client-123",
+            DEFAULT_DEVICE_LOGIN_SCOPES,
+        )
+        .await
+        .unwrap_err();
+
+        match err {
+            AuthError::OAuthFlow(msg) => {
+                assert!(msg.contains("Invalid client type"));
+                assert!(msg.contains("TVs and Limited Input devices"));
+            }
+            other => panic!("expected OAuthFlow, got {other:?}"),
+        }
     }
 
     #[test]

@@ -1,11 +1,13 @@
 use std::io::Write;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::cli::DriveCommand;
-use crate::drive::{list_files, DriveFile, ListFilesOptions};
+use crate::drive::{download, list_files, DownloadFileOptions, DriveFile, ListFilesOptions};
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
 const ALL_PAGE_SIZE: u32 = 1000;
@@ -31,11 +33,75 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DriveCommand::Download { .. } | DriveCommand::Upload { .. } => {
+        DriveCommand::Download { file_id, output } => {
+            let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_download_to(
+                client,
+                file_id,
+                output.map(PathBuf::from),
+                quiet,
+                None,
+            ))
+        }
+        DriveCommand::Upload { .. } => {
             println!("not yet implemented");
             Ok(())
         }
     }
+}
+
+async fn run_download_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    file_id: String,
+    output: Option<PathBuf>,
+    quiet: bool,
+    #[cfg_attr(not(test), allow(unused_variables))] files_url: Option<&str>,
+) -> Result<()> {
+    let options = download_options(file_id, output, files_url);
+    let progress = (!quiet).then(new_download_progress);
+    let result = download(client, &options, |bytes| {
+        if let Some(progress) = &progress {
+            progress.set_position(bytes);
+        }
+    })
+    .await
+    .context("failed to download Google Drive file")?;
+
+    if let Some(progress) = progress {
+        progress.finish_and_clear();
+    }
+
+    if !quiet {
+        eprintln!("Downloaded {} bytes to {}", result.bytes, result.path.display());
+    }
+
+    Ok(())
+}
+
+fn download_options(
+    file_id: String,
+    output: Option<PathBuf>,
+    #[cfg_attr(not(test), allow(unused_variables))] files_url: Option<&str>,
+) -> DownloadFileOptions {
+    let mut options = DownloadFileOptions::new(file_id);
+    if let Some(output) = output {
+        options = options.with_output(output);
+    }
+    #[cfg(test)]
+    if let Some(files_url) = files_url {
+        options = options.with_files_url(files_url);
+    }
+    options
+}
+
+fn new_download_progress() -> ProgressBar {
+    let progress = ProgressBar::new_spinner();
+    progress.set_style(
+        ProgressStyle::with_template("{spinner} {bytes} downloaded ({bytes_per_sec})")
+            .expect("download progress template is valid"),
+    );
+    progress.enable_steady_tick(std::time::Duration::from_millis(100));
+    progress
 }
 
 fn should_emit_json(json_flag: bool, output_json_by_default: bool) -> bool {
