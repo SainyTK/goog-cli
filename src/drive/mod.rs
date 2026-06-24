@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use reqwest::{Body, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio_util::io::ReaderStream;
 use url::Url;
 
@@ -347,30 +347,20 @@ where
     F: FnMut(u64),
 {
     let session_uri = initiate_resumable_upload(client, options, file_size).await?;
-    let mut file = tokio::fs::File::open(&options.path)
-        .await
-        .map_err(DriveError::Io)?;
     let mut uploaded = 0_u64;
-    let mut buffer = vec![0_u8; RESUMABLE_CHUNK_SIZE_BYTES];
 
-    loop {
-        let read = read_upload_chunk(&mut file, &mut buffer)
-            .await
-            .map_err(DriveError::Io)?;
-        if read == 0 {
-            break;
-        }
-
+    while uploaded < file_size {
+        let read = next_resumable_chunk_size(uploaded, file_size);
         let start = uploaded;
         let end = uploaded + read as u64 - 1;
-        let chunk = buffer[..read].to_vec();
+        let body = resumable_chunk_body(&options.path, start, read).await?;
         let response = client
             .send_with_scopes(
                 client
                     .put(session_uri.as_str())
                     .header(CONTENT_LENGTH, read.to_string())
                     .header(CONTENT_RANGE, format!("bytes {start}-{end}/{file_size}"))
-                    .body(chunk),
+                    .body(body),
                 DRIVE_SCOPES,
             )
             .await
@@ -391,21 +381,23 @@ where
     ))
 }
 
-async fn read_upload_chunk(
-    file: &mut tokio::fs::File,
-    buffer: &mut [u8],
-) -> Result<usize, std::io::Error> {
-    let mut filled = 0;
+fn next_resumable_chunk_size(uploaded: u64, file_size: u64) -> usize {
+    let remaining = file_size - uploaded;
+    remaining.min(RESUMABLE_CHUNK_SIZE_BYTES as u64) as usize
+}
 
-    while filled < buffer.len() {
-        let read = file.read(&mut buffer[filled..]).await?;
-        if read == 0 {
-            break;
-        }
-        filled += read;
-    }
+async fn resumable_chunk_body(
+    path: &std::path::Path,
+    start: u64,
+    length: usize,
+) -> Result<Body, DriveError> {
+    let mut file = tokio::fs::File::open(path).await.map_err(DriveError::Io)?;
+    file.seek(SeekFrom::Start(start))
+        .await
+        .map_err(DriveError::Io)?;
+    let reader = file.take(length as u64);
 
-    Ok(filled)
+    Ok(Body::wrap_stream(ReaderStream::new(reader)))
 }
 
 async fn initiate_resumable_upload<S: AccountStore>(
@@ -802,6 +794,14 @@ mod tests {
         }
     }
 
+    struct BodyLength(usize);
+
+    impl Match for BodyLength {
+        fn matches(&self, request: &Request) -> bool {
+            request.body.len() == self.0
+        }
+    }
+
     #[tokio::test]
     async fn upload_small_file_uses_multipart_upload_and_returns_drive_location() {
         let server = MockServer::start().await;
@@ -891,6 +891,7 @@ mod tests {
             .and(path("/upload-session"))
             .and(header("authorization", "Bearer drive-access"))
             .and(header("content-range", "bytes 0-5242879/5242883"))
+            .and(BodyLength(RESUMABLE_CHUNK_SIZE_BYTES))
             .respond_with(ResponseTemplate::new(308))
             .expect(1)
             .mount(&server)
@@ -899,6 +900,7 @@ mod tests {
             .and(path("/upload-session"))
             .and(header("authorization", "Bearer drive-access"))
             .and(header("content-range", "bytes 5242880-5242882/5242883"))
+            .and(BodyLength(3))
             .and(BodyContains(b"end"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "id": "large-file-123",
