@@ -2,11 +2,20 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum DriveError {
-    #[error("file not found: {id}")]
-    NotFound { id: String },
+    #[error("Google Drive resource was not found")]
+    NotFound,
 
-    #[error("permission denied for file: {id}")]
-    PermissionDenied { id: String },
+    #[error("Google Drive permission denied")]
+    PermissionDenied,
+
+    #[error("Google Drive API error ({status}): {body}")]
+    Api { status: reqwest::StatusCode, body: String },
+
+    #[error("invalid Google Drive API response: {0}")]
+    InvalidResponse(String),
+
+    #[error("invalid Google Drive API URL: {0}")]
+    InvalidUrl(#[from] url::ParseError),
 
     #[error("auth error: {0}")]
     Auth(#[from] crate::auth::error::AuthError),
