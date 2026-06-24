@@ -22,7 +22,7 @@ const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
 pub(super) const DRIVE_FILES_FIELDS: &str =
     "nextPageToken,files(id,name,parents,mimeType,modifiedTime)";
-const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
+pub(crate) const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;

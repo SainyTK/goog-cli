@@ -10,6 +10,7 @@ use crate::auth::client::AuthClient;
 use crate::cli::{DriveCommand, DriveFolderCommand};
 use crate::drive::{
     download, list_files, upload, DownloadFileOptions, DriveFile, ListFilesOptions,
+    DRIVE_FOLDER_MIME_TYPE,
     UploadFileOptions,
 };
 
@@ -18,7 +19,6 @@ const ALL_PAGE_SIZE: u32 = 1000;
 const TABLE_HEADER: &str = "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED";
 const FOLDER_TABLE_HEADER: &str = "NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED";
 const BROWSE_TABLE_HEADER: &str = "TYPE\tNAME\tID\tMIME TYPE\tMODIFIED";
-const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DriveListKind {
@@ -316,27 +316,19 @@ pub(super) async fn run_ls_to<S: AccountStore>(
     err: &mut impl Write,
     files_url: Option<&str>,
 ) -> Result<()> {
-    let mut files = collect_list_items(
+    run_list_items_to(
         client,
         DriveListKind::Browse,
         limit,
         all,
         folder,
+        json,
         quiet,
+        out,
         err,
         files_url,
     )
-    .await?;
-    sort_browse_items(&mut files);
-
-    if json {
-        write_browse_ndjson(&files, out)?;
-    } else {
-        let mut wrote_table_header = false;
-        write_browse_table(&files, out, &mut wrote_table_header)?;
-    }
-
-    Ok(())
+    .await
 }
 
 async fn run_list_items_to<S: AccountStore>(
@@ -352,10 +344,15 @@ async fn run_list_items_to<S: AccountStore>(
     files_url: Option<&str>,
 ) -> Result<()> {
     let mut wrote_table_header = false;
-    let files = collect_list_items(client, kind, limit, all, parent, quiet, err, files_url).await?;
+    let mut files =
+        collect_list_items(client, kind, limit, all, parent, quiet, err, files_url).await?;
+    prepare_list_items(kind, &mut files);
 
     if json {
-        write_ndjson(&files, out)?;
+        match kind {
+            DriveListKind::Browse => write_browse_ndjson(&files, out)?,
+            DriveListKind::Files | DriveListKind::Folders => write_ndjson(&files, out)?,
+        }
     } else {
         match kind {
             DriveListKind::Files => write_table(&files, out, &mut wrote_table_header)?,
@@ -365,6 +362,12 @@ async fn run_list_items_to<S: AccountStore>(
     }
 
     Ok(())
+}
+
+fn prepare_list_items(kind: DriveListKind, files: &mut [DriveFile]) {
+    if kind == DriveListKind::Browse {
+        sort_browse_items(files);
+    }
 }
 
 async fn collect_list_items<S: AccountStore>(
