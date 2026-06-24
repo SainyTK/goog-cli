@@ -292,6 +292,12 @@ mod tests {
     }
 
     #[test]
+    fn global_account_flag_after_subcommand() {
+        let cli = parse(&["drive", "list", "--account", "me@example.com"]).unwrap();
+        assert_eq!(cli.account.as_deref(), Some("me@example.com"));
+    }
+
+    #[test]
     fn global_quiet_flag() {
         let cli = parse(&["--quiet", "auth", "list"]).unwrap();
         assert!(cli.quiet);
