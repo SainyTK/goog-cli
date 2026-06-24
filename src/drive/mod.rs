@@ -385,11 +385,7 @@ fn next_resumable_chunk_size(uploaded: u64, file_size: u64) -> usize {
     remaining.min(RESUMABLE_CHUNK_SIZE_BYTES as u64) as usize
 }
 
-async fn resumable_chunk_body(
-    path: &Path,
-    start: u64,
-    length: usize,
-) -> Result<Body, DriveError> {
+async fn resumable_chunk_body(path: &Path, start: u64, length: usize) -> Result<Body, DriveError> {
     let mut file = tokio::fs::File::open(path).await.map_err(DriveError::Io)?;
     file.seek(SeekFrom::Start(start))
         .await
