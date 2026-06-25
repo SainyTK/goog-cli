@@ -36,7 +36,7 @@ pub struct MessageSummary {
 #[derive(Debug, Deserialize)]
 struct MessagesPage {
     #[serde(default)]
-    messages: Vec<ListedMessage>,
+    messages: Option<Vec<ListedMessage>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -241,9 +241,10 @@ pub async fn list_messages<S: AccountStore>(
         .await
         .map_err(MailError::Auth)?;
     let page = parse_messages_page_response(response).await?;
-    let mut summaries = Vec::with_capacity(page.messages.len());
+    let messages = page.messages.unwrap_or_default();
+    let mut summaries = Vec::with_capacity(messages.len());
 
-    for message in page.messages {
+    for message in messages {
         let metadata = fetch_message_metadata(client, &options.messages_url, &message.id).await?;
         summaries.push(summary_from_metadata(metadata));
     }

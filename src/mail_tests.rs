@@ -221,6 +221,32 @@ async fn search_messages_passes_mailbox_query_through() {
 }
 
 #[tokio::test]
+async fn search_messages_treats_null_messages_as_empty_results() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "10"))
+        .and(query_param("q", "เหรีย"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": null,
+            "resultSizeEstimate": 0
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListMessagesOptions::search("เหรีย", 10)
+        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+
+    let summaries = list_messages(&client, &options).await.unwrap();
+
+    assert!(summaries.is_empty());
+}
+
+#[tokio::test]
 async fn download_attachment_decodes_base64url_to_explicit_output_path() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
