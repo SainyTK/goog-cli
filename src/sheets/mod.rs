@@ -3,6 +3,7 @@ pub mod error;
 pub use error::SheetsError;
 
 use reqwest::{Response, StatusCode};
+use serde::Deserialize;
 use serde_json::Value;
 use url::Url;
 
@@ -12,6 +13,8 @@ use crate::auth::client::AuthClient;
 pub const SHEETS_READONLY_SCOPE: &str = "https://www.googleapis.com/auth/spreadsheets.readonly";
 pub const SHEETS_READONLY_SCOPES: &[&str] = &[SHEETS_READONLY_SCOPE];
 const SHEETS_SPREADSHEETS_URL: &str = "https://sheets.googleapis.com/v4/spreadsheets";
+const OFFICE_FILE_PRECONDITION_STATUS: &str = "FAILED_PRECONDITION";
+const OFFICE_FILE_PRECONDITION_MESSAGE: &str = "must not be an Office file";
 
 pub type Spreadsheet = Value;
 
@@ -125,12 +128,23 @@ fn is_office_file_precondition_error(status: StatusCode, body: &str) -> bool {
         return false;
     }
 
-    let Ok(value) = serde_json::from_str::<Value>(body) else {
+    let Ok(response) = serde_json::from_str::<GoogleErrorResponse>(body) else {
         return false;
     };
-    let error = &value["error"];
-    error["status"].as_str() == Some("FAILED_PRECONDITION")
-        && error["message"]
-            .as_str()
-            .map_or(false, |message| message.contains("must not be an Office file"))
+    response.error.status == OFFICE_FILE_PRECONDITION_STATUS
+        && response
+            .error
+            .message
+            .contains(OFFICE_FILE_PRECONDITION_MESSAGE)
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleErrorResponse {
+    error: GoogleError,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleError {
+    message: String,
+    status: String,
 }
