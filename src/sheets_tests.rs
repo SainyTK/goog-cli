@@ -672,3 +672,31 @@ async fn batch_update_spreadsheet_passes_structural_body_through() {
         .path()
         .ends_with("/spreadsheets/spreadsheet-123:batchUpdate"));
 }
+
+#[tokio::test]
+async fn batch_update_spreadsheet_reports_office_file_precondition_clearly() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": {
+                "code": 400,
+                "message": "This operation is not supported for this document. The document must not be an Office file.",
+                "status": "FAILED_PRECONDITION"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let options = BatchUpdateSpreadsheetOptions::new(
+        "spreadsheet-123",
+        serde_json::json!({ "requests": [] }),
+    )
+    .with_spreadsheets_url(spreadsheets_url(&server));
+
+    let err = batch_update_spreadsheet(&client, &options).await.unwrap_err();
+
+    assert!(matches!(err, SheetsError::UnsupportedOfficeFile));
+}

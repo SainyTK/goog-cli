@@ -3,6 +3,7 @@ pub mod error;
 pub use error::SheetsError;
 
 use reqwest::{RequestBuilder, Response, StatusCode};
+use serde::Deserialize;
 use serde_json::Value;
 use url::Url;
 
@@ -14,6 +15,8 @@ pub const SHEETS_READONLY_SCOPES: &[&str] = &[SHEETS_READONLY_SCOPE];
 pub const SHEETS_SCOPE: &str = "https://www.googleapis.com/auth/spreadsheets";
 pub const SHEETS_SCOPES: &[&str] = &[SHEETS_SCOPE];
 const SHEETS_SPREADSHEETS_URL: &str = "https://sheets.googleapis.com/v4/spreadsheets";
+const OFFICE_FILE_PRECONDITION_STATUS: &str = "FAILED_PRECONDITION";
+const OFFICE_FILE_PRECONDITION_MESSAGE: &str = "must not be an Office file";
 
 pub type Spreadsheet = Value;
 pub type ValueRange = Value;
@@ -608,7 +611,37 @@ async fn ensure_success_response(response: Response) -> Result<Response, SheetsE
         StatusCode::FORBIDDEN => Err(SheetsError::PermissionDenied),
         status => {
             let body = response.text().await.unwrap_or_default();
+            if is_office_file_precondition_error(status, &body) {
+                return Err(SheetsError::UnsupportedOfficeFile);
+            }
             Err(SheetsError::Api { status, body })
         }
     }
+}
+
+fn is_office_file_precondition_error(status: StatusCode, body: &str) -> bool {
+    if status != StatusCode::BAD_REQUEST {
+        return false;
+    }
+
+    let Ok(response) = serde_json::from_str::<GoogleErrorResponse>(body) else {
+        return false;
+    };
+
+    response.error.status == OFFICE_FILE_PRECONDITION_STATUS
+        && response
+            .error
+            .message
+            .contains(OFFICE_FILE_PRECONDITION_MESSAGE)
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleErrorResponse {
+    error: GoogleError,
+}
+
+#[derive(Debug, Deserialize)]
+struct GoogleError {
+    message: String,
+    status: String,
 }
