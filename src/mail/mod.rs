@@ -19,8 +19,7 @@ pub const GMAIL_READONLY_SCOPES: &[&str] = &[GMAIL_READONLY_SCOPE];
 const GMAIL_MESSAGES_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
-const ATTACHMENT_FILENAME_FIELDS: &str =
-    "payload(filename,body/attachmentId,parts(filename,body/attachmentId,parts))";
+const ATTACHMENT_FILENAME_FIELDS: &str = "payload";
 
 pub type Message = Value;
 
@@ -319,26 +318,34 @@ async fn fetch_attachment_filename_metadata<S: AccountStore>(
 }
 
 fn find_attachment_filename(payload: &MessagePayload, attachment_id: &str) -> Option<String> {
-    if let Some(filename) =
-        matching_attachment_filename(&payload.filename, payload.body.as_ref(), attachment_id)
-    {
-        return Some(filename);
-    }
-
-    payload
-        .parts
-        .iter()
-        .find_map(|part| find_attachment_filename_in_part(part, attachment_id))
+    find_attachment_filename_in_node(
+        &payload.filename,
+        payload.body.as_ref(),
+        &payload.parts,
+        attachment_id,
+    )
 }
 
 fn find_attachment_filename_in_part(part: &MessagePart, attachment_id: &str) -> Option<String> {
-    if let Some(filename) =
-        matching_attachment_filename(&part.filename, part.body.as_ref(), attachment_id)
-    {
+    find_attachment_filename_in_node(
+        &part.filename,
+        part.body.as_ref(),
+        &part.parts,
+        attachment_id,
+    )
+}
+
+fn find_attachment_filename_in_node(
+    filename: &str,
+    body: Option<&MessagePartBody>,
+    parts: &[MessagePart],
+    attachment_id: &str,
+) -> Option<String> {
+    if let Some(filename) = matching_attachment_filename(filename, body, attachment_id) {
         return Some(filename);
     }
 
-    part.parts
+    parts
         .iter()
         .find_map(|child| find_attachment_filename_in_part(child, attachment_id))
 }

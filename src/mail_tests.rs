@@ -268,10 +268,7 @@ async fn download_attachment_uses_message_part_filename_when_output_is_omitted()
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages/message-1"))
-        .and(query_param(
-            "fields",
-            "payload(filename,body/attachmentId,parts(filename,body/attachmentId,parts))",
-        ))
+        .and(query_param("fields", "payload"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "payload": {
                 "parts": [
@@ -307,6 +304,54 @@ async fn download_attachment_uses_message_part_filename_when_output_is_omitted()
         temp.path().join("report.txt").canonicalize().unwrap()
     );
     assert_eq!(std::fs::read(downloaded.path).unwrap(), b"report");
+}
+
+#[tokio::test]
+async fn download_attachment_uses_nested_message_part_filename_when_output_is_omitted() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .and(query_param("fields", "payload"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "",
+                        "parts": [
+                            {
+                                "filename": "invoice.pdf",
+                                "body": { "attachmentId": "attachment-1" }
+                            }
+                        ]
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(attachment_path("message-1", "attachment-1")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": "cGRm"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = download_attachment_options(&server, "message-1", "attachment-1");
+
+    let downloaded = download_attachment(&client, &options).await.unwrap();
+
+    assert_eq!(
+        downloaded.path.canonicalize().unwrap(),
+        temp.path().join("invoice.pdf").canonicalize().unwrap()
+    );
+    assert_eq!(std::fs::read(downloaded.path).unwrap(), b"pdf");
 }
 
 #[tokio::test]
