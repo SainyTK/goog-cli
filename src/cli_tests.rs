@@ -832,6 +832,40 @@ fn sheets_values_update_requires_values() {
 }
 
 #[test]
+fn sheets_values_batch_update_with_values_path() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "batch-update",
+        "spreadsheet-123",
+        "--values",
+        "values.json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::BatchUpdate {
+                            spreadsheet_id,
+                            values,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(values, "values.json");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_batch_update_requires_values() {
+    assert!(parse(&["sheets", "values", "batch-update", "spreadsheet-123"]).is_err());
+}
+
+#[test]
 fn sheets_values_append_defaults_to_user_entered_and_insert_rows() {
     let cli = parse(&[
         "sheets",
@@ -935,6 +969,37 @@ fn sheets_values_clear_with_range() {
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
             assert_eq!(range, "Sheet1!A1:B2");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_batch_clear_accepts_repeated_ranges() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "batch-clear",
+        "spreadsheet-123",
+        "--range",
+        "Sheet1!A1:B2",
+        "--range",
+        "Summary!A:A",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::BatchClear {
+                            spreadsheet_id,
+                            ranges,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
         }
         _ => panic!("unexpected parse result"),
     }

@@ -107,6 +107,13 @@ fn append_values_command(
     }
 }
 
+fn batch_update_values_command(values: impl Into<String>) -> SheetsValuesCommand {
+    SheetsValuesCommand::BatchUpdate {
+        spreadsheet_id: "spreadsheet-123".into(),
+        values: values.into(),
+    }
+}
+
 #[tokio::test]
 async fn run_get_prints_spreadsheet_json_to_stdout() {
     let server = MockServer::start().await;
@@ -378,6 +385,112 @@ async fn run_values_update_reads_values_from_stdin() {
 }
 
 #[tokio::test]
+async fn run_values_batch_update_reads_values_from_file_and_passes_full_body_through() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "valueInputOption": "RAW",
+        "data": [
+            {
+                "range": "Sheet1!A1:B2",
+                "majorDimension": "ROWS",
+                "values": [["Ada", 42]]
+            },
+            {
+                "range": "Summary!A1",
+                "values": [["done"]]
+            }
+        ],
+        "includeValuesInResponse": true,
+        "responseValueRenderOption": "UNFORMATTED_VALUE"
+    });
+    Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "totalUpdatedCells": 3,
+            "responses": [
+                {
+                    "updatedRange": "Sheet1!A1:B2"
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let values_path = temp_dir.path().join("batch-values.json");
+    std::fs::write(&values_path, request_body.to_string()).unwrap();
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        batch_update_values_command(values_path.to_string_lossy().into_owned()),
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        concat!(
+            "{\"responses\":[{\"updatedRange\":\"Sheet1!A1:B2\"}],",
+            "\"spreadsheetId\":\"spreadsheet-123\",\"totalUpdatedCells\":3}\n"
+        )
+    );
+}
+
+#[tokio::test]
+async fn run_values_batch_update_reads_values_from_stdin() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "valueInputOption": "USER_ENTERED",
+        "data": [
+            {
+                "range": "Sheet1!A1",
+                "values": [["=40+2"]]
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "totalUpdatedCells": 1
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new(request_body.to_string());
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        batch_update_values_command("-"),
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "{\"totalUpdatedCells\":1}\n");
+}
+
+#[tokio::test]
 async fn run_values_append_reads_values_from_file_and_prints_response_json() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
@@ -489,6 +602,9 @@ async fn run_values_append_reads_values_from_stdin() {
 async fn run_values_batch_clear_prints_response_json() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/:batchClear",
+        ))
         .and(header("authorization", "Bearer sheets-write-access"))
         .and(body_json(&serde_json::json!({
             "ranges": ["Sheet1!A1:B2", "Summary!A:A"]
@@ -522,6 +638,48 @@ async fn run_values_batch_clear_prints_response_json() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"clearedRanges\":[\"Sheet1!A1:B2\",\"Summary!A:A\"]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_values_clear_prints_response_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A1:B2:clear",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&serde_json::json!({})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "clearedRange": "Sheet1!A1:B2"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::Clear {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:B2".into(),
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"clearedRange\":\"Sheet1!A1:B2\",\"spreadsheetId\":\"spreadsheet-123\"}\n"
     );
 }
 
@@ -744,6 +902,64 @@ async fn run_values_append_returns_clear_error_for_invalid_request_json() {
 }
 
 #[tokio::test]
+async fn run_values_batch_update_returns_clear_error_for_invalid_request_json() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new("{not json");
+    let mut out = Vec::new();
+
+    let result = run_values_to(
+        &client,
+        batch_update_values_command("-"),
+        &mut input,
+        &mut out,
+        Some("https://example.test/sheets/v4/spreadsheets"),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to parse Google Sheets Values request body from stdin"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_values_batch_update_returns_clear_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("bad batch value update request"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new(
+        serde_json::json!({
+            "valueInputOption": "RAW",
+            "data": []
+        })
+        .to_string(),
+    );
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_values_to(
+        &client,
+        batch_update_values_command("-"),
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to batch update Google Sheets values"));
+    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
+    assert!(message.contains("bad batch value update request"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
 async fn run_values_append_returns_clear_error_for_api_failure() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -775,5 +991,73 @@ async fn run_values_append_returns_clear_error_for_api_failure() {
     assert!(message.contains("failed to append Google Sheets values"));
     assert!(message.contains("Google Sheets API error (400 Bad Request)"));
     assert!(message.contains("bad append request"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_values_clear_returns_clear_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("bad clear request"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_values_to(
+        &client,
+        SheetsValuesCommand::Clear {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:B2".into(),
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to clear Google Sheets values"));
+    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
+    assert!(message.contains("bad clear request"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_values_batch_clear_returns_clear_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("bad batch clear request"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_values_to(
+        &client,
+        SheetsValuesCommand::BatchClear {
+            spreadsheet_id: "spreadsheet-123".into(),
+            ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to batch clear Google Sheets values"));
+    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
+    assert!(message.contains("bad batch clear request"));
     assert!(out.is_empty());
 }
