@@ -1,6 +1,7 @@
 use std::io::{Read, Write};
 
 use anyhow::{bail, Context, Result};
+use serde::Serialize;
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
@@ -57,6 +58,47 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
                 document_id,
                 selector,
                 json,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DocsCommand::InsertText {
+            document_id,
+            text,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_insert_text_to(
+                client,
+                InsertTextCommand {
+                    document_id,
+                    text,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
                 &mut std::io::stdout(),
                 None,
             ))
@@ -119,6 +161,27 @@ pub(super) enum ContentSelector {
     Heading(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum InsertTextSelector {
+    Index(i64),
+    Entry(usize),
+    PageLine { page: usize, line: usize },
+    AfterHeading(String),
+    BeforeHeading(String),
+    AfterText(String),
+    BeforeText(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct InsertTextCommand {
+    pub document_id: String,
+    pub text: String,
+    pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
 pub(super) async fn run_search_text_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -150,6 +213,50 @@ pub(super) async fn run_get_content_to<S: AccountStore>(
         write_json_line(out, entry, "failed to serialize Docs content entry")
     } else {
         write_document_map_table(out, &document_map_with_entry(&document_map, entry))
+    }
+}
+
+pub(super) async fn run_insert_text_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: InsertTextCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let resolved = resolve_insert_text_location(&document_map, &command.selector)?;
+    let request_body = insert_text_request_body(
+        resolved.location.index,
+        &command.text,
+        command.required_revision_id.as_deref(),
+    );
+    let preview = InsertTextPreview {
+        before: resolved.preview_before.clone(),
+        after: insert_preview_text(
+            &resolved.preview_before,
+            resolved.preview_offset,
+            &command.text,
+        ),
+    };
+
+    if command.dry_run {
+        let dry_run = InsertTextDryRun {
+            revision_id: document_map.revision_id.clone(),
+            location: resolved.location,
+            request_body,
+            preview,
+        };
+        if command.json {
+            write_json_line(out, &dry_run, "failed to serialize Docs insert-text dry run")
+        } else {
+            write_insert_text_preview(out, &dry_run)
+        }
+    } else {
+        let options =
+            batch_update_document_options(command.document_id, request_body, documents_url);
+        let response = batch_update_document(client, &options)
+            .await
+            .context("failed to apply Google Docs insert-text")?;
+        write_json_line(out, &response, "failed to serialize Docs insert-text response")
     }
 }
 
@@ -258,6 +365,58 @@ fn content_selector(
     unreachable!("selector count checked above")
 }
 
+fn insert_text_selector(
+    index: Option<i64>,
+    entry: Option<usize>,
+    page: Option<usize>,
+    line: Option<usize>,
+    after_heading: Option<String>,
+    before_heading: Option<String>,
+    after_text: Option<String>,
+    before_text: Option<String>,
+) -> Result<InsertTextSelector> {
+    let selector_count = usize::from(index.is_some())
+        + usize::from(entry.is_some())
+        + usize::from(page.is_some() || line.is_some())
+        + usize::from(after_heading.is_some())
+        + usize::from(before_heading.is_some())
+        + usize::from(after_text.is_some())
+        + usize::from(before_text.is_some());
+    if selector_count != 1 {
+        bail!("provide exactly one insert-text selector: --index, --entry, --page with --line, --after-heading, --before-heading, --after-text, or --before-text");
+    }
+
+    if let Some(index) = index {
+        return Ok(InsertTextSelector::Index(index));
+    }
+    if let Some(entry) = entry {
+        return Ok(InsertTextSelector::Entry(entry));
+    }
+    if page.is_some() || line.is_some() {
+        let Some(page) = page else {
+            bail!("--page and --line must be provided together");
+        };
+        let Some(line) = line else {
+            bail!("--page and --line must be provided together");
+        };
+        return Ok(InsertTextSelector::PageLine { page, line });
+    }
+    if let Some(heading) = after_heading {
+        return Ok(InsertTextSelector::AfterHeading(heading));
+    }
+    if let Some(heading) = before_heading {
+        return Ok(InsertTextSelector::BeforeHeading(heading));
+    }
+    if let Some(text) = after_text {
+        return Ok(InsertTextSelector::AfterText(text));
+    }
+    if let Some(text) = before_text {
+        return Ok(InsertTextSelector::BeforeText(text));
+    }
+
+    unreachable!("selector count checked above")
+}
+
 fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry) -> DocumentMap {
     DocumentMap {
         document_id: document_map.document_id.clone(),
@@ -327,6 +486,227 @@ fn resolve_heading<'a>(
             bail!("ambiguous heading selector {heading:?}; candidates: {candidate_list}")
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InsertTextDryRun {
+    revision_id: Option<String>,
+    location: crate::docs::map::DocumentLocation,
+    request_body: serde_json::Value,
+    preview: InsertTextPreview,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InsertTextPreview {
+    before: String,
+    after: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ResolvedInsertTextLocation {
+    location: crate::docs::map::DocumentLocation,
+    preview_before: String,
+    preview_offset: usize,
+}
+
+fn resolve_insert_text_location(
+    document_map: &DocumentMap,
+    selector: &InsertTextSelector,
+) -> Result<ResolvedInsertTextLocation> {
+    match selector {
+        InsertTextSelector::Index(index) => resolved_for_index(document_map, *index),
+        InsertTextSelector::Entry(entry_number) => {
+            let entry =
+                resolve_content_entry(document_map, &ContentSelector::Entry(*entry_number))?;
+            resolved_for_entry_start(document_map, entry)
+        }
+        InsertTextSelector::PageLine { page, line } => {
+            let entry = resolve_content_entry(
+                document_map,
+                &ContentSelector::PageLine {
+                    page: *page,
+                    line: *line,
+                },
+            )?;
+            resolved_for_entry_start(document_map, entry)
+        }
+        InsertTextSelector::BeforeHeading(heading) => {
+            let entry = resolve_heading(document_map, heading)?;
+            resolved_for_entry_start(document_map, entry)
+        }
+        InsertTextSelector::AfterHeading(heading) => {
+            let entry = resolve_heading(document_map, heading)?;
+            resolved_for_entry_end(document_map, entry)
+        }
+        InsertTextSelector::BeforeText(text) => {
+            let range = resolve_text_anchor(document_map, text)?;
+            Ok(ResolvedInsertTextLocation {
+                location: range.location.clone(),
+                preview_before: range.preview.clone(),
+                preview_offset: preview_offset_for_index(
+                    &range.preview,
+                    range.start_index,
+                    range.start_index,
+                ),
+            })
+        }
+        InsertTextSelector::AfterText(text) => {
+            let range = resolve_text_anchor(document_map, text)?;
+            Ok(ResolvedInsertTextLocation {
+                location: crate::docs::map::DocumentLocation {
+                    index: Some(range.end_index),
+                    ..range.location.clone()
+                },
+                preview_before: range.preview.clone(),
+                preview_offset: preview_offset_for_index(
+                    &range.preview,
+                    range.start_index,
+                    range.end_index,
+                ),
+            })
+        }
+    }
+}
+
+fn resolved_for_index(
+    document_map: &DocumentMap,
+    index: i64,
+) -> Result<ResolvedInsertTextLocation> {
+    let entry = resolve_content_entry(document_map, &ContentSelector::Index(index))?;
+    let preview_offset = entry
+        .location
+        .index
+        .map(|start| preview_offset_for_index(&entry.preview, start, index))
+        .unwrap_or(0);
+    Ok(ResolvedInsertTextLocation {
+        location: crate::docs::map::DocumentLocation {
+            index: Some(index),
+            ..entry.location.clone()
+        },
+        preview_before: entry.preview.clone(),
+        preview_offset,
+    })
+}
+
+fn resolved_for_entry_start(
+    _document_map: &DocumentMap,
+    entry: &DocumentMapEntry,
+) -> Result<ResolvedInsertTextLocation> {
+    let Some(index) = entry.location.index else {
+        bail!("Document Map entry {} does not have a Google Docs index", entry.entry);
+    };
+    Ok(ResolvedInsertTextLocation {
+        location: crate::docs::map::DocumentLocation {
+            index: Some(index),
+            ..entry.location.clone()
+        },
+        preview_before: entry.preview.clone(),
+        preview_offset: 0,
+    })
+}
+
+fn resolved_for_entry_end(
+    document_map: &DocumentMap,
+    entry: &DocumentMapEntry,
+) -> Result<ResolvedInsertTextLocation> {
+    let Some(start_index) = entry.location.index else {
+        bail!("Document Map entry {} does not have a Google Docs index", entry.entry);
+    };
+    let end_index = document_map
+        .text_blocks
+        .iter()
+        .find(|block| block.start_index == start_index)
+        .map(|block| block.start_index + block.text.encode_utf16().count() as i64)
+        .unwrap_or(start_index);
+    Ok(ResolvedInsertTextLocation {
+        location: crate::docs::map::DocumentLocation {
+            index: Some(end_index),
+            ..entry.location.clone()
+        },
+        preview_before: entry.preview.clone(),
+        preview_offset: entry.preview.chars().count(),
+    })
+}
+
+fn resolve_text_anchor(document_map: &DocumentMap, text: &str) -> Result<DocumentRange> {
+    let matches = search_document_text(document_map, text);
+    match matches.as_slice() {
+        [range] => Ok(range.clone()),
+        [] => bail!("text selector {text:?} did not match any Document Map entries"),
+        candidates => {
+            let candidate_list = candidates
+                .iter()
+                .enumerate()
+                .map(|(index, range)| {
+                    format!(
+                        "match {} index {} page {} line {} preview {}",
+                        index + 1,
+                        range.start_index,
+                        display_optional(range.location.page),
+                        range.location.content_line,
+                        range.preview
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            bail!("ambiguous text selector {text:?}; candidates: {candidate_list}")
+        }
+    }
+}
+
+fn insert_text_request_body(
+    index: Option<i64>,
+    text: &str,
+    required_revision_id: Option<&str>,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "requests": [
+            {
+                "insertText": {
+                    "location": { "index": index },
+                    "text": text
+                }
+            }
+        ]
+    });
+    if let Some(required_revision_id) = required_revision_id {
+        body["writeControl"] = serde_json::json!({
+            "requiredRevisionId": required_revision_id
+        });
+    }
+    body
+}
+
+fn insert_preview_text(before: &str, char_offset: usize, inserted_text: &str) -> String {
+    let byte_offset = before
+        .char_indices()
+        .nth(char_offset)
+        .map(|(index, _)| index)
+        .unwrap_or(before.len());
+    let mut after = before.to_string();
+    after.insert_str(byte_offset, inserted_text);
+    after
+}
+
+fn preview_offset_for_index(preview: &str, block_start_index: i64, insertion_index: i64) -> usize {
+    let requested_offset = insertion_index.saturating_sub(block_start_index) as usize;
+    requested_offset.min(preview.chars().count())
+}
+
+fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -> Result<()> {
+    writeln!(
+        out,
+        "Insert text at index {}",
+        display_optional(dry_run.location.index)
+    )
+    .context("failed to write Docs insert-text preview header")?;
+    writeln!(out, "Before: {}", dry_run.preview.before)
+        .context("failed to write Docs insert-text before preview")?;
+    writeln!(out, "After: {}", dry_run.preview.after)
+        .context("failed to write Docs insert-text after preview")?;
+    Ok(())
 }
 
 fn get_document_options(

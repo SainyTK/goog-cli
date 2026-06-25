@@ -351,6 +351,156 @@ async fn run_get_content_ambiguous_heading_returns_candidates() {
 }
 
 #[tokio::test]
+async fn run_insert_text_dry_run_json_emits_request_without_mutating() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_insert_text_to(
+        &client,
+        InsertTextCommand {
+            document_id: "document-123".into(),
+            text: "Hello ".into(),
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["revisionId"], "rev-search");
+    assert_eq!(output["location"]["index"], 37);
+    assert_eq!(output["requestBody"]["requests"][0]["insertText"]["location"]["index"], 37);
+    assert_eq!(output["requestBody"]["requests"][0]["insertText"]["text"], "Hello ");
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+    assert_eq!(output["preview"]["before"], "Second Page Plan");
+    assert_eq!(output["preview"]["after"], "Hello Second Page Plan");
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
+async fn run_insert_text_posts_resolved_batch_update_request() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "insertText": {
+                    "location": { "index": 37 },
+                    "text": "Hello "
+                }
+            }
+        ],
+        "writeControl": {
+            "requiredRevisionId": "rev-search"
+        }
+    });
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_insert_text_to(
+        &client,
+        InsertTextCommand {
+            document_id: "document-123".into(),
+            text: "Hello ".into(),
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            dry_run: false,
+            json: false,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"documentId\":\"document-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_insert_text_rejects_ambiguous_text_anchor_with_candidates() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let result = run_insert_text_to(
+        &client,
+        InsertTextCommand {
+            document_id: "document-123".into(),
+            text: "Hello ".into(),
+            selector: InsertTextSelector::BeforeText("Plan".into()),
+            dry_run: false,
+            json: false,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("ambiguous text selector"));
+    assert!(message.contains("match 1 index 9"));
+    assert!(message.contains("match 2 index 49"));
+    assert!(out.is_empty());
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
 async fn run_batch_update_reads_requests_from_file_and_prints_response_json() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
