@@ -627,6 +627,7 @@ fn is_office_file_precondition_error(status: StatusCode, body: &str) -> bool {
     let Ok(response) = serde_json::from_str::<GoogleErrorResponse>(body) else {
         return false;
     };
+
     response.error.status == OFFICE_FILE_PRECONDITION_STATUS
         && response
             .error
