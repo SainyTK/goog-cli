@@ -560,6 +560,60 @@ fn docs_insert_text_parses_location_and_write_options() {
 }
 
 #[test]
+fn docs_replace_text_parses_match_and_write_options() {
+    let cli = parse(&[
+        "docs",
+        "replace-text",
+        "document-123",
+        "old",
+        "new",
+        "--match",
+        "2",
+        "--dry-run",
+        "--json",
+        "--required-revision-id",
+        "rev-123",
+    ])
+    .unwrap();
+
+    let Command::Docs { command } = cli.command else {
+        panic!("unexpected parse result");
+    };
+    let DocsCommand::ReplaceText {
+        document_id,
+        old_text,
+        new_text,
+        match_number,
+        all,
+        dry_run,
+        json,
+        required_revision_id,
+    } = command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(document_id, "document-123");
+    assert_eq!(old_text, "old");
+    assert_eq!(new_text, "new");
+    assert_eq!(match_number, Some(2));
+    assert!(!all);
+    assert!(dry_run);
+    assert!(json);
+    assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
+
+    assert!(parse(&[
+        "docs",
+        "replace-text",
+        "document-123",
+        "old",
+        "new",
+        "--all",
+    ])
+    .is_ok());
+}
+
+#[test]
 fn docs_batch_update_with_requests_path() {
     let cli = parse(&[
         "docs",

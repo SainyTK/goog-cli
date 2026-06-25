@@ -233,6 +233,30 @@ pub enum DocsCommand {
         #[arg(long)]
         required_revision_id: Option<String>,
     },
+    /// Replace text through the high-level Document Map editing layer
+    ReplaceText {
+        /// Google Docs Document ID to update
+        document_id: String,
+        /// Existing text to replace
+        old_text: String,
+        /// Replacement text
+        new_text: String,
+        /// Replace the Nth match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
+        /// Replace every match
+        #[arg(long)]
+        all: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
     /// Fetch a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.
