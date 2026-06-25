@@ -114,6 +114,26 @@ fn batch_update_values_command(values: impl Into<String>) -> SheetsValuesCommand
     }
 }
 
+fn clear_values_command() -> SheetsValuesCommand {
+    SheetsValuesCommand::Clear {
+        spreadsheet_id: "spreadsheet-123".into(),
+        range: "Sheet1!A1:B2".into(),
+    }
+}
+
+fn batch_clear_values_command() -> SheetsValuesCommand {
+    SheetsValuesCommand::BatchClear {
+        spreadsheet_id: "spreadsheet-123".into(),
+        ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
+    }
+}
+
+fn assert_api_failure(message: &str, operation: &str, api_body: &str) {
+    assert!(message.contains(operation));
+    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
+    assert!(message.contains(api_body));
+}
+
 #[tokio::test]
 async fn run_get_prints_spreadsheet_json_to_stdout() {
     let server = MockServer::start().await;
@@ -624,10 +644,7 @@ async fn run_values_batch_clear_prints_response_json() {
 
     run_values_to(
         &client,
-        SheetsValuesCommand::BatchClear {
-            spreadsheet_id: "spreadsheet-123".into(),
-            ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
-        },
+        batch_clear_values_command(),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -666,10 +683,7 @@ async fn run_values_clear_prints_response_json() {
 
     run_values_to(
         &client,
-        SheetsValuesCommand::Clear {
-            spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B2".into(),
-        },
+        clear_values_command(),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -926,6 +940,9 @@ async fn run_values_batch_update_returns_clear_error_for_invalid_request_json() 
 async fn run_values_batch_update_returns_clear_error_for_api_failure() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/:batchUpdate",
+        ))
         .respond_with(ResponseTemplate::new(400).set_body_string("bad batch value update request"))
         .expect(1)
         .mount(&server)
@@ -953,9 +970,11 @@ async fn run_values_batch_update_returns_clear_error_for_api_failure() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("failed to batch update Google Sheets values"));
-    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
-    assert!(message.contains("bad batch value update request"));
+    assert_api_failure(
+        &message,
+        "failed to batch update Google Sheets values",
+        "bad batch value update request",
+    );
     assert!(out.is_empty());
 }
 
@@ -998,6 +1017,9 @@ async fn run_values_append_returns_clear_error_for_api_failure() {
 async fn run_values_clear_returns_clear_error_for_api_failure() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A1:B2:clear",
+        ))
         .respond_with(ResponseTemplate::new(400).set_body_string("bad clear request"))
         .expect(1)
         .mount(&server)
@@ -1011,10 +1033,7 @@ async fn run_values_clear_returns_clear_error_for_api_failure() {
 
     let result = run_values_to(
         &client,
-        SheetsValuesCommand::Clear {
-            spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B2".into(),
-        },
+        clear_values_command(),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -1022,9 +1041,11 @@ async fn run_values_clear_returns_clear_error_for_api_failure() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("failed to clear Google Sheets values"));
-    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
-    assert!(message.contains("bad clear request"));
+    assert_api_failure(
+        &message,
+        "failed to clear Google Sheets values",
+        "bad clear request",
+    );
     assert!(out.is_empty());
 }
 
@@ -1032,6 +1053,9 @@ async fn run_values_clear_returns_clear_error_for_api_failure() {
 async fn run_values_batch_clear_returns_clear_error_for_api_failure() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/:batchClear",
+        ))
         .respond_with(ResponseTemplate::new(400).set_body_string("bad batch clear request"))
         .expect(1)
         .mount(&server)
@@ -1045,10 +1069,7 @@ async fn run_values_batch_clear_returns_clear_error_for_api_failure() {
 
     let result = run_values_to(
         &client,
-        SheetsValuesCommand::BatchClear {
-            spreadsheet_id: "spreadsheet-123".into(),
-            ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
-        },
+        batch_clear_values_command(),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -1056,8 +1077,10 @@ async fn run_values_batch_clear_returns_clear_error_for_api_failure() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("failed to batch clear Google Sheets values"));
-    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
-    assert!(message.contains("bad batch clear request"));
+    assert_api_failure(
+        &message,
+        "failed to batch clear Google Sheets values",
+        "bad batch clear request",
+    );
     assert!(out.is_empty());
 }
