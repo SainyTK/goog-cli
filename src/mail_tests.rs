@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use chrono::{Duration, Utc};
 use wiremock::matchers::{body_string_contains, header, method, path, query_param};
@@ -10,31 +10,7 @@ use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 use crate::mail::*;
-
-static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
-
-struct CurrentDirGuard {
-    original: std::path::PathBuf,
-    _lock: MutexGuard<'static, ()>,
-}
-
-impl CurrentDirGuard {
-    fn enter(path: impl AsRef<std::path::Path>) -> Self {
-        let lock = CURRENT_DIR_LOCK.lock().unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(path).unwrap();
-        Self {
-            original,
-            _lock: lock,
-        }
-    }
-}
-
-impl Drop for CurrentDirGuard {
-    fn drop(&mut self) {
-        std::env::set_current_dir(&self.original).unwrap();
-    }
-}
+use crate::test_support::CurrentDirGuard;
 
 fn test_config() -> Config {
     Config {
