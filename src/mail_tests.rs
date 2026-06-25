@@ -74,6 +74,23 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
+fn messages_url(server: &MockServer) -> String {
+    format!("{}/gmail/v1/users/me/messages", server.uri())
+}
+
+fn attachment_path(message_id: &str, attachment_id: &str) -> String {
+    format!("/gmail/v1/users/me/messages/{message_id}/attachments/{attachment_id}")
+}
+
+fn download_attachment_options(
+    server: &MockServer,
+    message_id: &str,
+    attachment_id: &str,
+) -> DownloadAttachmentOptions {
+    DownloadAttachmentOptions::new(message_id, attachment_id)
+        .with_messages_url(messages_url(server))
+}
+
 struct StaticAuthorizationCodeFlow {
     scopes_seen: Arc<Mutex<Vec<String>>>,
 }
@@ -153,8 +170,7 @@ async fn list_messages_defaults_to_inbox_and_hydrates_summary_metadata() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = ListMessagesOptions::inbox(10)
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+    let options = ListMessagesOptions::inbox(10).with_messages_url(messages_url(&server));
 
     let summaries = list_messages(&client, &options).await.unwrap();
 
@@ -213,7 +229,7 @@ async fn search_messages_passes_mailbox_query_through() {
     let store = MemoryStore::default();
     let client = test_client(&store);
     let options = ListMessagesOptions::search("from:alice@example.com has:attachment", 25)
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+        .with_messages_url(messages_url(&server));
 
     let summaries = list_messages(&client, &options).await.unwrap();
 
@@ -224,9 +240,7 @@ async fn search_messages_passes_mailbox_query_through() {
 async fn download_attachment_decodes_base64url_to_explicit_output_path() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path(
-            "/gmail/v1/users/me/messages/message-1/attachments/attachment-1",
-        ))
+        .and(path(attachment_path("message-1", "attachment-1")))
         .and(header("authorization", "Bearer mail-access"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "data": "aGVsbG8gbWFpbA"
@@ -239,9 +253,8 @@ async fn download_attachment_decodes_base64url_to_explicit_output_path() {
     let output = temp.path().join("report.txt");
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = DownloadAttachmentOptions::new("message-1", "attachment-1")
-        .with_output(output.clone())
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+    let options = download_attachment_options(&server, "message-1", "attachment-1")
+        .with_output(output.clone());
 
     let downloaded = download_attachment(&client, &options).await.unwrap();
 
@@ -273,9 +286,7 @@ async fn download_attachment_uses_message_part_filename_when_output_is_omitted()
         .mount(&server)
         .await;
     Mock::given(method("GET"))
-        .and(path(
-            "/gmail/v1/users/me/messages/message-1/attachments/attachment-1",
-        ))
+        .and(path(attachment_path("message-1", "attachment-1")))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "data": "cmVwb3J0"
         })))
@@ -287,8 +298,7 @@ async fn download_attachment_uses_message_part_filename_when_output_is_omitted()
     let _current_dir = CurrentDirGuard::enter(temp.path());
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = DownloadAttachmentOptions::new("message-1", "attachment-1")
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+    let options = download_attachment_options(&server, "message-1", "attachment-1");
 
     let downloaded = download_attachment(&client, &options).await.unwrap();
 
@@ -340,12 +350,137 @@ async fn download_attachment_requires_output_when_filename_is_missing() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = DownloadAttachmentOptions::new("message-1", "attachment-1")
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+    let options = download_attachment_options(&server, "message-1", "attachment-1");
 
     let err = download_attachment(&client, &options).await.unwrap_err();
 
     assert!(matches!(err, MailError::MissingAttachmentFilename));
+}
+
+#[tokio::test]
+async fn download_attachment_requests_only_gmail_readonly_scope_when_missing() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .and(body_string_contains("code=mail-code"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "mail-access",
+            "expires_in": 3600,
+            "scope": GMAIL_READONLY_SCOPE,
+            "token_type": "Bearer"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(attachment_path("message-1", "attachment-1")))
+        .and(header("authorization", "Bearer mail-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": "c2NvcGVk"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("scoped.txt");
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &profile_token())
+        .unwrap();
+    let scopes_seen = Arc::new(Mutex::new(Vec::new()));
+    let client = AuthClient::from_config(test_config(), &store, None)
+        .unwrap()
+        .with_auth_urls_for_tests(
+            "https://example.test/auth",
+            format!("{}/token", server.uri()),
+        )
+        .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
+            scopes_seen: scopes_seen.clone(),
+        }));
+    let options =
+        download_attachment_options(&server, "message-1", "attachment-1").with_output(output);
+
+    download_attachment(&client, &options).await.unwrap();
+
+    assert_eq!(
+        scopes_seen.lock().unwrap().clone(),
+        vec![GMAIL_READONLY_SCOPE.to_string()]
+    );
+    let saved = store.load_token("alice@example.com").unwrap().unwrap();
+    assert_eq!(
+        saved.scopes,
+        vec!["openid".to_string(), GMAIL_READONLY_SCOPE.to_string()]
+    );
+}
+
+#[tokio::test]
+async fn download_attachment_returns_mail_error_for_not_found_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(attachment_path("message-1", "missing-attachment")))
+        .respond_with(ResponseTemplate::new(404).set_body_string("not found"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = download_attachment_options(&server, "message-1", "missing-attachment")
+        .with_output(temp.path().join("missing.txt"));
+
+    let err = download_attachment(&client, &options).await.unwrap_err();
+
+    assert!(matches!(err, MailError::NotFound));
+}
+
+#[tokio::test]
+async fn download_attachment_returns_mail_error_for_permission_denied_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(attachment_path("message-1", "private-attachment")))
+        .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = download_attachment_options(&server, "message-1", "private-attachment")
+        .with_output(temp.path().join("private.txt"));
+
+    let err = download_attachment(&client, &options).await.unwrap_err();
+
+    assert!(matches!(err, MailError::PermissionDenied));
+}
+
+#[tokio::test]
+async fn download_attachment_returns_api_error_with_response_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(attachment_path("message-1", "attachment-1")))
+        .respond_with(ResponseTemplate::new(500).set_body_string("upstream failure"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = download_attachment_options(&server, "message-1", "attachment-1")
+        .with_output(temp.path().join("failed.txt"));
+
+    let err = download_attachment(&client, &options).await.unwrap_err();
+
+    match err {
+        MailError::Api { status, body } => {
+            assert_eq!(status, reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(body, "upstream failure");
+        }
+        _ => panic!("unexpected error: {err}"),
+    }
 }
 
 #[tokio::test]
@@ -369,8 +504,7 @@ async fn get_message_fetches_raw_googlemail_message() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetMessageOptions::new("message-123")
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+    let options = GetMessageOptions::new("message-123").with_messages_url(messages_url(&server));
 
     let message = get_message(&client, &options).await.unwrap();
 
@@ -419,7 +553,7 @@ async fn get_message_requests_only_gmail_readonly_scope_when_missing() {
             scopes_seen: scopes_seen.clone(),
         }));
     let options = GetMessageOptions::new("message-123")
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+        .with_messages_url(messages_url(&server));
 
     get_message(&client, &options).await.unwrap();
 
@@ -447,7 +581,7 @@ async fn get_message_returns_mail_error_for_not_found_response() {
     let store = MemoryStore::default();
     let client = test_client(&store);
     let options = GetMessageOptions::new("missing-message")
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+        .with_messages_url(messages_url(&server));
 
     let err = get_message(&client, &options).await.unwrap_err();
 
@@ -467,7 +601,7 @@ async fn get_message_returns_mail_error_for_permission_denied_response() {
     let store = MemoryStore::default();
     let client = test_client(&store);
     let options = GetMessageOptions::new("private-message")
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+        .with_messages_url(messages_url(&server));
 
     let err = get_message(&client, &options).await.unwrap_err();
 
@@ -486,8 +620,7 @@ async fn get_message_returns_api_error_with_response_body() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetMessageOptions::new("message-123")
-        .with_messages_url(format!("{}/gmail/v1/users/me/messages", server.uri()));
+    let options = GetMessageOptions::new("message-123").with_messages_url(messages_url(&server));
 
     let err = get_message(&client, &options).await.unwrap_err();
 
