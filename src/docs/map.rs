@@ -49,31 +49,19 @@ pub enum DocumentMapEntryKind {
 }
 
 pub fn build_document_map(document: &Value) -> DocumentMap {
-    let toc_page_hints = collect_table_of_contents_page_hints(document);
-    let mut builder = DocumentMapBuilder {
-        entries: Vec::new(),
-        current_page: None,
-        current_confidence: LocationConfidence::Unknown,
-        content_line: 0,
-        toc_page_hints,
-    };
+    let mut builder = DocumentMapBuilder::new(collect_table_of_contents_page_hints(document));
 
     for content in document_content(document) {
         builder.push_structural_element(content);
     }
 
-    let document_locations = builder
-        .entries
-        .iter()
-        .map(|entry| entry.location.clone())
-        .collect();
-
+    let entries = builder.entries;
     DocumentMap {
         document_id: string_field(document, "documentId"),
         title: string_field(document, "title"),
         revision_id: string_field(document, "revisionId"),
-        entries: builder.entries,
-        document_locations,
+        document_locations: entries.iter().map(|entry| entry.location.clone()).collect(),
+        entries,
     }
 }
 
@@ -86,6 +74,16 @@ struct DocumentMapBuilder {
 }
 
 impl DocumentMapBuilder {
+    fn new(toc_page_hints: Vec<TableOfContentsPageHint>) -> Self {
+        Self {
+            entries: Vec::new(),
+            current_page: None,
+            current_confidence: LocationConfidence::Unknown,
+            content_line: 0,
+            toc_page_hints,
+        }
+    }
+
     fn push_structural_element(&mut self, element: &Value) {
         if contains_page_break(element) {
             self.advance_explicit_page();
@@ -100,72 +98,56 @@ impl DocumentMapBuilder {
 
     fn push_paragraph(&mut self, element: &Value, paragraph: &Value) {
         let text = paragraph_text(paragraph);
+        let trimmed_text = text.trim();
         let has_inline_image = paragraph_has_inline_image(paragraph);
         let positioned_count = paragraph_positioned_object_count(paragraph);
         let style = paragraph_style(paragraph);
-        let is_heading = style.as_deref().map_or(false, |style| {
-            style == "TITLE" || style.starts_with("HEADING")
-        });
+        let is_heading = style.as_deref().map_or(false, is_heading_style);
 
-        if !text.trim().is_empty() {
+        if !trimmed_text.is_empty() {
             self.push_content_line();
-            let toc_hint = if is_heading {
-                self.toc_page_hints
-                    .iter()
-                    .find(|hint| hint.heading == text.trim())
+            let kind = if is_heading {
+                DocumentMapEntryKind::Heading
             } else {
-                None
+                DocumentMapEntryKind::Paragraph
             };
-            let location = if let Some(hint) = toc_hint {
-                self.location_for(element, Some(hint.page), LocationConfidence::TableOfContents)
-            } else {
-                self.location_for(element, self.current_page, self.current_confidence)
-            };
-            self.entries.push(DocumentMapEntry {
-                entry: self.entries.len() + 1,
-                location,
-                kind: if is_heading {
-                    DocumentMapEntryKind::Heading
-                } else {
-                    DocumentMapEntryKind::Paragraph
-                },
-                style: style.clone(),
-                preview: preview(&text),
-            });
+            self.push_entry(
+                self.text_location(element, is_heading, trimmed_text),
+                kind,
+                style.clone(),
+                preview(&text),
+            );
         } else if has_inline_image || positioned_count > 0 {
             self.push_content_line();
         }
 
         if has_inline_image {
-            self.entries.push(DocumentMapEntry {
-                entry: self.entries.len() + 1,
-                location: self.location_for(element, self.current_page, self.current_confidence),
-                kind: DocumentMapEntryKind::InlineImage,
-                style: style.clone(),
-                preview: "[inline image]".into(),
-            });
+            self.push_entry(
+                self.current_location(element),
+                DocumentMapEntryKind::InlineImage,
+                style.clone(),
+                "[inline image]".into(),
+            );
         }
 
         for object_number in 1..=positioned_count {
-            self.entries.push(DocumentMapEntry {
-                entry: self.entries.len() + 1,
-                location: self.location_for(element, self.current_page, self.current_confidence),
-                kind: DocumentMapEntryKind::PositionedImage,
-                style: style.clone(),
-                preview: format!("[positioned image {object_number}]"),
-            });
+            self.push_entry(
+                self.current_location(element),
+                DocumentMapEntryKind::PositionedImage,
+                style.clone(),
+                format!("[positioned image {object_number}]"),
+            );
         }
     }
 
     fn push_table(&mut self, element: &Value, table: &Value) {
         self.push_content_line();
-        self.entries.push(DocumentMapEntry {
-            entry: self.entries.len() + 1,
-            location: self.location_for(element, self.current_page, self.current_confidence),
-            kind: DocumentMapEntryKind::Table,
-            style: None,
-            preview: preview(&table_preview(table)),
-        });
+        self.push_entry(
+            self.current_location(element),
+            DocumentMapEntryKind::Table,
+            None,
+            preview(&table_preview(table)),
+        );
     }
 
     fn advance_explicit_page(&mut self) {
@@ -176,6 +158,51 @@ impl DocumentMapBuilder {
 
     fn push_content_line(&mut self) {
         self.content_line += 1;
+    }
+
+    fn push_entry(
+        &mut self,
+        location: DocumentLocation,
+        kind: DocumentMapEntryKind,
+        style: Option<String>,
+        preview: String,
+    ) {
+        self.entries.push(DocumentMapEntry {
+            entry: self.entries.len() + 1,
+            location,
+            kind,
+            style,
+            preview,
+        });
+    }
+
+    fn text_location(
+        &self,
+        element: &Value,
+        is_heading: bool,
+        trimmed_text: &str,
+    ) -> DocumentLocation {
+        if !is_heading {
+            return self.current_location(element);
+        }
+
+        if let Some(hint) = self
+            .toc_page_hints
+            .iter()
+            .find(|hint| hint.heading == trimmed_text)
+        {
+            return self.location_for(
+                element,
+                Some(hint.page),
+                LocationConfidence::TableOfContents,
+            );
+        }
+
+        self.current_location(element)
+    }
+
+    fn current_location(&self, element: &Value) -> DocumentLocation {
+        self.location_for(element, self.current_page, self.current_confidence)
     }
 
     fn location_for(
@@ -191,6 +218,10 @@ impl DocumentMapBuilder {
             confidence,
         }
     }
+}
+
+fn is_heading_style(style: &str) -> bool {
+    style == "TITLE" || style.starts_with("HEADING")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -224,17 +255,18 @@ fn collect_table_of_contents_page_hints(document: &Value) -> Vec<TableOfContents
 
 fn parse_table_of_contents_hint(text: &str) -> Option<TableOfContentsPageHint> {
     let trimmed = text.trim();
-    let page_start = trimmed
+    let page_number_start = trimmed
         .char_indices()
         .rev()
         .find(|(_, c)| !c.is_ascii_digit())
         .map(|(index, c)| index + c.len_utf8())?;
-    if page_start >= trimmed.len() || !trimmed[page_start..].chars().all(|c| c.is_ascii_digit()) {
+    let page_number = &trimmed[page_number_start..];
+    if page_number_start >= trimmed.len() || !page_number.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
 
-    let page = trimmed[page_start..].parse().ok()?;
-    let heading = trimmed[..page_start]
+    let page = page_number.parse().ok()?;
+    let heading = trimmed[..page_number_start]
         .trim_end_matches(|c: char| c.is_whitespace() || c == '.')
         .trim()
         .to_string();
