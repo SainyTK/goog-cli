@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{Duration, Utc};
 use url::Url;
-use wiremock::matchers::{body_json, body_string_contains, header, method, path};
+use wiremock::matchers::{body_json, body_string_contains, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
@@ -10,6 +10,7 @@ use crate::auth::client::{AuthClient, AuthorizationCode, AuthorizationCodeFlow};
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
+use crate::drive::DRIVE_SCOPE;
 use crate::sheets::*;
 
 const SPREADSHEET_RESPONSE: &str = r#"{
@@ -85,6 +86,10 @@ fn write_test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
 
 fn spreadsheets_url(server: &MockServer) -> String {
     format!("{}/sheets/v4/spreadsheets", server.uri())
+}
+
+fn drive_files_url(server: &MockServer) -> String {
+    format!("{}/drive/v3/files", server.uri())
 }
 
 fn spreadsheet_options(server: &MockServer, spreadsheet_id: &str) -> GetSpreadsheetOptions {
@@ -439,6 +444,76 @@ async fn get_values_fetches_value_range_with_default_formatted_values() {
 }
 
 #[tokio::test]
+async fn get_values_converts_office_file_then_reads_temporary_spreadsheet() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/sheets/v4/spreadsheets/office-file-123/values/Sheet1!A1:B2",
+        ))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": {
+                "code": 400,
+                "status": "FAILED_PRECONDITION",
+                "message": "This operation is not supported for this document. The document must not be an Office file."
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-file-123/copy"))
+        .and(query_param("fields", "id"))
+        .and(body_json(&serde_json::json!({
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+            "name": "goog temporary Sheets conversion"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "converted-spreadsheet-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/sheets/v4/spreadsheets/converted-spreadsheet-456/values/Sheet1!A1:B2",
+        ))
+        .and(query_param("valueRenderOption", "FORMATTED_VALUE"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "range": "Sheet1!A1:B2",
+            "values": [["Name", "Score"], ["Ada", "42"]]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/converted-spreadsheet-456"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                scopes: vec![SHEETS_READONLY_SCOPE.into(), DRIVE_SCOPE.into()],
+                ..sheets_token()
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let options = GetValuesOptions::new("office-file-123", "Sheet1!A1:B2")
+        .with_spreadsheets_url(spreadsheets_url(&server))
+        .with_drive_files_url(drive_files_url(&server));
+
+    let response = get_values(&client, &options).await.unwrap();
+
+    assert_eq!(response["range"], "Sheet1!A1:B2");
+    assert_eq!(response["values"][1][1], "42");
+}
+
+#[tokio::test]
 async fn batch_get_values_uses_repeated_ranges_and_readonly_scope() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -472,6 +547,85 @@ async fn batch_get_values_uses_repeated_ranges_and_readonly_scope() {
         query_value(&url, "valueRenderOption").as_deref(),
         Some("UNFORMATTED_VALUE")
     );
+}
+
+#[tokio::test]
+async fn batch_get_values_converts_office_file_then_reads_temporary_spreadsheet() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/sheets/v4/spreadsheets/office-file-123/values/:batchGet"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": {
+                "code": 400,
+                "status": "FAILED_PRECONDITION",
+                "message": "This operation is not supported for this document. The document must not be an Office file."
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-file-123/copy"))
+        .and(query_param("fields", "id"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "converted-spreadsheet-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/sheets/v4/spreadsheets/converted-spreadsheet-456/values/:batchGet",
+        ))
+        .and(query_param("ranges", "Sheet1!A1:B2"))
+        .and(query_param("ranges", "Summary!A:A"))
+        .and(query_param("valueRenderOption", "FORMULA"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "converted-spreadsheet-456",
+            "valueRanges": [
+                {
+                    "range": "Sheet1!A1:B2",
+                    "values": [["Name", "Score"], ["Ada", "=40+2"]]
+                },
+                {
+                    "range": "Summary!A:A",
+                    "values": [["Total"], ["=SUM(Sheet1!B:B)"]]
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/converted-spreadsheet-456"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                scopes: vec![SHEETS_READONLY_SCOPE.into(), DRIVE_SCOPE.into()],
+                ..sheets_token()
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let options = BatchGetValuesOptions::new(
+        "office-file-123",
+        vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
+    )
+    .with_value_render_option(ValueRenderOption::Formula)
+    .with_spreadsheets_url(spreadsheets_url(&server))
+    .with_drive_files_url(drive_files_url(&server));
+
+    let response = batch_get_values(&client, &options).await.unwrap();
+
+    assert_eq!(response["valueRanges"][0]["range"], "Sheet1!A1:B2");
+    assert_eq!(response["valueRanges"][1]["values"][1][0], "=SUM(Sheet1!B:B)");
 }
 
 #[tokio::test]
