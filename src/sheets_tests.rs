@@ -379,6 +379,31 @@ async fn get_spreadsheet_returns_sheets_error_for_permission_denied_response() {
 }
 
 #[tokio::test]
+async fn get_spreadsheet_returns_sheets_error_for_office_file_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/sheets/v4/spreadsheets/office-spreadsheet"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": {
+                "code": 400,
+                "message": "This operation is not supported for this document. The document must not be an Office file.",
+                "status": "FAILED_PRECONDITION"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = spreadsheet_options(&server, "office-spreadsheet");
+
+    let err = get_spreadsheet(&client, &options).await.unwrap_err();
+
+    assert!(matches!(err, SheetsError::UnsupportedOfficeFile));
+}
+
+#[tokio::test]
 async fn get_spreadsheet_returns_invalid_url_error_for_malformed_api_url() {
     let store = MemoryStore::default();
     let client = test_client(&store);

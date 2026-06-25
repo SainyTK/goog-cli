@@ -8,6 +8,9 @@ pub enum SheetsError {
     #[error("Google Sheets permission denied")]
     PermissionDenied,
 
+    #[error("Google Sheets cannot read Office spreadsheets; convert to a native Google Sheets Spreadsheet and retry")]
+    UnsupportedOfficeFile,
+
     #[error("Google Sheets API error ({status}): {body}")]
     Api {
         status: reqwest::StatusCode,
