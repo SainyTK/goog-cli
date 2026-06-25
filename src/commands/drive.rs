@@ -3,17 +3,38 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
+use serde::Serialize;
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::cli::DriveCommand;
+use crate::cli::{DriveCommand, DriveFolderCommand};
 use crate::drive::{
     download, list_files, upload, DownloadFileOptions, DriveFile, ListFilesOptions,
-    UploadFileOptions,
+    UploadFileOptions, DRIVE_FOLDER_MIME_TYPE,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
 const ALL_PAGE_SIZE: u32 = 1000;
+const TABLE_HEADER: &str = "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED";
+const FOLDER_TABLE_HEADER: &str = "NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED";
+const BROWSE_TABLE_HEADER: &str = "TYPE\tNAME\tID\tMIME TYPE\tMODIFIED";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DriveListKind {
+    Files,
+    Folders,
+    Browse,
+}
+
+impl DriveListKind {
+    fn item_name(self) -> &'static str {
+        match self {
+            Self::Files => "files",
+            Self::Folders => "folders",
+            Self::Browse => "items",
+        }
+    }
+}
 
 pub fn run<S: AccountStore>(
     cmd: DriveCommand,
@@ -22,14 +43,20 @@ pub fn run<S: AccountStore>(
     quiet: bool,
 ) -> Result<()> {
     match cmd {
-        DriveCommand::List { limit, all, json } => {
+        DriveCommand::Ls {
+            limit,
+            all,
+            folder,
+            json,
+        } => {
             let json = should_emit_json(json, output_json_by_default);
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_list_to(
+            runtime.block_on(run_ls_to(
                 client,
                 limit,
                 all,
+                folder,
                 json,
                 quiet,
                 &mut std::io::stdout(),
@@ -37,6 +64,50 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DriveCommand::List {
+            limit,
+            all,
+            folder,
+            json,
+        } => {
+            let json = should_emit_json(json, output_json_by_default);
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_list_to(
+                client,
+                limit,
+                all,
+                folder,
+                json,
+                quiet,
+                &mut std::io::stdout(),
+                &mut std::io::stderr(),
+                None,
+            ))
+        }
+        DriveCommand::Folder { command } => match command {
+            DriveFolderCommand::List {
+                limit,
+                all,
+                parent,
+                json,
+            } => {
+                let json = should_emit_json(json, output_json_by_default);
+                let runtime =
+                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+                runtime.block_on(run_folder_list_to(
+                    client,
+                    limit,
+                    all,
+                    parent,
+                    json,
+                    quiet,
+                    &mut std::io::stdout(),
+                    &mut std::io::stderr(),
+                    None,
+                ))
+            }
+        },
         DriveCommand::Download { file_id, output } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -185,32 +256,149 @@ pub(super) async fn run_list_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     limit: Option<u32>,
     all: bool,
+    folder: Option<String>,
     json: bool,
     quiet: bool,
     out: &mut impl Write,
     err: &mut impl Write,
     files_url: Option<&str>,
 ) -> Result<()> {
+    run_list_items_to(
+        client,
+        DriveListKind::Files,
+        limit,
+        all,
+        folder,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+pub(super) async fn run_folder_list_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    run_list_items_to(
+        client,
+        DriveListKind::Folders,
+        limit,
+        all,
+        parent,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+pub(super) async fn run_ls_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    run_list_items_to(
+        client,
+        DriveListKind::Browse,
+        limit,
+        all,
+        folder,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+async fn run_list_items_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    kind: DriveListKind,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    let mut wrote_table_header = false;
+    let mut files =
+        collect_list_items(client, kind, limit, all, parent, quiet, err, files_url).await?;
+    prepare_list_items(kind, &mut files);
+
+    if json {
+        match kind {
+            DriveListKind::Browse => write_browse_ndjson(&files, out)?,
+            DriveListKind::Files | DriveListKind::Folders => write_ndjson(&files, out)?,
+        }
+    } else {
+        match kind {
+            DriveListKind::Files => write_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Folders => write_folder_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Browse => write_browse_table(&files, out, &mut wrote_table_header)?,
+        }
+    }
+
+    Ok(())
+}
+
+fn prepare_list_items(kind: DriveListKind, files: &mut [DriveFile]) {
+    if kind == DriveListKind::Browse {
+        sort_browse_items(files);
+    }
+}
+
+async fn collect_list_items<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    kind: DriveListKind,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    quiet: bool,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<Vec<DriveFile>> {
     let mut remaining = requested_result_count(limit, all);
     let mut page_token = None;
-    let mut wrote_table_header = false;
     let mut total = 0_u32;
+    let mut files = Vec::new();
 
     loop {
         let Some(page_size) = next_page_size(remaining) else {
             break;
         };
-        let options = list_options(page_size, page_token.take(), files_url);
+        let options = list_options(
+            page_size,
+            page_token.take(),
+            parent.as_deref(),
+            files_url,
+            kind,
+        );
 
         let page = list_files(client, &options)
             .await
             .context("failed to list Google Drive files")?;
-
-        if json {
-            write_ndjson(&page.files, out)?;
-        } else {
-            write_table(&page.files, out, &mut wrote_table_header)?;
-        }
 
         let page_count = page.files.len() as u32;
         total += page_count;
@@ -219,8 +407,11 @@ pub(super) async fn run_list_to<S: AccountStore>(
         }
 
         if all && !quiet {
-            writeln!(err, "Fetched {total} files...").context("failed to write progress")?;
+            writeln!(err, "Fetched {total} {}...", kind.item_name())
+                .context("failed to write progress")?;
         }
+
+        files.extend(page.files);
 
         match page.next_page_token {
             Some(token) if should_fetch_next_page(remaining, all) => {
@@ -230,7 +421,7 @@ pub(super) async fn run_list_to<S: AccountStore>(
         }
     }
 
-    Ok(())
+    Ok(files)
 }
 
 pub(super) fn requested_result_count(limit: Option<u32>, all: bool) -> Option<u32> {
@@ -253,16 +444,55 @@ pub(super) fn should_fetch_next_page(remaining: Option<u32>, all: bool) -> bool 
 pub(super) fn list_options(
     page_size: u32,
     page_token: Option<String>,
+    parent: Option<&str>,
     files_url: Option<&str>,
+    kind: DriveListKind,
 ) -> ListFilesOptions {
-    let mut options = ListFilesOptions::new(page_size);
+    let mut options = match kind {
+        DriveListKind::Files => ListFilesOptions::new(page_size),
+        DriveListKind::Folders => ListFilesOptions::folders(page_size),
+        DriveListKind::Browse => ListFilesOptions::browse(page_size),
+    };
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);
+    }
+    if let Some(parent) = parent {
+        options = options.with_folder(parent);
     }
     if let Some(files_url) = files_url {
         options = options.with_files_url(files_url);
     }
     options
+}
+
+pub(super) fn sort_browse_items(files: &mut [DriveFile]) {
+    files.sort_by(|left, right| {
+        browse_type_rank(left)
+            .cmp(&browse_type_rank(right))
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+}
+
+fn browse_type_rank(file: &DriveFile) -> u8 {
+    if is_folder(file) {
+        0
+    } else {
+        1
+    }
+}
+
+fn is_folder(file: &DriveFile) -> bool {
+    file.mime_type == DRIVE_FOLDER_MIME_TYPE
+}
+
+fn browse_type(file: &DriveFile) -> &'static str {
+    if is_folder(file) {
+        "folder"
+    } else {
+        "file"
+    }
 }
 
 pub(super) fn write_ndjson(files: &[DriveFile], out: &mut impl Write) -> Result<()> {
@@ -273,13 +503,96 @@ pub(super) fn write_ndjson(files: &[DriveFile], out: &mut impl Write) -> Result<
     Ok(())
 }
 
+#[derive(Serialize)]
+struct BrowseFileJson<'a> {
+    name: &'a str,
+    id: &'a str,
+    parents: &'a [String],
+    #[serde(rename = "mimeType")]
+    mime_type: &'a str,
+    #[serde(rename = "modifiedTime")]
+    modified_time: &'a str,
+}
+
+pub(super) fn write_browse_ndjson(files: &[DriveFile], out: &mut impl Write) -> Result<()> {
+    for file in files {
+        let row = BrowseFileJson {
+            name: &file.name,
+            id: &file.id,
+            parents: &file.parent_ids,
+            mime_type: &file.mime_type,
+            modified_time: &file.modified_time,
+        };
+        serde_json::to_writer(&mut *out, &row).context("failed to serialize Drive browse item")?;
+        writeln!(out).context("failed to write output")?;
+    }
+    Ok(())
+}
+
+pub(super) fn write_browse_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+) -> Result<()> {
+    if !*wrote_header {
+        writeln!(out, "{BROWSE_TABLE_HEADER}").context("failed to write output")?;
+        *wrote_header = true;
+    }
+
+    for file in files {
+        let mime_type = if is_folder(file) {
+            ""
+        } else {
+            file.mime_type.as_str()
+        };
+        writeln!(
+            out,
+            "{}\t{}\t{}\t{}\t{}",
+            browse_type(file),
+            file.name,
+            file.id,
+            mime_type,
+            file.modified_time
+        )
+        .context("failed to write output")?;
+    }
+
+    Ok(())
+}
+
 pub(super) fn write_table(
     files: &[DriveFile],
     out: &mut impl Write,
     wrote_header: &mut bool,
 ) -> Result<()> {
     if !*wrote_header {
-        writeln!(out, "NAME\tFILE ID\tMIME TYPE\tMODIFIED").context("failed to write output")?;
+        writeln!(out, "{TABLE_HEADER}").context("failed to write output")?;
+        *wrote_header = true;
+    }
+
+    for file in files {
+        writeln!(
+            out,
+            "{}\t{}\t{}\t{}\t{}",
+            file.name,
+            file.id,
+            file.parent_ids.join(","),
+            file.mime_type,
+            file.modified_time
+        )
+        .context("failed to write output")?;
+    }
+
+    Ok(())
+}
+
+pub(super) fn write_folder_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+) -> Result<()> {
+    if !*wrote_header {
+        writeln!(out, "{FOLDER_TABLE_HEADER}").context("failed to write output")?;
         *wrote_header = true;
     }
 
@@ -287,7 +600,10 @@ pub(super) fn write_table(
         writeln!(
             out,
             "{}\t{}\t{}\t{}",
-            file.name, file.id, file.mime_type, file.modified_time
+            file.name,
+            file.id,
+            file.parent_ids.join(","),
+            file.modified_time
         )
         .context("failed to write output")?;
     }

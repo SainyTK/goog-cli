@@ -31,5 +31,20 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
             commands::drive::run(command, &client, output_json_by_default, cli.quiet)
         }
+        Command::Docs { command } => {
+            let store = KeyringStore;
+            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
+            commands::docs::run(command, &client)
+        }
+        Command::Mail { command } => {
+            let store = KeyringStore;
+            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
+            commands::mail::run(command, &client, cli.quiet)
+        }
+        Command::Sheets { command } => {
+            let store = KeyringStore;
+            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
+            commands::sheets::run(command, &client)
+        }
     }
 }

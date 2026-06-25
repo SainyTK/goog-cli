@@ -27,6 +27,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 indicatif = "0.17"
 bytes = "1"
 futures-util = "0.3"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"

@@ -5,11 +5,11 @@ pub use error::DriveError;
 use bytes::Bytes;
 use futures_util::{stream, StreamExt};
 use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, LOCATION};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use reqwest::{Body, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio_util::io::ReaderStream;
 use url::Url;
 
@@ -20,10 +20,12 @@ pub const DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive";
 pub const DRIVE_SCOPES: &[&str] = &[DRIVE_SCOPE];
 const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
-pub(super) const DRIVE_FILES_FIELDS: &str = "nextPageToken,files(id,name,mimeType,modifiedTime)";
+pub(super) const DRIVE_FILES_FIELDS: &str =
+    "nextPageToken,files(id,name,parents,mimeType,modifiedTime)";
+pub(crate) const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
-const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
+pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
 const DEFAULT_UPLOAD_MIME_TYPE: &str = "application/octet-stream";
 const JSON_CONTENT_TYPE: &str = "application/json; charset=UTF-8";
 const MULTIPART_UPLOAD_BOUNDARY: &str = "goog-drive-upload-boundary";
@@ -49,6 +51,8 @@ impl UploadType {
 pub struct DriveFile {
     pub name: String,
     pub id: String,
+    #[serde(default, rename(serialize = "parentIds", deserialize = "parents"))]
+    pub parent_ids: Vec<String>,
     #[serde(rename = "mimeType")]
     pub mime_type: String,
     #[serde(rename = "modifiedTime")]
@@ -176,7 +180,16 @@ struct UploadMetadata {
 pub struct ListFilesOptions {
     pub page_size: u32,
     pub page_token: Option<String>,
+    pub folder: Option<String>,
+    mode: ListFilesMode,
     files_url: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListFilesMode {
+    Files,
+    Folders,
+    Browse,
 }
 
 impl ListFilesOptions {
@@ -184,12 +197,33 @@ impl ListFilesOptions {
         Self {
             page_size,
             page_token: None,
+            folder: None,
+            mode: ListFilesMode::Files,
             files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub fn folders(page_size: u32) -> Self {
+        Self {
+            mode: ListFilesMode::Folders,
+            ..Self::new(page_size)
+        }
+    }
+
+    pub fn browse(page_size: u32) -> Self {
+        Self {
+            mode: ListFilesMode::Browse,
+            ..Self::new(page_size)
         }
     }
 
     pub fn with_page_token(mut self, page_token: impl Into<String>) -> Self {
         self.page_token = Some(page_token.into());
+        self
+    }
+
+    pub fn with_folder(mut self, folder: impl Into<String>) -> Self {
+        self.folder = Some(folder.into());
         self
     }
 
@@ -204,14 +238,60 @@ impl ListFilesOptions {
             let mut query = url.query_pairs_mut();
             query
                 .append_pair("pageSize", &self.page_size.to_string())
-                .append_pair("orderBy", "modifiedTime desc")
-                .append_pair("fields", DRIVE_FILES_FIELDS);
+                .append_pair("orderBy", self.mode.order_by())
+                .append_pair("fields", DRIVE_FILES_FIELDS)
+                .append_pair("q", &self.query());
             if let Some(page_token) = &self.page_token {
                 query.append_pair("pageToken", page_token);
             }
         }
         Ok(url)
     }
+
+    fn query(&self) -> String {
+        match (self.parent_filter(), self.mode.mime_type_filter()) {
+            (Some(parent_filter), Some(mime_type_filter)) => {
+                format!("{parent_filter} and {mime_type_filter}")
+            }
+            (Some(parent_filter), None) => parent_filter,
+            (None, Some(mime_type_filter)) => mime_type_filter,
+            (None, None) => String::new(),
+        }
+    }
+
+    fn parent_filter(&self) -> Option<String> {
+        match (self.mode, self.folder.as_deref()) {
+            (_, Some(folder)) => Some(parent_query_filter(folder)),
+            (ListFilesMode::Folders, None) => Some(parent_query_filter("root")),
+            (ListFilesMode::Browse, None) => Some(parent_query_filter("root")),
+            (ListFilesMode::Files, None) => None,
+        }
+    }
+}
+
+impl ListFilesMode {
+    fn mime_type_filter(self) -> Option<String> {
+        match self {
+            Self::Files => Some(format!("mimeType != '{DRIVE_FOLDER_MIME_TYPE}'")),
+            Self::Folders => Some(format!("mimeType = '{DRIVE_FOLDER_MIME_TYPE}'")),
+            Self::Browse => None,
+        }
+    }
+
+    fn order_by(self) -> &'static str {
+        match self {
+            Self::Browse => "name",
+            Self::Files | Self::Folders => "modifiedTime desc",
+        }
+    }
+}
+
+fn escape_query_literal(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+fn parent_query_filter(parent_id: &str) -> String {
+    format!("'{}' in parents", escape_query_literal(parent_id))
 }
 
 pub async fn list_files<S: AccountStore>(
@@ -346,36 +426,26 @@ where
     F: FnMut(u64),
 {
     let session_uri = initiate_resumable_upload(client, options, file_size).await?;
-    let mut file = tokio::fs::File::open(&options.path)
-        .await
-        .map_err(DriveError::Io)?;
     let mut uploaded = 0_u64;
-    let mut buffer = vec![0_u8; RESUMABLE_CHUNK_SIZE_BYTES];
 
-    loop {
-        let read = read_upload_chunk(&mut file, &mut buffer)
-            .await
-            .map_err(DriveError::Io)?;
-        if read == 0 {
-            break;
-        }
-
+    while uploaded < file_size {
+        let chunk_size = next_resumable_chunk_size(uploaded, file_size);
         let start = uploaded;
-        let end = uploaded + read as u64 - 1;
-        let chunk = buffer[..read].to_vec();
+        let end = uploaded + chunk_size as u64 - 1;
+        let body = resumable_chunk_body(&options.path, start, chunk_size).await?;
         let response = client
             .send_with_scopes(
                 client
                     .put(session_uri.as_str())
-                    .header(CONTENT_LENGTH, read.to_string())
+                    .header(CONTENT_LENGTH, chunk_size.to_string())
                     .header(CONTENT_RANGE, format!("bytes {start}-{end}/{file_size}"))
-                    .body(chunk),
+                    .body(body),
                 DRIVE_SCOPES,
             )
             .await
             .map_err(DriveError::Auth)?;
 
-        uploaded += read as u64;
+        uploaded += chunk_size as u64;
         progress(uploaded);
 
         let upload_complete = uploaded == file_size;
@@ -390,21 +460,19 @@ where
     ))
 }
 
-async fn read_upload_chunk(
-    file: &mut tokio::fs::File,
-    buffer: &mut [u8],
-) -> Result<usize, std::io::Error> {
-    let mut filled = 0;
+fn next_resumable_chunk_size(uploaded: u64, file_size: u64) -> usize {
+    let remaining = file_size - uploaded;
+    remaining.min(RESUMABLE_CHUNK_SIZE_BYTES as u64) as usize
+}
 
-    while filled < buffer.len() {
-        let read = file.read(&mut buffer[filled..]).await?;
-        if read == 0 {
-            break;
-        }
-        filled += read;
-    }
+async fn resumable_chunk_body(path: &Path, start: u64, length: usize) -> Result<Body, DriveError> {
+    let mut file = tokio::fs::File::open(path).await.map_err(DriveError::Io)?;
+    file.seek(SeekFrom::Start(start))
+        .await
+        .map_err(DriveError::Io)?;
+    let reader = file.take(length as u64);
 
-    Ok(filled)
+    Ok(Body::wrap_stream(ReaderStream::new(reader)))
 }
 
 async fn initiate_resumable_upload<S: AccountStore>(

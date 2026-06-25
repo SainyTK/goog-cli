@@ -10,7 +10,7 @@ use super::error::AuthError;
 use super::login::{
     build_authorize_url, exchange_code, fetch_email, parse_callback_params, poll_device_token,
     render_device_authorization_prompt, request_device_authorization, DeviceAuthorization,
-    GOOGLE_AUTH_URL,
+    DEFAULT_DEVICE_LOGIN_SCOPES, GOOGLE_AUTH_URL,
 };
 
 struct DeviceTokenSequence {
@@ -98,6 +98,32 @@ async fn request_device_authorization_parses_verification_url_and_user_code() {
     );
     assert_eq!(authorization.expires_in, 1800);
     assert_eq!(authorization.interval, 7);
+}
+
+#[tokio::test]
+async fn request_device_authorization_explains_invalid_client_type() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/device/code"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+            "error": "invalid_client",
+            "error_description": "Invalid client type.",
+        })))
+        .mount(&server)
+        .await;
+
+    let err = request_device_authorization(
+        &format!("{}/device/code", server.uri()),
+        "client-123",
+        DEFAULT_DEVICE_LOGIN_SCOPES,
+    )
+    .await
+    .unwrap_err();
+
+    match err {
+        AuthError::OAuthFlow(msg) => assert_device_client_type_guidance(&msg),
+        other => panic!("expected OAuthFlow, got {other:?}"),
+    }
 }
 
 #[test]
@@ -189,6 +215,41 @@ async fn poll_device_token_errors_when_authorization_is_denied() {
         AuthError::OAuthFlow(msg) => assert!(msg.contains("denied")),
         other => panic!("expected OAuthFlow, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn poll_device_token_explains_invalid_client_type() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+            "error": "invalid_client",
+            "error_description": "Invalid client type.",
+        })))
+        .mount(&server)
+        .await;
+
+    let err = poll_device_token(
+        &format!("{}/token", server.uri()),
+        "client-123",
+        "shh",
+        "device-code-123",
+        0,
+        60,
+    )
+    .await
+    .unwrap_err();
+
+    match err {
+        AuthError::OAuthFlow(msg) => assert_device_client_type_guidance(&msg),
+        other => panic!("expected OAuthFlow, got {other:?}"),
+    }
+}
+
+fn assert_device_client_type_guidance(msg: &str) {
+    assert!(msg.contains("Invalid client type"));
+    assert!(msg.contains("TVs and Limited Input devices"));
+    assert!(msg.contains("goog auth setup"));
 }
 
 #[tokio::test]

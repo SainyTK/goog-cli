@@ -1,7 +1,10 @@
-use crate::auth::config::Config;
+use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType};
 use crate::auth::error::AuthError;
+use crate::auth::testing::MemoryStore;
 
-use super::auth::{add_account_to_config, build_oauth_app_secrets, run_setup_to, SETUP_GUIDE};
+use super::auth::{
+    add_account_to_config, build_oauth_app_secrets, perform_device_login, run_setup_to, SETUP_GUIDE,
+};
 
 #[test]
 fn setup_guide_describes_direct_client_id_and_secret_entry() {
@@ -21,7 +24,11 @@ fn setup_guide_describes_direct_client_id_and_secret_entry() {
         "guide is missing GCP Console URL"
     );
 
-    let result = run_setup_to(Some("/nonexistent/client_secret.json".into()), &mut out);
+    let result = run_setup_to(
+        Some("/nonexistent/client_secret.json".into()),
+        None,
+        &mut out,
+    );
     assert!(result.is_err(), "expected error for nonexistent file");
     assert!(
         out.is_empty(),
@@ -35,6 +42,23 @@ fn build_oauth_app_secrets_trims_values() {
 
     assert_eq!(secrets.client_id, "id123");
     assert_eq!(secrets.client_secret, "sec456");
+    assert_eq!(secrets.app_type, OAuthAppType::Desktop);
+}
+
+#[test]
+fn device_login_rejects_non_device_oauth_app_before_network_request() {
+    let app = OAuthAppConfig {
+        client_id: "client-123".into(),
+        client_secret: "secret-456".into(),
+        app_type: OAuthAppType::Desktop,
+    };
+    let store = MemoryStore::default();
+
+    let err = perform_device_login(&app, &store).unwrap_err();
+
+    let msg = err.to_string();
+    assert!(msg.contains("TVs and Limited Input devices"));
+    assert!(msg.contains("--app-type device"));
 }
 
 #[test]

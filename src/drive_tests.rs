@@ -1,5 +1,3 @@
-use std::sync::{Mutex, MutexGuard};
-
 use chrono::{Duration, Utc};
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Match, Request};
@@ -7,44 +5,64 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
 use crate::auth::client::AuthClient;
-use crate::auth::config::{Config, OAuthAppConfig, SettingsConfig};
+use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::testing::MemoryStore;
 use crate::drive::*;
+use crate::test_support::CurrentDirGuard;
 
 const SINGLE_PAGE_RESPONSE: &str = include_str!("../tests/fixtures/drive/files_page_single.json");
 const EMPTY_PAGE_WITH_TOKEN_RESPONSE: &str =
     include_str!("../tests/fixtures/drive/files_page_empty_with_token.json");
-
-static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
-
-struct CurrentDirGuard {
-    original: std::path::PathBuf,
-    _lock: MutexGuard<'static, ()>,
-}
-
-impl CurrentDirGuard {
-    fn enter(path: impl AsRef<std::path::Path>) -> Self {
-        let lock = CURRENT_DIR_LOCK.lock().unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(path).unwrap();
-        Self {
-            original,
-            _lock: lock,
-        }
+const FOLDER_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "file-1",
+      "name": "Roadmap",
+      "parents": ["folder-123"],
+      "mimeType": "application/vnd.google-apps.document",
+      "modifiedTime": "2026-06-24T10:15:00.000Z"
     }
-}
-
-impl Drop for CurrentDirGuard {
-    fn drop(&mut self) {
-        std::env::set_current_dir(&self.original).unwrap();
+  ]
+}"#;
+const DRIVE_FOLDER_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "folder-456",
+      "name": "Projects",
+      "parents": ["root"],
+      "mimeType": "application/vnd.google-apps.folder",
+      "modifiedTime": "2026-06-24T11:15:00.000Z"
     }
-}
+  ]
+}"#;
+const DRIVE_BROWSE_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "folder-456",
+      "name": "Projects",
+      "parents": ["root"],
+      "mimeType": "application/vnd.google-apps.folder",
+      "modifiedTime": "2026-06-24T11:15:00.000Z"
+    },
+    {
+      "id": "file-1",
+      "name": "Roadmap",
+      "parents": ["root"],
+      "mimeType": "application/vnd.google-apps.document",
+      "modifiedTime": "2026-06-24T10:15:00.000Z"
+    }
+  ]
+}"#;
 
 fn test_config() -> Config {
     Config {
         oauth_app: Some(OAuthAppConfig {
             client_id: "client-123".into(),
             client_secret: "secret-456".into(),
+            app_type: OAuthAppType::Desktop,
         }),
         settings: Some(SettingsConfig {
             active_account: Some("alice@example.com".into()),
@@ -79,6 +97,10 @@ async fn list_files_deserializes_a_single_page_response() {
         .and(query_param("pageSize", "50"))
         .and(query_param("orderBy", "modifiedTime desc"))
         .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -97,10 +119,207 @@ async fn list_files_deserializes_a_single_page_response() {
         vec![DriveFile {
             name: "Roadmap".into(),
             id: "file-1".into(),
+            parent_ids: vec![],
             mime_type: "application/vnd.google-apps.document".into(),
             modified_time: "2026-06-24T10:15:00.000Z".into(),
         }]
     );
+}
+
+#[tokio::test]
+async fn list_files_can_filter_to_files_inside_a_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::new(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(
+        page.files,
+        vec![DriveFile {
+            name: "Roadmap".into(),
+            id: "file-1".into(),
+            parent_ids: vec!["folder-123".into()],
+            mime_type: "application/vnd.google-apps.document".into(),
+            modified_time: "2026-06-24T10:15:00.000Z".into(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn list_folders_defaults_to_folders_in_drive_root() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ListFilesOptions::folders(50).with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(
+        page.files,
+        vec![DriveFile {
+            name: "Projects".into(),
+            id: "folder-456".into(),
+            parent_ids: vec!["root".into()],
+            mime_type: "application/vnd.google-apps.folder".into(),
+            modified_time: "2026-06-24T11:15:00.000Z".into(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn list_folders_can_filter_to_child_folders_inside_a_parent() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::folders(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "folder-456");
+}
+
+#[tokio::test]
+async fn browse_files_defaults_to_drive_root_without_mime_filter() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "name"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param("q", "'root' in parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ListFilesOptions::browse(50).with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "folder-456");
+    assert_eq!(page.files[1].id, "file-1");
+}
+
+#[tokio::test]
+async fn browse_files_can_filter_to_children_inside_a_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param("q", "'folder-123' in parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::browse(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    list_files(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
+async fn list_files_escapes_folder_id_in_query_literal() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param(
+            "q",
+            r#"'folder\\\'123' in parents and mimeType != 'application/vnd.google-apps.folder'"#,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::new(50)
+        .with_folder(r#"folder\'123"#)
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    list_files(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
+async fn list_folders_escapes_parent_id_in_query_literal() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param(
+            "q",
+            r#"'folder\\\'123' in parents and mimeType = 'application/vnd.google-apps.folder'"#,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::folders(50)
+        .with_folder(r#"folder\'123"#)
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    list_files(&client, &options).await.unwrap();
 }
 
 #[tokio::test]
@@ -111,6 +330,10 @@ async fn list_files_sends_next_page_token_and_returns_next_page_token() {
         .and(header("authorization", "Bearer drive-access"))
         .and(query_param("pageSize", "25"))
         .and(query_param("pageToken", "token-1"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(EMPTY_PAGE_WITH_TOKEN_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -298,6 +521,14 @@ impl Match for BodyContains {
     }
 }
 
+struct BodyLength(usize);
+
+impl Match for BodyLength {
+    fn matches(&self, request: &Request) -> bool {
+        request.body.len() == self.0
+    }
+}
+
 #[tokio::test]
 async fn upload_small_file_uses_multipart_upload_and_returns_drive_location() {
     let server = MockServer::start().await;
@@ -385,6 +616,7 @@ async fn upload_large_file_uses_resumable_upload_chunks() {
         .and(path("/upload-session"))
         .and(header("authorization", "Bearer drive-access"))
         .and(header("content-range", "bytes 0-5242879/5242883"))
+        .and(BodyLength(RESUMABLE_CHUNK_SIZE_BYTES))
         .respond_with(ResponseTemplate::new(308))
         .expect(1)
         .mount(&server)
@@ -393,6 +625,7 @@ async fn upload_large_file_uses_resumable_upload_chunks() {
         .and(path("/upload-session"))
         .and(header("authorization", "Bearer drive-access"))
         .and(header("content-range", "bytes 5242880-5242882/5242883"))
+        .and(BodyLength(3))
         .and(BodyContains(b"end"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "large-file-123",

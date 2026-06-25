@@ -5,7 +5,7 @@ use tempfile::TempDir;
 
 use super::config::{
     load_config_from_path, resolve_account, save_config_to_path, switch_active_account, Config,
-    OAuthAppConfig, SettingsConfig,
+    OAuthAppConfig, OAuthAppType, SettingsConfig,
 };
 use super::error::AuthError;
 
@@ -35,6 +35,7 @@ fn round_trips_oauth_app_config() {
         oauth_app: Some(OAuthAppConfig {
             client_id: "my-client-id".into(),
             client_secret: "my-client-secret".into(),
+            app_type: OAuthAppType::Desktop,
         }),
         settings: None,
         accounts: Vec::new(),
@@ -69,6 +70,7 @@ output = "json"
     let app = config.oauth_app.unwrap();
     assert_eq!(app.client_id, "abc123");
     assert_eq!(app.client_secret, "secret456");
+    assert_eq!(app.app_type, OAuthAppType::Unknown);
 
     let settings = config.settings.unwrap();
     assert_eq!(settings.active_account.as_deref(), Some("user@example.com"));
@@ -92,13 +94,28 @@ fn serialises_only_present_fields() {
         oauth_app: Some(OAuthAppConfig {
             client_id: "id".into(),
             client_secret: "sec".into(),
+            app_type: OAuthAppType::Device,
         }),
         settings: None,
         accounts: Vec::new(),
     };
     let s = toml::to_string_pretty(&config).unwrap();
     assert!(s.contains("client_id"));
+    assert!(s.contains("app_type = \"device\""));
     assert!(!s.contains("settings"));
+}
+
+#[test]
+fn defaults_missing_oauth_app_type_to_unknown() {
+    let contents = r#"
+[oauth_app]
+client_id = "abc123"
+client_secret = "secret456"
+"#;
+
+    let config: Config = toml::from_str(contents).unwrap();
+
+    assert_eq!(config.oauth_app.unwrap().app_type, OAuthAppType::Unknown);
 }
 
 #[test]
