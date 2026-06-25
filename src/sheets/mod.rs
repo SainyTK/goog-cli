@@ -112,7 +112,25 @@ async fn ensure_success_response(response: Response) -> Result<Response, SheetsE
         StatusCode::FORBIDDEN => Err(SheetsError::PermissionDenied),
         status => {
             let body = response.text().await.unwrap_or_default();
+            if is_office_file_precondition_error(status, &body) {
+                return Err(SheetsError::UnsupportedOfficeFile);
+            }
             Err(SheetsError::Api { status, body })
         }
     }
+}
+
+fn is_office_file_precondition_error(status: StatusCode, body: &str) -> bool {
+    if status != StatusCode::BAD_REQUEST {
+        return false;
+    }
+
+    let Ok(value) = serde_json::from_str::<Value>(body) else {
+        return false;
+    };
+    let error = &value["error"];
+    error["status"].as_str() == Some("FAILED_PRECONDITION")
+        && error["message"]
+            .as_str()
+            .map_or(false, |message| message.contains("must not be an Office file"))
 }
