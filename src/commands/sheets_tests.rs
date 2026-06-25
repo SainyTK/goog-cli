@@ -89,6 +89,24 @@ fn query_values(url: &Url, name: &str) -> Vec<String> {
         .collect()
 }
 
+fn assert_query_value(url: &Url, name: &str, expected: &str) {
+    assert_eq!(query_value(url, name).as_deref(), Some(expected));
+}
+
+fn append_values_command(
+    values: impl Into<String>,
+    value_input_option: SheetsValueInputOption,
+    insert_data_option: SheetsInsertDataOption,
+) -> SheetsValuesCommand {
+    SheetsValuesCommand::Append {
+        spreadsheet_id: "spreadsheet-123".into(),
+        range: "Sheet1!A:B".into(),
+        values: values.into(),
+        value_input_option,
+        insert_data_option,
+    }
+}
+
 #[tokio::test]
 async fn run_get_prints_spreadsheet_json_to_stdout() {
     let server = MockServer::start().await;
@@ -317,10 +335,7 @@ async fn run_values_update_reads_values_from_file_and_prints_response_json() {
     assert!(url
         .path()
         .ends_with("/spreadsheets/spreadsheet-123/values/Sheet1!A1:B2"));
-    assert_eq!(
-        query_value(&url, "valueInputOption").as_deref(),
-        Some("USER_ENTERED")
-    );
+    assert_query_value(&url, "valueInputOption", "USER_ENTERED");
 }
 
 #[tokio::test]
@@ -394,13 +409,11 @@ async fn run_values_append_reads_values_from_file_and_prints_response_json() {
 
     run_values_to(
         &client,
-        SheetsValuesCommand::Append {
-            spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A:B".into(),
-            values: values_path.to_string_lossy().into_owned(),
-            value_input_option: SheetsValueInputOption::UserEntered,
-            insert_data_option: SheetsInsertDataOption::InsertRows,
-        },
+        append_values_command(
+            values_path.to_string_lossy().into_owned(),
+            SheetsValueInputOption::UserEntered,
+            SheetsInsertDataOption::InsertRows,
+        ),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -421,14 +434,8 @@ async fn run_values_append_reads_values_from_file_and_prints_response_json() {
     assert!(url
         .path()
         .ends_with("/spreadsheets/spreadsheet-123/values/Sheet1!A:B:append"));
-    assert_eq!(
-        query_value(&url, "valueInputOption").as_deref(),
-        Some("USER_ENTERED")
-    );
-    assert_eq!(
-        query_value(&url, "insertDataOption").as_deref(),
-        Some("INSERT_ROWS")
-    );
+    assert_query_value(&url, "valueInputOption", "USER_ENTERED");
+    assert_query_value(&url, "insertDataOption", "INSERT_ROWS");
 }
 
 #[tokio::test]
@@ -456,13 +463,11 @@ async fn run_values_append_reads_values_from_stdin() {
 
     run_values_to(
         &client,
-        SheetsValuesCommand::Append {
-            spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A:B".into(),
-            values: "-".into(),
-            value_input_option: SheetsValueInputOption::Raw,
-            insert_data_option: SheetsInsertDataOption::Overwrite,
-        },
+        append_values_command(
+            "-",
+            SheetsValueInputOption::Raw,
+            SheetsInsertDataOption::Overwrite,
+        ),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -476,14 +481,8 @@ async fn run_values_append_reads_values_from_stdin() {
     );
 
     let url = received_url(&server).await;
-    assert_eq!(
-        query_value(&url, "valueInputOption").as_deref(),
-        Some("RAW")
-    );
-    assert_eq!(
-        query_value(&url, "insertDataOption").as_deref(),
-        Some("OVERWRITE")
-    );
+    assert_query_value(&url, "valueInputOption", "RAW");
+    assert_query_value(&url, "insertDataOption", "OVERWRITE");
 }
 
 #[tokio::test]
@@ -609,13 +608,11 @@ async fn run_values_append_returns_clear_error_for_invalid_request_json() {
 
     let result = run_values_to(
         &client,
-        SheetsValuesCommand::Append {
-            spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A:B".into(),
-            values: "-".into(),
-            value_input_option: SheetsValueInputOption::UserEntered,
-            insert_data_option: SheetsInsertDataOption::InsertRows,
-        },
+        append_values_command(
+            "-",
+            SheetsValueInputOption::UserEntered,
+            SheetsInsertDataOption::InsertRows,
+        ),
         &mut input,
         &mut out,
         Some("https://example.test/sheets/v4/spreadsheets"),
@@ -644,13 +641,11 @@ async fn run_values_append_returns_clear_error_for_api_failure() {
 
     let result = run_values_to(
         &client,
-        SheetsValuesCommand::Append {
-            spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A:B".into(),
-            values: "-".into(),
-            value_input_option: SheetsValueInputOption::UserEntered,
-            insert_data_option: SheetsInsertDataOption::InsertRows,
-        },
+        append_values_command(
+            "-",
+            SheetsValueInputOption::UserEntered,
+            SheetsInsertDataOption::InsertRows,
+        ),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
