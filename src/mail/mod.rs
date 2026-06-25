@@ -19,8 +19,7 @@ pub const GMAIL_READONLY_SCOPES: &[&str] = &[GMAIL_READONLY_SCOPE];
 const GMAIL_MESSAGES_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
-const ATTACHMENT_FILENAME_FIELDS: &str =
-    "payload(filename,body/attachmentId,parts(filename,body/attachmentId,parts))";
+const ATTACHMENT_FILENAME_FIELDS: &str = "payload";
 
 pub type Message = Value;
 
