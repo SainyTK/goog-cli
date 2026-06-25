@@ -2,6 +2,8 @@ pub mod error;
 
 pub use error::SheetsError;
 
+use std::future::Future;
+
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde_json::Value;
 use url::Url;
@@ -508,38 +510,26 @@ pub async fn get_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetValuesOptions,
 ) -> Result<ValueRange, SheetsError> {
-    let result = send_json_request(
+    send_json_request_with_office_file_fallback(
         client,
         client.get(options.request_url()?),
         SHEETS_READONLY_SCOPES,
+        || get_values_via_temporary_conversion(client, options),
     )
-    .await;
-
-    match result {
-        Err(SheetsError::Api { status, body }) if is_office_file_precondition(status, &body) => {
-            get_values_via_temporary_conversion(client, options).await
-        }
-        other => other,
-    }
+    .await
 }
 
 pub async fn batch_get_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchGetValuesOptions,
 ) -> Result<BatchGetValuesResponse, SheetsError> {
-    let result = send_json_request(
+    send_json_request_with_office_file_fallback(
         client,
         client.get(options.request_url()?),
         SHEETS_READONLY_SCOPES,
+        || batch_get_values_via_temporary_conversion(client, options),
     )
-    .await;
-
-    match result {
-        Err(SheetsError::Api { status, body }) if is_office_file_precondition(status, &body) => {
-            batch_get_values_via_temporary_conversion(client, options).await
-        }
-        other => other,
-    }
+    .await
 }
 
 pub async fn update_values<S: AccountStore>(
@@ -637,6 +627,27 @@ async fn send_json_request<S: AccountStore>(
         .map_err(SheetsError::Auth)?;
 
     parse_json_response(response).await
+}
+
+async fn send_json_request_with_office_file_fallback<S, F, Fut>(
+    client: &AuthClient<'_, S>,
+    request: RequestBuilder,
+    scopes: &[&str],
+    fallback: F,
+) -> Result<Value, SheetsError>
+where
+    S: AccountStore,
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<Value, SheetsError>>,
+{
+    let result = send_json_request(client, request, scopes).await;
+
+    match result {
+        Err(SheetsError::Api { status, body }) if is_office_file_precondition(status, &body) => {
+            fallback().await
+        }
+        other => other,
+    }
 }
 
 async fn send_empty_request<S: AccountStore>(

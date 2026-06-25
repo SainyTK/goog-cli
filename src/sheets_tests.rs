@@ -61,6 +61,13 @@ fn sheets_write_token() -> Token {
     }
 }
 
+fn sheets_and_drive_token() -> Token {
+    Token {
+        scopes: vec![SHEETS_READONLY_SCOPE.into(), DRIVE_SCOPE.into()],
+        ..sheets_token()
+    }
+}
+
 fn profile_token() -> Token {
     Token {
         access_token: "profile-access".into(),
@@ -73,6 +80,13 @@ fn profile_token() -> Token {
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     store
         .save_token("alice@example.com", &sheets_token())
+        .unwrap();
+    AuthClient::from_config(test_config(), store, None).unwrap()
+}
+
+fn sheets_and_drive_test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
+    store
+        .save_token("alice@example.com", &sheets_and_drive_token())
         .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
@@ -102,6 +116,41 @@ fn values_body() -> serde_json::Value {
         "majorDimension": "ROWS",
         "values": [["Name", "Score"], ["Ada", 42]]
     })
+}
+
+fn office_file_precondition_response() -> ResponseTemplate {
+    ResponseTemplate::new(400).set_body_json(serde_json::json!({
+        "error": {
+            "code": 400,
+            "status": "FAILED_PRECONDITION",
+            "message": "This operation is not supported for this document. The document must not be an Office file."
+        }
+    }))
+}
+
+async fn mount_temporary_sheet_copy(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-file-123/copy"))
+        .and(query_param("fields", "id"))
+        .and(body_json(&serde_json::json!({
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+            "name": "goog temporary Sheets conversion"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "converted-spreadsheet-456"
+        })))
+        .expect(1)
+        .mount(server)
+        .await;
+}
+
+async fn mount_temporary_sheet_delete(server: &MockServer) {
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/converted-spreadsheet-456"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(server)
+        .await;
 }
 
 async fn received_url(server: &MockServer) -> Url {
@@ -450,29 +499,11 @@ async fn get_values_converts_office_file_then_reads_temporary_spreadsheet() {
         .and(path(
             "/sheets/v4/spreadsheets/office-file-123/values/Sheet1!A1:B2",
         ))
-        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
-            "error": {
-                "code": 400,
-                "status": "FAILED_PRECONDITION",
-                "message": "This operation is not supported for this document. The document must not be an Office file."
-            }
-        })))
+        .respond_with(office_file_precondition_response())
         .expect(1)
         .mount(&server)
         .await;
-    Mock::given(method("POST"))
-        .and(path("/drive/v3/files/office-file-123/copy"))
-        .and(query_param("fields", "id"))
-        .and(body_json(&serde_json::json!({
-            "mimeType": "application/vnd.google-apps.spreadsheet",
-            "name": "goog temporary Sheets conversion"
-        })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "converted-spreadsheet-456"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
+    mount_temporary_sheet_copy(&server).await;
     Mock::given(method("GET"))
         .and(path(
             "/sheets/v4/spreadsheets/converted-spreadsheet-456/values/Sheet1!A1:B2",
@@ -485,24 +516,10 @@ async fn get_values_converts_office_file_then_reads_temporary_spreadsheet() {
         .expect(1)
         .mount(&server)
         .await;
-    Mock::given(method("DELETE"))
-        .and(path("/drive/v3/files/converted-spreadsheet-456"))
-        .respond_with(ResponseTemplate::new(204))
-        .expect(1)
-        .mount(&server)
-        .await;
+    mount_temporary_sheet_delete(&server).await;
 
     let store = MemoryStore::default();
-    store
-        .save_token(
-            "alice@example.com",
-            &Token {
-                scopes: vec![SHEETS_READONLY_SCOPE.into(), DRIVE_SCOPE.into()],
-                ..sheets_token()
-            },
-        )
-        .unwrap();
-    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let client = sheets_and_drive_test_client(&store);
     let options = GetValuesOptions::new("office-file-123", "Sheet1!A1:B2")
         .with_spreadsheets_url(spreadsheets_url(&server))
         .with_drive_files_url(drive_files_url(&server));
@@ -554,25 +571,11 @@ async fn batch_get_values_converts_office_file_then_reads_temporary_spreadsheet(
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/sheets/v4/spreadsheets/office-file-123/values/:batchGet"))
-        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
-            "error": {
-                "code": 400,
-                "status": "FAILED_PRECONDITION",
-                "message": "This operation is not supported for this document. The document must not be an Office file."
-            }
-        })))
+        .respond_with(office_file_precondition_response())
         .expect(1)
         .mount(&server)
         .await;
-    Mock::given(method("POST"))
-        .and(path("/drive/v3/files/office-file-123/copy"))
-        .and(query_param("fields", "id"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "converted-spreadsheet-456"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
+    mount_temporary_sheet_copy(&server).await;
     Mock::given(method("GET"))
         .and(path(
             "/sheets/v4/spreadsheets/converted-spreadsheet-456/values/:batchGet",
@@ -596,24 +599,10 @@ async fn batch_get_values_converts_office_file_then_reads_temporary_spreadsheet(
         .expect(1)
         .mount(&server)
         .await;
-    Mock::given(method("DELETE"))
-        .and(path("/drive/v3/files/converted-spreadsheet-456"))
-        .respond_with(ResponseTemplate::new(204))
-        .expect(1)
-        .mount(&server)
-        .await;
+    mount_temporary_sheet_delete(&server).await;
 
     let store = MemoryStore::default();
-    store
-        .save_token(
-            "alice@example.com",
-            &Token {
-                scopes: vec![SHEETS_READONLY_SCOPE.into(), DRIVE_SCOPE.into()],
-                ..sheets_token()
-            },
-        )
-        .unwrap();
-    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let client = sheets_and_drive_test_client(&store);
     let options = BatchGetValuesOptions::new(
         "office-file-123",
         vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
