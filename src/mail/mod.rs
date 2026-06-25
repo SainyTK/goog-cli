@@ -5,7 +5,7 @@ pub use error::MailError;
 use base64::Engine;
 use reqwest::{Response, StatusCode};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
@@ -34,13 +34,21 @@ pub struct MessageSummary {
 
 #[derive(Debug, Deserialize)]
 struct MessagesPage {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_vec_as_empty")]
     messages: Vec<ListedMessage>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ListedMessage {
     id: String,
+}
+
+fn deserialize_null_vec_as_empty<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Deserialize)]
