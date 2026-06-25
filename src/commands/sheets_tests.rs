@@ -941,6 +941,7 @@ async fn run_values_batch_update_returns_clear_error_for_invalid_request_json_fi
     let temp_dir = tempfile::tempdir().unwrap();
     let values_path = temp_dir.path().join("batch-values.json");
     std::fs::write(&values_path, "{not json").unwrap();
+    let values_path_arg = values_path.to_string_lossy().into_owned();
     let store = MemoryStore::default();
     let client = write_test_client(&store);
     let mut input = std::io::empty();
@@ -948,7 +949,7 @@ async fn run_values_batch_update_returns_clear_error_for_invalid_request_json_fi
 
     let result = run_values_to(
         &client,
-        batch_update_values_command(values_path.to_string_lossy().into_owned()),
+        batch_update_values_command(values_path_arg.clone()),
         &mut input,
         &mut out,
         Some("https://example.test/sheets/v4/spreadsheets"),
@@ -957,7 +958,7 @@ async fn run_values_batch_update_returns_clear_error_for_invalid_request_json_fi
 
     let message = format!("{:#}", result.unwrap_err());
     assert!(message.contains("failed to parse Google Sheets Values request body from"));
-    assert!(message.contains("batch-values.json"));
+    assert!(message.contains(&values_path_arg));
     assert!(out.is_empty());
 }
 
