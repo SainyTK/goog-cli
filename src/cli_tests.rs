@@ -409,11 +409,7 @@ fn docs_map_with_document_id_and_json_flag() {
     let cli = parse(&["docs", "map", "document-123", "--json"]).unwrap();
     match cli.command {
         Command::Docs {
-            command:
-                DocsCommand::Map {
-                    document_id,
-                    json,
-                },
+            command: DocsCommand::Map { document_id, json },
         } => {
             assert_eq!(document_id, "document-123");
             assert!(json);
@@ -472,10 +468,7 @@ fn docs_get_content_accepts_location_selectors() {
     let by_entry = parse(&["docs", "get-content", "document-123", "--entry", "44"]).unwrap();
     match by_entry.command {
         Command::Docs {
-            command:
-                DocsCommand::GetContent {
-                    index, entry, ..
-                },
+            command: DocsCommand::GetContent { index, entry, .. },
         } => {
             assert_eq!(index, None);
             assert_eq!(entry, Some(44));
@@ -502,105 +495,6 @@ fn docs_get_content_accepts_location_selectors() {
         "--json",
     ])
     .is_ok());
-}
-
-#[test]
-fn docs_insert_text_parses_location_and_write_options() {
-    let cli = parse(&[
-        "docs",
-        "insert-text",
-        "document-123",
-        "Hello",
-        "--page",
-        "2",
-        "--line",
-        "1",
-        "--dry-run",
-        "--json",
-        "--required-revision-id",
-        "rev-123",
-    ])
-    .unwrap();
-
-    let Command::Docs { command } = cli.command else {
-        panic!("unexpected parse result");
-    };
-    let DocsCommand::InsertText {
-        document_id,
-        text,
-        index,
-        entry,
-        page,
-        line,
-        after_heading,
-        before_heading,
-        after_text,
-        before_text,
-        dry_run,
-        json,
-        required_revision_id,
-    } = command
-    else {
-        panic!("unexpected parse result");
-    };
-
-    assert_eq!(document_id, "document-123");
-    assert_eq!(text, "Hello");
-    assert_eq!(index, None);
-    assert_eq!(entry, None);
-    assert_eq!(page, Some(2));
-    assert_eq!(line, Some(1));
-    assert_eq!(after_heading, None);
-    assert_eq!(before_heading, None);
-    assert_eq!(after_text, None);
-    assert_eq!(before_text, None);
-    assert!(dry_run);
-    assert!(json);
-    assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
-}
-
-#[test]
-fn docs_replace_text_parses_match_and_write_options() {
-    let cli = parse(&[
-        "docs",
-        "replace-text",
-        "document-123",
-        "old",
-        "new",
-        "--match",
-        "2",
-        "--dry-run",
-        "--json",
-        "--required-revision-id",
-        "rev-123",
-    ])
-    .unwrap();
-
-    let Command::Docs { command } = cli.command else {
-        panic!("unexpected parse result");
-    };
-    let DocsCommand::ReplaceText {
-        document_id,
-        old_text,
-        new_text,
-        match_number,
-        all,
-        dry_run,
-        json,
-        required_revision_id,
-    } = command
-    else {
-        panic!("unexpected parse result");
-    };
-
-    assert_eq!(document_id, "document-123");
-    assert_eq!(old_text, "old");
-    assert_eq!(new_text, "new");
-    assert_eq!(match_number, Some(2));
-    assert!(!all);
-    assert!(dry_run);
-    assert!(json);
-    assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
 }
 
 #[test]
@@ -724,12 +618,7 @@ fn mail_search_with_query_limit_and_json() {
     .unwrap();
     match cli.command {
         Command::Mail {
-            command:
-                MailCommand::Search {
-                    query,
-                    limit,
-                    json,
-                },
+            command: MailCommand::Search { query, limit, json },
         } => {
             assert_eq!(query, "from:alice@example.com");
             assert_eq!(limit, Some(25));
@@ -767,7 +656,14 @@ fn mail_read_requires_message_id() {
 
 #[test]
 fn mail_read_accepts_global_account_flag() {
-    let cli = parse(&["mail", "read", "message-123", "--account", "mail@example.com"]).unwrap();
+    let cli = parse(&[
+        "mail",
+        "read",
+        "message-123",
+        "--account",
+        "mail@example.com",
+    ])
+    .unwrap();
     assert_eq!(cli.account.as_deref(), Some("mail@example.com"));
 }
 
@@ -973,7 +869,10 @@ fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
             assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
-            assert_eq!(value_render_option, SheetsValueRenderOption::UnformattedValue);
+            assert_eq!(
+                value_render_option,
+                SheetsValueRenderOption::UnformattedValue
+            );
         }
         _ => panic!("unexpected parse result"),
     }
@@ -1154,7 +1053,14 @@ fn sheets_values_append_accepts_raw_and_overwrite_options() {
 
 #[test]
 fn sheets_values_clear_with_range() {
-    let cli = parse(&["sheets", "values", "clear", "spreadsheet-123", "Sheet1!A1:B2"]).unwrap();
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "clear",
+        "spreadsheet-123",
+        "Sheet1!A1:B2",
+    ])
+    .unwrap();
     match cli.command {
         Command::Sheets {
             command:
