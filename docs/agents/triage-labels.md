@@ -14,4 +14,14 @@ When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the 
 
 Whenever applying `ready-for-agent` to an issue, also apply the `Sandcastle` label.
 
+## Sandcastle workflow labels
+
+| Label               | Meaning                                                                 |
+| ------------------- | ----------------------------------------------------------------------- |
+| `Sandcastle`        | Issue is eligible for the Sandcastle automation loop                    |
+| `need-human-review` | Sandcastle merged an implementation and a human needs to test/review it |
+| `need-fix`          | Human review found required changes and Sandcastle should run again     |
+
+Sandcastle keeps issues open after implementation. After merging, it adds `need-human-review` and removes `need-fix`. A human closes the issue if it passes. If it needs more work, the human removes `need-human-review`, adds `need-fix`, and leaves review comments for the next implementation pass.
+
 Edit the right-hand column to match whatever vocabulary you actually use.

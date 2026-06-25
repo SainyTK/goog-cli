@@ -13,11 +13,24 @@ For each branch:
 
 After all branches are merged, make a single commit summarizing the merge.
 
-# CLOSE ISSUES
+# HAND OFF ISSUES FOR HUMAN REVIEW
 
-For each branch that was merged, close its issue using the following command:
+Do not close issues after merging. A human will test, review, and close each issue manually if it passes.
 
-`gh issue close <ID> --comment "Completed by Sandcastle"`
+For each issue whose branch was merged:
+
+1. Add `need-human-review`.
+2. Remove `need-fix` if it is present.
+3. Leave the issue open.
+4. Add a short comment saying the Sandcastle implementation is ready for human review.
+
+Use these commands:
+
+`gh issue edit <ID> --add-label "need-human-review"`
+
+`gh issue edit <ID> --remove-label "need-fix" || true`
+
+`gh issue comment <ID> --body "Implemented by Sandcastle and ready for human review. Please test and close this issue if it passes. If it needs changes, remove need-human-review, add need-fix, and leave review comments."`
 
 Here are all the issues:
 
