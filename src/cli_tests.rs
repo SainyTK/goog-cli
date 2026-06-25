@@ -423,6 +423,88 @@ fn docs_map_with_document_id_and_json_flag() {
 }
 
 #[test]
+fn docs_search_text_with_document_id_text_and_json_flag() {
+    let cli = parse(&["docs", "search-text", "document-123", "Plan", "--json"]).unwrap();
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::SearchText {
+                    document_id,
+                    text,
+                    json,
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert_eq!(text, "Plan");
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn docs_get_content_accepts_location_selectors() {
+    let by_index = parse(&["docs", "get-content", "document-123", "--index", "44"]).unwrap();
+    match by_index.command {
+        Command::Docs {
+            command:
+                DocsCommand::GetContent {
+                    document_id,
+                    index,
+                    entry,
+                    page,
+                    line,
+                    heading,
+                    json,
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert_eq!(index, Some(44));
+            assert_eq!(entry, None);
+            assert_eq!(page, None);
+            assert_eq!(line, None);
+            assert_eq!(heading, None);
+            assert!(!json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    let by_entry = parse(&["docs", "get-content", "document-123", "--entry", "44"]).unwrap();
+    match by_entry.command {
+        Command::Docs {
+            command:
+                DocsCommand::GetContent {
+                    index, entry, ..
+                },
+        } => {
+            assert_eq!(index, None);
+            assert_eq!(entry, Some(44));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&[
+        "docs",
+        "get-content",
+        "document-123",
+        "--page",
+        "2",
+        "--line",
+        "1",
+    ])
+    .is_ok());
+    assert!(parse(&[
+        "docs",
+        "get-content",
+        "document-123",
+        "--heading",
+        "Appendix",
+        "--json",
+    ])
+    .is_ok());
+}
+
+#[test]
 fn docs_batch_update_with_requests_path() {
     let cli = parse(&[
         "docs",

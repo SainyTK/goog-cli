@@ -9,6 +9,8 @@ pub struct DocumentMap {
     pub revision_id: Option<String>,
     pub entries: Vec<DocumentMapEntry>,
     pub document_locations: Vec<DocumentLocation>,
+    #[serde(skip)]
+    pub text_blocks: Vec<DocumentTextBlock>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -18,6 +20,23 @@ pub struct DocumentMapEntry {
     pub location: DocumentLocation,
     pub kind: DocumentMapEntryKind,
     pub style: Option<String>,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentTextBlock {
+    pub location: DocumentLocation,
+    pub start_index: i64,
+    pub text: String,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentRange {
+    pub start_index: i64,
+    pub end_index: i64,
+    pub location: DocumentLocation,
     pub preview: String,
 }
 
@@ -62,11 +81,25 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         revision_id: string_field(document, "revisionId"),
         document_locations: entries.iter().map(|entry| entry.location.clone()).collect(),
         entries,
+        text_blocks: builder.text_blocks,
     }
+}
+
+pub fn search_document_text(document_map: &DocumentMap, needle: &str) -> Vec<DocumentRange> {
+    if needle.is_empty() {
+        return Vec::new();
+    }
+
+    document_map
+        .text_blocks
+        .iter()
+        .flat_map(|block| text_matches(block, needle))
+        .collect()
 }
 
 struct DocumentMapBuilder {
     entries: Vec<DocumentMapEntry>,
+    text_blocks: Vec<DocumentTextBlock>,
     current_page: Option<usize>,
     current_confidence: LocationConfidence,
     content_line: usize,
@@ -77,6 +110,7 @@ impl DocumentMapBuilder {
     fn new(toc_page_hints: Vec<TableOfContentsPageHint>) -> Self {
         Self {
             entries: Vec::new(),
+            text_blocks: Vec::new(),
             current_page: None,
             current_confidence: LocationConfidence::Unknown,
             content_line: 0,
@@ -106,17 +140,22 @@ impl DocumentMapBuilder {
 
         if !trimmed_text.is_empty() {
             self.push_content_line();
+            let location = self.text_location(element, is_heading, trimmed_text);
             let kind = if is_heading {
                 DocumentMapEntryKind::Heading
             } else {
                 DocumentMapEntryKind::Paragraph
             };
-            self.push_entry(
-                self.text_location(element, is_heading, trimmed_text),
-                kind,
-                style.clone(),
-                preview(&text),
-            );
+            let preview = preview(&text);
+            if let Some(start_index) = location.index {
+                self.text_blocks.push(DocumentTextBlock {
+                    location: location.clone(),
+                    start_index,
+                    text: text.clone(),
+                    preview: preview.clone(),
+                });
+            }
+            self.push_entry(location, kind, style.clone(), preview);
         } else if has_inline_image || positioned_count > 0 {
             self.push_content_line();
         }
@@ -388,6 +427,30 @@ fn table_cell_text(cell: &Value) -> String {
         .collect::<String>()
         .trim()
         .to_string()
+}
+
+fn text_matches(block: &DocumentTextBlock, needle: &str) -> Vec<DocumentRange> {
+    block
+        .text
+        .match_indices(needle)
+        .map(|(byte_offset, _)| {
+            let start_index = block.start_index + utf16_len(&block.text[..byte_offset]);
+            let end_index = start_index + utf16_len(needle);
+            DocumentRange {
+                start_index,
+                end_index,
+                location: DocumentLocation {
+                    index: Some(start_index),
+                    ..block.location.clone()
+                },
+                preview: block.preview.clone(),
+            }
+        })
+        .collect()
+}
+
+fn utf16_len(text: &str) -> i64 {
+    text.encode_utf16().count() as i64
 }
 
 fn preview(text: &str) -> String {
