@@ -152,6 +152,14 @@ pub enum DriveFolderCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsCommand {
+    /// Print a high-level map of editable Google Docs content
+    Map {
+        /// Google Docs Document ID to map
+        document_id: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Fetch a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.

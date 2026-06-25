@@ -1,4 +1,5 @@
 pub mod error;
+pub mod map;
 
 pub use error::DocsError;
 

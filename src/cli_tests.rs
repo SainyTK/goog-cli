@@ -405,6 +405,24 @@ fn docs_get_with_google_query_flags() {
 }
 
 #[test]
+fn docs_map_with_document_id_and_json_flag() {
+    let cli = parse(&["docs", "map", "document-123", "--json"]).unwrap();
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::Map {
+                    document_id,
+                    json,
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn docs_batch_update_with_requests_path() {
     let cli = parse(&[
         "docs",

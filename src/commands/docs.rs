@@ -6,11 +6,23 @@ use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::cli::DocsCommand;
 use crate::docs::{
-    batch_update_document, get_document, BatchUpdateDocumentOptions, GetDocumentOptions,
+    batch_update_document, get_document, map::build_document_map, map::DocumentMap,
+    BatchUpdateDocumentOptions, GetDocumentOptions,
 };
 
 pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Result<()> {
     match cmd {
+        DocsCommand::Map { document_id, json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_map_to(
+                client,
+                document_id,
+                json,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
         DocsCommand::Get {
             document_id,
             fields,
@@ -43,6 +55,26 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
                 None,
             ))
         }
+    }
+}
+
+pub(super) async fn run_map_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let options = get_document_options(document_id, None, true, documents_url);
+
+    let document = get_document(client, &options)
+        .await
+        .context("failed to fetch Google Docs Document")?;
+    let document_map = build_document_map(&document);
+    if json {
+        write_json_line(out, &document_map, "failed to serialize Docs Document Map")
+    } else {
+        write_document_map_table(out, &document_map)
     }
 }
 
@@ -131,7 +163,49 @@ fn batch_update_document_options(
     options
 }
 
-fn write_json_line(out: &mut impl Write, value: &serde_json::Value, context: &str) -> Result<()> {
+fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) -> Result<()> {
+    writeln!(
+        out,
+        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<18} {:<15} Preview",
+        "Entry", "Index", "Page", "Line", "Kind", "Style", "Confidence"
+    )
+    .context("failed to write Docs Document Map header")?;
+
+    for entry in &document_map.entries {
+        let index = entry
+            .location
+            .index
+            .map(|index| index.to_string())
+            .unwrap_or_else(|| "-".into());
+        let page = entry
+            .location
+            .page
+            .map(|page| page.to_string())
+            .unwrap_or_else(|| "-".into());
+        let style = entry.style.as_deref().unwrap_or("-");
+        writeln!(
+            out,
+            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<18} {:<15} {}",
+            entry.entry,
+            index,
+            page,
+            entry.location.content_line,
+            format!("{:?}", entry.kind),
+            style,
+            format!("{:?}", entry.location.confidence),
+            entry.preview
+        )
+        .context("failed to write Docs Document Map row")?;
+    }
+
+    Ok(())
+}
+
+fn write_json_line<T: serde::Serialize>(
+    out: &mut impl Write,
+    value: &T,
+    context: &str,
+) -> Result<()> {
     serde_json::to_writer(&mut *out, value).context(context.to_string())?;
     writeln!(out).context("failed to write output")?;
     Ok(())
