@@ -160,6 +160,39 @@ pub enum DocsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Search editable Google Docs content through the Document Map
+    SearchText {
+        /// Google Docs Document ID to search
+        document_id: String,
+        /// Text to find
+        text: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Retrieve one content block through a Document Map location selector
+    GetContent {
+        /// Google Docs Document ID to inspect
+        document_id: String,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Heading text anchor
+        #[arg(long)]
+        heading: Option<String>,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Fetch a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.

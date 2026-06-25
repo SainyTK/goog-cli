@@ -157,6 +157,200 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
 }
 
 #[tokio::test]
+async fn run_search_text_prints_human_matches_from_document_map() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_search_text_to(
+        &client,
+        "document-123".into(),
+        "Plan".into(),
+        false,
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("Match Page"));
+    assert!(output.contains("1     -     1    9     Unknown"));
+    assert!(output.contains("Project Plan"));
+    assert!(output.contains("2     2     1    49    ExplicitPageBreak"));
+    assert!(output.contains("Second Page Plan"));
+}
+
+#[tokio::test]
+async fn run_search_text_json_emits_document_ranges_and_locations() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_search_text_to(
+        &client,
+        "document-123".into(),
+        "Plan".into(),
+        true,
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output.as_array().unwrap().len(), 2);
+    assert_eq!(output[0]["startIndex"], 9);
+    assert_eq!(output[0]["endIndex"], 13);
+    assert_eq!(output[0]["location"]["index"], 9);
+    assert_eq!(output[0]["location"]["confidence"], "unknown");
+    assert_eq!(output[1]["location"]["page"], 2);
+    assert_eq!(output[1]["preview"], "Second Page Plan");
+}
+
+#[tokio::test]
+async fn run_get_content_keeps_index_and_entry_distinct() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut by_index = Vec::new();
+    run_get_content_to(
+        &client,
+        "document-123".into(),
+        ContentSelector::Index(44),
+        false,
+        &mut by_index,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let by_index = String::from_utf8(by_index).unwrap();
+    assert!(by_index.contains("Entry Index"));
+    assert!(by_index.contains("3     37"));
+    assert!(by_index.contains("Second Page Plan"));
+
+    let mut by_entry = Vec::new();
+    run_get_content_to(
+        &client,
+        "document-123".into(),
+        ContentSelector::Entry(2),
+        false,
+        &mut by_entry,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let by_entry = String::from_utf8(by_entry).unwrap();
+    assert!(by_entry.contains("2     14"));
+    assert!(by_entry.contains("No matching text here"));
+}
+
+#[tokio::test]
+async fn run_get_content_json_resolves_page_line_and_heading() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut by_page_line = Vec::new();
+    run_get_content_to(
+        &client,
+        "document-123".into(),
+        ContentSelector::PageLine { page: 2, line: 1 },
+        true,
+        &mut by_page_line,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let by_page_line: serde_json::Value = serde_json::from_slice(&by_page_line).unwrap();
+    assert_eq!(by_page_line["entry"], 3);
+    assert_eq!(by_page_line["location"]["page"], 2);
+
+    let mut by_heading = Vec::new();
+    run_get_content_to(
+        &client,
+        "document-123".into(),
+        ContentSelector::Heading("Second Page Plan".into()),
+        true,
+        &mut by_heading,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let by_heading: serde_json::Value = serde_json::from_slice(&by_heading).unwrap();
+    assert_eq!(by_heading["entry"], 3);
+    assert_eq!(by_heading["kind"], "heading");
+}
+
+#[tokio::test]
+async fn run_get_content_ambiguous_heading_returns_candidates() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(ambiguous_heading_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let result = run_get_content_to(
+        &client,
+        "document-123".into(),
+        ContentSelector::Heading("Overview".into()),
+        false,
+        &mut out,
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("ambiguous heading selector"));
+    assert!(message.contains("entry 1"));
+    assert!(message.contains("entry 2"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
 async fn run_batch_update_reads_requests_from_file_and_prints_response_json() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
@@ -380,6 +574,125 @@ fn short_document_with_page_break() -> serde_json::Value {
                                 "startIndex": 15,
                                 "endIndex": 27,
                                 "textRun": { "content": "Second Page\n" }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    })
+}
+
+fn searchable_document() -> serde_json::Value {
+    serde_json::json!({
+        "documentId": "document-123",
+        "title": "Searchable",
+        "revisionId": "rev-search",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 14,
+                    "paragraph": {
+                        "paragraphStyle": { "namedStyleType": "TITLE" },
+                        "elements": [
+                            {
+                                "startIndex": 1,
+                                "endIndex": 14,
+                                "textRun": { "content": "Project Plan\n" }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "startIndex": 14,
+                    "endIndex": 36,
+                    "paragraph": {
+                        "elements": [
+                            {
+                                "startIndex": 14,
+                                "endIndex": 36,
+                                "textRun": { "content": "No matching text here\n" }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "startIndex": 36,
+                    "endIndex": 37,
+                    "paragraph": {
+                        "elements": [
+                            {
+                                "startIndex": 36,
+                                "endIndex": 37,
+                                "pageBreak": {}
+                            }
+                        ]
+                    }
+                },
+                {
+                    "startIndex": 37,
+                    "endIndex": 54,
+                    "paragraph": {
+                        "paragraphStyle": { "namedStyleType": "HEADING_1" },
+                        "elements": [
+                            {
+                                "startIndex": 37,
+                                "endIndex": 54,
+                                "textRun": { "content": "Second Page Plan\n" }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    })
+}
+
+fn ambiguous_heading_document() -> serde_json::Value {
+    serde_json::json!({
+        "documentId": "document-123",
+        "title": "Ambiguous",
+        "revisionId": "rev-ambiguous",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 10,
+                    "paragraph": {
+                        "paragraphStyle": { "namedStyleType": "HEADING_1" },
+                        "elements": [
+                            {
+                                "startIndex": 1,
+                                "endIndex": 10,
+                                "textRun": { "content": "Overview\n" }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "startIndex": 10,
+                    "endIndex": 11,
+                    "paragraph": {
+                        "elements": [
+                            {
+                                "startIndex": 10,
+                                "endIndex": 11,
+                                "pageBreak": {}
+                            }
+                        ]
+                    }
+                },
+                {
+                    "startIndex": 11,
+                    "endIndex": 20,
+                    "paragraph": {
+                        "paragraphStyle": { "namedStyleType": "HEADING_1" },
+                        "elements": [
+                            {
+                                "startIndex": 11,
+                                "endIndex": 20,
+                                "textRun": { "content": "Overview\n" }
                             }
                         ]
                     }

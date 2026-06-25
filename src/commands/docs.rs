@@ -1,13 +1,14 @@
 use std::io::{Read, Write};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::cli::DocsCommand;
 use crate::docs::{
-    batch_update_document, get_document, map::build_document_map, map::DocumentMap,
-    BatchUpdateDocumentOptions, GetDocumentOptions,
+    batch_update_document, get_document, map::build_document_map, map::search_document_text,
+    map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind,
+    map::DocumentRange, BatchUpdateDocumentOptions, GetDocumentOptions,
 };
 
 pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Result<()> {
@@ -18,6 +19,43 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
             runtime.block_on(run_map_to(
                 client,
                 document_id,
+                json,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DocsCommand::SearchText {
+            document_id,
+            text,
+            json,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_search_text_to(
+                client,
+                document_id,
+                text,
+                json,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DocsCommand::GetContent {
+            document_id,
+            index,
+            entry,
+            page,
+            line,
+            heading,
+            json,
+        } => {
+            let selector = content_selector(index, entry, page, line, heading)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_get_content_to(
+                client,
+                document_id,
+                selector,
                 json,
                 &mut std::io::stdout(),
                 None,
@@ -78,6 +116,65 @@ pub(super) async fn run_map_to<S: AccountStore>(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum ContentSelector {
+    Index(i64),
+    Entry(usize),
+    PageLine { page: usize, line: usize },
+    Heading(String),
+}
+
+pub(super) async fn run_search_text_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    text: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let options = get_document_options(document_id, None, true, documents_url);
+
+    let document = get_document(client, &options)
+        .await
+        .context("failed to fetch Google Docs Document")?;
+    let document_map = build_document_map(&document);
+    let ranges = search_document_text(&document_map, &text);
+    if json {
+        write_json_line(out, &ranges, "failed to serialize Docs text matches")
+    } else {
+        write_search_text_table(out, &ranges)
+    }
+}
+
+pub(super) async fn run_get_content_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    selector: ContentSelector,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let options = get_document_options(document_id, None, true, documents_url);
+
+    let document = get_document(client, &options)
+        .await
+        .context("failed to fetch Google Docs Document")?;
+    let document_map = build_document_map(&document);
+    let entry = resolve_content_entry(&document_map, &selector)?;
+    if json {
+        write_json_line(out, entry, "failed to serialize Docs content entry")
+    } else {
+        write_document_map_table(out, &DocumentMap {
+            document_id: document_map.document_id.clone(),
+            title: document_map.title.clone(),
+            revision_id: document_map.revision_id.clone(),
+            entries: vec![entry.clone()],
+            document_locations: vec![entry.location.clone()],
+            text_blocks: Vec::new(),
+        })
+    }
+}
+
 pub(super) async fn run_get_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -132,6 +229,111 @@ fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde
     serde_json::from_str(&body).with_context(|| {
         format!("failed to parse Google Docs Batch Update request body from {request_source}")
     })
+}
+
+fn content_selector(
+    index: Option<i64>,
+    entry: Option<usize>,
+    page: Option<usize>,
+    line: Option<usize>,
+    heading: Option<String>,
+) -> Result<ContentSelector> {
+    let selector_count = usize::from(index.is_some())
+        + usize::from(entry.is_some())
+        + usize::from(page.is_some() || line.is_some())
+        + usize::from(heading.is_some());
+    if selector_count != 1 {
+        bail!("provide exactly one content selector: --index, --entry, --page with --line, or --heading");
+    }
+
+    if let Some(index) = index {
+        return Ok(ContentSelector::Index(index));
+    }
+    if let Some(entry) = entry {
+        return Ok(ContentSelector::Entry(entry));
+    }
+    if page.is_some() || line.is_some() {
+        let Some(page) = page else {
+            bail!("--page and --line must be provided together");
+        };
+        let Some(line) = line else {
+            bail!("--page and --line must be provided together");
+        };
+        return Ok(ContentSelector::PageLine { page, line });
+    }
+    if let Some(heading) = heading {
+        return Ok(ContentSelector::Heading(heading));
+    }
+
+    unreachable!("selector count checked above")
+}
+
+fn resolve_content_entry<'a>(
+    document_map: &'a DocumentMap,
+    selector: &ContentSelector,
+) -> Result<&'a DocumentMapEntry> {
+    match selector {
+        ContentSelector::Index(index) => document_map
+            .entries
+            .iter()
+            .filter(|entry| entry.location.index.is_some_and(|entry_index| entry_index <= *index))
+            .max_by_key(|entry| entry.location.index)
+            .with_context(|| format!("no content found at Google Docs index {index}")),
+        ContentSelector::Entry(entry_number) => document_map
+            .entries
+            .iter()
+            .find(|entry| entry.entry == *entry_number)
+            .with_context(|| format!("Document Map entry {entry_number} was not found")),
+        ContentSelector::PageLine { page, line } => document_map
+            .entries
+            .iter()
+            .find(|entry| {
+                entry.location.page == Some(*page) && entry.location.content_line == *line
+            })
+            .with_context(|| format!("no content found at page {page}, line {line}")),
+        ContentSelector::Heading(heading) => resolve_heading(document_map, heading),
+    }
+}
+
+fn resolve_heading<'a>(
+    document_map: &'a DocumentMap,
+    heading: &str,
+) -> Result<&'a DocumentMapEntry> {
+    let matches = document_map
+        .entries
+        .iter()
+        .filter(|entry| entry.kind == DocumentMapEntryKind::Heading && entry.preview == heading)
+        .collect::<Vec<_>>();
+
+    match matches.as_slice() {
+        [entry] => Ok(entry),
+        [] => bail!("heading selector {heading:?} did not match any Document Map entries"),
+        candidates => {
+            let candidate_list = candidates
+                .iter()
+                .map(|entry| {
+                    format!(
+                        "entry {} index {} page {} line {} preview {}",
+                        entry.entry,
+                        entry
+                            .location
+                            .index
+                            .map(|index| index.to_string())
+                            .unwrap_or_else(|| "-".into()),
+                        entry
+                            .location
+                            .page
+                            .map(|page| page.to_string())
+                            .unwrap_or_else(|| "-".into()),
+                        entry.location.content_line,
+                        entry.preview
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            bail!("ambiguous heading selector {heading:?}; candidates: {candidate_list}")
+        }
+    }
 }
 
 fn get_document_options(
@@ -196,6 +398,36 @@ fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) ->
             entry.preview
         )
         .context("failed to write Docs Document Map row")?;
+    }
+
+    Ok(())
+}
+
+fn write_search_text_table(out: &mut impl Write, ranges: &[DocumentRange]) -> Result<()> {
+    writeln!(
+        out,
+        "{:<5} {:<5} {:<4} {:<5} {:<15} Preview",
+        "Match", "Page", "Line", "Index", "Confidence"
+    )
+    .context("failed to write Docs text search header")?;
+
+    for (match_number, range) in ranges.iter().enumerate() {
+        let page = range
+            .location
+            .page
+            .map(|page| page.to_string())
+            .unwrap_or_else(|| "-".into());
+        writeln!(
+            out,
+            "{:<5} {:<5} {:<4} {:<5} {:<15} {}",
+            match_number + 1,
+            page,
+            range.location.content_line,
+            range.start_index,
+            format!("{:?}", range.location.confidence),
+            range.preview
+        )
+        .context("failed to write Docs text search row")?;
     }
 
     Ok(())
