@@ -574,6 +574,125 @@ async fn run_batch_update_reads_requests_from_stdin() {
 }
 
 #[tokio::test]
+async fn run_batch_update_reads_requests_from_file_and_passes_full_body_through() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": 0,
+                        "title": "Renamed"
+                    },
+                    "fields": "title"
+                }
+            }
+        ],
+        "includeSpreadsheetInResponse": true,
+        "responseRanges": ["Renamed!A1:B2"],
+        "responseIncludeGridData": false
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}],
+            "updatedSpreadsheet": {
+                "spreadsheetId": "spreadsheet-123"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let requests_path = temp_dir.path().join("batch-update.json");
+    std::fs::write(&requests_path, request_body.to_string()).unwrap();
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new("");
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_batch_update_to(
+        &client,
+        "spreadsheet-123".into(),
+        requests_path.to_string_lossy().into_owned(),
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        concat!(
+            "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\",",
+            "\"updatedSpreadsheet\":{\"spreadsheetId\":\"spreadsheet-123\"}}\n"
+        )
+    );
+}
+
+#[tokio::test]
+async fn run_batch_update_returns_clear_error_for_invalid_request_json() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new("{not json");
+    let mut out = Vec::new();
+
+    let result = run_batch_update_to(
+        &client,
+        "spreadsheet-123".into(),
+        "-".into(),
+        &mut input,
+        &mut out,
+        Some("https://example.test/sheets/v4/spreadsheets"),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to parse Google Sheets Batch Update request body from stdin"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_batch_update_returns_clear_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("bad batch update request"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new(serde_json::json!({ "requests": [] }).to_string());
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_batch_update_to(
+        &client,
+        "spreadsheet-123".into(),
+        "-".into(),
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to apply Google Sheets Batch Update"));
+    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
+    assert!(message.contains("bad batch update request"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
 async fn run_values_update_returns_clear_error_for_invalid_request_json() {
     let store = MemoryStore::default();
     let client = write_test_client(&store);

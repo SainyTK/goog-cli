@@ -1009,6 +1009,11 @@ fn sheets_batch_update_with_requests_path() {
 }
 
 #[test]
+fn sheets_batch_update_requires_requests() {
+    assert!(parse(&["sheets", "batch-update", "spreadsheet-123"]).is_err());
+}
+
+#[test]
 fn global_account_flag() {
     let cli = parse(&["--account", "me@example.com", "auth", "list"]).unwrap();
     assert_eq!(cli.account.as_deref(), Some("me@example.com"));
