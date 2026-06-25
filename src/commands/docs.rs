@@ -103,6 +103,34 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
                 None,
             ))
         }
+        DocsCommand::ReplaceText {
+            document_id,
+            old_text,
+            new_text,
+            match_number,
+            all,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_replace_text_to(
+                client,
+                ReplaceTextCommand {
+                    document_id,
+                    old_text,
+                    new_text,
+                    match_number,
+                    all,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
         DocsCommand::Get {
             document_id,
             fields,
@@ -177,6 +205,18 @@ pub(super) struct InsertTextCommand {
     pub document_id: String,
     pub text: String,
     pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ReplaceTextCommand {
+    pub document_id: String,
+    pub old_text: String,
+    pub new_text: String,
+    pub match_number: Option<usize>,
+    pub all: bool,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -257,6 +297,48 @@ pub(super) async fn run_insert_text_to<S: AccountStore>(
             .await
             .context("failed to apply Google Docs insert-text")?;
         write_json_line(out, &response, "failed to serialize Docs insert-text response")
+    }
+}
+
+pub(super) async fn run_replace_text_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: ReplaceTextCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let ranges = resolve_replace_text_ranges(&document_map, &command)?;
+    let request_body = replace_text_request_body(
+        &ranges,
+        &command.new_text,
+        command.required_revision_id.as_deref(),
+    );
+    let preview = replace_text_preview(
+        &document_map,
+        &ranges,
+        &command.old_text,
+        &command.new_text,
+    );
+
+    if command.dry_run {
+        let dry_run = ReplaceTextDryRun {
+            revision_id: document_map.revision_id.clone(),
+            ranges,
+            request_body,
+            preview,
+        };
+        if command.json {
+            write_json_line(out, &dry_run, "failed to serialize Docs replace-text dry run")
+        } else {
+            write_replace_text_preview(out, &dry_run)
+        }
+    } else {
+        let options =
+            batch_update_document_options(command.document_id, request_body, documents_url);
+        let response = batch_update_document(client, &options)
+            .await
+            .context("failed to apply Google Docs replace-text")?;
+        write_json_line(out, &response, "failed to serialize Docs replace-text response")
     }
 }
 
@@ -504,6 +586,29 @@ struct InsertTextPreview {
     after: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplaceTextDryRun {
+    revision_id: Option<String>,
+    ranges: Vec<DocumentRange>,
+    request_body: serde_json::Value,
+    preview: ReplaceTextPreview,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplaceTextPreview {
+    changes: Vec<ReplaceTextPreviewChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplaceTextPreviewChange {
+    range: DocumentRange,
+    before: String,
+    after: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedInsertTextLocation {
     location: crate::docs::map::DocumentLocation,
@@ -656,6 +761,69 @@ fn resolve_text_anchor(document_map: &DocumentMap, text: &str) -> Result<Documen
     }
 }
 
+fn resolve_replace_text_ranges(
+    document_map: &DocumentMap,
+    command: &ReplaceTextCommand,
+) -> Result<Vec<DocumentRange>> {
+    if command.old_text.is_empty() {
+        bail!("replace-text old text must not be empty");
+    }
+    if command.all && command.match_number.is_some() {
+        bail!("provide only one replace-text disambiguator: --match or --all");
+    }
+    if command.match_number == Some(0) {
+        bail!("--match must be 1 or greater");
+    }
+
+    let matches = search_document_text(document_map, &command.old_text);
+    if matches.is_empty() {
+        bail!(
+            "replace-text did not match {old_text:?}",
+            old_text = command.old_text.as_str()
+        );
+    }
+    if command.all {
+        return Ok(matches);
+    }
+    if let Some(match_number) = command.match_number {
+        return matches
+            .get(match_number - 1)
+            .cloned()
+            .map(|range| vec![range])
+            .with_context(|| {
+                format!(
+                    "replace-text match {match_number} was not found; {} matches available",
+                    matches.len()
+                )
+            });
+    }
+
+    match matches.as_slice() {
+        [range] => Ok(vec![range.clone()]),
+        candidates => {
+            let candidate_list = candidates
+                .iter()
+                .enumerate()
+                .map(|(index, range)| {
+                    format!(
+                        "match {} index {} page {} line {} preview {}",
+                        index + 1,
+                        range.start_index,
+                        display_optional(range.location.page),
+                        range.location.content_line,
+                        range.preview
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            bail!(
+                "ambiguous replace-text match {old_text:?}; candidates: {candidate_list}",
+                old_text = command.old_text.as_str()
+            )
+        }
+    }
+}
+
 fn insert_text_request_body(
     index: Option<i64>,
     text: &str,
@@ -679,6 +847,41 @@ fn insert_text_request_body(
     body
 }
 
+fn replace_text_request_body(
+    ranges: &[DocumentRange],
+    new_text: &str,
+    required_revision_id: Option<&str>,
+) -> serde_json::Value {
+    let mut requests = Vec::new();
+    let mut ranges_descending = ranges.to_vec();
+    ranges_descending.sort_by_key(|range| std::cmp::Reverse(range.start_index));
+
+    for range in ranges_descending {
+        requests.push(serde_json::json!({
+            "deleteContentRange": {
+                "range": {
+                    "startIndex": range.start_index,
+                    "endIndex": range.end_index
+                }
+            }
+        }));
+        requests.push(serde_json::json!({
+            "insertText": {
+                "location": { "index": range.start_index },
+                "text": new_text
+            }
+        }));
+    }
+
+    let mut body = serde_json::json!({ "requests": requests });
+    if let Some(required_revision_id) = required_revision_id {
+        body["writeControl"] = serde_json::json!({
+            "requiredRevisionId": required_revision_id
+        });
+    }
+    body
+}
+
 fn insert_preview_text(before: &str, char_offset: usize, inserted_text: &str) -> String {
     let byte_offset = before
         .char_indices()
@@ -688,6 +891,72 @@ fn insert_preview_text(before: &str, char_offset: usize, inserted_text: &str) ->
     let mut after = before.to_string();
     after.insert_str(byte_offset, inserted_text);
     after
+}
+
+fn replace_text_preview(
+    document_map: &DocumentMap,
+    ranges: &[DocumentRange],
+    old_text: &str,
+    new_text: &str,
+) -> ReplaceTextPreview {
+    ReplaceTextPreview {
+        changes: ranges
+            .iter()
+            .map(|range| ReplaceTextPreviewChange {
+                range: range.clone(),
+                before: range.preview.clone(),
+                after: replace_text_preview_after(document_map, range, old_text, new_text),
+            })
+            .collect(),
+    }
+}
+
+fn replace_text_preview_after(
+    document_map: &DocumentMap,
+    range: &DocumentRange,
+    old_text: &str,
+    new_text: &str,
+) -> String {
+    let block = document_map.text_blocks.iter().find(|block| {
+        let block_end = block.start_index + block.text.encode_utf16().count() as i64;
+        block.start_index <= range.start_index && range.end_index <= block_end
+    });
+    let Some(block) = block else {
+        return range.preview.replacen(old_text, new_text, 1);
+    };
+
+    let start_offset = utf16_byte_offset(&block.text, range.start_index - block.start_index);
+    let end_offset = utf16_byte_offset(&block.text, range.end_index - block.start_index);
+    let mut after = block.text.clone();
+    after.replace_range(start_offset..end_offset, new_text);
+    compact_preview(&after)
+}
+
+fn utf16_byte_offset(text: &str, utf16_offset: i64) -> usize {
+    if utf16_offset <= 0 {
+        return 0;
+    }
+
+    let mut units = 0;
+    for (byte_index, character) in text.char_indices() {
+        if units >= utf16_offset {
+            return byte_index;
+        }
+        units += character.len_utf16() as i64;
+    }
+    text.len()
+}
+
+fn compact_preview(text: &str) -> String {
+    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    const MAX_PREVIEW_CHARS: usize = 80;
+    if compact.chars().count() <= MAX_PREVIEW_CHARS {
+        compact
+    } else {
+        let mut truncated = compact.chars().take(MAX_PREVIEW_CHARS - 3).collect::<String>();
+        truncated.push_str("...");
+        truncated
+    }
 }
 
 fn preview_offset_for_index(preview: &str, block_start_index: i64, insertion_index: i64) -> usize {
@@ -706,6 +975,25 @@ fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -
         .context("failed to write Docs insert-text before preview")?;
     writeln!(out, "After: {}", dry_run.preview.after)
         .context("failed to write Docs insert-text after preview")?;
+    Ok(())
+}
+
+fn write_replace_text_preview(out: &mut impl Write, dry_run: &ReplaceTextDryRun) -> Result<()> {
+    writeln!(out, "Replace text in {} match(es)", dry_run.ranges.len())
+        .context("failed to write Docs replace-text preview header")?;
+    for (index, change) in dry_run.preview.changes.iter().enumerate() {
+        writeln!(
+            out,
+            "Match {} at index {}",
+            index + 1,
+            change.range.start_index
+        )
+        .context("failed to write Docs replace-text match preview")?;
+        writeln!(out, "Before: {}", change.before)
+            .context("failed to write Docs replace-text before preview")?;
+        writeln!(out, "After: {}", change.after)
+            .context("failed to write Docs replace-text after preview")?;
+    }
     Ok(())
 }
 
