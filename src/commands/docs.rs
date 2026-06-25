@@ -7,8 +7,8 @@ use crate::auth::client::AuthClient;
 use crate::cli::DocsCommand;
 use crate::docs::{
     batch_update_document, get_document, map::build_document_map, map::search_document_text,
-    map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind,
-    map::DocumentRange, BatchUpdateDocumentOptions, GetDocumentOptions,
+    map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind, map::DocumentRange,
+    BatchUpdateDocumentOptions, GetDocumentOptions,
 };
 
 pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Result<()> {
@@ -103,12 +103,7 @@ pub(super) async fn run_map_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
-    let options = get_document_options(document_id, None, true, documents_url);
-
-    let document = get_document(client, &options)
-        .await
-        .context("failed to fetch Google Docs Document")?;
-    let document_map = build_document_map(&document);
+    let document_map = get_document_map(client, document_id, documents_url).await?;
     if json {
         write_json_line(out, &document_map, "failed to serialize Docs Document Map")
     } else {
@@ -132,12 +127,7 @@ pub(super) async fn run_search_text_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
-    let options = get_document_options(document_id, None, true, documents_url);
-
-    let document = get_document(client, &options)
-        .await
-        .context("failed to fetch Google Docs Document")?;
-    let document_map = build_document_map(&document);
+    let document_map = get_document_map(client, document_id, documents_url).await?;
     let ranges = search_document_text(&document_map, &text);
     if json {
         write_json_line(out, &ranges, "failed to serialize Docs text matches")
@@ -154,24 +144,12 @@ pub(super) async fn run_get_content_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
-    let options = get_document_options(document_id, None, true, documents_url);
-
-    let document = get_document(client, &options)
-        .await
-        .context("failed to fetch Google Docs Document")?;
-    let document_map = build_document_map(&document);
+    let document_map = get_document_map(client, document_id, documents_url).await?;
     let entry = resolve_content_entry(&document_map, &selector)?;
     if json {
         write_json_line(out, entry, "failed to serialize Docs content entry")
     } else {
-        write_document_map_table(out, &DocumentMap {
-            document_id: document_map.document_id.clone(),
-            title: document_map.title.clone(),
-            revision_id: document_map.revision_id.clone(),
-            entries: vec![entry.clone()],
-            document_locations: vec![entry.location.clone()],
-            text_blocks: Vec::new(),
-        })
+        write_document_map_table(out, &document_map_with_entry(&document_map, entry))
     }
 }
 
@@ -231,6 +209,18 @@ fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde
     })
 }
 
+async fn get_document_map<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    documents_url: Option<&str>,
+) -> Result<DocumentMap> {
+    let options = get_document_options(document_id, None, true, documents_url);
+    let document = get_document(client, &options)
+        .await
+        .context("failed to fetch Google Docs Document")?;
+    Ok(build_document_map(&document))
+}
+
 fn content_selector(
     index: Option<i64>,
     entry: Option<usize>,
@@ -266,6 +256,17 @@ fn content_selector(
     }
 
     unreachable!("selector count checked above")
+}
+
+fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry) -> DocumentMap {
+    DocumentMap {
+        document_id: document_map.document_id.clone(),
+        title: document_map.title.clone(),
+        revision_id: document_map.revision_id.clone(),
+        entries: vec![entry.clone()],
+        document_locations: vec![entry.location.clone()],
+        text_blocks: Vec::new(),
+    }
 }
 
 fn resolve_content_entry<'a>(
@@ -315,16 +316,8 @@ fn resolve_heading<'a>(
                     format!(
                         "entry {} index {} page {} line {} preview {}",
                         entry.entry,
-                        entry
-                            .location
-                            .index
-                            .map(|index| index.to_string())
-                            .unwrap_or_else(|| "-".into()),
-                        entry
-                            .location
-                            .page
-                            .map(|page| page.to_string())
-                            .unwrap_or_else(|| "-".into()),
+                        display_optional(entry.location.index),
+                        display_optional(entry.location.page),
                         entry.location.content_line,
                         entry.preview
                     )
@@ -374,23 +367,13 @@ fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) ->
     .context("failed to write Docs Document Map header")?;
 
     for entry in &document_map.entries {
-        let index = entry
-            .location
-            .index
-            .map(|index| index.to_string())
-            .unwrap_or_else(|| "-".into());
-        let page = entry
-            .location
-            .page
-            .map(|page| page.to_string())
-            .unwrap_or_else(|| "-".into());
         let style = entry.style.as_deref().unwrap_or("-");
         writeln!(
             out,
             "{:<5} {:<7} {:<5} {:<4} {:<20} {:<18} {:<15} {}",
             entry.entry,
-            index,
-            page,
+            display_optional(entry.location.index),
+            display_optional(entry.location.page),
             entry.location.content_line,
             format!("{:?}", entry.kind),
             style,
@@ -412,16 +395,11 @@ fn write_search_text_table(out: &mut impl Write, ranges: &[DocumentRange]) -> Re
     .context("failed to write Docs text search header")?;
 
     for (match_number, range) in ranges.iter().enumerate() {
-        let page = range
-            .location
-            .page
-            .map(|page| page.to_string())
-            .unwrap_or_else(|| "-".into());
         writeln!(
             out,
             "{:<5} {:<5} {:<4} {:<5} {:<15} {}",
             match_number + 1,
-            page,
+            display_optional(range.location.page),
             range.location.content_line,
             range.start_index,
             format!("{:?}", range.location.confidence),
@@ -431,6 +409,12 @@ fn write_search_text_table(out: &mut impl Write, ranges: &[DocumentRange]) -> Re
     }
 
     Ok(())
+}
+
+fn display_optional<T: ToString>(value: Option<T>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".into())
 }
 
 fn write_json_line<T: serde::Serialize>(

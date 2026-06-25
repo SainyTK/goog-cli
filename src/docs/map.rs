@@ -147,7 +147,7 @@ impl DocumentMapBuilder {
                 DocumentMapEntryKind::Paragraph
             };
             let preview = preview(&text);
-            if let Some(start_index) = element.get("startIndex").and_then(Value::as_i64) {
+            if let Some(start_index) = location.index {
                 self.text_blocks.push(DocumentTextBlock {
                     location: location.clone(),
                     start_index,
