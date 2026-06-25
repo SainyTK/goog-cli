@@ -613,7 +613,7 @@ async fn run_batch_update_reads_requests_from_file_and_passes_full_body_through(
 
     let store = MemoryStore::default();
     let client = write_test_client(&store);
-    let mut input = std::io::Cursor::new("");
+    let mut input = std::io::empty();
     let mut out = Vec::new();
     let spreadsheets_url = spreadsheets_url(&server);
 
