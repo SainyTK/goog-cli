@@ -625,6 +625,42 @@ async fn run_values_append_returns_clear_error_for_invalid_request_json() {
 }
 
 #[tokio::test]
+async fn run_values_update_returns_clear_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("bad update request"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new(serde_json::json!({ "values": [["Ada"]] }).to_string());
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_values_to(
+        &client,
+        SheetsValuesCommand::Update {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:B2".into(),
+            values: "-".into(),
+            value_input_option: SheetsValueInputOption::UserEntered,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to update Google Sheets values"));
+    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
+    assert!(message.contains("bad update request"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
 async fn run_values_append_returns_clear_error_for_api_failure() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
