@@ -462,7 +462,7 @@ async fn get_document_map_unified<S: AccountStore>(
     Ok(build_document_map(&document))
 }
 
-fn content_selector(
+pub(super) fn content_selector(
     index: Option<i64>,
     entry: Option<usize>,
     page: Option<usize>,

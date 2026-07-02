@@ -1,0 +1,59 @@
+Issue 36 E2E evidence, redacted
+Result: PARTIAL
+
+Test setup:
+- Accounts used: [active-account], [alternate-account]
+- Fixture used: [existing Google Docs document ID redacted]
+- Skipped fixture: full live Docs read, because both tested accounts required additional Google `documents.readonly` OAuth consent and the sandbox could not complete the browser flow.
+
+Local checks:
+$ cargo test get_content_selector_rejects_mixed_or_partial_selectors -- --nocapture
+Expected: `get-content` selector validation rejects mixed `--index` plus `--entry`, and rejects partial `--page` without `--line`.
+Observed: 1 passed; 0 failed.
+Result: PASS.
+
+$ cargo test run_get_content -- --nocapture
+Expected: command-layer tests cover `get-content` by raw index, Document Map entry, page/line, heading, JSON output, ambiguous heading candidates, and unified account fallback.
+Observed: 4 passed; 0 failed.
+Result: PASS.
+
+$ cargo test run_search_text -- --nocapture
+Expected: command-layer tests cover human and JSON `search-text` output using Document Map ranges and locations.
+Observed: 3 passed; 0 failed.
+Result: PASS.
+
+Live checks:
+$ cargo run -- auth list
+Expected: show configured accounts available to the local CLI.
+Observed: four configured accounts; active account redacted.
+Result: PASS.
+
+$ cargo run -- drive list --limit 20 --json
+Expected: find an existing Google Docs document fixture through read-only Drive listing.
+Observed: returned Drive rows including multiple Google Docs documents; file names and IDs redacted.
+Result: PASS.
+
+$ cargo run -- docs map [DOC_ID_REDACTED]
+Expected: print a Document Map table for the selected Google Docs document.
+Observed: CLI requested additional Google `documents.readonly` consent and printed a manual browser authorization URL; no document content was returned.
+Result: PARTIAL.
+
+$ cargo run -- docs search-text [DOC_ID_REDACTED] [TEXT_REDACTED]
+Expected: print human-readable text matches with match number, page, line, index, confidence, and preview.
+Observed: CLI requested additional Google `documents.readonly` consent and printed a manual browser authorization URL; no document content was returned.
+Result: PARTIAL.
+
+$ cargo run -- docs search-text [DOC_ID_REDACTED] [TEXT_REDACTED] --json
+Expected: emit structured Document Ranges and Document Locations.
+Observed: CLI requested additional Google `documents.readonly` consent and printed a manual browser authorization URL; no document content was returned.
+Result: PARTIAL.
+
+$ cargo run -- --account [ALTERNATE_ACCOUNT_REDACTED] docs search-text [DOC_ID_REDACTED] [TEXT_REDACTED] --json
+Expected: verify whether an alternate configured account already had the Docs read-only scope.
+Observed: alternate account also required additional Google `documents.readonly` consent; no document content was returned.
+Result: PARTIAL.
+
+Reviewer notes:
+- No tokens, OAuth URLs, real email addresses, document IDs, file names, document titles, or document contents are included in this evidence.
+- The live blocker is missing account consent for the Docs read-only scope inside this sandbox, not a command parsing or local regression failure.
+- A human reviewer with `documents.readonly` already granted can rerun the live commands from the issue test steps.

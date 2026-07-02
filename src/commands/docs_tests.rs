@@ -361,6 +361,21 @@ async fn run_get_content_keeps_index_and_entry_distinct() {
     assert!(by_entry.contains("No matching text here"));
 }
 
+#[test]
+fn get_content_selector_rejects_mixed_or_partial_selectors() {
+    let mixed_index_and_entry = content_selector(Some(44), Some(2), None, None, None)
+        .expect_err("index and entry selectors must be mutually exclusive");
+    assert!(mixed_index_and_entry
+        .to_string()
+        .contains("provide exactly one content selector"));
+
+    let partial_page_line = content_selector(None, None, Some(2), None, None)
+        .expect_err("page selectors require a matching line");
+    assert!(partial_page_line
+        .to_string()
+        .contains("--page and --line must be provided together"));
+}
+
 #[tokio::test]
 async fn run_get_content_json_resolves_page_line_and_heading() {
     let server = MockServer::start().await;
