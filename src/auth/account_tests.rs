@@ -3,11 +3,11 @@ use std::sync::Mutex;
 
 use super::account::{
     resolve_account_store, AccountStore, AccountStoreImpl, FileAccountStore, Token,
+    TOKEN_FILE_ENV_VAR,
 };
 use super::testing::MemoryStore;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
-const TOKEN_FILE_ENV_VAR: &str = "GOOG_TOKEN_FILE";
 
 fn sample_token() -> Token {
     Token {
@@ -19,28 +19,29 @@ fn sample_token() -> Token {
 }
 
 struct EnvGuard {
+    name: &'static str,
     original: Option<std::ffi::OsString>,
 }
 
 impl EnvGuard {
-    fn unset(name: &str) -> Self {
+    fn unset(name: &'static str) -> Self {
         let original = std::env::var_os(name);
         std::env::remove_var(name);
-        Self { original }
+        Self { name, original }
     }
 
-    fn set(name: &str, value: &std::path::Path) -> Self {
+    fn set(name: &'static str, value: &std::path::Path) -> Self {
         let original = std::env::var_os(name);
         std::env::set_var(name, value);
-        Self { original }
+        Self { name, original }
     }
 }
 
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         match &self.original {
-            Some(value) => std::env::set_var(TOKEN_FILE_ENV_VAR, value),
-            None => std::env::remove_var(TOKEN_FILE_ENV_VAR),
+            Some(value) => std::env::set_var(self.name, value),
+            None => std::env::remove_var(self.name),
         }
     }
 }

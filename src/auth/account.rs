@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,9 @@ const KEYRING_SERVICE: &str = "goog";
 /// Sandcastle sandbox) that have no access to the host keychain -- never set
 /// this for normal interactive use, since a token file grants whoever can
 /// read it full access to that account within its authorized scopes.
-const TOKEN_FILE_ENV_VAR: &str = "GOOG_TOKEN_FILE";
+pub(crate) const TOKEN_FILE_ENV_VAR: &str = "GOOG_TOKEN_FILE";
+
+type TokenMap = HashMap<String, Token>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Token {
@@ -144,21 +147,7 @@ mod macos_keychain {
 
         delete_existing(&keychain, service, account)?;
 
-        let trusted_app = current_executable_trusted_app()?;
-        let trusted_apps = CFArray::from_CFTypes(&[trusted_app]);
-        let descriptor = CFString::new(service);
-        let mut access = ptr::null_mut();
-        let status = unsafe {
-            SecAccessCreate(
-                descriptor.as_concrete_TypeRef(),
-                trusted_apps.as_concrete_TypeRef(),
-                &mut access,
-            )
-        };
-        if status != errSecSuccess {
-            return Err(to_auth_error(Error::from_code(status)));
-        }
-        let access = unsafe { SecAccess::wrap_under_create_rule(access) };
+        let access = access_for_current_executable(service)?;
 
         let mut attrs = [
             attr(SEC_SERVICE_ITEM_ATTR, service),
@@ -189,6 +178,25 @@ mod macos_keychain {
         }
 
         Ok(())
+    }
+
+    fn access_for_current_executable(service: &str) -> Result<SecAccess, AuthError> {
+        let trusted_app = current_executable_trusted_app()?;
+        let trusted_apps = CFArray::from_CFTypes(&[trusted_app]);
+        let descriptor = CFString::new(service);
+        let mut access = ptr::null_mut();
+        let status = unsafe {
+            SecAccessCreate(
+                descriptor.as_concrete_TypeRef(),
+                trusted_apps.as_concrete_TypeRef(),
+                &mut access,
+            )
+        };
+        if status == errSecSuccess {
+            Ok(unsafe { SecAccess::wrap_under_create_rule(access) })
+        } else {
+            Err(to_auth_error(Error::from_code(status)))
+        }
     }
 
     fn delete_existing(
@@ -234,7 +242,7 @@ mod macos_keychain {
 }
 
 /// An `AccountStore` backed by a single JSON file holding a map of email to
-/// token, rather than the OS keychain -- populated via `goog auth export`.
+/// token, rather than the OS keychain.
 pub struct FileAccountStore {
     path: PathBuf,
 }
@@ -248,14 +256,11 @@ impl FileAccountStore {
     /// whatever was there before. Used by `goog auth export` to produce a
     /// file that reflects the current keychain state, not a merge with a
     /// stale previous export.
-    pub fn replace_all(
-        &self,
-        tokens: &std::collections::HashMap<String, Token>,
-    ) -> Result<(), AuthError> {
+    pub fn replace_all(&self, tokens: &TokenMap) -> Result<(), AuthError> {
         self.write_map(tokens)
     }
 
-    fn read_map(&self) -> Result<std::collections::HashMap<String, Token>, AuthError> {
+    fn read_map(&self) -> Result<TokenMap, AuthError> {
         match std::fs::read_to_string(&self.path) {
             Ok(payload) => serde_json::from_str(&payload)
                 .map_err(|e| AuthError::TokenFile(format!("deserialize token file: {e}"))),
@@ -267,7 +272,7 @@ impl FileAccountStore {
         }
     }
 
-    fn write_map(&self, map: &std::collections::HashMap<String, Token>) -> Result<(), AuthError> {
+    fn write_map(&self, map: &TokenMap) -> Result<(), AuthError> {
         let payload = serde_json::to_string_pretty(map)
             .map_err(|e| AuthError::TokenFile(format!("serialize token file: {e}")))?;
         std::fs::write(&self.path, payload)
@@ -290,19 +295,19 @@ impl AccountStore for FileAccountStore {
 }
 
 #[cfg(unix)]
-fn restrict_permissions(path: &std::path::Path) -> Result<(), AuthError> {
+fn restrict_permissions(path: &Path) -> Result<(), AuthError> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
         .map_err(|e| AuthError::TokenFile(format!("set permissions on {}: {e}", path.display())))
 }
 
 #[cfg(not(unix))]
-fn restrict_permissions(_path: &std::path::Path) -> Result<(), AuthError> {
+fn restrict_permissions(_path: &Path) -> Result<(), AuthError> {
     Ok(())
 }
 
 /// The account store actually used at runtime: the OS keychain by default,
-/// or a single-account token file when `GOOG_TOKEN_FILE` is set.
+/// or a token file when `GOOG_TOKEN_FILE` is set.
 pub enum AccountStoreImpl {
     Keyring(KeyringStore),
     File(FileAccountStore),
