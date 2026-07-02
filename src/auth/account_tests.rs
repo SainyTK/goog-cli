@@ -1,7 +1,13 @@
 use chrono::{TimeZone, Utc};
+use std::sync::Mutex;
 
-use super::account::{AccountStore, FileAccountStore, Token};
+use super::account::{
+    resolve_account_store, AccountStore, AccountStoreImpl, FileAccountStore, Token,
+    TOKEN_FILE_ENV_VAR,
+};
 use super::testing::MemoryStore;
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn sample_token() -> Token {
     Token {
@@ -9,6 +15,34 @@ fn sample_token() -> Token {
         refresh_token: "refresh-def".into(),
         expiry: Utc.with_ymd_and_hms(2030, 1, 1, 0, 0, 0).unwrap(),
         scopes: vec!["openid".into(), "email".into()],
+    }
+}
+
+struct EnvGuard {
+    name: &'static str,
+    original: Option<std::ffi::OsString>,
+}
+
+impl EnvGuard {
+    fn unset(name: &'static str) -> Self {
+        let original = std::env::var_os(name);
+        std::env::remove_var(name);
+        Self { name, original }
+    }
+
+    fn set(name: &'static str, value: &std::path::Path) -> Self {
+        let original = std::env::var_os(name);
+        std::env::set_var(name, value);
+        Self { name, original }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        match &self.original {
+            Some(value) => std::env::set_var(self.name, value),
+            None => std::env::remove_var(self.name),
+        }
     }
 }
 
@@ -90,7 +124,9 @@ fn file_store_returns_none_when_file_is_missing() {
 fn file_store_returns_none_for_an_email_not_in_the_file() {
     let dir = tempfile::tempdir().unwrap();
     let store = FileAccountStore::new(dir.path().join("tokens.json"));
-    store.save_token("alice@example.com", &sample_token()).unwrap();
+    store
+        .save_token("alice@example.com", &sample_token())
+        .unwrap();
 
     assert!(store.load_token("bob@example.com").unwrap().is_none());
 }
@@ -108,11 +144,19 @@ fn file_store_holds_multiple_accounts_without_clobbering() {
     store.save_token("second@example.com", &t2).unwrap();
 
     assert_eq!(
-        store.load_token("first@example.com").unwrap().unwrap().access_token,
+        store
+            .load_token("first@example.com")
+            .unwrap()
+            .unwrap()
+            .access_token,
         "first"
     );
     assert_eq!(
-        store.load_token("second@example.com").unwrap().unwrap().access_token,
+        store
+            .load_token("second@example.com")
+            .unwrap()
+            .unwrap()
+            .access_token,
         "second"
     );
 }
@@ -121,7 +165,9 @@ fn file_store_holds_multiple_accounts_without_clobbering() {
 fn file_store_replace_all_discards_accounts_not_in_the_new_set() {
     let dir = tempfile::tempdir().unwrap();
     let store = FileAccountStore::new(dir.path().join("tokens.json"));
-    store.save_token("stale@example.com", &sample_token()).unwrap();
+    store
+        .save_token("stale@example.com", &sample_token())
+        .unwrap();
 
     let mut fresh = std::collections::HashMap::new();
     fresh.insert("alice@example.com".to_string(), sample_token());
@@ -129,4 +175,26 @@ fn file_store_replace_all_discards_accounts_not_in_the_new_set() {
 
     assert!(store.load_token("stale@example.com").unwrap().is_none());
     assert!(store.load_token("alice@example.com").unwrap().is_some());
+}
+
+#[test]
+fn resolve_account_store_uses_keyring_by_default() {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let _guard = EnvGuard::unset(TOKEN_FILE_ENV_VAR);
+
+    let store = resolve_account_store();
+
+    assert!(matches!(store, AccountStoreImpl::Keyring(_)));
+}
+
+#[test]
+fn resolve_account_store_uses_file_only_when_token_file_is_explicit() {
+    let _lock = ENV_LOCK.lock().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let token_path = dir.path().join("tokens.json");
+    let _guard = EnvGuard::set(TOKEN_FILE_ENV_VAR, &token_path);
+
+    let store = resolve_account_store();
+
+    assert!(matches!(store, AccountStoreImpl::File(_)));
 }

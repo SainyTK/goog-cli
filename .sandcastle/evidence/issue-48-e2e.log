@@ -1,0 +1,12 @@
+$ cargo run -- auth list
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.92s
+     Running `target/debug/goog auth list`
+  EMAIL                     ACTIVE
+* account-1@redacted.example  *
+  account-2@redacted.example
+  account-3@redacted.example
+  account-4@redacted.example
+
+Note: this verifies the auth command can read already-authorized accounts in
+the Sandcastle sandbox via GOOG_TOKEN_FILE. The issue's macOS Keychain trust
+prompt behavior cannot be exercised from this Linux sandbox.
