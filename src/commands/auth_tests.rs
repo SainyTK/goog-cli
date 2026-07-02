@@ -1,9 +1,11 @@
+use crate::auth::account::TokenSaveOutcome;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType};
 use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 
 use super::auth::{
-    add_account_to_config, build_oauth_app_secrets, perform_device_login, run_setup_to, SETUP_GUIDE,
+    add_account_to_config, build_oauth_app_secrets, perform_device_login, run_setup_to,
+    write_login_completion_to, SETUP_GUIDE,
 };
 
 #[test]
@@ -120,4 +122,49 @@ fn second_login_does_not_displace_active_account() {
         config.settings.unwrap().active_account.as_deref(),
         Some("alice@example.com")
     );
+}
+
+#[test]
+fn login_warns_when_keychain_prompt_free_access_is_not_guaranteed() {
+    let mut out: Vec<u8> = Vec::new();
+    let mut err: Vec<u8> = Vec::new();
+
+    write_login_completion_to(
+        "alice@example.com",
+        &TokenSaveOutcome::prompt_free_access_not_guaranteed(),
+        &mut out,
+        &mut err,
+    )
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Authorized as alice@example.com\n"
+    );
+    let warning = String::from_utf8(err).unwrap();
+    assert!(warning.contains("Keychain Access Prompts"));
+    assert!(warning.contains("Google browser consent prompts"));
+    assert!(warning.contains("goog auth login"));
+    assert!(!warning.contains("access-abc"));
+    assert!(!warning.contains("refresh-def"));
+}
+
+#[test]
+fn login_does_not_warn_when_keychain_prompt_free_access_is_guaranteed() {
+    let mut out: Vec<u8> = Vec::new();
+    let mut err: Vec<u8> = Vec::new();
+
+    write_login_completion_to(
+        "alice@example.com",
+        &TokenSaveOutcome::prompt_free_access_guaranteed(),
+        &mut out,
+        &mut err,
+    )
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Authorized as alice@example.com\n"
+    );
+    assert!(String::from_utf8(err).unwrap().is_empty());
 }

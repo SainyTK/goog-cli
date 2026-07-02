@@ -27,8 +27,46 @@ pub struct Token {
 
 pub trait AccountStore {
     fn save_token(&self, email: &str, token: &Token) -> Result<(), AuthError>;
+    fn save_token_for_login(
+        &self,
+        email: &str,
+        token: &Token,
+    ) -> Result<TokenSaveOutcome, AuthError> {
+        self.save_token(email, token)?;
+        Ok(TokenSaveOutcome::prompt_free_access_guaranteed())
+    }
+
     #[allow(dead_code)]
     fn load_token(&self, email: &str) -> Result<Option<Token>, AuthError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenSaveOutcome {
+    prompt_free_access: PromptFreeAccess,
+}
+
+impl TokenSaveOutcome {
+    pub fn prompt_free_access_guaranteed() -> Self {
+        Self {
+            prompt_free_access: PromptFreeAccess::Guaranteed,
+        }
+    }
+
+    pub fn prompt_free_access_not_guaranteed() -> Self {
+        Self {
+            prompt_free_access: PromptFreeAccess::NotGuaranteed,
+        }
+    }
+
+    pub fn prompt_free_access_is_guaranteed(&self) -> bool {
+        self.prompt_free_access == PromptFreeAccess::Guaranteed
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromptFreeAccess {
+    Guaranteed,
+    NotGuaranteed,
 }
 
 pub struct KeyringStore;
@@ -38,6 +76,16 @@ impl AccountStore for KeyringStore {
         let payload = serde_json::to_string(token)
             .map_err(|e| AuthError::Keyring(format!("serialize token: {e}")))?;
         save_keyring_payload(email, &payload)
+    }
+
+    fn save_token_for_login(
+        &self,
+        email: &str,
+        token: &Token,
+    ) -> Result<TokenSaveOutcome, AuthError> {
+        let payload = serde_json::to_string(token)
+            .map_err(|e| AuthError::Keyring(format!("serialize token: {e}")))?;
+        save_keyring_payload_for_login(email, &payload)
     }
 
     fn load_token(&self, email: &str) -> Result<Option<Token>, AuthError> {
@@ -57,6 +105,19 @@ impl AccountStore for KeyringStore {
 
 #[cfg(not(target_os = "macos"))]
 fn save_keyring_payload(email: &str, payload: &str) -> Result<(), AuthError> {
+    save_keyring_payload_with_default_access(email, payload)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn save_keyring_payload_for_login(
+    email: &str,
+    payload: &str,
+) -> Result<TokenSaveOutcome, AuthError> {
+    save_keyring_payload_with_default_access(email, payload)?;
+    Ok(TokenSaveOutcome::prompt_free_access_guaranteed())
+}
+
+fn save_keyring_payload_with_default_access(email: &str, payload: &str) -> Result<(), AuthError> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, email)
         .map_err(|e| AuthError::Keyring(e.to_string()))?;
     entry
@@ -67,6 +128,20 @@ fn save_keyring_payload(email: &str, payload: &str) -> Result<(), AuthError> {
 #[cfg(target_os = "macos")]
 fn save_keyring_payload(email: &str, payload: &str) -> Result<(), AuthError> {
     macos_keychain::save_trusted_cli_password(KEYRING_SERVICE, email, payload.as_bytes())
+}
+
+#[cfg(target_os = "macos")]
+fn save_keyring_payload_for_login(
+    email: &str,
+    payload: &str,
+) -> Result<TokenSaveOutcome, AuthError> {
+    match save_keyring_payload(email, payload) {
+        Ok(()) => Ok(TokenSaveOutcome::prompt_free_access_guaranteed()),
+        Err(_) => {
+            save_keyring_payload_with_default_access(email, payload)?;
+            Ok(TokenSaveOutcome::prompt_free_access_not_guaranteed())
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]
