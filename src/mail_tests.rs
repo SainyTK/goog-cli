@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use chrono::{Duration, Utc};
 use wiremock::matchers::{body_string_contains, header, method, path, query_param};
@@ -10,31 +10,7 @@ use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 use crate::mail::*;
-
-static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
-
-struct CurrentDirGuard {
-    original: std::path::PathBuf,
-    _lock: MutexGuard<'static, ()>,
-}
-
-impl CurrentDirGuard {
-    fn enter(path: impl AsRef<std::path::Path>) -> Self {
-        let lock = CURRENT_DIR_LOCK.lock().unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(path).unwrap();
-        Self {
-            original,
-            _lock: lock,
-        }
-    }
-}
-
-impl Drop for CurrentDirGuard {
-    fn drop(&mut self) {
-        std::env::set_current_dir(&self.original).unwrap();
-    }
-}
+use crate::test_support::CurrentDirGuard;
 
 fn test_config() -> Config {
     Config {
@@ -70,7 +46,9 @@ fn profile_token() -> Token {
 }
 
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
-    store.save_token("alice@example.com", &mail_token()).unwrap();
+    store
+        .save_token("alice@example.com", &mail_token())
+        .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
@@ -597,8 +575,7 @@ async fn get_message_requests_only_gmail_readonly_scope_when_missing() {
         .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
             scopes_seen: scopes_seen.clone(),
         }));
-    let options = GetMessageOptions::new("message-123")
-        .with_messages_url(messages_url(&server));
+    let options = GetMessageOptions::new("message-123").with_messages_url(messages_url(&server));
 
     get_message(&client, &options).await.unwrap();
 
@@ -625,8 +602,8 @@ async fn get_message_returns_mail_error_for_not_found_response() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetMessageOptions::new("missing-message")
-        .with_messages_url(messages_url(&server));
+    let options =
+        GetMessageOptions::new("missing-message").with_messages_url(messages_url(&server));
 
     let err = get_message(&client, &options).await.unwrap_err();
 
@@ -645,8 +622,8 @@ async fn get_message_returns_mail_error_for_permission_denied_response() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = GetMessageOptions::new("private-message")
-        .with_messages_url(messages_url(&server));
+    let options =
+        GetMessageOptions::new("private-message").with_messages_url(messages_url(&server));
 
     let err = get_message(&client, &options).await.unwrap_err();
 

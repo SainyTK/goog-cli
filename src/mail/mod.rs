@@ -126,9 +126,7 @@ impl DownloadAttachmentOptions {
     fn attachment_url(&self) -> Result<Url, MailError> {
         let mut url = message_url(&self.messages_url, &self.message_id)?;
         url.path_segments_mut()
-            .map_err(|_| {
-                MailError::InvalidResponse("GoogleMail API URL cannot be a base".into())
-            })?
+            .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
             .push("attachments")
             .push(&self.attachment_id);
         Ok(url)
@@ -212,9 +210,7 @@ impl GetMessageOptions {
 fn message_url(messages_url: &str, message_id: &str) -> Result<Url, MailError> {
     let mut url = Url::parse(messages_url)?;
     url.path_segments_mut()
-        .map_err(|_| {
-            MailError::InvalidResponse("GoogleMail API URL cannot be a base".into())
-        })?
+        .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
         .push(message_id);
     Ok(url)
 }
@@ -299,7 +295,9 @@ async fn attachment_filename_path<S: AccountStore>(
     let metadata = fetch_attachment_filename_metadata(client, options).await?;
     let filename = find_attachment_filename(&metadata.payload, &options.attachment_id)
         .ok_or(MailError::MissingAttachmentFilename)?;
-    Ok(std::env::current_dir().map_err(MailError::Io)?.join(filename))
+    Ok(std::env::current_dir()
+        .map_err(MailError::Io)?
+        .join(filename))
 }
 
 async fn fetch_attachment_filename_metadata<S: AccountStore>(
@@ -355,8 +353,8 @@ fn matching_attachment_filename(
     body: Option<&MessagePartBody>,
     attachment_id: &str,
 ) -> Option<String> {
-    let matches_attachment = body.and_then(|body| body.attachment_id.as_deref())
-        == Some(attachment_id);
+    let matches_attachment =
+        body.and_then(|body| body.attachment_id.as_deref()) == Some(attachment_id);
 
     if matches_attachment && !filename.is_empty() {
         Some(filename.to_string())

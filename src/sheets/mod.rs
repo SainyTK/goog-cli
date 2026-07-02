@@ -159,11 +159,8 @@ impl GetValuesOptions {
     }
 
     fn request_url(&self) -> Result<Url, SheetsError> {
-        let mut url = spreadsheet_values_url(
-            &self.spreadsheets_url,
-            &self.spreadsheet_id,
-            &[&self.range],
-        )?;
+        let mut url =
+            spreadsheet_values_url(&self.spreadsheets_url, &self.spreadsheet_id, &[&self.range])?;
         url.query_pairs_mut().append_pair(
             "valueRenderOption",
             self.value_render_option.as_google_value(),
@@ -252,11 +249,8 @@ impl UpdateValuesOptions {
     }
 
     fn request_url(&self) -> Result<Url, SheetsError> {
-        let mut url = spreadsheet_values_url(
-            &self.spreadsheets_url,
-            &self.spreadsheet_id,
-            &[&self.range],
-        )?;
+        let mut url =
+            spreadsheet_values_url(&self.spreadsheets_url, &self.spreadsheet_id, &[&self.range])?;
         url.query_pairs_mut().append_pair(
             "valueInputOption",
             self.value_input_option.as_google_value(),
@@ -287,7 +281,11 @@ impl BatchUpdateValuesOptions {
     }
 
     fn request_url(&self) -> Result<Url, SheetsError> {
-        spreadsheet_values_url(&self.spreadsheets_url, &self.spreadsheet_id, &[":batchUpdate"])
+        spreadsheet_values_url(
+            &self.spreadsheets_url,
+            &self.spreadsheet_id,
+            &[":batchUpdate"],
+        )
     }
 }
 
@@ -334,15 +332,21 @@ impl AppendValuesOptions {
 
     fn request_url(&self) -> Result<Url, SheetsError> {
         let append_range = format!("{}:append", self.range);
-        let mut url =
-            spreadsheet_values_url(&self.spreadsheets_url, &self.spreadsheet_id, &[&append_range])?;
+        let mut url = spreadsheet_values_url(
+            &self.spreadsheets_url,
+            &self.spreadsheet_id,
+            &[&append_range],
+        )?;
         {
             let mut query = url.query_pairs_mut();
             query.append_pair(
                 "valueInputOption",
                 self.value_input_option.as_google_value(),
             );
-            query.append_pair("insertDataOption", self.insert_data_option.as_google_value());
+            query.append_pair(
+                "insertDataOption",
+                self.insert_data_option.as_google_value(),
+            );
         }
         Ok(url)
     }
@@ -371,7 +375,11 @@ impl ClearValuesOptions {
 
     fn request_url(&self) -> Result<Url, SheetsError> {
         let clear_range = format!("{}:clear", self.range);
-        spreadsheet_values_url(&self.spreadsheets_url, &self.spreadsheet_id, &[&clear_range])
+        spreadsheet_values_url(
+            &self.spreadsheets_url,
+            &self.spreadsheet_id,
+            &[&clear_range],
+        )
     }
 }
 
@@ -397,7 +405,11 @@ impl BatchClearValuesOptions {
     }
 
     fn request_url(&self) -> Result<Url, SheetsError> {
-        spreadsheet_values_url(&self.spreadsheets_url, &self.spreadsheet_id, &[":batchClear"])
+        spreadsheet_values_url(
+            &self.spreadsheets_url,
+            &self.spreadsheet_id,
+            &[":batchClear"],
+        )
     }
 }
 

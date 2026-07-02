@@ -625,12 +625,7 @@ fn mail_search_with_query_limit_and_json() {
     .unwrap();
     match cli.command {
         Command::Mail {
-            command:
-                MailCommand::Search {
-                    query,
-                    limit,
-                    json,
-                },
+            command: MailCommand::Search { query, limit, json },
         } => {
             assert_eq!(query, "from:alice@example.com");
             assert_eq!(limit, Some(25));
@@ -668,7 +663,14 @@ fn mail_read_requires_message_id() {
 
 #[test]
 fn mail_read_accepts_global_account_flag() {
-    let cli = parse(&["mail", "read", "message-123", "--account", "mail@example.com"]).unwrap();
+    let cli = parse(&[
+        "mail",
+        "read",
+        "message-123",
+        "--account",
+        "mail@example.com",
+    ])
+    .unwrap();
     assert_eq!(cli.account.as_deref(), Some("mail@example.com"));
 }
 
@@ -874,7 +876,10 @@ fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
             assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
-            assert_eq!(value_render_option, SheetsValueRenderOption::UnformattedValue);
+            assert_eq!(
+                value_render_option,
+                SheetsValueRenderOption::UnformattedValue
+            );
         }
         _ => panic!("unexpected parse result"),
     }
@@ -1055,7 +1060,14 @@ fn sheets_values_append_accepts_raw_and_overwrite_options() {
 
 #[test]
 fn sheets_values_clear_with_range() {
-    let cli = parse(&["sheets", "values", "clear", "spreadsheet-123", "Sheet1!A1:B2"]).unwrap();
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "clear",
+        "spreadsheet-123",
+        "Sheet1!A1:B2",
+    ])
+    .unwrap();
     match cli.command {
         Command::Sheets {
             command:

@@ -7,6 +7,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::testing::MemoryStore;
 use crate::mail::GMAIL_READONLY_SCOPE;
+use crate::test_support::CurrentDirGuard;
 
 use super::mail::*;
 
@@ -35,7 +36,9 @@ fn mail_token() -> Token {
 }
 
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
-    store.save_token("alice@example.com", &mail_token()).unwrap();
+    store
+        .save_token("alice@example.com", &mail_token())
+        .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
@@ -273,6 +276,65 @@ async fn run_attachment_download_writes_bytes_to_output_path() {
     .unwrap();
 
     assert_eq!(std::fs::read(output).unwrap(), b"hello mail");
+}
+
+#[tokio::test]
+async fn run_attachment_download_uses_part_filename_when_output_is_omitted() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .and(query_param("fields", "payload"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "",
+                        "parts": [
+                            {
+                                "filename": "invoice.pdf",
+                                "body": { "attachmentId": "attachment-1" }
+                            }
+                        ]
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/gmail/v1/users/me/messages/message-1/attachments/attachment-1",
+        ))
+        .and(header("authorization", "Bearer mail-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": "cGRm"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_attachment_download_to(
+        &client,
+        "message-1".into(),
+        "attachment-1".into(),
+        None,
+        true,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        std::fs::read(temp.path().join("invoice.pdf")).unwrap(),
+        b"pdf"
+    );
 }
 
 #[tokio::test]

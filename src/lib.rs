@@ -18,3 +18,5 @@ mod mail_tests;
 mod sandcastle_tests;
 #[cfg(test)]
 mod sheets_tests;
+#[cfg(test)]
+mod test_support;
