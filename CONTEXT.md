@@ -44,6 +44,26 @@ _Avoid_: Permission, capability
 The pattern of requesting only the Scopes a command needs, on first use, rather than all Scopes upfront at login.
 _Avoid_: Lazy auth, on-demand auth, progressive scopes
 
+**Target Access Failure**:
+A definitive Google API response showing that an Account cannot access a target resource after it has the required Scope.
+It does not include malformed targets, network failures, rate limits, revoked Tokens, missing OAuth setup, or Incremental Authorization failures.
+_Avoid_: Resolve failure, command failure, auth failure
+
+**Resource Account Mapping**:
+A remembered association between a target resource on a Google API surface and the Account that last accessed it successfully.
+It is an optimization for future commands, not an ownership claim.
+_Avoid_: Resource owner, account cache, file owner
+
+**Account Fallback**:
+The automatic attempt to access a target resource with other Accounts after the default Account receives a Target Access Failure.
+Explicit Account selection disables Account Fallback.
+_Avoid_: Account switching, account guessing, auto-login
+
+**Unified Access**:
+The user experience where a person logs in to multiple Accounts once, then targets Google resources without manually switching Accounts for each command.
+Unified Access applies to both read and write commands that target existing resources.
+_Avoid_: Multi-account mode, account pooling, global access
+
 ### Commands
 
 **Setup**:
