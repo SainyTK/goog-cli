@@ -4,8 +4,11 @@ use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 
 use super::auth::{
-    add_account_to_config, build_oauth_app_secrets, perform_device_login, run_setup_to,
-    write_login_completion_to, SETUP_GUIDE,
+    add_account_to_config, build_oauth_app_secrets, perform_device_login, run_mappings_clear_to,
+    run_mappings_list_to, run_setup_to, write_login_completion_to, SETUP_GUIDE,
+};
+use crate::auth::state::{
+    load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 
 #[test]
@@ -167,4 +170,171 @@ fn login_does_not_warn_when_keychain_prompt_free_access_is_guaranteed() {
         "Authorized as alice@example.com\n"
     );
     assert!(String::from_utf8(err).unwrap().is_empty());
+}
+
+#[test]
+fn mappings_list_renders_resource_account_mappings() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut state = RuntimeState::default();
+    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
+    state.set_resource_account(resource_key("sheets", "spreadsheet-456"), "bob@example.com");
+    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let mut out = Vec::new();
+
+    run_mappings_list_to(false, &mut out, Some(&state_path)).unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SURFACE  RESOURCE ID      ACCOUNT          \n\
+docs     document-123     alice@example.com\n\
+sheets   spreadsheet-456  bob@example.com  \n"
+    );
+}
+
+#[test]
+fn mappings_list_renders_json_resource_account_mappings() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut state = RuntimeState::default();
+    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
+    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let mut out = Vec::new();
+
+    run_mappings_list_to(true, &mut out, Some(&state_path)).unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"surface\":\"docs\",\"resource_id\":\"document-123\",\"account\":\"alice@example.com\",\"resource_key\":\"docs:document-123\"}\n"
+    );
+}
+
+#[test]
+fn mappings_clear_filters_by_surface_and_resource_id() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut state = RuntimeState::default();
+    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
+    state.set_resource_account(resource_key("docs", "document-456"), "bob@example.com");
+    state.set_resource_account(resource_key("sheets", "document-123"), "carol@example.com");
+    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let mut out = Vec::new();
+
+    run_mappings_clear_to(
+        Some("docs"),
+        Some("document-123"),
+        &mut out,
+        Some(&state_path),
+    )
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Cleared 1 Resource Account Mapping(s).\n"
+    );
+    let state = load_runtime_state_from_path(&state_path).unwrap();
+    assert_eq!(
+        state.account_for_resource(&resource_key("docs", "document-456")),
+        Some("bob@example.com")
+    );
+    assert_eq!(
+        state.account_for_resource(&resource_key("sheets", "document-123")),
+        Some("carol@example.com")
+    );
+    assert_eq!(
+        state.account_for_resource(&resource_key("docs", "document-123")),
+        None
+    );
+}
+
+#[test]
+fn mappings_clear_rejects_partial_filter() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut state = RuntimeState::default();
+    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
+    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let mut out = Vec::new();
+
+    let err = run_mappings_clear_to(Some("docs"), None, &mut out, Some(&state_path)).unwrap_err();
+
+    let message = err.to_string();
+    assert!(message.contains("--surface"));
+    assert!(message.contains("--resource-id"));
+    assert!(out.is_empty());
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("docs", "document-123")),
+        Some("alice@example.com")
+    );
+}
+
+#[test]
+fn mappings_clear_without_filters_clears_all_mappings() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut state = RuntimeState::default();
+    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
+    state.set_resource_account(resource_key("sheets", "spreadsheet-456"), "bob@example.com");
+    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let mut out = Vec::new();
+
+    run_mappings_clear_to(None, None, &mut out, Some(&state_path)).unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Cleared 2 Resource Account Mapping(s).\n"
+    );
+    assert!(load_runtime_state_from_path(&state_path)
+        .unwrap()
+        .resource_account_mappings
+        .is_empty());
+}
+
+#[test]
+fn mappings_list_handles_missing_runtime_state_file() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("missing-state.toml");
+    let mut out = Vec::new();
+
+    run_mappings_list_to(false, &mut out, Some(&state_path)).unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "No Resource Account Mappings remembered.\n"
+    );
+}
+
+#[test]
+fn mappings_clear_handles_missing_runtime_state_file() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("missing-state.toml");
+    let mut out = Vec::new();
+
+    run_mappings_clear_to(None, None, &mut out, Some(&state_path)).unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Cleared 0 Resource Account Mapping(s).\n"
+    );
+    assert!(load_runtime_state_from_path(&state_path)
+        .unwrap()
+        .resource_account_mappings
+        .is_empty());
+}
+
+#[test]
+fn mappings_list_reports_malformed_runtime_state() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    std::fs::write(&state_path, "[resource_account_mappings\n").unwrap();
+    let mut out = Vec::new();
+
+    let err = run_mappings_list_to(false, &mut out, Some(&state_path)).unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(message.contains("failed to load runtime state"));
+    assert!(message.contains("config file is malformed"));
+    assert!(out.is_empty());
 }

@@ -17,7 +17,11 @@ use crate::auth::login::{
     GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL,
 };
 use crate::auth::setup::{parse_client_secret_file, OAuthAppSecrets};
-use crate::cli::AuthCommand;
+use crate::auth::state::{
+    load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
+    save_runtime_state_to_path, RuntimeState,
+};
+use crate::cli::{AuthCommand, AuthMappingsCommand};
 
 const DEVICE_OAUTH_CLIENT_TYPE: &str = "TVs and Limited Input devices";
 const DEVICE_OAUTH_SETUP_COMMAND: &str =
@@ -55,6 +59,7 @@ pub fn run(cmd: AuthCommand, resolved_account: Option<String>) -> Result<()> {
         AuthCommand::List { json } => run_list(json, resolved_account),
         AuthCommand::Switch { email } => run_switch(email),
         AuthCommand::Export { email, out } => run_export(email.as_deref(), &out),
+        AuthCommand::Mappings { command } => run_mappings(command),
     }
 }
 
@@ -382,4 +387,172 @@ fn run_export_to(email: Option<&str>, out_path: &str, out: &mut impl std::io::Wr
     )
     .context("failed to write output")?;
     Ok(())
+}
+
+fn run_mappings(command: AuthMappingsCommand) -> Result<()> {
+    match command {
+        AuthMappingsCommand::List { json } => {
+            run_mappings_list_to(json, &mut std::io::stdout(), None)
+        }
+        AuthMappingsCommand::Clear {
+            surface,
+            resource_id,
+        } => run_mappings_clear_to(
+            surface.as_deref(),
+            resource_id.as_deref(),
+            &mut std::io::stdout(),
+            None,
+        ),
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub(super) struct ResourceAccountMappingRow {
+    pub surface: String,
+    pub resource_id: String,
+    pub account: String,
+    pub resource_key: String,
+}
+
+pub(super) fn run_mappings_list_to(
+    json: bool,
+    out: &mut impl std::io::Write,
+    state_path: Option<&std::path::Path>,
+) -> Result<()> {
+    let state = load_mappings_runtime_state(state_path)?;
+    let rows = resource_account_mapping_rows(&state);
+    let rendered = if json {
+        render_mapping_ndjson(&rows)
+    } else {
+        render_mapping_table(&rows)
+    };
+
+    out.write_all(rendered.as_bytes())
+        .context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) fn run_mappings_clear_to(
+    surface: Option<&str>,
+    resource_id: Option<&str>,
+    out: &mut impl std::io::Write,
+    state_path: Option<&std::path::Path>,
+) -> Result<()> {
+    let mut state = load_mappings_runtime_state(state_path)?;
+    let before = state.resource_account_mappings.len();
+
+    match (surface, resource_id) {
+        (None, None) => state.resource_account_mappings.clear(),
+        (Some(surface), Some(resource_id)) => {
+            state
+                .resource_account_mappings
+                .remove(&resource_key(surface, resource_id));
+        }
+        _ => {
+            anyhow::bail!(
+                "pass both --surface and --resource-id to clear one Resource Account Mapping, or omit both to clear all mappings"
+            );
+        }
+    }
+
+    let cleared = before.saturating_sub(state.resource_account_mappings.len());
+    save_mappings_runtime_state(&state, state_path)?;
+    writeln!(out, "Cleared {cleared} Resource Account Mapping(s).")
+        .context("failed to write output")?;
+    Ok(())
+}
+
+fn resource_account_mapping_rows(state: &RuntimeState) -> Vec<ResourceAccountMappingRow> {
+    let mut rows: Vec<_> = state
+        .resource_account_mappings
+        .iter()
+        .map(|(key, account)| {
+            let (surface, resource_id) = split_resource_key(key);
+            ResourceAccountMappingRow {
+                surface: surface.to_string(),
+                resource_id: resource_id.to_string(),
+                account: account.clone(),
+                resource_key: key.clone(),
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        a.surface
+            .cmp(&b.surface)
+            .then(a.resource_id.cmp(&b.resource_id))
+            .then(a.account.cmp(&b.account))
+    });
+    rows
+}
+
+fn split_resource_key(key: &str) -> (&str, &str) {
+    key.split_once(':').unwrap_or((key, ""))
+}
+
+fn render_mapping_table(rows: &[ResourceAccountMappingRow]) -> String {
+    if rows.is_empty() {
+        return "No Resource Account Mappings remembered.\n".to_string();
+    }
+
+    let surface_width = rows
+        .iter()
+        .map(|row| row.surface.len())
+        .max()
+        .unwrap_or(0)
+        .max("SURFACE".len());
+    let resource_width = rows
+        .iter()
+        .map(|row| row.resource_id.len())
+        .max()
+        .unwrap_or(0)
+        .max("RESOURCE ID".len());
+    let account_width = rows
+        .iter()
+        .map(|row| row.account.len())
+        .max()
+        .unwrap_or(0)
+        .max("ACCOUNT".len());
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "{:<surface_width$}  {:<resource_width$}  {:<account_width$}\n",
+        "SURFACE", "RESOURCE ID", "ACCOUNT",
+    ));
+    for row in rows {
+        out.push_str(&format!(
+            "{:<surface_width$}  {:<resource_width$}  {:<account_width$}\n",
+            row.surface, row.resource_id, row.account,
+        ));
+    }
+    out
+}
+
+fn render_mapping_ndjson(rows: &[ResourceAccountMappingRow]) -> String {
+    let mut out = String::new();
+    for row in rows {
+        out.push_str(
+            &serde_json::to_string(row).expect("ResourceAccountMappingRow is always serializable"),
+        );
+        out.push('\n');
+    }
+    out
+}
+
+fn load_mappings_runtime_state(state_path: Option<&std::path::Path>) -> Result<RuntimeState> {
+    match state_path {
+        Some(path) => load_runtime_state_from_path(path),
+        None => load_runtime_state(),
+    }
+    .context("failed to load runtime state")
+}
+
+fn save_mappings_runtime_state(
+    state: &RuntimeState,
+    state_path: Option<&std::path::Path>,
+) -> Result<()> {
+    match state_path {
+        Some(path) => save_runtime_state_to_path(state, path),
+        None => save_runtime_state(state),
+    }
+    .context("failed to save runtime state")
 }

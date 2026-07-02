@@ -2,7 +2,7 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand,
+    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand,
     MailAttachmentCommand, MailCommand, SheetsCommand, SheetsInsertDataOption,
     SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
@@ -136,6 +136,58 @@ fn auth_switch_with_email() {
 #[test]
 fn auth_switch_requires_email() {
     assert!(parse(&["auth", "switch"]).is_err());
+}
+
+#[test]
+fn auth_mappings_list_json() {
+    let cli = parse(&["auth", "mappings", "list", "--json"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::Auth {
+            command: AuthCommand::Mappings {
+                command: AuthMappingsCommand::List { json: true }
+            }
+        }
+    ));
+}
+
+#[test]
+fn auth_mappings_clear_with_surface_and_resource_id() {
+    let cli = parse(&[
+        "auth",
+        "mappings",
+        "clear",
+        "--surface",
+        "docs",
+        "--resource-id",
+        "document-123",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Auth {
+            command:
+                AuthCommand::Mappings {
+                    command:
+                        AuthMappingsCommand::Clear {
+                            surface,
+                            resource_id,
+                        },
+                },
+        } => {
+            assert_eq!(surface.as_deref(), Some("docs"));
+            assert_eq!(resource_id.as_deref(), Some("document-123"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn auth_mappings_help_uses_glossary_terms() {
+    let text = help(&["auth", "mappings"]);
+
+    assert!(text.contains("Resource Account Mappings"));
+    assert!(text.contains("Account"));
 }
 
 #[test]
