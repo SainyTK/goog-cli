@@ -129,12 +129,11 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
         ranges,
         spreadsheets_url,
     );
-    let target_resource_key = resource_key("sheets", &spreadsheet_id);
-    let spreadsheet = run_with_sheets_unified_access(
+    let spreadsheet = run_spreadsheet_attempt(
         config,
         store,
         account_override,
-        &target_resource_key,
+        &spreadsheet_id,
         SheetsAccessAttempt::GetSpreadsheet(&options),
         state_path,
     )
@@ -309,12 +308,11 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 value_render_option.into(),
                 spreadsheets_url,
             );
-            let target_resource_key = resource_key("sheets", &spreadsheet_id);
-            let response = run_with_sheets_unified_access(
+            let response = run_spreadsheet_attempt(
                 config,
                 store,
                 account_override,
-                &target_resource_key,
+                &spreadsheet_id,
                 SheetsAccessAttempt::GetValues(&options),
                 state_path,
             )
@@ -333,12 +331,11 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 value_render_option.into(),
                 spreadsheets_url,
             );
-            let target_resource_key = resource_key("sheets", &spreadsheet_id);
-            let response = run_with_sheets_unified_access(
+            let response = run_spreadsheet_attempt(
                 config,
                 store,
                 account_override,
-                &target_resource_key,
+                &spreadsheet_id,
                 SheetsAccessAttempt::BatchGetValues(&options),
                 state_path,
             )
@@ -365,12 +362,11 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 value_input_option.into(),
                 spreadsheets_url,
             );
-            let target_resource_key = resource_key("sheets", &spreadsheet_id);
-            let response = run_with_sheets_unified_access(
+            let response = run_spreadsheet_attempt(
                 config,
                 store,
                 account_override,
-                &target_resource_key,
+                &spreadsheet_id,
                 SheetsAccessAttempt::UpdateValues(&options),
                 state_path,
             )
@@ -390,12 +386,11 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 read_request_body(&values, input, "Google Sheets Values request body")?;
             let options =
                 batch_update_values_options(spreadsheet_id.clone(), request_body, spreadsheets_url);
-            let target_resource_key = resource_key("sheets", &spreadsheet_id);
-            let response = run_with_sheets_unified_access(
+            let response = run_spreadsheet_attempt(
                 config,
                 store,
                 account_override,
-                &target_resource_key,
+                &spreadsheet_id,
                 SheetsAccessAttempt::BatchUpdateValues(&options),
                 state_path,
             )
@@ -424,12 +419,11 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 insert_data_option.into(),
                 spreadsheets_url,
             );
-            let target_resource_key = resource_key("sheets", &spreadsheet_id);
-            let response = run_with_sheets_unified_access(
+            let response = run_spreadsheet_attempt(
                 config,
                 store,
                 account_override,
-                &target_resource_key,
+                &spreadsheet_id,
                 SheetsAccessAttempt::AppendValues(&options),
                 state_path,
             )
@@ -446,12 +440,11 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
             range,
         } => {
             let options = clear_values_options(spreadsheet_id.clone(), range, spreadsheets_url);
-            let target_resource_key = resource_key("sheets", &spreadsheet_id);
-            let response = run_with_sheets_unified_access(
+            let response = run_spreadsheet_attempt(
                 config,
                 store,
                 account_override,
-                &target_resource_key,
+                &spreadsheet_id,
                 SheetsAccessAttempt::ClearValues(&options),
                 state_path,
             )
@@ -469,12 +462,11 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
         } => {
             let options =
                 batch_clear_values_options(spreadsheet_id.clone(), ranges, spreadsheets_url);
-            let target_resource_key = resource_key("sheets", &spreadsheet_id);
-            let response = run_with_sheets_unified_access(
+            let response = run_spreadsheet_attempt(
                 config,
                 store,
                 account_override,
-                &target_resource_key,
+                &spreadsheet_id,
                 SheetsAccessAttempt::BatchClearValues(&options),
                 state_path,
             )
@@ -527,12 +519,11 @@ pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
         read_request_body(&requests, input, "Google Sheets Batch Update request body")?;
     let options =
         batch_update_spreadsheet_options(spreadsheet_id.clone(), request_body, spreadsheets_url);
-    let target_resource_key = resource_key("sheets", &spreadsheet_id);
-    let response = run_with_sheets_unified_access(
+    let response = run_spreadsheet_attempt(
         config,
         store,
         account_override,
-        &target_resource_key,
+        &spreadsheet_id,
         SheetsAccessAttempt::BatchUpdateSpreadsheet(&options),
         state_path,
     )
@@ -558,6 +549,26 @@ enum SheetsAccessAttempt<'a> {
     BatchUpdateSpreadsheet(&'a BatchUpdateSpreadsheetOptions),
 }
 
+async fn run_spreadsheet_attempt<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    spreadsheet_id: &str,
+    attempt: SheetsAccessAttempt<'_>,
+    state_path: Option<&Path>,
+) -> Result<serde_json::Value, SheetsError> {
+    let target_resource_key = resource_key("sheets", spreadsheet_id);
+    run_with_sheets_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        attempt,
+        state_path,
+    )
+    .await
+}
+
 async fn run_with_sheets_unified_access<S: AccountStore>(
     config: &Config,
     store: &S,
@@ -568,8 +579,8 @@ async fn run_with_sheets_unified_access<S: AccountStore>(
 ) -> Result<serde_json::Value, SheetsError> {
     let mut state = load_sheets_runtime_state(state_path)?;
 
-    if account_override.is_some() {
-        let account = resolve_account(config, account_override)
+    if let Some(account_override) = account_override {
+        let account = resolve_account(config, Some(account_override))
             .map_err(SheetsError::Auth)?
             .expect("explicit account resolution returns an account");
         return run_sheets_access_as_account(
