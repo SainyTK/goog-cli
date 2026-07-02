@@ -209,6 +209,7 @@ async fn run_map_json_emits_each_inline_image_in_a_paragraph() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
         .respond_with(
             ResponseTemplate::new(200).set_body_json(document_with_multiple_inline_images()),
         )
