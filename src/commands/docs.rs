@@ -131,11 +131,7 @@ pub(super) async fn run_map_to<S: AccountStore>(
     documents_url: Option<&str>,
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
-    if json {
-        write_json_line(out, &document_map, "failed to serialize Docs Document Map")
-    } else {
-        write_document_map_table(out, &document_map)
-    }
+    write_document_map(out, &document_map, json)
 }
 
 pub(super) async fn run_map_unified_to<S: AccountStore>(
@@ -146,7 +142,7 @@ pub(super) async fn run_map_unified_to<S: AccountStore>(
     json: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let document_map = get_document_map_unified(
         config,
@@ -157,11 +153,7 @@ pub(super) async fn run_map_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
-    if json {
-        write_json_line(out, &document_map, "failed to serialize Docs Document Map")
-    } else {
-        write_document_map_table(out, &document_map)
-    }
+    write_document_map(out, &document_map, json)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,11 +175,7 @@ pub(super) async fn run_search_text_to<S: AccountStore>(
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
     let ranges = search_document_text(&document_map, &text);
-    if json {
-        write_json_line(out, &ranges, "failed to serialize Docs text matches")
-    } else {
-        write_search_text_table(out, &ranges)
-    }
+    write_search_text_results(out, &ranges, json)
 }
 
 pub(super) async fn run_search_text_unified_to<S: AccountStore>(
@@ -199,7 +187,7 @@ pub(super) async fn run_search_text_unified_to<S: AccountStore>(
     json: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let document_map = get_document_map_unified(
         config,
@@ -211,11 +199,7 @@ pub(super) async fn run_search_text_unified_to<S: AccountStore>(
     )
     .await?;
     let ranges = search_document_text(&document_map, &text);
-    if json {
-        write_json_line(out, &ranges, "failed to serialize Docs text matches")
-    } else {
-        write_search_text_table(out, &ranges)
-    }
+    write_search_text_results(out, &ranges, json)
 }
 
 #[cfg(test)]
@@ -229,11 +213,7 @@ pub(super) async fn run_get_content_to<S: AccountStore>(
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
     let entry = resolve_content_entry(&document_map, &selector)?;
-    if json {
-        write_json_line(out, entry, "failed to serialize Docs content entry")
-    } else {
-        write_document_map_table(out, &document_map_with_entry(&document_map, entry))
-    }
+    write_content_entry(out, &document_map, entry, json)
 }
 
 pub(super) async fn run_get_content_unified_to<S: AccountStore>(
@@ -245,7 +225,7 @@ pub(super) async fn run_get_content_unified_to<S: AccountStore>(
     json: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let document_map = get_document_map_unified(
         config,
@@ -257,11 +237,7 @@ pub(super) async fn run_get_content_unified_to<S: AccountStore>(
     )
     .await?;
     let entry = resolve_content_entry(&document_map, &selector)?;
-    if json {
-        write_json_line(out, entry, "failed to serialize Docs content entry")
-    } else {
-        write_document_map_table(out, &document_map_with_entry(&document_map, entry))
-    }
+    write_content_entry(out, &document_map, entry, json)
 }
 
 #[cfg(test)]
@@ -290,7 +266,7 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
     include_tabs_content: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let options = get_document_options(
         document_id.clone(),
@@ -344,7 +320,7 @@ pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
     input: &mut impl Read,
     out: &mut impl Write,
     documents_url: Option<&str>,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let request_body = read_request_body(&requests, input)?;
     let options = batch_update_document_options(document_id.clone(), request_body, documents_url);
@@ -711,6 +687,39 @@ fn batch_update_document_options(
     options
 }
 
+fn write_document_map(out: &mut impl Write, document_map: &DocumentMap, json: bool) -> Result<()> {
+    if json {
+        write_json_line(out, document_map, "failed to serialize Docs Document Map")
+    } else {
+        write_document_map_table(out, document_map)
+    }
+}
+
+fn write_search_text_results(
+    out: &mut impl Write,
+    ranges: &[DocumentRange],
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, ranges, "failed to serialize Docs text matches")
+    } else {
+        write_search_text_table(out, ranges)
+    }
+}
+
+fn write_content_entry(
+    out: &mut impl Write,
+    document_map: &DocumentMap,
+    entry: &DocumentMapEntry,
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, entry, "failed to serialize Docs content entry")
+    } else {
+        write_document_map_table(out, &document_map_with_entry(document_map, entry))
+    }
+}
+
 fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) -> Result<()> {
     writeln!(
         out,
@@ -770,7 +779,7 @@ fn display_optional<T: ToString>(value: Option<T>) -> String {
         .unwrap_or_else(|| "-".into())
 }
 
-fn write_json_line<T: serde::Serialize>(
+fn write_json_line<T: serde::Serialize + ?Sized>(
     out: &mut impl Write,
     value: &T,
     context: &str,
