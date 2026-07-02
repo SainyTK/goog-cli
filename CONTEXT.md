@@ -26,6 +26,16 @@ _Avoid_: Account query, account search, email prefix
 The pair of (access token, refresh token) issued by Google for a specific Account and set of Scopes. Stored in the system keychain, never in config files.
 _Avoid_: Credentials (overloaded), auth token, OAuth token
 
+**Keychain Access Prompt**:
+An operating-system prompt that appears when `goog` reads or writes a Token from the system keychain.
+It is distinct from Google consent and does not grant new Scopes.
+_Avoid_: Google password prompt, OAuth prompt, browser login
+
+**Trusted CLI**:
+The local `goog` executable that the OS user has approved to read and write Tokens without a Keychain Access Prompt on every command invocation.
+Trust is local to the machine and OS user account.
+_Avoid_: Trusted app, trusted account, trusted Google session
+
 **Scope**:
 A Google OAuth permission string (e.g., `https://www.googleapis.com/auth/drive`) that grants access to a specific API. Scopes are acquired incrementally -- only when a command first needs them.
 _Avoid_: Permission, capability

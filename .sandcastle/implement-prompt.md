@@ -49,6 +49,10 @@ Once E2E verification confirms the real behavior, use RGR to build the regressio
 
 Before committing, run `npm run typecheck` and `npm run test` to ensure the tests pass.
 
+If a required Rust tool is missing inside the Sandcastle sandbox, make one bounded repair attempt with `rustup component add ...` or `rustup toolchain install ...` and continue the task.
+If the repair was needed, mention the missing tool in the issue comment so the human can decide whether to bake it into `.sandcastle/Dockerfile` before the next Sandcastle run.
+Do not spend more than one repair attempt on Rust toolchain setup.
+
 # COMMIT
 
 Make a git commit. The commit message must:
