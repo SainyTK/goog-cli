@@ -28,8 +28,14 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 .and_then(|settings| settings.output.as_deref())
                 == Some("json");
             let store = resolve_account_store();
-            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
-            commands::drive::run(command, &client, output_json_by_default, cli.quiet)
+            commands::drive::run(
+                command,
+                &config,
+                &store,
+                cli.account.as_deref(),
+                output_json_by_default,
+                cli.quiet,
+            )
         }
         Command::Docs { command } => {
             let store = resolve_account_store();
