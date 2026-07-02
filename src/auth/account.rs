@@ -169,7 +169,7 @@ mod macos_keychain {
     const SEC_ACCOUNT_ITEM_ATTR: u32 = u32::from_be_bytes(*b"acct");
     const SEC_SERVICE_ITEM_ATTR: u32 = u32::from_be_bytes(*b"svce");
 
-    enum OpaqueSecTrustedApplicationRef {}
+    pub enum OpaqueSecTrustedApplicationRef {}
     type SecTrustedApplicationRef = *mut OpaqueSecTrustedApplicationRef;
 
     declare_TCFType! {

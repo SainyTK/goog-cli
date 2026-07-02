@@ -1,6 +1,8 @@
 use chrono::{TimeZone, Utc};
 use std::sync::Mutex;
 
+#[cfg(target_os = "macos")]
+use super::account::KeyringStore;
 use super::account::{
     resolve_account_store, AccountStore, AccountStoreImpl, FileAccountStore, Token,
     TOKEN_FILE_ENV_VAR,
@@ -211,4 +213,54 @@ fn resolve_account_store_uses_file_only_when_token_file_is_explicit() {
     let store = resolve_account_store();
 
     assert!(matches!(store, AccountStoreImpl::File(_)));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "writes a disposable item to the macOS login keychain"]
+fn keyring_store_login_save_round_trips_through_macos_keychain() {
+    let store = KeyringStore;
+    let account = format!("goog-keychain-smoke-{}@example.invalid", std::process::id());
+    let token = sample_token();
+
+    let _cleanup = KeychainCleanup::new(&account);
+
+    let outcome = store.save_token_for_login(&account, &token).unwrap();
+
+    assert!(outcome.prompt_free_access_is_guaranteed());
+    assert_eq!(store.load_token(&account).unwrap(), Some(token));
+}
+
+#[cfg(target_os = "macos")]
+struct KeychainCleanup {
+    account: String,
+}
+
+#[cfg(target_os = "macos")]
+impl KeychainCleanup {
+    fn new(account: &str) -> Self {
+        let cleanup = Self {
+            account: account.to_string(),
+        };
+        cleanup.delete();
+        cleanup
+    }
+
+    fn delete(&self) {
+        let Ok(entry) = keyring::Entry::new("goog", &self.account) else {
+            return;
+        };
+
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(_) => {}
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for KeychainCleanup {
+    fn drop(&mut self) {
+        self.delete();
+    }
 }
