@@ -363,17 +363,33 @@ async fn run_get_content_keeps_index_and_entry_distinct() {
 
 #[test]
 fn get_content_selector_rejects_mixed_or_partial_selectors() {
-    let mixed_index_and_entry = content_selector(Some(44), Some(2), None, None, None)
-        .expect_err("index and entry selectors must be mutually exclusive");
-    assert!(mixed_index_and_entry
-        .to_string()
-        .contains("provide exactly one content selector"));
+    fn assert_selector_error(
+        selector: anyhow::Result<ContentSelector>,
+        expected_message: &str,
+        failure_message: &str,
+    ) {
+        let error = selector.expect_err(failure_message);
+        assert!(
+            error.to_string().contains(expected_message),
+            "expected {error} to contain {expected_message}"
+        );
+    }
 
-    let partial_page_line = content_selector(None, None, Some(2), None, None)
-        .expect_err("page selectors require a matching line");
-    assert!(partial_page_line
-        .to_string()
-        .contains("--page and --line must be provided together"));
+    assert_selector_error(
+        content_selector(Some(44), Some(2), None, None, None),
+        "provide exactly one content selector",
+        "index and entry selectors must be mutually exclusive",
+    );
+    assert_selector_error(
+        content_selector(None, None, Some(2), None, None),
+        "--page and --line must be provided together",
+        "page selectors require a matching line",
+    );
+    assert_selector_error(
+        content_selector(None, None, None, Some(1), None),
+        "--page and --line must be provided together",
+        "line selectors require a matching page",
+    );
 }
 
 #[tokio::test]
