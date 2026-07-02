@@ -205,6 +205,46 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
 }
 
 #[tokio::test]
+async fn run_map_json_emits_each_inline_image_in_a_paragraph() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(document_with_multiple_inline_images()),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_map_to(
+        &client,
+        "document-123".into(),
+        true,
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["entries"].as_array().unwrap().len(), 2);
+    assert_eq!(output["entries"][0]["kind"], "inline-image");
+    assert_eq!(output["entries"][0]["location"]["index"], 1);
+    assert_eq!(output["entries"][0]["preview"], "[inline image 1]");
+    assert_eq!(output["entries"][1]["kind"], "inline-image");
+    assert_eq!(output["entries"][1]["location"]["index"], 2);
+    assert_eq!(output["entries"][1]["preview"], "[inline image 2]");
+    assert_eq!(output["entries"][0]["location"]["contentLine"], 1);
+    assert_eq!(output["entries"][1]["location"]["contentLine"], 1);
+}
+
+#[tokio::test]
 async fn run_search_text_prints_human_matches_from_document_map() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -1423,6 +1463,40 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     }
                 }
             }
+        }
+    })
+}
+
+fn document_with_multiple_inline_images() -> serde_json::Value {
+    serde_json::json!({
+        "documentId": "document-123",
+        "title": "Images",
+        "revisionId": "rev-images",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 3,
+                    "paragraph": {
+                        "elements": [
+                            {
+                                "startIndex": 1,
+                                "endIndex": 2,
+                                "inlineObjectElement": {
+                                    "inlineObjectId": "inline-image-1"
+                                }
+                            },
+                            {
+                                "startIndex": 2,
+                                "endIndex": 3,
+                                "inlineObjectElement": {
+                                    "inlineObjectId": "inline-image-2"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
         }
     })
 }
