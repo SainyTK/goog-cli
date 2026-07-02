@@ -27,6 +27,7 @@ pub struct Token {
 
 pub trait AccountStore {
     fn save_token(&self, email: &str, token: &Token) -> Result<(), AuthError>;
+
     fn save_token_for_login(
         &self,
         email: &str,
@@ -41,40 +42,30 @@ pub trait AccountStore {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TokenSaveOutcome {
-    prompt_free_access: PromptFreeAccess,
+pub enum TokenSaveOutcome {
+    PromptFreeAccessGuaranteed,
+    PromptFreeAccessNotGuaranteed,
 }
 
 impl TokenSaveOutcome {
     pub fn prompt_free_access_guaranteed() -> Self {
-        Self {
-            prompt_free_access: PromptFreeAccess::Guaranteed,
-        }
+        Self::PromptFreeAccessGuaranteed
     }
 
     pub fn prompt_free_access_not_guaranteed() -> Self {
-        Self {
-            prompt_free_access: PromptFreeAccess::NotGuaranteed,
-        }
+        Self::PromptFreeAccessNotGuaranteed
     }
 
     pub fn prompt_free_access_is_guaranteed(&self) -> bool {
-        self.prompt_free_access == PromptFreeAccess::Guaranteed
+        matches!(self, Self::PromptFreeAccessGuaranteed)
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PromptFreeAccess {
-    Guaranteed,
-    NotGuaranteed,
 }
 
 pub struct KeyringStore;
 
 impl AccountStore for KeyringStore {
     fn save_token(&self, email: &str, token: &Token) -> Result<(), AuthError> {
-        let payload = serde_json::to_string(token)
-            .map_err(|e| AuthError::Keyring(format!("serialize token: {e}")))?;
+        let payload = serialize_keyring_token(token)?;
         save_keyring_payload(email, &payload)
     }
 
@@ -83,8 +74,7 @@ impl AccountStore for KeyringStore {
         email: &str,
         token: &Token,
     ) -> Result<TokenSaveOutcome, AuthError> {
-        let payload = serde_json::to_string(token)
-            .map_err(|e| AuthError::Keyring(format!("serialize token: {e}")))?;
+        let payload = serialize_keyring_token(token)?;
         save_keyring_payload_for_login(email, &payload)
     }
 
@@ -101,6 +91,10 @@ impl AccountStore for KeyringStore {
             Err(e) => Err(AuthError::Keyring(e.to_string())),
         }
     }
+}
+
+fn serialize_keyring_token(token: &Token) -> Result<String, AuthError> {
+    serde_json::to_string(token).map_err(|e| AuthError::Keyring(format!("serialize token: {e}")))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -393,6 +387,17 @@ impl AccountStore for AccountStoreImpl {
         match self {
             AccountStoreImpl::Keyring(store) => store.save_token(email, token),
             AccountStoreImpl::File(store) => store.save_token(email, token),
+        }
+    }
+
+    fn save_token_for_login(
+        &self,
+        email: &str,
+        token: &Token,
+    ) -> Result<TokenSaveOutcome, AuthError> {
+        match self {
+            AccountStoreImpl::Keyring(store) => store.save_token_for_login(email, token),
+            AccountStoreImpl::File(store) => store.save_token_for_login(email, token),
         }
     }
 
