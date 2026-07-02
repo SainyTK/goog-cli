@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::error::AuthError;
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     pub oauth_app: Option<OAuthAppConfig>,
     pub settings: Option<SettingsConfig>,
@@ -32,7 +32,7 @@ pub enum OAuthAppType {
     Unknown,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct SettingsConfig {
     pub active_account: Option<String>,
     pub output: Option<String>,

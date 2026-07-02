@@ -4,20 +4,31 @@ use anyhow::{bail, Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
+use crate::auth::config::{resolve_account, Config};
+use crate::auth::state::{
+    load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
+    save_runtime_state_to_path, RuntimeState,
+};
 use crate::cli::DocsCommand;
 use crate::docs::{
     batch_update_document, get_document, map::build_document_map, map::search_document_text,
     map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind, map::DocumentRange,
-    BatchUpdateDocumentOptions, GetDocumentOptions,
+    BatchUpdateDocumentOptions, DocsError, GetDocumentOptions,
 };
 
-pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Result<()> {
+pub fn run<S: AccountStore>(
+    cmd: DocsCommand,
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+) -> Result<()> {
     match cmd {
         DocsCommand::Map { document_id, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
             runtime.block_on(run_map_to(
-                client,
+                &client,
                 document_id,
                 json,
                 &mut std::io::stdout(),
@@ -31,8 +42,9 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
             runtime.block_on(run_search_text_to(
-                client,
+                &client,
                 document_id,
                 text,
                 json,
@@ -52,8 +64,9 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
             let selector = content_selector(index, entry, page, line, heading)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
             runtime.block_on(run_get_content_to(
-                client,
+                &client,
                 document_id,
                 selector,
                 json,
@@ -68,12 +81,15 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_get_to(
-                client,
+            runtime.block_on(run_get_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 fields,
                 include_tabs_content,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -84,12 +100,15 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             let mut stdin = std::io::stdin();
-            runtime.block_on(run_batch_update_to(
-                client,
+            runtime.block_on(run_batch_update_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 requests,
                 &mut stdin,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -153,6 +172,7 @@ pub(super) async fn run_get_content_to<S: AccountStore>(
     }
 }
 
+#[cfg(test)]
 pub(super) async fn run_get_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -169,6 +189,39 @@ pub(super) async fn run_get_to<S: AccountStore>(
     write_json_line(out, &document, "failed to serialize Docs Document")
 }
 
+pub(super) async fn run_get_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    fields: Option<String>,
+    include_tabs_content: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&std::path::Path>,
+) -> Result<()> {
+    let options = get_document_options(
+        document_id.clone(),
+        fields,
+        include_tabs_content,
+        documents_url,
+    );
+    let resource_key = resource_key("docs", &document_id);
+    let document = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::Get(&options),
+        state_path,
+    )
+    .await
+    .context("failed to fetch Google Docs Document")?;
+
+    write_json_line(out, &document, "failed to serialize Docs Document")
+}
+
+#[cfg(test)]
 pub(super) async fn run_batch_update_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -188,6 +241,156 @@ pub(super) async fn run_batch_update_to<S: AccountStore>(
         &response,
         "failed to serialize Docs Batch Update response",
     )
+}
+
+pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    requests: String,
+    input: &mut impl Read,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&std::path::Path>,
+) -> Result<()> {
+    let request_body = read_request_body(&requests, input)?;
+    let options = batch_update_document_options(document_id.clone(), request_body, documents_url);
+    let resource_key = resource_key("docs", &document_id);
+    let response = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to apply Google Docs Batch Update")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Docs Batch Update response",
+    )
+}
+
+enum DocsAccessAttempt<'a> {
+    Get(&'a GetDocumentOptions),
+    BatchUpdate(&'a BatchUpdateDocumentOptions),
+}
+
+async fn run_with_docs_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    attempt: DocsAccessAttempt<'_>,
+    state_path: Option<&std::path::Path>,
+) -> Result<serde_json::Value, DocsError> {
+    let mut state = match state_path {
+        Some(path) => load_runtime_state_from_path(path),
+        None => load_runtime_state(),
+    }
+    .map_err(DocsError::Auth)?;
+
+    if account_override.is_some() {
+        let account = resolve_account(config, account_override)
+            .map_err(DocsError::Auth)?
+            .expect("explicit account resolution returns an account");
+        let client = AuthClient::from_config(config.clone(), store, Some(&account))
+            .map_err(DocsError::Auth)?;
+        let result = attempt_docs_access(&client, &attempt).await?;
+        state.set_resource_account(target_resource_key, account);
+        save_docs_runtime_state(&state, state_path)?;
+        return Ok(result);
+    }
+
+    let candidates = unified_access_candidates(config, &state, target_resource_key);
+    let mut last_target_access_failure = None;
+
+    for account in candidates {
+        let client = AuthClient::from_config(config.clone(), store, Some(&account))
+            .map_err(DocsError::Auth)?;
+        match attempt_docs_access(&client, &attempt).await {
+            Ok(result) => {
+                state.set_resource_account(target_resource_key, account);
+                save_docs_runtime_state(&state, state_path)?;
+                return Ok(result);
+            }
+            Err(err) if is_target_access_failure(&err) => {
+                last_target_access_failure = Some(err);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(last_target_access_failure.unwrap_or_else(|| {
+        DocsError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
+    }))
+}
+
+async fn attempt_docs_access<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    attempt: &DocsAccessAttempt<'_>,
+) -> Result<serde_json::Value, DocsError> {
+    match attempt {
+        DocsAccessAttempt::Get(options) => get_document(client, options).await,
+        DocsAccessAttempt::BatchUpdate(options) => batch_update_document(client, options).await,
+    }
+}
+
+fn save_docs_runtime_state(
+    state: &RuntimeState,
+    state_path: Option<&std::path::Path>,
+) -> Result<(), DocsError> {
+    match state_path {
+        Some(path) => save_runtime_state_to_path(state, path),
+        None => save_runtime_state(state),
+    }
+    .map_err(DocsError::Auth)
+}
+
+fn unified_access_candidates(
+    config: &Config,
+    state: &RuntimeState,
+    target_resource_key: &str,
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+
+    if let Some(mapped) = state.account_for_resource(target_resource_key) {
+        push_if_configured(config, &mut candidates, mapped);
+    }
+
+    if let Some(active) = config.active_account() {
+        push_if_configured(config, &mut candidates, active);
+    }
+
+    for account in &config.accounts {
+        push_candidate(&mut candidates, account);
+    }
+
+    candidates
+}
+
+fn push_if_configured(config: &Config, candidates: &mut Vec<String>, account: &str) {
+    if config
+        .accounts
+        .iter()
+        .any(|configured| configured == account)
+    {
+        push_candidate(candidates, account);
+    }
+}
+
+fn push_candidate(candidates: &mut Vec<String>, account: &str) {
+    if !candidates.iter().any(|candidate| candidate == account) {
+        candidates.push(account.to_string());
+    }
+}
+
+fn is_target_access_failure(err: &DocsError) -> bool {
+    matches!(err, DocsError::NotFound | DocsError::PermissionDenied)
 }
 
 fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde_json::Value> {
@@ -277,7 +480,12 @@ fn resolve_content_entry<'a>(
         ContentSelector::Index(index) => document_map
             .entries
             .iter()
-            .filter(|entry| entry.location.index.is_some_and(|entry_index| entry_index <= *index))
+            .filter(|entry| {
+                entry
+                    .location
+                    .index
+                    .is_some_and(|entry_index| entry_index <= *index)
+            })
             .max_by_key(|entry| entry.location.index)
             .with_context(|| format!("no content found at Google Docs index {index}")),
         ContentSelector::Entry(entry_number) => document_map
