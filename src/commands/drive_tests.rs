@@ -5,6 +5,9 @@ use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
 use crate::auth::account::{AccountStore, Token};
 use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
+use crate::auth::state::{
+    load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
+};
 use crate::auth::testing::MemoryStore;
 use crate::drive::{DriveFile, DRIVE_SCOPE};
 
@@ -140,6 +143,48 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
         .save_token("alice@example.com", &drive_token())
         .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
+}
+
+fn scoped_drive_token(access_token: &str) -> Token {
+    Token {
+        access_token: access_token.into(),
+        refresh_token: "refresh-123".into(),
+        expiry: Utc::now() + Duration::hours(1),
+        scopes: vec![DRIVE_SCOPE.into()],
+    }
+}
+
+fn multi_account_config() -> Config {
+    Config {
+        oauth_app: Some(OAuthAppConfig {
+            client_id: "client-123".into(),
+            client_secret: "secret-456".into(),
+            app_type: OAuthAppType::Desktop,
+        }),
+        settings: Some(SettingsConfig {
+            active_account: Some("alice@example.com".into()),
+            output: None,
+        }),
+        accounts: vec![
+            "alice@example.com".into(),
+            "bob@example.com".into(),
+            "carol@example.com".into(),
+        ],
+    }
+}
+
+fn multi_account_store() -> MemoryStore {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &scoped_drive_token("alice-access"))
+        .unwrap();
+    store
+        .save_token("bob@example.com", &scoped_drive_token("bob-access"))
+        .unwrap();
+    store
+        .save_token("carol@example.com", &scoped_drive_token("carol-access"))
+        .unwrap();
+    store
 }
 
 struct BodyContains(&'static [u8]);
@@ -951,5 +996,343 @@ async fn run_upload_prints_uploaded_file_id_and_url() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "file-123\thttps://drive.google.com/file/d/file-123/view\n"
+    );
+}
+
+#[tokio::test]
+async fn run_download_unified_falls_back_on_target_access_failure_and_maps_success() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("missing for bob"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer carol-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"hello drive".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let output = temp_dir.path().join("download.txt");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_download_unified_to(
+        &config,
+        &store,
+        None,
+        "file-123".into(),
+        Some(output.clone()),
+        true,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(output).unwrap(), b"hello drive");
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "file-123")),
+        Some("carol@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_list_command_without_target_stays_on_active_account() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer alice-access"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_list_command_to(
+        &config,
+        &store,
+        None,
+        None,
+        false,
+        None,
+        false,
+        true,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED\nRoadmap\tfile-1\t\tapplication/vnd.google-apps.document\t2026-06-24T10:15:00.000Z\n"
+    );
+    assert!(err.is_empty());
+}
+
+#[tokio::test]
+async fn run_list_unified_tries_mapped_folder_before_active_account() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut state = RuntimeState::default();
+    state.set_resource_account(resource_key("drive", "folder-123"), "bob@example.com");
+    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_list_unified_to(
+        &config,
+        &store,
+        None,
+        DriveListKind::Files,
+        None,
+        false,
+        Some("folder-123".into()),
+        false,
+        true,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("Roadmap\tfile-1\t"));
+    assert!(err.is_empty());
+}
+
+#[tokio::test]
+async fn run_ls_unified_browses_target_folder_with_mapped_account() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("q", "'folder-123' in parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_MIXED_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut state = RuntimeState::default();
+    state.set_resource_account(resource_key("drive", "folder-123"), "bob@example.com");
+    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_list_unified_to(
+        &config,
+        &store,
+        None,
+        DriveListKind::Browse,
+        None,
+        false,
+        Some("folder-123".into()),
+        false,
+        true,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("folder\tAlpha\tfolder-a\t\t"));
+    assert!(rendered.contains("file\tArchive\tfile-a\tapplication/pdf"));
+    assert!(err.is_empty());
+}
+
+#[tokio::test]
+async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps_success() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer alice-access"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param(
+            "q",
+            "'folder-456' in parents and mimeType = 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    let mut denied_out = Vec::new();
+    let mut denied_err = Vec::new();
+    let denied = run_list_unified_to(
+        &config,
+        &store,
+        Some("alice@example.com"),
+        DriveListKind::Folders,
+        None,
+        false,
+        Some("folder-123".into()),
+        false,
+        true,
+        &mut denied_out,
+        &mut denied_err,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await;
+
+    let message = format!("{:#}", denied.unwrap_err());
+    assert!(message.contains("failed to list Google Drive files"));
+    assert!(message.contains("Google Drive permission denied"));
+    assert!(denied_out.is_empty());
+
+    let mut mapped_out = Vec::new();
+    let mut mapped_err = Vec::new();
+    run_list_unified_to(
+        &config,
+        &store,
+        Some("bob@example.com"),
+        DriveListKind::Folders,
+        None,
+        false,
+        Some("folder-456".into()),
+        false,
+        true,
+        &mut mapped_out,
+        &mut mapped_err,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "folder-456")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_upload_unified_uses_target_folder_for_account_mapping() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .and(header("authorization", "Bearer alice-access"))
+        .and(query_param("uploadType", "multipart"))
+        .and(BodyContains(br#""parents":["folder-123"]"#))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("uploadType", "multipart"))
+        .and(BodyContains(br#""parents":["folder-123"]"#))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "uploaded-123",
+            "webViewLink": "https://drive.google.com/file/d/uploaded-123/view"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let path = temp_dir.path().join("report.txt");
+    std::fs::write(&path, "hello drive").unwrap();
+    let mut out = Vec::new();
+    let upload_url = format!("{}/upload/drive/v3/files", server.uri());
+
+    run_upload_unified_to(
+        &config,
+        &store,
+        None,
+        path,
+        Some("folder-123".into()),
+        true,
+        &mut out,
+        Some(&upload_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "uploaded-123\thttps://drive.google.com/file/d/uploaded-123/view\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "folder-123")),
+        Some("bob@example.com")
     );
 }

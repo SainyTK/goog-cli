@@ -37,11 +37,17 @@ WORKDIR /home/agent
 
 # Rust is part of the sandbox baseline because this repo's package.json scripts run Cargo.
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-  | sh -s -- -y --profile default --default-toolchain stable --component rustfmt \
+  | sh -s -- -y \
+    --profile minimal \
+    --default-toolchain stable \
+    --component rustfmt \
+    --component clippy \
+    --component rust-src \
   && cargo --version \
   && rustc --version \
   && rustup --version \
-  && rustfmt --version
+  && rustfmt --version \
+  && cargo clippy --version
 
 # In worktree sandbox mode, Sandcastle bind-mounts the git worktree at /home/agent/workspace
 # and overrides the working directory to /home/agent/workspace at container start.

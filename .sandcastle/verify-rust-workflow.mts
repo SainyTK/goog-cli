@@ -11,7 +11,9 @@ const verificationBranch = "sandcastle/verify-rust-workflow";
 const setupCommands = ["npm install"];
 const workflowCommands = [
   "rustup --version",
+  "rustup component list --installed",
   "cargo fmt",
+  "cargo clippy --version",
   "npm run typecheck",
   "npm run test",
 ];

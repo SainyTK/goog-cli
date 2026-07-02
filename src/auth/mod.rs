@@ -5,6 +5,8 @@ pub mod error;
 pub mod list;
 pub mod login;
 pub mod setup;
+pub mod state;
+pub mod unified_access;
 
 #[cfg(test)]
 mod account_tests;

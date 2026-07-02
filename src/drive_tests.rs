@@ -1,5 +1,3 @@
-use std::sync::{Mutex, MutexGuard};
-
 use chrono::{Duration, Utc};
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Match, Request};
@@ -10,6 +8,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::testing::MemoryStore;
 use crate::drive::*;
+use crate::test_support::CurrentDirGuard;
 
 const SINGLE_PAGE_RESPONSE: &str = include_str!("../tests/fixtures/drive/files_page_single.json");
 const EMPTY_PAGE_WITH_TOKEN_RESPONSE: &str =
@@ -57,31 +56,6 @@ const DRIVE_BROWSE_PAGE_RESPONSE: &str = r#"{
     }
   ]
 }"#;
-
-static CURRENT_DIR_LOCK: Mutex<()> = Mutex::new(());
-
-struct CurrentDirGuard {
-    original: std::path::PathBuf,
-    _lock: MutexGuard<'static, ()>,
-}
-
-impl CurrentDirGuard {
-    fn enter(path: impl AsRef<std::path::Path>) -> Self {
-        let lock = CURRENT_DIR_LOCK.lock().unwrap();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(path).unwrap();
-        Self {
-            original,
-            _lock: lock,
-        }
-    }
-}
-
-impl Drop for CurrentDirGuard {
-    fn drop(&mut self) {
-        std::env::set_current_dir(&self.original).unwrap();
-    }
-}
 
 fn test_config() -> Config {
     Config {

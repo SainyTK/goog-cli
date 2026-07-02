@@ -1,0 +1,28 @@
+Issue 53 E2E evidence, redacted.
+
+Notes:
+- Existing Drive account emails, file names, folder names, and non-scratch IDs are redacted.
+- A scratch folder named goog-e2e-issue-53-20260702165328 was created via the Drive API using the mounted E2E token so upload --folder could target a resource created in this run.
+- The uploaded scratch file was named goog-e2e-issue-53-upload.txt.
+
+$ cargo run --quiet -- drive list --limit 1 --json --quiet
+{"name":"[existing file name redacted]","id":"[existing file id redacted]","parentIds":["[existing parent id redacted]"],"mimeType":"application/vnd.google-apps.spreadsheet","modifiedTime":"2026-07-02T10:28:01.512Z"}
+[exit 0]
+
+$ cargo run --quiet -- drive ls --folder [existing folder id redacted] --limit 3 --json --quiet
+{"name":"[existing child folder name redacted]","id":"[existing child folder id redacted]","parents":["[existing folder id redacted]"],"mimeType":"application/vnd.google-apps.folder","modifiedTime":"2026-05-14T08:29:38.090Z"}
+[exit 0]
+
+$ cargo run --quiet -- drive list --folder [existing folder id redacted] --limit 3 --json --quiet
+[exit 0]
+
+$ cargo run --quiet -- drive folder list --parent [existing folder id redacted] --limit 3 --json --quiet
+{"name":"[existing child folder name redacted]","id":"[existing child folder id redacted]","parentIds":["[existing folder id redacted]"],"mimeType":"application/vnd.google-apps.folder","modifiedTime":"2026-05-14T08:29:38.090Z"}
+[exit 0]
+
+$ cargo run --quiet -- drive download [existing binary file id redacted] --output /tmp/[tempdir-redacted]/download.bin --quiet
+[exit 0]
+
+$ cargo run --quiet -- drive upload /tmp/[tempdir-redacted]/goog-e2e-issue-53-upload.txt --folder 1U7uex43axNl42f2dFz7WvCUaRmQnHQ4H --quiet
+1BNyMsWh4ncZKoDJomCzubqzmOSJOe1sz	https://drive.google.com/file/d/1BNyMsWh4ncZKoDJomCzubqzmOSJOe1sz/view?usp=drivesdk
+[exit 0]

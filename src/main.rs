@@ -1,8 +1,7 @@
 use clap::Parser;
 
 use goog::{
-    auth::account::KeyringStore,
-    auth::client::AuthClient,
+    auth::account::resolve_account_store,
     auth::config::{load_config, resolve_account},
     cli::{Cli, Command},
     commands,
@@ -27,19 +26,27 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 .as_ref()
                 .and_then(|settings| settings.output.as_deref())
                 == Some("json");
-            let store = KeyringStore;
-            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
-            commands::drive::run(command, &client, output_json_by_default, cli.quiet)
+            let store = resolve_account_store();
+            commands::drive::run(
+                command,
+                &config,
+                &store,
+                cli.account.as_deref(),
+                output_json_by_default,
+                cli.quiet,
+            )
         }
         Command::Docs { command } => {
-            let store = KeyringStore;
-            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
-            commands::docs::run(command, &client)
+            let store = resolve_account_store();
+            commands::docs::run(command, &config, &store, cli.account.as_deref())
+        }
+        Command::Mail { command } => {
+            let store = resolve_account_store();
+            commands::mail::run(command, &config, &store, cli.account.as_deref(), cli.quiet)
         }
         Command::Sheets { command } => {
-            let store = KeyringStore;
-            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
-            commands::sheets::run(command, &client)
+            let store = resolve_account_store();
+            commands::sheets::run(command, &config, &store, cli.account.as_deref())
         }
     }
 }

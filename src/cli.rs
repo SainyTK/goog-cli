@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::auth::config::OAuthAppType;
 
@@ -34,6 +34,11 @@ pub enum Command {
         #[command(subcommand)]
         command: DocsCommand,
     },
+    /// Interact with GoogleMail
+    Mail {
+        #[command(subcommand)]
+        command: MailCommand,
+    },
     /// Interact with Google Sheets
     Sheets {
         #[command(subcommand)]
@@ -68,6 +73,43 @@ pub enum AuthCommand {
     Switch {
         /// Email address or partial email of the account to activate
         email: String,
+    },
+    /// Export account tokens to a file, for use with GOOG_TOKEN_FILE in
+    /// headless environments that have no access to the OS keychain (e.g. a
+    /// Sandcastle sandbox). The output file grants full access to every
+    /// account it contains, within their authorized scopes -- never commit
+    /// it, and delete it once the headless environment no longer needs it.
+    Export {
+        /// Email address or partial email of one account to export. Omit to
+        /// export every authorized account.
+        email: Option<String>,
+        /// Path to write the token JSON to. Overwrites any existing file.
+        #[arg(long)]
+        out: String,
+    },
+    /// Manage remembered Resource Account Mappings
+    Mappings {
+        #[command(subcommand)]
+        command: AuthMappingsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AuthMappingsCommand {
+    /// List remembered Resource Account Mappings and their Account
+    List {
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Clear Resource Account Mappings from runtime state
+    Clear {
+        /// Google API surface to clear, such as docs. Use with --resource-id.
+        #[arg(long)]
+        surface: Option<String>,
+        /// Resource ID to clear within the Google API surface. Use with --surface.
+        #[arg(long)]
+        resource_id: Option<String>,
     },
 }
 
@@ -147,6 +189,47 @@ pub enum DriveFolderCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsCommand {
+    /// Print a high-level map of editable Google Docs content
+    Map {
+        /// Google Docs Document ID to map
+        document_id: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Search editable Google Docs content through the Document Map
+    SearchText {
+        /// Google Docs Document ID to search
+        document_id: String,
+        /// Text to find
+        text: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Retrieve one content block through a Document Map location selector
+    GetContent {
+        /// Google Docs Document ID to inspect
+        document_id: String,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Heading text anchor
+        #[arg(long)]
+        heading: Option<String>,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Fetch a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.
@@ -211,6 +294,80 @@ Example:
 }
 
 #[derive(Debug, Subcommand)]
+pub enum MailCommand {
+    /// List recent Inbox GoogleMail Messages
+    List {
+        /// Maximum number of messages to return (default: 10)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Search GoogleMail Messages with a Gmail Mailbox Query
+    Search {
+        /// Gmail Mailbox Query to pass through to GoogleMail
+        query: String,
+        /// Maximum number of messages to return (default: 10)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fetch a raw GoogleMail Message
+    Read {
+        /// GoogleMail Message ID to fetch
+        message_id: String,
+    },
+    /// Manage GoogleMail Attachments
+    Attachment {
+        #[command(subcommand)]
+        command: MailAttachmentCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MailAttachmentCommand {
+    /// Download a GoogleMail Attachment
+    Download {
+        /// GoogleMail Message ID containing the Attachment
+        message_id: String,
+        /// GoogleMail Attachment ID to download
+        attachment_id: String,
+        /// Destination path (defaults to Attachment filename)
+        #[arg(long, short)]
+        output: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsValueRenderOption {
+    /// Return values formatted as displayed in Google Sheets
+    FormattedValue,
+    /// Return underlying unformatted values
+    UnformattedValue,
+    /// Return formulas instead of calculated values
+    Formula,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsValueInputOption {
+    /// Store values exactly as provided
+    Raw,
+    /// Parse values as if entered by a user
+    UserEntered,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsInsertDataOption {
+    /// Insert new rows for appended values
+    InsertRows,
+    /// Overwrite existing data where possible
+    Overwrite,
+}
+
+#[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Fetch raw Google Sheets Spreadsheet metadata
     Get {
@@ -224,6 +381,96 @@ pub enum SheetsCommand {
         include_grid_data: bool,
         /// Limit returned grid data to a Google Sheets A1 Range
         #[arg(long = "ranges")]
+        ranges: Vec<String>,
+    },
+    /// Read and write Google Sheets cell values
+    Values {
+        #[command(subcommand)]
+        command: SheetsValuesCommand,
+    },
+    /// Apply a raw Google Sheets structural Batch Update request body
+    BatchUpdate {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Path to a full spreadsheets.batchUpdate JSON request body, or - for stdin
+        #[arg(long)]
+        requests: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SheetsValuesCommand {
+    /// Fetch a raw Google Sheets ValueRange
+    Get {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to fetch
+        range: String,
+        /// How values should be represented in the response
+        #[arg(long, value_enum, default_value = "formatted-value")]
+        value_render_option: SheetsValueRenderOption,
+    },
+    /// Fetch raw Google Sheets values from multiple ranges
+    BatchGet {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to fetch
+        #[arg(long = "range", required = true)]
+        ranges: Vec<String>,
+        /// How values should be represented in the response
+        #[arg(long, value_enum, default_value = "formatted-value")]
+        value_render_option: SheetsValueRenderOption,
+    },
+    /// Update a Google Sheets ValueRange
+    Update {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to update
+        range: String,
+        /// Path to a Google ValueRange JSON request body, or - for stdin
+        #[arg(long)]
+        values: String,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+    },
+    /// Batch update Google Sheets values
+    BatchUpdate {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Path to a full spreadsheets.values.batchUpdate JSON request body, or - for stdin
+        #[arg(long)]
+        values: String,
+    },
+    /// Append values to a Google Sheets Range
+    Append {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to append into
+        range: String,
+        /// Path to a Google ValueRange JSON request body, or - for stdin
+        #[arg(long)]
+        values: String,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+        /// How Google Sheets should insert appended data
+        #[arg(long, value_enum, default_value = "insert-rows")]
+        insert_data_option: SheetsInsertDataOption,
+    },
+    /// Clear values from a Google Sheets Range
+    Clear {
+        /// Google Sheets Spreadsheet ID to clear
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to clear
+        range: String,
+    },
+    /// Clear values from multiple Google Sheets Ranges
+    BatchClear {
+        /// Google Sheets Spreadsheet ID to clear
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to clear
+        #[arg(long = "range", required = true)]
         ranges: Vec<String>,
     },
 }

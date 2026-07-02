@@ -1,35 +1,92 @@
-use std::io::Write;
+use std::future::Future;
+use std::io::{Read, Write};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::cli::SheetsCommand;
-use crate::sheets::{get_spreadsheet, GetSpreadsheetOptions};
+use crate::auth::config::{resolve_account, Config};
+use crate::auth::state::{
+    load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
+    save_runtime_state_to_path, RuntimeState,
+};
+use crate::cli::{
+    SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand,
+};
+use crate::sheets::{
+    append_values, batch_clear_values, batch_get_values, batch_update_spreadsheet,
+    batch_update_values, clear_values, get_spreadsheet, get_values, update_values,
+    AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
+    BatchUpdateSpreadsheetOptions, BatchUpdateValuesOptions, ClearValuesOptions,
+    GetSpreadsheetOptions, GetValuesOptions, InsertDataOption, SheetsError, UpdateValuesOptions,
+    ValueInputOption, ValueRenderOption,
+};
 
-pub fn run<S: AccountStore>(cmd: SheetsCommand, client: &AuthClient<'_, S>) -> Result<()> {
+pub fn run<S: AccountStore>(
+    cmd: SheetsCommand,
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+) -> Result<()> {
     match cmd {
         SheetsCommand::Get {
             spreadsheet_id,
             fields,
             include_grid_data,
             ranges,
-        } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_get_to(
-                client,
-                spreadsheet_id,
-                fields,
-                include_grid_data,
-                ranges,
+        } => run_with_runtime(run_get_unified_to(
+            config,
+            store,
+            account_override,
+            spreadsheet_id,
+            fields,
+            include_grid_data,
+            ranges,
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SheetsCommand::Values { command } => {
+            let mut stdin = std::io::stdin();
+            run_with_runtime(run_values_unified_to(
+                config,
+                store,
+                account_override,
+                command,
+                &mut stdin,
                 &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        SheetsCommand::BatchUpdate {
+            spreadsheet_id,
+            requests,
+        } => {
+            let mut stdin = std::io::stdin();
+            run_with_runtime(run_batch_update_unified_to(
+                config,
+                store,
+                account_override,
+                spreadsheet_id,
+                requests,
+                &mut stdin,
+                &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
     }
 }
 
+fn run_with_runtime(future: impl Future<Output = Result<()>>) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+    runtime.block_on(future)
+}
+
+#[cfg(test)]
 pub(super) async fn run_get_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     spreadsheet_id: String,
@@ -53,6 +110,639 @@ pub(super) async fn run_get_to<S: AccountStore>(
     write_json_line(out, &spreadsheet, "failed to serialize Sheets Spreadsheet")
 }
 
+pub(super) async fn run_get_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    spreadsheet_id: String,
+    fields: Option<String>,
+    include_grid_data: bool,
+    ranges: Vec<String>,
+    out: &mut impl Write,
+    spreadsheets_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let options = get_spreadsheet_options(
+        spreadsheet_id.clone(),
+        fields,
+        include_grid_data,
+        ranges,
+        spreadsheets_url,
+    );
+    let spreadsheet = run_spreadsheet_attempt(
+        config,
+        store,
+        account_override,
+        &spreadsheet_id,
+        SheetsAccessAttempt::GetSpreadsheet(&options),
+        state_path,
+    )
+    .await
+    .context("failed to fetch Google Sheets Spreadsheet")?;
+
+    write_json_line(out, &spreadsheet, "failed to serialize Sheets Spreadsheet")
+}
+
+#[cfg(test)]
+pub(super) async fn run_values_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    cmd: SheetsValuesCommand,
+    input: &mut impl Read,
+    out: &mut impl Write,
+    spreadsheets_url: Option<&str>,
+) -> Result<()> {
+    match cmd {
+        SheetsValuesCommand::Get {
+            spreadsheet_id,
+            range,
+            value_render_option,
+        } => {
+            let options = get_values_options(
+                spreadsheet_id,
+                range,
+                value_render_option.into(),
+                spreadsheets_url,
+            );
+            let response = get_values(client, &options)
+                .await
+                .context("failed to fetch Google Sheets ValueRange")?;
+            write_json_line(out, &response, "failed to serialize Sheets ValueRange")
+        }
+        SheetsValuesCommand::BatchGet {
+            spreadsheet_id,
+            ranges,
+            value_render_option,
+        } => {
+            let options = batch_get_values_options(
+                spreadsheet_id,
+                ranges,
+                value_render_option.into(),
+                spreadsheets_url,
+            );
+            let response = batch_get_values(client, &options)
+                .await
+                .context("failed to fetch Google Sheets ValueRanges")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Batch Get values response",
+            )
+        }
+        SheetsValuesCommand::Update {
+            spreadsheet_id,
+            range,
+            values,
+            value_input_option,
+        } => {
+            let request_body =
+                read_request_body(&values, input, "Google Sheets Values request body")?;
+            let options = update_values_options(
+                spreadsheet_id,
+                range,
+                request_body,
+                value_input_option.into(),
+                spreadsheets_url,
+            );
+            let response = update_values(client, &options)
+                .await
+                .context("failed to update Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Update values response",
+            )
+        }
+        SheetsValuesCommand::BatchUpdate {
+            spreadsheet_id,
+            values,
+        } => {
+            let request_body =
+                read_request_body(&values, input, "Google Sheets Values request body")?;
+            let options =
+                batch_update_values_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = batch_update_values(client, &options)
+                .await
+                .context("failed to batch update Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Batch Update values response",
+            )
+        }
+        SheetsValuesCommand::Append {
+            spreadsheet_id,
+            range,
+            values,
+            value_input_option,
+            insert_data_option,
+        } => {
+            let request_body =
+                read_request_body(&values, input, "Google Sheets Values request body")?;
+            let options = append_values_options(
+                spreadsheet_id,
+                range,
+                request_body,
+                value_input_option.into(),
+                insert_data_option.into(),
+                spreadsheets_url,
+            );
+            let response = append_values(client, &options)
+                .await
+                .context("failed to append Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Append values response",
+            )
+        }
+        SheetsValuesCommand::Clear {
+            spreadsheet_id,
+            range,
+        } => {
+            let options = clear_values_options(spreadsheet_id, range, spreadsheets_url);
+            let response = clear_values(client, &options)
+                .await
+                .context("failed to clear Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Clear values response",
+            )
+        }
+        SheetsValuesCommand::BatchClear {
+            spreadsheet_id,
+            ranges,
+        } => {
+            let options = batch_clear_values_options(spreadsheet_id, ranges, spreadsheets_url);
+            let response = batch_clear_values(client, &options)
+                .await
+                .context("failed to batch clear Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Batch Clear values response",
+            )
+        }
+    }
+}
+
+pub(super) async fn run_values_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    cmd: SheetsValuesCommand,
+    input: &mut impl Read,
+    out: &mut impl Write,
+    spreadsheets_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    match cmd {
+        SheetsValuesCommand::Get {
+            spreadsheet_id,
+            range,
+            value_render_option,
+        } => {
+            let options = get_values_options(
+                spreadsheet_id.clone(),
+                range,
+                value_render_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &spreadsheet_id,
+                SheetsAccessAttempt::GetValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to fetch Google Sheets ValueRange")?;
+            write_json_line(out, &response, "failed to serialize Sheets ValueRange")
+        }
+        SheetsValuesCommand::BatchGet {
+            spreadsheet_id,
+            ranges,
+            value_render_option,
+        } => {
+            let options = batch_get_values_options(
+                spreadsheet_id.clone(),
+                ranges,
+                value_render_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &spreadsheet_id,
+                SheetsAccessAttempt::BatchGetValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to fetch Google Sheets ValueRanges")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Batch Get values response",
+            )
+        }
+        SheetsValuesCommand::Update {
+            spreadsheet_id,
+            range,
+            values,
+            value_input_option,
+        } => {
+            let request_body =
+                read_request_body(&values, input, "Google Sheets Values request body")?;
+            let options = update_values_options(
+                spreadsheet_id.clone(),
+                range,
+                request_body,
+                value_input_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &spreadsheet_id,
+                SheetsAccessAttempt::UpdateValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to update Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Update values response",
+            )
+        }
+        SheetsValuesCommand::BatchUpdate {
+            spreadsheet_id,
+            values,
+        } => {
+            let request_body =
+                read_request_body(&values, input, "Google Sheets Values request body")?;
+            let options =
+                batch_update_values_options(spreadsheet_id.clone(), request_body, spreadsheets_url);
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &spreadsheet_id,
+                SheetsAccessAttempt::BatchUpdateValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to batch update Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Batch Update values response",
+            )
+        }
+        SheetsValuesCommand::Append {
+            spreadsheet_id,
+            range,
+            values,
+            value_input_option,
+            insert_data_option,
+        } => {
+            let request_body =
+                read_request_body(&values, input, "Google Sheets Values request body")?;
+            let options = append_values_options(
+                spreadsheet_id.clone(),
+                range,
+                request_body,
+                value_input_option.into(),
+                insert_data_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &spreadsheet_id,
+                SheetsAccessAttempt::AppendValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to append Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Append values response",
+            )
+        }
+        SheetsValuesCommand::Clear {
+            spreadsheet_id,
+            range,
+        } => {
+            let options = clear_values_options(spreadsheet_id.clone(), range, spreadsheets_url);
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &spreadsheet_id,
+                SheetsAccessAttempt::ClearValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to clear Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Clear values response",
+            )
+        }
+        SheetsValuesCommand::BatchClear {
+            spreadsheet_id,
+            ranges,
+        } => {
+            let options =
+                batch_clear_values_options(spreadsheet_id.clone(), ranges, spreadsheets_url);
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &spreadsheet_id,
+                SheetsAccessAttempt::BatchClearValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to batch clear Google Sheets values")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Batch Clear values response",
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+pub(super) async fn run_batch_update_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    spreadsheet_id: String,
+    requests: String,
+    input: &mut impl Read,
+    out: &mut impl Write,
+    spreadsheets_url: Option<&str>,
+) -> Result<()> {
+    let request_body =
+        read_request_body(&requests, input, "Google Sheets Batch Update request body")?;
+    let options = batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+
+    let response = batch_update_spreadsheet(client, &options)
+        .await
+        .context("failed to apply Google Sheets Batch Update")?;
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Sheets Batch Update response",
+    )
+}
+
+pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    spreadsheet_id: String,
+    requests: String,
+    input: &mut impl Read,
+    out: &mut impl Write,
+    spreadsheets_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let request_body =
+        read_request_body(&requests, input, "Google Sheets Batch Update request body")?;
+    let options =
+        batch_update_spreadsheet_options(spreadsheet_id.clone(), request_body, spreadsheets_url);
+    let response = run_spreadsheet_attempt(
+        config,
+        store,
+        account_override,
+        &spreadsheet_id,
+        SheetsAccessAttempt::BatchUpdateSpreadsheet(&options),
+        state_path,
+    )
+    .await
+    .context("failed to apply Google Sheets Batch Update")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Sheets Batch Update response",
+    )
+}
+
+enum SheetsAccessAttempt<'a> {
+    GetSpreadsheet(&'a GetSpreadsheetOptions),
+    GetValues(&'a GetValuesOptions),
+    BatchGetValues(&'a BatchGetValuesOptions),
+    UpdateValues(&'a UpdateValuesOptions),
+    BatchUpdateValues(&'a BatchUpdateValuesOptions),
+    AppendValues(&'a AppendValuesOptions),
+    ClearValues(&'a ClearValuesOptions),
+    BatchClearValues(&'a BatchClearValuesOptions),
+    BatchUpdateSpreadsheet(&'a BatchUpdateSpreadsheetOptions),
+}
+
+async fn run_spreadsheet_attempt<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    spreadsheet_id: &str,
+    attempt: SheetsAccessAttempt<'_>,
+    state_path: Option<&Path>,
+) -> Result<serde_json::Value, SheetsError> {
+    let target_resource_key = resource_key("sheets", spreadsheet_id);
+    run_with_sheets_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        attempt,
+        state_path,
+    )
+    .await
+}
+
+async fn run_with_sheets_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    attempt: SheetsAccessAttempt<'_>,
+    state_path: Option<&Path>,
+) -> Result<serde_json::Value, SheetsError> {
+    let mut state = load_sheets_runtime_state(state_path)?;
+
+    if let Some(account_override) = account_override {
+        let account = resolve_account(config, Some(account_override))
+            .map_err(SheetsError::Auth)?
+            .expect("explicit account resolution returns an account");
+        return run_sheets_access_as_account(
+            config,
+            store,
+            &mut state,
+            state_path,
+            target_resource_key,
+            &attempt,
+            account,
+        )
+        .await;
+    }
+
+    let candidates = unified_access_candidates(config, &state, target_resource_key);
+    let mut last_target_access_failure = None;
+
+    for account in candidates {
+        match run_sheets_access_as_account(
+            config,
+            store,
+            &mut state,
+            state_path,
+            target_resource_key,
+            &attempt,
+            account,
+        )
+        .await
+        {
+            Ok(result) => return Ok(result),
+            Err(err) if is_target_access_failure(&err) => {
+                last_target_access_failure = Some(err);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(last_target_access_failure.unwrap_or_else(|| {
+        SheetsError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
+    }))
+}
+
+async fn run_sheets_access_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    state: &mut RuntimeState,
+    state_path: Option<&Path>,
+    target_resource_key: &str,
+    attempt: &SheetsAccessAttempt<'_>,
+    account: String,
+) -> Result<serde_json::Value, SheetsError> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))
+        .map_err(SheetsError::Auth)?;
+    let result = attempt_sheets_access(&client, attempt).await?;
+    state.set_resource_account(target_resource_key, account);
+    save_sheets_runtime_state(state, state_path)?;
+    Ok(result)
+}
+
+async fn attempt_sheets_access<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    attempt: &SheetsAccessAttempt<'_>,
+) -> Result<serde_json::Value, SheetsError> {
+    match attempt {
+        SheetsAccessAttempt::GetSpreadsheet(options) => get_spreadsheet(client, options).await,
+        SheetsAccessAttempt::GetValues(options) => get_values(client, options).await,
+        SheetsAccessAttempt::BatchGetValues(options) => batch_get_values(client, options).await,
+        SheetsAccessAttempt::UpdateValues(options) => update_values(client, options).await,
+        SheetsAccessAttempt::BatchUpdateValues(options) => {
+            batch_update_values(client, options).await
+        }
+        SheetsAccessAttempt::AppendValues(options) => append_values(client, options).await,
+        SheetsAccessAttempt::ClearValues(options) => clear_values(client, options).await,
+        SheetsAccessAttempt::BatchClearValues(options) => batch_clear_values(client, options).await,
+        SheetsAccessAttempt::BatchUpdateSpreadsheet(options) => {
+            batch_update_spreadsheet(client, options).await
+        }
+    }
+}
+
+fn load_sheets_runtime_state(state_path: Option<&Path>) -> Result<RuntimeState, SheetsError> {
+    match state_path {
+        Some(path) => load_runtime_state_from_path(path),
+        None => load_runtime_state(),
+    }
+    .map_err(SheetsError::Auth)
+}
+
+fn save_sheets_runtime_state(
+    state: &RuntimeState,
+    state_path: Option<&Path>,
+) -> Result<(), SheetsError> {
+    match state_path {
+        Some(path) => save_runtime_state_to_path(state, path),
+        None => save_runtime_state(state),
+    }
+    .map_err(SheetsError::Auth)
+}
+
+fn unified_access_candidates(
+    config: &Config,
+    state: &RuntimeState,
+    target_resource_key: &str,
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+
+    if let Some(mapped) = state.account_for_resource(target_resource_key) {
+        push_if_configured(config, &mut candidates, mapped);
+    }
+
+    if let Some(active) = config.active_account() {
+        push_if_configured(config, &mut candidates, active);
+    }
+
+    for account in &config.accounts {
+        push_candidate(&mut candidates, account);
+    }
+
+    candidates
+}
+
+fn push_if_configured(config: &Config, candidates: &mut Vec<String>, account: &str) {
+    if config
+        .accounts
+        .iter()
+        .any(|configured| configured == account)
+    {
+        push_candidate(candidates, account);
+    }
+}
+
+fn push_candidate(candidates: &mut Vec<String>, account: &str) {
+    if !candidates.iter().any(|candidate| candidate == account) {
+        candidates.push(account.to_string());
+    }
+}
+
+fn is_target_access_failure(err: &SheetsError) -> bool {
+    matches!(err, SheetsError::NotFound | SheetsError::PermissionDenied)
+}
+
+fn read_request_body(
+    path_or_stdin: &str,
+    input: &mut impl Read,
+    request_name: &str,
+) -> Result<serde_json::Value> {
+    let (body, request_source) = if path_or_stdin == "-" {
+        let mut body = String::new();
+        input
+            .read_to_string(&mut body)
+            .with_context(|| format!("failed to read {request_name} from stdin"))?;
+        (body, "stdin".to_string())
+    } else {
+        let body = std::fs::read_to_string(path_or_stdin)
+            .with_context(|| format!("failed to read {request_name}: {path_or_stdin}"))?;
+        (body, path_or_stdin.to_string())
+    };
+
+    serde_json::from_str(&body)
+        .with_context(|| format!("failed to parse {request_name} from {request_source}"))
+}
+
 fn get_spreadsheet_options(
     spreadsheet_id: String,
     fields: Option<String>,
@@ -70,6 +760,142 @@ fn get_spreadsheet_options(
         options = options.with_spreadsheets_url(spreadsheets_url);
     }
     options
+}
+
+fn get_values_options(
+    spreadsheet_id: String,
+    range: String,
+    value_render_option: ValueRenderOption,
+    spreadsheets_url: Option<&str>,
+) -> GetValuesOptions {
+    let mut options =
+        GetValuesOptions::new(spreadsheet_id, range).with_value_render_option(value_render_option);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+    options
+}
+
+fn batch_get_values_options(
+    spreadsheet_id: String,
+    ranges: Vec<String>,
+    value_render_option: ValueRenderOption,
+    spreadsheets_url: Option<&str>,
+) -> BatchGetValuesOptions {
+    let mut options = BatchGetValuesOptions::new(spreadsheet_id, ranges)
+        .with_value_render_option(value_render_option);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+    options
+}
+
+fn update_values_options(
+    spreadsheet_id: String,
+    range: String,
+    request_body: serde_json::Value,
+    value_input_option: ValueInputOption,
+    spreadsheets_url: Option<&str>,
+) -> UpdateValuesOptions {
+    let mut options = UpdateValuesOptions::new(spreadsheet_id, range, request_body)
+        .with_value_input_option(value_input_option);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+    options
+}
+
+fn batch_update_values_options(
+    spreadsheet_id: String,
+    request_body: serde_json::Value,
+    spreadsheets_url: Option<&str>,
+) -> BatchUpdateValuesOptions {
+    let mut options = BatchUpdateValuesOptions::new(spreadsheet_id, request_body);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+    options
+}
+
+fn append_values_options(
+    spreadsheet_id: String,
+    range: String,
+    request_body: serde_json::Value,
+    value_input_option: ValueInputOption,
+    insert_data_option: InsertDataOption,
+    spreadsheets_url: Option<&str>,
+) -> AppendValuesOptions {
+    let mut options = AppendValuesOptions::new(spreadsheet_id, range, request_body)
+        .with_value_input_option(value_input_option)
+        .with_insert_data_option(insert_data_option);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+    options
+}
+
+fn clear_values_options(
+    spreadsheet_id: String,
+    range: String,
+    spreadsheets_url: Option<&str>,
+) -> ClearValuesOptions {
+    let mut options = ClearValuesOptions::new(spreadsheet_id, range);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+    options
+}
+
+fn batch_clear_values_options(
+    spreadsheet_id: String,
+    ranges: Vec<String>,
+    spreadsheets_url: Option<&str>,
+) -> BatchClearValuesOptions {
+    let mut options = BatchClearValuesOptions::new(spreadsheet_id, ranges);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+    options
+}
+
+fn batch_update_spreadsheet_options(
+    spreadsheet_id: String,
+    request_body: serde_json::Value,
+    spreadsheets_url: Option<&str>,
+) -> BatchUpdateSpreadsheetOptions {
+    let mut options = BatchUpdateSpreadsheetOptions::new(spreadsheet_id, request_body);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+    options
+}
+
+impl From<SheetsValueRenderOption> for ValueRenderOption {
+    fn from(value: SheetsValueRenderOption) -> Self {
+        match value {
+            SheetsValueRenderOption::FormattedValue => Self::FormattedValue,
+            SheetsValueRenderOption::UnformattedValue => Self::UnformattedValue,
+            SheetsValueRenderOption::Formula => Self::Formula,
+        }
+    }
+}
+
+impl From<SheetsValueInputOption> for ValueInputOption {
+    fn from(value: SheetsValueInputOption) -> Self {
+        match value {
+            SheetsValueInputOption::Raw => Self::Raw,
+            SheetsValueInputOption::UserEntered => Self::UserEntered,
+        }
+    }
+}
+
+impl From<SheetsInsertDataOption> for InsertDataOption {
+    fn from(value: SheetsInsertDataOption) -> Self {
+        match value {
+            SheetsInsertDataOption::InsertRows => Self::InsertRows,
+            SheetsInsertDataOption::Overwrite => Self::Overwrite,
+        }
+    }
 }
 
 fn write_json_line(out: &mut impl Write, value: &serde_json::Value, context: &str) -> Result<()> {

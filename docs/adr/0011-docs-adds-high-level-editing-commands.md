@@ -1,0 +1,5 @@
+# Docs Adds High-Level Editing Commands
+
+Google Docs editing through raw `documents.batchUpdate` remains available as the last-mile API coverage path, but it is not usable enough as the primary editing workflow because it requires callers to understand raw document JSON, UTF-16 indexes, structural elements, and Google request shapes. The Docs surface will add High-Level Docs Commands backed by a Document Map, Location Selectors, ambiguity checks, Dry Run Previews, and optional Revision Guards, so common text, image, table, style, and list edits can be made from human-readable anchors while still exposing exact indexes and raw Batch Update requests when needed.
+
+High-level read commands default to human-readable tables and expose full structured data with `--json`. High-level write commands apply immediately by default, reject Ambiguous Locations, support `--dry-run` with Human Preview output, and accept `--required-revision-id` for guarded writes. `goog docs batch-update` continues to accept native Google request bodies for advanced cases that the high-level commands do not cover.
