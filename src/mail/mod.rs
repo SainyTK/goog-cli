@@ -316,63 +316,23 @@ async fn fetch_attachment_filename_metadata<S: AccountStore>(
 }
 
 fn find_attachment_filename(payload: &MessagePayload, attachment_id: &str) -> Option<String> {
-    find_matching_attachment_filename_in_node(
-        &payload.filename,
-        &payload.headers,
-        payload.body.as_ref(),
-        &payload.parts,
-        attachment_id,
-    )
-    .or_else(|| single_attachment_filename(payload))
+    let attachments = attachment_filenames(payload);
+
+    filename_for_attachment(&attachments, attachment_id)
+        .or_else(|| filename_from_single_attachment(&attachments))
 }
 
-fn find_matching_attachment_filename_in_part(
-    part: &MessagePart,
+fn filename_for_attachment(
+    attachments: &[AttachmentFilename],
     attachment_id: &str,
 ) -> Option<String> {
-    find_matching_attachment_filename_in_node(
-        &part.filename,
-        &part.headers,
-        part.body.as_ref(),
-        &part.parts,
-        attachment_id,
-    )
-}
-
-fn find_matching_attachment_filename_in_node(
-    filename: &str,
-    headers: &[MessageHeader],
-    body: Option<&MessagePartBody>,
-    parts: &[MessagePart],
-    attachment_id: &str,
-) -> Option<String> {
-    if let Some(filename) = matching_attachment_filename(filename, headers, body, attachment_id) {
-        return Some(filename);
-    }
-
-    parts
-        .iter()
-        .find_map(|child| find_matching_attachment_filename_in_part(child, attachment_id))
-}
-
-fn matching_attachment_filename(
-    filename: &str,
-    headers: &[MessageHeader],
-    body: Option<&MessagePartBody>,
-    attachment_id: &str,
-) -> Option<String> {
-    let matches_attachment =
-        body.and_then(|body| body.attachment_id.as_deref()) == Some(attachment_id);
-
-    if !matches_attachment {
-        return None;
-    }
-
-    if !filename.is_empty() {
-        return Some(filename.to_string());
-    }
-
-    attachment_filename_from_headers(headers)
+    attachments.iter().find_map(|attachment| {
+        if attachment.id == attachment_id {
+            attachment.filename.clone()
+        } else {
+            None
+        }
+    })
 }
 
 fn attachment_filename_from_headers(headers: &[MessageHeader]) -> Option<String> {
@@ -403,64 +363,69 @@ fn header_parameter(value: &str, parameter_name: &str) -> Option<String> {
         })
 }
 
-fn single_attachment_filename(payload: &MessagePayload) -> Option<String> {
-    let mut candidate = AttachmentFilenameCandidate::default();
-    collect_attachment_filename_candidate_from_node(
+fn attachment_filenames(payload: &MessagePayload) -> Vec<AttachmentFilename> {
+    let mut attachments = Vec::new();
+    collect_attachment_filenames_from_node(
         &payload.filename,
         &payload.headers,
         payload.body.as_ref(),
         &payload.parts,
-        &mut candidate,
+        &mut attachments,
     );
-
-    if candidate.attachments == 1 {
-        candidate.filename
-    } else {
-        None
-    }
+    attachments
 }
 
-#[derive(Default)]
-struct AttachmentFilenameCandidate {
-    attachments: usize,
+fn filename_from_single_attachment(attachments: &[AttachmentFilename]) -> Option<String> {
+    let [attachment] = attachments else {
+        return None;
+    };
+
+    attachment.filename.clone()
+}
+
+struct AttachmentFilename {
+    id: String,
     filename: Option<String>,
 }
 
-fn collect_attachment_filename_candidate_from_part(
+fn collect_attachment_filenames_from_part(
     part: &MessagePart,
-    candidate: &mut AttachmentFilenameCandidate,
+    attachments: &mut Vec<AttachmentFilename>,
 ) {
-    collect_attachment_filename_candidate_from_node(
+    collect_attachment_filenames_from_node(
         &part.filename,
         &part.headers,
         part.body.as_ref(),
         &part.parts,
-        candidate,
+        attachments,
     );
 }
 
-fn collect_attachment_filename_candidate_from_node(
+fn collect_attachment_filenames_from_node(
     filename: &str,
     headers: &[MessageHeader],
     body: Option<&MessagePartBody>,
     parts: &[MessagePart],
-    candidate: &mut AttachmentFilenameCandidate,
+    attachments: &mut Vec<AttachmentFilename>,
 ) {
-    if body
-        .and_then(|body| body.attachment_id.as_deref())
-        .is_some()
-    {
-        candidate.attachments += 1;
-        if !filename.is_empty() {
-            candidate.filename = Some(filename.to_string());
-        } else if let Some(filename) = attachment_filename_from_headers(headers) {
-            candidate.filename = Some(filename);
-        }
+    if let Some(attachment_id) = body.and_then(|body| body.attachment_id.as_deref()) {
+        attachments.push(AttachmentFilename {
+            id: attachment_id.to_string(),
+            filename: part_filename(filename, headers),
+        });
     }
 
     for child in parts {
-        collect_attachment_filename_candidate_from_part(child, candidate);
+        collect_attachment_filenames_from_part(child, attachments);
     }
+}
+
+fn part_filename(filename: &str, headers: &[MessageHeader]) -> Option<String> {
+    if !filename.is_empty() {
+        return Some(filename.to_string());
+    }
+
+    attachment_filename_from_headers(headers)
 }
 
 fn decode_base64url(data: &str) -> Result<Vec<u8>, MailError> {
