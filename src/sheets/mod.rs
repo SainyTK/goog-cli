@@ -636,23 +636,26 @@ fn is_office_file_precondition_error(status: StatusCode, body: &str) -> bool {
         return false;
     }
 
-    let Ok(response) = serde_json::from_str::<GoogleErrorResponse>(body) else {
+    let Ok(response) = serde_json::from_str::<GoogleApiErrorResponse>(body) else {
         return false;
     };
-    response.error.status == OFFICE_FILE_PRECONDITION_STATUS
-        && response
-            .error
-            .message
-            .contains(OFFICE_FILE_PRECONDITION_MESSAGE)
+    response.error.is_office_file_precondition()
 }
 
 #[derive(Debug, Deserialize)]
-struct GoogleErrorResponse {
-    error: GoogleError,
+struct GoogleApiErrorResponse {
+    error: GoogleApiError,
 }
 
 #[derive(Debug, Deserialize)]
-struct GoogleError {
+struct GoogleApiError {
     message: String,
     status: String,
+}
+
+impl GoogleApiError {
+    fn is_office_file_precondition(&self) -> bool {
+        self.status == OFFICE_FILE_PRECONDITION_STATUS
+            && self.message.contains(OFFICE_FILE_PRECONDITION_MESSAGE)
+    }
 }
