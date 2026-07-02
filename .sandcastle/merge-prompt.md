@@ -22,8 +22,8 @@ For each issue whose branch was merged:
 1. Add `need-human-review`.
 2. Remove `bug` if it is present.
 3. Leave the issue open.
-4. If `.sandcastle/evidence/issue-<ID>-e2e.log` exists on that issue's branch, build its blob URL from `gh repo view --json nameWithOwner --jq .nameWithOwner` and the issue's own branch name: `https://github.com/<owner>/<repo>/blob/<branch>/.sandcastle/evidence/issue-<ID>-e2e.log`.
-5. Add a comment saying the Sandcastle implementation is ready for human review, linking the evidence log from step 4 if one exists.
+4. If `.sandcastle/evidence/issue-<ID>-e2e.log` exists (it's now on the current branch after merging), read its contents. Issue branches are never pushed to GitHub, so a blob link to them is always dead -- embed the log's contents directly in the comment instead, inside a collapsible `<details>` block, so a reviewer sees it without leaving the issue.
+5. Add a comment saying the Sandcastle implementation is ready for human review, with the evidence embedded per step 4 if the file exists.
 
 Use these commands:
 
@@ -31,7 +31,20 @@ Use these commands:
 
 `gh issue edit <ID> --remove-label "bug" || true`
 
-`gh issue comment <ID> --body "Implemented by Sandcastle and ready for human review. E2E evidence: <blob-url-or-omit-if-none>. Please test and close this issue if it passes. If it needs changes, remove need-human-review, add bug, and leave review comments."`
+Build the comment body so the evidence log (if present) renders as:
+
+```
+<details>
+<summary>E2E evidence</summary>
+
+​```
+<contents of .sandcastle/evidence/issue-<ID>-e2e.log>
+​```
+
+</details>
+```
+
+`gh issue comment <ID> --body-file <path-to-a-temp-file-containing-the-composed-body>` -- use a temp file rather than `--body` so the log's own backticks/newlines don't need shell escaping. The body should read: "Implemented by Sandcastle and ready for human review." followed by the evidence block (or, if no evidence file exists, a line noting E2E testing wasn't available for this run), followed by "Please test and close this issue if it passes. If it needs changes, remove need-human-review, add bug, and leave review comments."
 
 Here are all the issues:
 

@@ -34,6 +34,8 @@ If neither file has been set up, `goog` commands inside the sandbox fail with "a
 
 For each issue, capture every `goog` invocation and its output in `.sandcastle/evidence/issue-<ID>-e2e.log`. Include the exact command line and the full stdout/stderr, in the order run. This is what a human reviewer checks instead of re-running the test themselves, so it needs to be legible on its own -- command, then result, repeated per step.
 
+Issue branches (`sandcastle/issue-<ID>`) are never pushed to GitHub, so a link to the file on that branch is always a dead link. The merge step embeds the log's contents directly in the human-review comment instead -- keep it short enough to read comfortably inline (a handful of commands, not a full transcript dump).
+
 ## Redaction, before committing
 
 `.sandcastle/evidence/` is a tracked directory, not `.sandcastle/logs/` -- anything written there enters git history. Before staging an evidence log, scrub it:
