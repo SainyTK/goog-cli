@@ -2,7 +2,6 @@ use clap::Parser;
 
 use goog::{
     auth::account::resolve_account_store,
-    auth::client::AuthClient,
     auth::config::{load_config, resolve_account},
     cli::{Cli, Command},
     commands,
