@@ -543,6 +543,228 @@ async fn run_get_unified_tries_mapped_account_before_active_account() {
 }
 
 #[tokio::test]
+async fn run_map_unified_falls_back_and_maps_successful_account() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("missing for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(short_document_with_page_break()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_map_unified_to(
+        &config,
+        &store,
+        None,
+        "document-123".into(),
+        false,
+        &mut out,
+        Some(&documents_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("Project Plan"));
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("docs", "document-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_search_text_unified_falls_back_without_changing_json_shape() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_search_text_unified_to(
+        &config,
+        &store,
+        None,
+        "document-123".into(),
+        "Plan".into(),
+        true,
+        &mut out,
+        Some(&documents_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output.as_array().unwrap().len(), 2);
+    assert_eq!(output[0]["startIndex"], 9);
+    assert_eq!(output[1]["preview"], "Second Page Plan");
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("docs", "document-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_get_content_unified_falls_back_without_changing_json_shape() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("missing for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_get_content_unified_to(
+        &config,
+        &store,
+        None,
+        "document-123".into(),
+        ContentSelector::Entry(3),
+        true,
+        &mut out,
+        Some(&documents_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["entry"], 3);
+    assert_eq!(output["preview"], "Second Page Plan");
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("docs", "document-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn high_level_docs_unified_commands_do_not_fallback_for_explicit_account() {
+    let server = MockServer::start().await;
+    for document_id in ["map-document", "search-document", "content-document"] {
+        Mock::given(method("GET"))
+            .and(path(format!("/docs/v1/documents/{document_id}")))
+            .and(header("authorization", "Bearer alice-access"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("missing for alice"))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/docs/v1/documents/{document_id}")))
+            .and(header("authorization", "Bearer bob-access"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+            .expect(0)
+            .mount(&server)
+            .await;
+    }
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let map = run_map_unified_to(
+        &config,
+        &store,
+        Some("alice@example.com"),
+        "map-document".into(),
+        false,
+        &mut Vec::new(),
+        Some(&documents_url),
+        Some(&state_path),
+    )
+    .await;
+    let search = run_search_text_unified_to(
+        &config,
+        &store,
+        Some("alice@example.com"),
+        "search-document".into(),
+        "Plan".into(),
+        true,
+        &mut Vec::new(),
+        Some(&documents_url),
+        Some(&state_path),
+    )
+    .await;
+    let content = run_get_content_unified_to(
+        &config,
+        &store,
+        Some("alice@example.com"),
+        "content-document".into(),
+        ContentSelector::Entry(1),
+        true,
+        &mut Vec::new(),
+        Some(&documents_url),
+        Some(&state_path),
+    )
+    .await;
+
+    for result in [map, search, content] {
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("failed to fetch Google Docs Document"));
+        assert!(message.contains("Google Docs Document was not found"));
+    }
+    assert!(load_runtime_state_from_path(&state_path)
+        .unwrap()
+        .resource_account_mappings
+        .is_empty());
+}
+
+#[tokio::test]
 async fn run_get_unified_falls_back_on_target_access_failure_and_repairs_stale_mapping() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
