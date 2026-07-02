@@ -19,7 +19,6 @@ pub const GMAIL_READONLY_SCOPES: &[&str] = &[GMAIL_READONLY_SCOPE];
 const GMAIL_MESSAGES_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
-const ATTACHMENT_FILENAME_FIELDS: &str = "payload";
 
 pub type Message = Value;
 
@@ -73,6 +72,8 @@ struct MessageHeader {
 struct MessagePart {
     #[serde(default)]
     filename: String,
+    #[serde(default)]
+    headers: Vec<MessageHeader>,
     #[serde(default)]
     parts: Vec<MessagePart>,
     body: Option<MessagePartBody>,
@@ -304,62 +305,161 @@ async fn fetch_attachment_filename_metadata<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DownloadAttachmentOptions,
 ) -> Result<MetadataMessage, MailError> {
-    let mut url = message_url(&options.messages_url, &options.message_id)?;
-    url.query_pairs_mut()
-        .append_pair("fields", ATTACHMENT_FILENAME_FIELDS);
-
     let response = client
-        .send_with_scopes(client.get(url), GMAIL_READONLY_SCOPES)
+        .send_with_scopes(
+            client.get(message_url(&options.messages_url, &options.message_id)?),
+            GMAIL_READONLY_SCOPES,
+        )
         .await
         .map_err(MailError::Auth)?;
     parse_json_response(response).await
 }
 
 fn find_attachment_filename(payload: &MessagePayload, attachment_id: &str) -> Option<String> {
-    find_attachment_filename_in_node(
+    find_matching_attachment_filename_in_node(
         &payload.filename,
+        &payload.headers,
         payload.body.as_ref(),
         &payload.parts,
         attachment_id,
     )
+    .or_else(|| single_attachment_filename(payload))
 }
 
-fn find_attachment_filename_in_part(part: &MessagePart, attachment_id: &str) -> Option<String> {
-    find_attachment_filename_in_node(
+fn find_matching_attachment_filename_in_part(
+    part: &MessagePart,
+    attachment_id: &str,
+) -> Option<String> {
+    find_matching_attachment_filename_in_node(
         &part.filename,
+        &part.headers,
         part.body.as_ref(),
         &part.parts,
         attachment_id,
     )
 }
 
-fn find_attachment_filename_in_node(
+fn find_matching_attachment_filename_in_node(
     filename: &str,
+    headers: &[MessageHeader],
     body: Option<&MessagePartBody>,
     parts: &[MessagePart],
     attachment_id: &str,
 ) -> Option<String> {
-    if let Some(filename) = matching_attachment_filename(filename, body, attachment_id) {
+    if let Some(filename) = matching_attachment_filename(filename, headers, body, attachment_id) {
         return Some(filename);
     }
 
     parts
         .iter()
-        .find_map(|child| find_attachment_filename_in_part(child, attachment_id))
+        .find_map(|child| find_matching_attachment_filename_in_part(child, attachment_id))
 }
 
 fn matching_attachment_filename(
     filename: &str,
+    headers: &[MessageHeader],
     body: Option<&MessagePartBody>,
     attachment_id: &str,
 ) -> Option<String> {
     let matches_attachment =
         body.and_then(|body| body.attachment_id.as_deref()) == Some(attachment_id);
 
-    if matches_attachment && !filename.is_empty() {
-        Some(filename.to_string())
+    if !matches_attachment {
+        return None;
+    }
+
+    if !filename.is_empty() {
+        return Some(filename.to_string());
+    }
+
+    attachment_filename_from_headers(headers)
+}
+
+fn attachment_filename_from_headers(headers: &[MessageHeader]) -> Option<String> {
+    headers
+        .iter()
+        .filter(|header| {
+            header.name.eq_ignore_ascii_case("content-disposition")
+                || header.name.eq_ignore_ascii_case("content-type")
+        })
+        .find_map(|header| {
+            header_parameter(&header.value, "filename")
+                .or_else(|| header_parameter(&header.value, "name"))
+        })
+}
+
+fn header_parameter(value: &str, parameter_name: &str) -> Option<String> {
+    value
+        .split(';')
+        .skip(1)
+        .filter_map(|parameter| parameter.split_once('='))
+        .find_map(|(name, value)| {
+            if name.trim().eq_ignore_ascii_case(parameter_name) {
+                let value = value.trim().trim_matches('"').trim();
+                (!value.is_empty()).then(|| value.to_string())
+            } else {
+                None
+            }
+        })
+}
+
+fn single_attachment_filename(payload: &MessagePayload) -> Option<String> {
+    let mut candidate = AttachmentFilenameCandidate::default();
+    collect_attachment_filename_candidate_from_node(
+        &payload.filename,
+        &payload.headers,
+        payload.body.as_ref(),
+        &payload.parts,
+        &mut candidate,
+    );
+
+    if candidate.attachments == 1 {
+        candidate.filename
     } else {
         None
+    }
+}
+
+#[derive(Default)]
+struct AttachmentFilenameCandidate {
+    attachments: usize,
+    filename: Option<String>,
+}
+
+fn collect_attachment_filename_candidate_from_part(
+    part: &MessagePart,
+    candidate: &mut AttachmentFilenameCandidate,
+) {
+    collect_attachment_filename_candidate_from_node(
+        &part.filename,
+        &part.headers,
+        part.body.as_ref(),
+        &part.parts,
+        candidate,
+    );
+}
+
+fn collect_attachment_filename_candidate_from_node(
+    filename: &str,
+    headers: &[MessageHeader],
+    body: Option<&MessagePartBody>,
+    parts: &[MessagePart],
+    candidate: &mut AttachmentFilenameCandidate,
+) {
+    if body
+        .and_then(|body| body.attachment_id.as_deref())
+        .is_some()
+    {
+        candidate.attachments += 1;
+        if !filename.is_empty() {
+            candidate.filename = Some(filename.to_string());
+        } else if let Some(filename) = attachment_filename_from_headers(headers) {
+            candidate.filename = Some(filename);
+        }
+    }
+
+    for child in parts {
+        collect_attachment_filename_candidate_from_part(child, candidate);
     }
 }
 

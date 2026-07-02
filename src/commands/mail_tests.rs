@@ -283,7 +283,6 @@ async fn run_attachment_download_uses_part_filename_when_output_is_omitted() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages/message-1"))
-        .and(query_param("fields", "payload"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "payload": {
                 "parts": [

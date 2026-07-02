@@ -246,7 +246,6 @@ async fn download_attachment_uses_message_part_filename_when_output_is_omitted()
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages/message-1"))
-        .and(query_param("fields", "payload"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "payload": {
                 "parts": [
@@ -289,7 +288,6 @@ async fn download_attachment_uses_nested_message_part_filename_when_output_is_om
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages/message-1"))
-        .and(query_param("fields", "payload"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "payload": {
                 "parts": [
@@ -330,6 +328,133 @@ async fn download_attachment_uses_nested_message_part_filename_when_output_is_om
         temp.path().join("invoice.pdf").canonicalize().unwrap()
     );
     assert_eq!(std::fs::read(downloaded.path).unwrap(), b"pdf");
+}
+
+#[tokio::test]
+async fn download_attachment_uses_content_disposition_filename_when_part_filename_is_empty() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "",
+                        "headers": [
+                            {
+                                "name": "Content-Disposition",
+                                "value": "attachment; filename=\"invoice-header.pdf\""
+                            }
+                        ],
+                        "body": { "attachmentId": "attachment-1" }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(attachment_path("message-1", "attachment-1")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": "cGRm"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = download_attachment_options(&server, "message-1", "attachment-1");
+
+    let downloaded = download_attachment(&client, &options).await.unwrap();
+
+    assert_eq!(
+        downloaded.path.canonicalize().unwrap(),
+        temp.path()
+            .join("invoice-header.pdf")
+            .canonicalize()
+            .unwrap()
+    );
+    assert_eq!(std::fs::read(downloaded.path).unwrap(), b"pdf");
+}
+
+#[tokio::test]
+async fn download_attachment_uses_single_attachment_filename_when_refetched_attachment_id_differs()
+{
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "invoice.pdf",
+                        "body": { "attachmentId": "refetched-attachment-id" }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(attachment_path("message-1", "original-attachment-id")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": "cGRm"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = download_attachment_options(&server, "message-1", "original-attachment-id");
+
+    let downloaded = download_attachment(&client, &options).await.unwrap();
+
+    assert_eq!(
+        downloaded.path.canonicalize().unwrap(),
+        temp.path().join("invoice.pdf").canonicalize().unwrap()
+    );
+    assert_eq!(std::fs::read(downloaded.path).unwrap(), b"pdf");
+}
+
+#[tokio::test]
+async fn download_attachment_does_not_guess_filename_when_refetched_message_has_multiple_attachments(
+) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "invoice.pdf",
+                        "body": { "attachmentId": "refetched-attachment-id-1" }
+                    },
+                    {
+                        "filename": "",
+                        "body": { "attachmentId": "refetched-attachment-id-2" }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = download_attachment_options(&server, "message-1", "original-attachment-id");
+
+    let err = download_attachment(&client, &options).await.unwrap_err();
+
+    assert!(matches!(err, MailError::MissingAttachmentFilename));
 }
 
 #[tokio::test]
