@@ -133,7 +133,7 @@ async fn run_summary_to<S: AccountStore>(
     out: &mut impl Write,
     error_context: &'static str,
 ) -> Result<()> {
-    let summaries = list_messages(client, &options)
+    let summaries = list_messages(client, options)
         .await
         .context(error_context)?;
     write_summaries(&summaries, json, out)
@@ -164,13 +164,13 @@ pub(super) async fn run_read_unified_to<S: AccountStore>(
     state_path: Option<&Path>,
 ) -> Result<()> {
     let options = get_message_options(message_id.clone(), messages_url);
-    let target_resource_key = resource_key("mail", &message_id);
+    let message_resource_key = mail_message_resource_key(&message_id);
 
     let result = run_with_mail_unified_access(
         config,
         store,
         account_override,
-        &target_resource_key,
+        &message_resource_key,
         MailAccessAttempt::Read(&options),
         state_path,
     )
@@ -197,13 +197,7 @@ pub(super) async fn run_attachment_download_to<S: AccountStore>(
         .await
         .context("failed to download GoogleMail Attachment")?;
 
-    if !quiet {
-        eprintln!(
-            "Downloaded {} bytes to {}",
-            downloaded.bytes,
-            downloaded.path.display()
-        );
-    }
+    write_download_notice(&downloaded, quiet);
 
     Ok(())
 }
@@ -222,12 +216,12 @@ pub(super) async fn run_attachment_download_unified_to<S: AccountStore>(
 ) -> Result<()> {
     let options =
         attachment_download_options(message_id.clone(), attachment_id, output, messages_url);
-    let target_resource_key = resource_key("mail", &message_id);
+    let message_resource_key = mail_message_resource_key(&message_id);
     let result = run_with_mail_unified_access(
         config,
         store,
         account_override,
-        &target_resource_key,
+        &message_resource_key,
         MailAccessAttempt::DownloadAttachment(&options),
         state_path,
     )
@@ -237,15 +231,25 @@ pub(super) async fn run_attachment_download_unified_to<S: AccountStore>(
         unreachable!("attachment download access returns a download result")
     };
 
-    if !quiet {
-        eprintln!(
-            "Downloaded {} bytes to {}",
-            downloaded.bytes,
-            downloaded.path.display()
-        );
-    }
+    write_download_notice(&downloaded, quiet);
 
     Ok(())
+}
+
+fn mail_message_resource_key(message_id: &str) -> String {
+    resource_key("mail", message_id)
+}
+
+fn write_download_notice(downloaded: &crate::mail::DownloadedAttachment, quiet: bool) {
+    if quiet {
+        return;
+    }
+
+    eprintln!(
+        "Downloaded {} bytes to {}",
+        downloaded.bytes,
+        downloaded.path.display()
+    );
 }
 
 enum MailAccessAttempt<'a> {
@@ -307,9 +311,9 @@ async fn run_with_mail_unified_access<S: AccountStore>(
         }
     }
 
-    Err(last_target_access_failure.unwrap_or_else(|| {
-        MailError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
-    }))
+    Err(last_target_access_failure.unwrap_or(MailError::Auth(
+        crate::auth::error::AuthError::ActiveAccountNotConfigured,
+    )))
 }
 
 async fn run_mail_access_as_account<S: AccountStore>(
