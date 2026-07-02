@@ -43,8 +43,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Mail { command } => {
             let store = resolve_account_store();
-            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
-            commands::mail::run(command, &client, cli.quiet)
+            commands::mail::run(command, &config, &store, cli.account.as_deref(), cli.quiet)
         }
         Command::Sheets { command } => {
             let store = resolve_account_store();
