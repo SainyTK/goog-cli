@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{io::Write, path::Path};
 
 use anyhow::{Context, Result};
 use dialoguer::{Input, Password};
@@ -26,6 +26,12 @@ use crate::cli::{AuthCommand, AuthMappingsCommand};
 const DEVICE_OAUTH_CLIENT_TYPE: &str = "TVs and Limited Input devices";
 const DEVICE_OAUTH_SETUP_COMMAND: &str =
     "`goog auth setup --client-secret-file <path> --app-type device`";
+const MAPPING_EMPTY_TABLE: &str = "No Resource Account Mappings remembered.\n";
+const MAPPING_CLEAR_FILTER_ERROR: &str =
+    "pass both --surface and --resource-id to clear one Resource Account Mapping, or omit both to clear all mappings";
+const MAPPING_SURFACE_HEADER: &str = "SURFACE";
+const MAPPING_RESOURCE_ID_HEADER: &str = "RESOURCE ID";
+const MAPPING_ACCOUNT_HEADER: &str = "ACCOUNT";
 
 pub(super) const SETUP_GUIDE: &str = "\
 Setting up your OAuth App. Follow these steps in the Google Cloud Console:
@@ -417,7 +423,7 @@ pub(super) struct ResourceAccountMappingRow {
 pub(super) fn run_mappings_list_to(
     json: bool,
     out: &mut impl std::io::Write,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let state = load_mappings_runtime_state(state_path)?;
     let rows = resource_account_mapping_rows(&state);
@@ -436,11 +442,22 @@ pub(super) fn run_mappings_clear_to(
     surface: Option<&str>,
     resource_id: Option<&str>,
     out: &mut impl std::io::Write,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let mut state = load_mappings_runtime_state(state_path)?;
-    let before = state.resource_account_mappings.len();
+    let cleared = clear_resource_account_mappings(&mut state, surface, resource_id)?;
+    save_mappings_runtime_state(&state, state_path)?;
+    writeln!(out, "Cleared {cleared} Resource Account Mapping(s).")
+        .context("failed to write output")?;
+    Ok(())
+}
 
+fn clear_resource_account_mappings(
+    state: &mut RuntimeState,
+    surface: Option<&str>,
+    resource_id: Option<&str>,
+) -> Result<usize> {
+    let before = state.resource_account_mappings.len();
     match (surface, resource_id) {
         (None, None) => state.resource_account_mappings.clear(),
         (Some(surface), Some(resource_id)) => {
@@ -448,18 +465,9 @@ pub(super) fn run_mappings_clear_to(
                 .resource_account_mappings
                 .remove(&resource_key(surface, resource_id));
         }
-        _ => {
-            anyhow::bail!(
-                "pass both --surface and --resource-id to clear one Resource Account Mapping, or omit both to clear all mappings"
-            );
-        }
+        _ => anyhow::bail!(MAPPING_CLEAR_FILTER_ERROR),
     }
-
-    let cleared = before.saturating_sub(state.resource_account_mappings.len());
-    save_mappings_runtime_state(&state, state_path)?;
-    writeln!(out, "Cleared {cleared} Resource Account Mapping(s).")
-        .context("failed to write output")?;
-    Ok(())
+    Ok(before.saturating_sub(state.resource_account_mappings.len()))
 }
 
 fn resource_account_mapping_rows(state: &RuntimeState) -> Vec<ResourceAccountMappingRow> {
@@ -491,32 +499,18 @@ fn split_resource_key(key: &str) -> (&str, &str) {
 
 fn render_mapping_table(rows: &[ResourceAccountMappingRow]) -> String {
     if rows.is_empty() {
-        return "No Resource Account Mappings remembered.\n".to_string();
+        return MAPPING_EMPTY_TABLE.to_string();
     }
 
-    let surface_width = rows
-        .iter()
-        .map(|row| row.surface.len())
-        .max()
-        .unwrap_or(0)
-        .max("SURFACE".len());
-    let resource_width = rows
-        .iter()
-        .map(|row| row.resource_id.len())
-        .max()
-        .unwrap_or(0)
-        .max("RESOURCE ID".len());
-    let account_width = rows
-        .iter()
-        .map(|row| row.account.len())
-        .max()
-        .unwrap_or(0)
-        .max("ACCOUNT".len());
+    let surface_width = mapping_column_width(rows, MAPPING_SURFACE_HEADER, |row| &row.surface);
+    let resource_width =
+        mapping_column_width(rows, MAPPING_RESOURCE_ID_HEADER, |row| &row.resource_id);
+    let account_width = mapping_column_width(rows, MAPPING_ACCOUNT_HEADER, |row| &row.account);
 
     let mut out = String::new();
     out.push_str(&format!(
         "{:<surface_width$}  {:<resource_width$}  {:<account_width$}\n",
-        "SURFACE", "RESOURCE ID", "ACCOUNT",
+        MAPPING_SURFACE_HEADER, MAPPING_RESOURCE_ID_HEADER, MAPPING_ACCOUNT_HEADER,
     ));
     for row in rows {
         out.push_str(&format!(
@@ -525,6 +519,19 @@ fn render_mapping_table(rows: &[ResourceAccountMappingRow]) -> String {
         ));
     }
     out
+}
+
+fn mapping_column_width(
+    rows: &[ResourceAccountMappingRow],
+    header: &str,
+    value: impl Fn(&ResourceAccountMappingRow) -> &str,
+) -> usize {
+    rows.iter()
+        .map(value)
+        .map(str::len)
+        .max()
+        .unwrap_or(0)
+        .max(header.len())
 }
 
 fn render_mapping_ndjson(rows: &[ResourceAccountMappingRow]) -> String {
@@ -538,7 +545,7 @@ fn render_mapping_ndjson(rows: &[ResourceAccountMappingRow]) -> String {
     out
 }
 
-fn load_mappings_runtime_state(state_path: Option<&std::path::Path>) -> Result<RuntimeState> {
+fn load_mappings_runtime_state(state_path: Option<&Path>) -> Result<RuntimeState> {
     match state_path {
         Some(path) => load_runtime_state_from_path(path),
         None => load_runtime_state(),
@@ -546,10 +553,7 @@ fn load_mappings_runtime_state(state_path: Option<&std::path::Path>) -> Result<R
     .context("failed to load runtime state")
 }
 
-fn save_mappings_runtime_state(
-    state: &RuntimeState,
-    state_path: Option<&std::path::Path>,
-) -> Result<()> {
+fn save_mappings_runtime_state(state: &RuntimeState, state_path: Option<&Path>) -> Result<()> {
     match state_path {
         Some(path) => save_runtime_state_to_path(state, path),
         None => save_runtime_state(state),

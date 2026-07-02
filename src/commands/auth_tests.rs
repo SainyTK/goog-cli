@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use crate::auth::account::TokenSaveOutcome;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType};
 use crate::auth::error::AuthError;
@@ -10,6 +12,38 @@ use super::auth::{
 use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
+
+struct RuntimeStateFixture {
+    _temp_dir: tempfile::TempDir,
+    path: PathBuf,
+}
+
+impl RuntimeStateFixture {
+    fn with_mappings(mappings: &[(&str, &str, &str)]) -> Self {
+        let fixture = Self::missing("state.toml");
+        let mut state = RuntimeState::default();
+
+        for (surface, resource_id, account) in mappings {
+            state.set_resource_account(resource_key(surface, resource_id), *account);
+        }
+
+        save_runtime_state_to_path(&state, &fixture.path).unwrap();
+        fixture
+    }
+
+    fn missing(file_name: &str) -> Self {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join(file_name);
+        Self {
+            _temp_dir: temp_dir,
+            path,
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
 
 #[test]
 fn setup_guide_describes_direct_client_id_and_secret_entry() {
@@ -174,15 +208,13 @@ fn login_does_not_warn_when_keychain_prompt_free_access_is_guaranteed() {
 
 #[test]
 fn mappings_list_renders_resource_account_mappings() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let state_path = temp_dir.path().join("state.toml");
-    let mut state = RuntimeState::default();
-    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
-    state.set_resource_account(resource_key("sheets", "spreadsheet-456"), "bob@example.com");
-    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let state = RuntimeStateFixture::with_mappings(&[
+        ("docs", "document-123", "alice@example.com"),
+        ("sheets", "spreadsheet-456", "bob@example.com"),
+    ]);
     let mut out = Vec::new();
 
-    run_mappings_list_to(false, &mut out, Some(&state_path)).unwrap();
+    run_mappings_list_to(false, &mut out, Some(state.path())).unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
@@ -194,14 +226,11 @@ sheets   spreadsheet-456  bob@example.com  \n"
 
 #[test]
 fn mappings_list_renders_json_resource_account_mappings() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let state_path = temp_dir.path().join("state.toml");
-    let mut state = RuntimeState::default();
-    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
-    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let state =
+        RuntimeStateFixture::with_mappings(&[("docs", "document-123", "alice@example.com")]);
     let mut out = Vec::new();
 
-    run_mappings_list_to(true, &mut out, Some(&state_path)).unwrap();
+    run_mappings_list_to(true, &mut out, Some(state.path())).unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
@@ -211,20 +240,18 @@ fn mappings_list_renders_json_resource_account_mappings() {
 
 #[test]
 fn mappings_clear_filters_by_surface_and_resource_id() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let state_path = temp_dir.path().join("state.toml");
-    let mut state = RuntimeState::default();
-    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
-    state.set_resource_account(resource_key("docs", "document-456"), "bob@example.com");
-    state.set_resource_account(resource_key("sheets", "document-123"), "carol@example.com");
-    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let fixture = RuntimeStateFixture::with_mappings(&[
+        ("docs", "document-123", "alice@example.com"),
+        ("docs", "document-456", "bob@example.com"),
+        ("sheets", "document-123", "carol@example.com"),
+    ]);
     let mut out = Vec::new();
 
     run_mappings_clear_to(
         Some("docs"),
         Some("document-123"),
         &mut out,
-        Some(&state_path),
+        Some(fixture.path()),
     )
     .unwrap();
 
@@ -232,7 +259,7 @@ fn mappings_clear_filters_by_surface_and_resource_id() {
         String::from_utf8(out).unwrap(),
         "Cleared 1 Resource Account Mapping(s).\n"
     );
-    let state = load_runtime_state_from_path(&state_path).unwrap();
+    let state = load_runtime_state_from_path(fixture.path()).unwrap();
     assert_eq!(
         state.account_for_resource(&resource_key("docs", "document-456")),
         Some("bob@example.com")
@@ -249,21 +276,19 @@ fn mappings_clear_filters_by_surface_and_resource_id() {
 
 #[test]
 fn mappings_clear_rejects_partial_filter() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let state_path = temp_dir.path().join("state.toml");
-    let mut state = RuntimeState::default();
-    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
-    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let fixture =
+        RuntimeStateFixture::with_mappings(&[("docs", "document-123", "alice@example.com")]);
     let mut out = Vec::new();
 
-    let err = run_mappings_clear_to(Some("docs"), None, &mut out, Some(&state_path)).unwrap_err();
+    let err =
+        run_mappings_clear_to(Some("docs"), None, &mut out, Some(fixture.path())).unwrap_err();
 
     let message = err.to_string();
     assert!(message.contains("--surface"));
     assert!(message.contains("--resource-id"));
     assert!(out.is_empty());
     assert_eq!(
-        load_runtime_state_from_path(&state_path)
+        load_runtime_state_from_path(fixture.path())
             .unwrap()
             .account_for_resource(&resource_key("docs", "document-123")),
         Some("alice@example.com")
@@ -272,21 +297,19 @@ fn mappings_clear_rejects_partial_filter() {
 
 #[test]
 fn mappings_clear_without_filters_clears_all_mappings() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let state_path = temp_dir.path().join("state.toml");
-    let mut state = RuntimeState::default();
-    state.set_resource_account(resource_key("docs", "document-123"), "alice@example.com");
-    state.set_resource_account(resource_key("sheets", "spreadsheet-456"), "bob@example.com");
-    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let fixture = RuntimeStateFixture::with_mappings(&[
+        ("docs", "document-123", "alice@example.com"),
+        ("sheets", "spreadsheet-456", "bob@example.com"),
+    ]);
     let mut out = Vec::new();
 
-    run_mappings_clear_to(None, None, &mut out, Some(&state_path)).unwrap();
+    run_mappings_clear_to(None, None, &mut out, Some(fixture.path())).unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "Cleared 2 Resource Account Mapping(s).\n"
     );
-    assert!(load_runtime_state_from_path(&state_path)
+    assert!(load_runtime_state_from_path(fixture.path())
         .unwrap()
         .resource_account_mappings
         .is_empty());
@@ -294,11 +317,10 @@ fn mappings_clear_without_filters_clears_all_mappings() {
 
 #[test]
 fn mappings_list_handles_missing_runtime_state_file() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let state_path = temp_dir.path().join("missing-state.toml");
+    let state = RuntimeStateFixture::missing("missing-state.toml");
     let mut out = Vec::new();
 
-    run_mappings_list_to(false, &mut out, Some(&state_path)).unwrap();
+    run_mappings_list_to(false, &mut out, Some(state.path())).unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
@@ -308,17 +330,16 @@ fn mappings_list_handles_missing_runtime_state_file() {
 
 #[test]
 fn mappings_clear_handles_missing_runtime_state_file() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let state_path = temp_dir.path().join("missing-state.toml");
+    let state = RuntimeStateFixture::missing("missing-state.toml");
     let mut out = Vec::new();
 
-    run_mappings_clear_to(None, None, &mut out, Some(&state_path)).unwrap();
+    run_mappings_clear_to(None, None, &mut out, Some(state.path())).unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "Cleared 0 Resource Account Mapping(s).\n"
     );
-    assert!(load_runtime_state_from_path(&state_path)
+    assert!(load_runtime_state_from_path(state.path())
         .unwrap()
         .resource_account_mappings
         .is_empty());
@@ -326,12 +347,11 @@ fn mappings_clear_handles_missing_runtime_state_file() {
 
 #[test]
 fn mappings_list_reports_malformed_runtime_state() {
-    let temp_dir = tempfile::tempdir().unwrap();
-    let state_path = temp_dir.path().join("state.toml");
-    std::fs::write(&state_path, "[resource_account_mappings\n").unwrap();
+    let state = RuntimeStateFixture::missing("state.toml");
+    std::fs::write(state.path(), "[resource_account_mappings\n").unwrap();
     let mut out = Vec::new();
 
-    let err = run_mappings_list_to(false, &mut out, Some(&state_path)).unwrap_err();
+    let err = run_mappings_list_to(false, &mut out, Some(state.path())).unwrap_err();
 
     let message = format!("{err:#}");
     assert!(message.contains("failed to load runtime state"));
