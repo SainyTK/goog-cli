@@ -27,12 +27,14 @@ pub fn run<S: AccountStore>(
         DocsCommand::Map { document_id, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            let client = AuthClient::from_config(config.clone(), store, account_override)?;
-            runtime.block_on(run_map_to(
-                &client,
+            runtime.block_on(run_map_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 json,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -43,13 +45,15 @@ pub fn run<S: AccountStore>(
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            let client = AuthClient::from_config(config.clone(), store, account_override)?;
-            runtime.block_on(run_search_text_to(
-                &client,
+            runtime.block_on(run_search_text_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 text,
                 json,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -65,13 +69,15 @@ pub fn run<S: AccountStore>(
             let selector = content_selector(index, entry, page, line, heading)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            let client = AuthClient::from_config(config.clone(), store, account_override)?;
-            runtime.block_on(run_get_content_to(
-                &client,
+            runtime.block_on(run_get_content_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 selector,
                 json,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -116,6 +122,7 @@ pub fn run<S: AccountStore>(
     }
 }
 
+#[cfg(test)]
 pub(super) async fn run_map_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -131,6 +138,32 @@ pub(super) async fn run_map_to<S: AccountStore>(
     }
 }
 
+pub(super) async fn run_map_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&std::path::Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    if json {
+        write_json_line(out, &document_map, "failed to serialize Docs Document Map")
+    } else {
+        write_document_map_table(out, &document_map)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ContentSelector {
     Index(i64),
@@ -139,6 +172,7 @@ pub(super) enum ContentSelector {
     Heading(String),
 }
 
+#[cfg(test)]
 pub(super) async fn run_search_text_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -156,6 +190,35 @@ pub(super) async fn run_search_text_to<S: AccountStore>(
     }
 }
 
+pub(super) async fn run_search_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    text: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&std::path::Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let ranges = search_document_text(&document_map, &text);
+    if json {
+        write_json_line(out, &ranges, "failed to serialize Docs text matches")
+    } else {
+        write_search_text_table(out, &ranges)
+    }
+}
+
+#[cfg(test)]
 pub(super) async fn run_get_content_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -165,6 +228,34 @@ pub(super) async fn run_get_content_to<S: AccountStore>(
     documents_url: Option<&str>,
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
+    let entry = resolve_content_entry(&document_map, &selector)?;
+    if json {
+        write_json_line(out, entry, "failed to serialize Docs content entry")
+    } else {
+        write_document_map_table(out, &document_map_with_entry(&document_map, entry))
+    }
+}
+
+pub(super) async fn run_get_content_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    selector: ContentSelector,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&std::path::Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
     let entry = resolve_content_entry(&document_map, &selector)?;
     if json {
         write_json_line(out, entry, "failed to serialize Docs content entry")
@@ -442,6 +533,7 @@ fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde
     })
 }
 
+#[cfg(test)]
 async fn get_document_map<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -451,6 +543,29 @@ async fn get_document_map<S: AccountStore>(
     let document = get_document(client, &options)
         .await
         .context("failed to fetch Google Docs Document")?;
+    Ok(build_document_map(&document))
+}
+
+async fn get_document_map_unified<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<DocumentMap> {
+    let options = get_document_options(document_id.clone(), None, true, documents_url);
+    let resource_key = resource_key("docs", &document_id);
+    let document = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::Get(&options),
+        state_path,
+    )
+    .await
+    .context("failed to fetch Google Docs Document")?;
     Ok(build_document_map(&document))
 }
 
