@@ -1,0 +1,79 @@
+Issue 35 E2E evidence, redacted
+Result: PARTIAL
+
+Test setup:
+- Accounts used: active account plus three configured accounts from `goog auth list`; all account emails redacted.
+- Fixture used: existing Google Docs documents discovered through read-only Drive listing; document IDs, names, and content redacted because they were not scratch resources created by this run.
+- Skipped fixture: completed live `docs map` output was unavailable because the sandbox accounts either required interactive Google Docs readonly consent or lacked access to the selected document.
+
+Local checks:
+$ cargo build
+Expected: local `goog` binary builds for command-surface probing.
+Observed: build completed successfully.
+Result: PASS.
+
+$ cargo test run_map_json_emits_each_inline_image_in_a_paragraph
+Expected: regression proving `goog docs map --json` emits one Document Map Entry per inline image object in the same paragraph.
+Observed: test failed before implementation with `left: 1, right: 2`, then passed after implementation.
+Result: PASS.
+
+$ cargo test docs_tests::run_map
+Expected: focused Document Map command tests pass, including human output, JSON output, long document shape, and unified account fallback.
+Observed: 4 tests passed.
+Result: PASS.
+
+$ npm run typecheck
+Expected: Rust typecheck passes through the project script.
+Observed: `cargo check` finished successfully.
+Result: PASS.
+
+$ npm run test
+Expected: full regression suite passes.
+Observed: 312 tests passed.
+Result: PASS.
+
+Live checks:
+$ ./target/debug/goog auth list
+Expected: confirm sandbox has configured accounts.
+Observed: 4 configured accounts, 1 active; email addresses redacted.
+Result: PASS.
+
+$ ./target/debug/goog drive ls --limit 20 --json
+Expected: read-only Drive discovery can find an existing Google Docs fixture without mutating data.
+Observed: returned 20 Drive items, including multiple `application/vnd.google-apps.document` resources; names and IDs redacted.
+Result: PASS.
+
+$ ./target/debug/goog docs map "$DOC_ID"
+Expected: print a human-readable Document Map table for an existing Google Docs document.
+Observed: command did not complete within a practical review window and was interrupted after producing no output.
+Result: PARTIAL.
+
+$ ./target/debug/goog docs map "$DOC_ID" --json
+Expected: emit structured Document Map JSON for the same existing Google Docs document.
+Observed: command did not complete because the preceding human-readable map invocation did not return.
+Result: PARTIAL.
+
+$ timeout 45s ./target/debug/goog docs get "$DOC_ID" --fields documentId,title,revisionId --account "$ACCOUNT"
+Expected: determine whether the live issue was specific to `docs map` or below it in raw Docs fetching/auth.
+Observed: timed out with an interactive incremental authorization prompt for `https://www.googleapis.com/auth/documents.readonly`; browser consent cannot be completed from this sandbox.
+Result: PARTIAL.
+
+$ timeout 20s ./target/debug/goog docs get "$DOC_ID" --fields documentId,title,revisionId --account "$ACCOUNT_2"
+Expected: check whether a second configured account already had Docs readonly scope.
+Observed: timed out with the same interactive incremental authorization prompt; consent URL redacted.
+Result: PARTIAL.
+
+$ timeout 20s ./target/debug/goog docs get "$DOC_ID" --fields documentId,title,revisionId --account "$ACCOUNT_3"
+Expected: check whether a third configured account had access and Docs readonly scope.
+Observed: failed with Google Docs permission denied for the selected document.
+Result: PARTIAL.
+
+$ timeout 20s ./target/debug/goog docs get "$DOC_ID" --fields documentId,title,revisionId --account "$ACCOUNT_4"
+Expected: check whether a fourth configured account already had Docs readonly scope.
+Observed: timed out with the same interactive incremental authorization prompt; consent URL redacted.
+Result: PARTIAL.
+
+Reviewer notes:
+- Live `docs map` could not be fully verified because the available sandbox credentials did not have prompt-free Docs readonly access for the selected fixture. Raw `docs get` showed the same consent/access limitation, so this does not appear specific to the Document Map code path.
+- No mutating Google commands were run.
+- Before human retest, authorize Docs readonly scope on one account or use an account that already has that scope, then rerun the `docs map` commands from issue 35 test steps.

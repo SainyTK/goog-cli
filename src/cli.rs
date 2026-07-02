@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use crate::auth::config::OAuthAppType;
 
 #[derive(Debug, Parser)]
-#[command(name = "goog", about = "A CLI for Google APIs")]
+#[command(name = "goog", about = "A CLI for Google APIs", version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -73,6 +73,43 @@ pub enum AuthCommand {
     Switch {
         /// Email address or partial email of the account to activate
         email: String,
+    },
+    /// Export account tokens to a file, for use with GOOG_TOKEN_FILE in
+    /// headless environments that have no access to the OS keychain (e.g. a
+    /// Sandcastle sandbox). The output file grants full access to every
+    /// account it contains, within their authorized scopes -- never commit
+    /// it, and delete it once the headless environment no longer needs it.
+    Export {
+        /// Email address or partial email of one account to export. Omit to
+        /// export every authorized account.
+        email: Option<String>,
+        /// Path to write the token JSON to. Overwrites any existing file.
+        #[arg(long)]
+        out: String,
+    },
+    /// Manage remembered Resource Account Mappings
+    Mappings {
+        #[command(subcommand)]
+        command: AuthMappingsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AuthMappingsCommand {
+    /// List remembered Resource Account Mappings and their Account
+    List {
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Clear Resource Account Mappings from runtime state
+    Clear {
+        /// Google API surface to clear, such as docs. Use with --resource-id.
+        #[arg(long)]
+        surface: Option<String>,
+        /// Resource ID to clear within the Google API surface. Use with --surface.
+        #[arg(long)]
+        resource_id: Option<String>,
     },
 }
 

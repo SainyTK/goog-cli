@@ -580,7 +580,9 @@ async fn batch_get_values_uses_repeated_ranges_and_readonly_scope() {
     batch_get_values(&client, &options).await.unwrap();
 
     let url = received_url(&server).await;
-    assert!(url.path().ends_with("/spreadsheets/spreadsheet-123/values/:batchGet"));
+    assert!(url
+        .path()
+        .ends_with("/spreadsheets/spreadsheet-123/values/:batchGet"));
     assert_eq!(
         query_values(&url, "ranges"),
         vec!["Sheet1!A1:B2".to_string(), "Summary!A:A".to_string()]

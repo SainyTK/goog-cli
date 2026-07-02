@@ -1,6 +1,6 @@
 # TASK
 
-Review the code changes on branch `{{BRANCH}}` and improve code clarity, consistency, and maintainability while preserving exact functionality.
+Review the code changes for issue {{TASK_ID}} on branch `{{BRANCH}}` and improve code clarity, consistency, and maintainability while preserving exact functionality.
 
 # CONTEXT
 
@@ -30,6 +30,10 @@ Review the code changes on branch `{{BRANCH}}` and improve code clarity, consist
    - Are new/changed behaviours covered by tests?
    - Are there unsafe casts, `any` types, or unchecked assumptions?
    - Does the change introduce injection vulnerabilities, credential leaks, or other security issues?
+   - Does `.sandcastle/evidence/issue-{{TASK_ID}}-e2e.log` exist for the issue branch when live or local E2E was possible?
+   - Is the evidence log reproducible, with exact commands, expected result, observed redacted result, and pass/fail status?
+   - Does the GitHub issue body contain a concrete `## Test steps` section that a human reviewer can run?
+   - Are the test steps aligned with the acceptance criteria and the implemented command surface?
 
 4. **Maintain balance**: Avoid over-simplification that could:
    - Reduce code clarity or maintainability

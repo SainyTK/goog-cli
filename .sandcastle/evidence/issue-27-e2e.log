@@ -1,0 +1,41 @@
+Issue 27 E2E evidence
+Date: 2026-07-02
+
+Redactions:
+- Real email addresses, message subjects, message IDs, attachment IDs, and attachment filenames are replaced with placeholders.
+- Message bodies, snippets, tokens, and secrets are omitted.
+
+$ ./target/debug/goog mail search "has:attachment" --limit 1 --json
+Output:
+{"messageId":"<MESSAGE_ID>","date":"Thu, 02 Jul 2026 05:08:15 +0700","from":"<SENDER_EMAIL>","subject":"<SUBJECT_REDACTED>"}
+
+$ ./target/debug/goog mail attachment download MESSAGE_ID ATTACHMENT_ID --output /tmp/goog-issue-27-probe.bin
+Output:
+error: failed to download GoogleMail Attachment: GoogleMail API error (400 Bad Request): {"error":{"code":400,"message":"Invalid attachment token","errors":[{"message":"Invalid attachment token","domain":"global","reason":"invalidArgument"}],"status":"INVALID_ARGUMENT"}}
+
+$ ./target/debug/goog mail read <MESSAGE_ID> | jq -c '[.. | objects | select(.body.attachmentId? != null) | {filename, mimeType, attachmentId: .body.attachmentId, size: .body.size}]'
+Output:
+[{"filename":"<ATTACHMENT_FILENAME>","mimeType":"application/pdf","attachmentId":"<ATTACHMENT_ID_A>","size":240537}]
+
+$ cd /tmp/goog-issue-27-e2e && /home/agent/workspace/target/debug/goog mail attachment download <MESSAGE_ID> <ATTACHMENT_ID_A>
+Output before fix:
+error: failed to download GoogleMail Attachment: GoogleMail Attachment filename was not found; pass --output
+
+$ ./target/debug/goog mail read <MESSAGE_ID> | jq -c 'paths(objects | select(.body.attachmentId? != null))'
+Output:
+["payload","parts",1]
+
+$ ./target/debug/goog mail read <MESSAGE_ID> | jq -c '.. | objects | select(.body.attachmentId? != null) | {partId, filename, mimeType, headerNames: [.headers[]?.name], bodyKeys: (.body | keys), attachmentId: .body.attachmentId}'
+Output:
+{"partId":"1","filename":"<ATTACHMENT_FILENAME>","mimeType":"application/pdf","headerNames":["Content-Type","Content-Disposition","Content-Transfer-Encoding"],"bodyKeys":["attachmentId","size"],"attachmentId":"<ATTACHMENT_ID_B>"}
+
+$ ./target/debug/goog mail read <MESSAGE_ID> | jq -c '.payload | {filename, hasBody: has("body"), partCount: (.parts|length), firstPartKeys: (.parts[0]|keys), firstPartMime: .parts[0].mimeType, nestedCounts: [.parts[]? | (.parts|length?)]}'
+Output:
+{"filename":"","hasBody":true,"partCount":2,"firstPartKeys":["body","filename","headers","mimeType","partId","parts"],"firstPartMime":"multipart/alternative","nestedCounts":[2,0]}
+
+$ ATTACHMENT_ID=$(./target/debug/goog mail read <MESSAGE_ID> | jq -r '.. | objects | select(.body.attachmentId? != null) | .body.attachmentId' | head -1)
+$ cd /tmp/goog-issue-27-e2e && /home/agent/workspace/target/debug/goog mail attachment download <MESSAGE_ID> "$ATTACHMENT_ID" && ls -l
+Output after fix:
+Downloaded 240537 bytes to /tmp/goog-issue-27-e2e/<ATTACHMENT_FILENAME>
+total 236
+-rw-r--r-- 1 agent dialout 240537 Jul  2 15:51 <ATTACHMENT_FILENAME>

@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -7,10 +7,13 @@ use serde::Serialize;
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
+use crate::auth::config::{resolve_account, Config};
+use crate::auth::state::resource_key;
+use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::{DriveCommand, DriveFolderCommand};
 use crate::drive::{
-    download, list_files, upload, DownloadFileOptions, DriveFile, ListFilesOptions,
-    UploadFileOptions, DRIVE_FOLDER_MIME_TYPE,
+    download, list_files, upload, DownloadFileOptions, DownloadedFile, DriveError, DriveFile,
+    ListFilesOptions, UploadFileOptions, UploadedFile, DRIVE_FOLDER_MIME_TYPE,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -18,6 +21,8 @@ const ALL_PAGE_SIZE: u32 = 1000;
 const TABLE_HEADER: &str = "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED";
 const FOLDER_TABLE_HEADER: &str = "NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED";
 const BROWSE_TABLE_HEADER: &str = "TYPE\tNAME\tID\tMIME TYPE\tMODIFIED";
+
+type DriveResult<T> = std::result::Result<T, DriveError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DriveListKind {
@@ -38,7 +43,9 @@ impl DriveListKind {
 
 pub fn run<S: AccountStore>(
     cmd: DriveCommand,
-    client: &AuthClient<'_, S>,
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
     output_json_by_default: bool,
     quiet: bool,
 ) -> Result<()> {
@@ -52,8 +59,10 @@ pub fn run<S: AccountStore>(
             let json = should_emit_json(json, output_json_by_default);
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_ls_to(
-                client,
+            runtime.block_on(run_ls_command_to(
+                config,
+                store,
+                account_override,
                 limit,
                 all,
                 folder,
@@ -73,8 +82,10 @@ pub fn run<S: AccountStore>(
             let json = should_emit_json(json, output_json_by_default);
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_list_to(
-                client,
+            runtime.block_on(run_list_command_to(
+                config,
+                store,
+                account_override,
                 limit,
                 all,
                 folder,
@@ -95,8 +106,10 @@ pub fn run<S: AccountStore>(
                 let json = should_emit_json(json, output_json_by_default);
                 let runtime =
                     tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                runtime.block_on(run_folder_list_to(
-                    client,
+                runtime.block_on(run_folder_list_command_to(
+                    config,
+                    store,
+                    account_override,
                     limit,
                     all,
                     parent,
@@ -111,26 +124,152 @@ pub fn run<S: AccountStore>(
         DriveCommand::Download { file_id, output } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_download_to(
-                client,
+            runtime.block_on(run_download_unified_to(
+                config,
+                store,
+                account_override,
                 file_id,
                 output.map(PathBuf::from),
                 quiet,
+                None,
                 None,
             ))
         }
         DriveCommand::Upload { path, folder } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_upload_to(
-                client,
-                PathBuf::from(path),
-                folder,
-                quiet,
-                &mut std::io::stdout(),
-                None,
-            ))
+            if folder.is_some() {
+                runtime.block_on(run_upload_unified_to(
+                    config,
+                    store,
+                    account_override,
+                    PathBuf::from(path),
+                    folder,
+                    quiet,
+                    &mut std::io::stdout(),
+                    None,
+                    None,
+                ))
+            } else {
+                let client = AuthClient::from_config(config.clone(), store, account_override)?;
+                runtime.block_on(run_upload_to(
+                    &client,
+                    PathBuf::from(path),
+                    None,
+                    quiet,
+                    &mut std::io::stdout(),
+                    None,
+                ))
+            }
         }
+    }
+}
+
+pub(super) async fn run_list_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    if folder.is_some() {
+        run_list_unified_to(
+            config,
+            store,
+            account_override,
+            DriveListKind::Files,
+            limit,
+            all,
+            folder,
+            json,
+            quiet,
+            out,
+            err,
+            files_url,
+            None,
+        )
+        .await
+    } else {
+        let client = AuthClient::from_config(config.clone(), store, account_override)?;
+        run_list_to(&client, limit, all, None, json, quiet, out, err, files_url).await
+    }
+}
+
+pub(super) async fn run_ls_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    if folder.is_some() {
+        run_list_unified_to(
+            config,
+            store,
+            account_override,
+            DriveListKind::Browse,
+            limit,
+            all,
+            folder,
+            json,
+            quiet,
+            out,
+            err,
+            files_url,
+            None,
+        )
+        .await
+    } else {
+        let client = AuthClient::from_config(config.clone(), store, account_override)?;
+        run_ls_to(&client, limit, all, None, json, quiet, out, err, files_url).await
+    }
+}
+
+pub(super) async fn run_folder_list_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    if parent.is_some() {
+        run_list_unified_to(
+            config,
+            store,
+            account_override,
+            DriveListKind::Folders,
+            limit,
+            all,
+            parent,
+            json,
+            quiet,
+            out,
+            err,
+            files_url,
+            None,
+        )
+        .await
+    } else {
+        let client = AuthClient::from_config(config.clone(), store, account_override)?;
+        run_folder_list_to(&client, limit, all, None, json, quiet, out, err, files_url).await
     }
 }
 
@@ -165,6 +304,50 @@ pub(super) async fn run_upload_to<S: AccountStore>(
     Ok(())
 }
 
+pub(super) async fn run_upload_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    path: PathBuf,
+    folder: Option<String>,
+    quiet: bool,
+    out: &mut impl Write,
+    upload_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let Some(folder_id) = folder.clone() else {
+        let client = AuthClient::from_config(config.clone(), store, account_override)?;
+        return run_upload_to(&client, path, None, quiet, out, upload_url).await;
+    };
+
+    let file_size = tokio::fs::metadata(&path)
+        .await
+        .with_context(|| format!("failed to read upload file metadata: {}", path.display()))?
+        .len();
+    let options = upload_options(path, Some(folder_id.clone()), upload_url);
+    let resource_key = resource_key("drive", &folder_id);
+    let progress = (!quiet).then(|| new_upload_progress(file_size));
+    let uploaded = upload_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        &options,
+        &progress,
+        state_path,
+    )
+    .await
+    .context("failed to upload Google Drive file")?;
+
+    if let Some(progress) = progress {
+        progress.finish_and_clear();
+    }
+
+    writeln!(out, "{}\t{}", uploaded.id, uploaded.web_view_link)
+        .context("failed to write output")?;
+    Ok(())
+}
+
 pub(super) fn upload_options(
     path: PathBuf,
     folder: Option<String>,
@@ -180,20 +363,28 @@ pub(super) fn upload_options(
     options
 }
 
-pub(super) async fn run_download_to<S: AccountStore>(
-    client: &AuthClient<'_, S>,
+pub(super) async fn run_download_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
     file_id: String,
     output: Option<PathBuf>,
     quiet: bool,
     files_url: Option<&str>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
-    let options = download_options(file_id, output, files_url);
+    let options = download_options(file_id.clone(), output, files_url);
+    let resource_key = resource_key("drive", &file_id);
     let progress = (!quiet).then(new_download_progress);
-    let result = download(client, &options, |bytes| {
-        if let Some(progress) = &progress {
-            progress.set_position(bytes);
-        }
-    })
+    let result = download_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        &options,
+        &progress,
+        state_path,
+    )
     .await
     .context("failed to download Google Drive file")?;
 
@@ -276,6 +467,67 @@ pub(super) async fn run_list_to<S: AccountStore>(
         files_url,
     )
     .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn run_list_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    kind: DriveListKind,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let Some(parent_id) = parent.clone() else {
+        let client = AuthClient::from_config(config.clone(), store, account_override)?;
+        return run_list_items_to(
+            &client, kind, limit, all, None, json, quiet, out, err, files_url,
+        )
+        .await;
+    };
+
+    let resource_key = resource_key("drive", &parent_id);
+    let mut files = collect_list_items_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        kind,
+        limit,
+        all,
+        Some(parent_id),
+        quiet,
+        err,
+        files_url,
+        state_path,
+    )
+    .await
+    .context("failed to list Google Drive files")?;
+
+    prepare_list_items(kind, &mut files);
+
+    if json {
+        match kind {
+            DriveListKind::Browse => write_browse_ndjson(&files, out)?,
+            DriveListKind::Files | DriveListKind::Folders => write_ndjson(&files, out)?,
+        }
+    } else {
+        let mut wrote_table_header = false;
+        match kind {
+            DriveListKind::Files => write_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Folders => write_folder_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Browse => write_browse_table(&files, out, &mut wrote_table_header)?,
+        }
+    }
+
+    Ok(())
 }
 
 pub(super) async fn run_folder_list_to<S: AccountStore>(
@@ -363,6 +615,195 @@ async fn run_list_items_to<S: AccountStore>(
     Ok(())
 }
 
+async fn upload_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &UploadFileOptions,
+    progress: &Option<ProgressBar>,
+    state_path: Option<&Path>,
+) -> DriveResult<UploadedFile> {
+    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
+
+    if account_override.is_some() {
+        let account = resolve_account_override(config, account_override)?;
+        return upload_as_account(config, store, &mut access, options, progress, account).await;
+    }
+
+    let candidates = access.candidates(config);
+    let mut last_target_access_failure = None;
+
+    for account in candidates {
+        match upload_as_account(config, store, &mut access, options, progress, account).await {
+            Ok(result) => return Ok(result),
+            Err(err) if is_target_access_failure(&err) => {
+                last_target_access_failure = Some(err);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
+}
+
+async fn upload_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    access: &mut UnifiedAccess,
+    options: &UploadFileOptions,
+    progress: &Option<ProgressBar>,
+    account: String,
+) -> DriveResult<UploadedFile> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    let uploaded = upload(&client, options, |bytes| {
+        if let Some(progress) = progress {
+            progress.set_position(bytes);
+        }
+    })
+    .await?;
+    access.record_success(account)?;
+    Ok(uploaded)
+}
+
+async fn download_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &DownloadFileOptions,
+    progress: &Option<ProgressBar>,
+    state_path: Option<&Path>,
+) -> DriveResult<DownloadedFile> {
+    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
+
+    if account_override.is_some() {
+        let account = resolve_account_override(config, account_override)?;
+        return download_as_account(config, store, &mut access, options, progress, account).await;
+    }
+
+    let candidates = access.candidates(config);
+    let mut last_target_access_failure = None;
+
+    for account in candidates {
+        match download_as_account(config, store, &mut access, options, progress, account).await {
+            Ok(result) => return Ok(result),
+            Err(err) if is_target_access_failure(&err) => {
+                last_target_access_failure = Some(err);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
+}
+
+async fn download_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    access: &mut UnifiedAccess,
+    options: &DownloadFileOptions,
+    progress: &Option<ProgressBar>,
+    account: String,
+) -> DriveResult<DownloadedFile> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    let downloaded = download(&client, options, |bytes| {
+        if let Some(progress) = progress {
+            progress.set_position(bytes);
+        }
+    })
+    .await?;
+    access.record_success(account)?;
+    Ok(downloaded)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn collect_list_items_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    kind: DriveListKind,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    quiet: bool,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> DriveResult<Vec<DriveFile>> {
+    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
+
+    if account_override.is_some() {
+        let account = resolve_account_override(config, account_override)?;
+        return collect_list_items_as_account(
+            config,
+            store,
+            &mut access,
+            kind,
+            limit,
+            all,
+            parent,
+            quiet,
+            err,
+            files_url,
+            account,
+        )
+        .await;
+    }
+
+    let candidates = access.candidates(config);
+    let mut last_target_access_failure = None;
+
+    for account in candidates {
+        match collect_list_items_as_account(
+            config,
+            store,
+            &mut access,
+            kind,
+            limit,
+            all,
+            parent.clone(),
+            quiet,
+            err,
+            files_url,
+            account,
+        )
+        .await
+        {
+            Ok(result) => return Ok(result),
+            Err(err) if is_target_access_failure(&err) => {
+                last_target_access_failure = Some(err);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn collect_list_items_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    access: &mut UnifiedAccess,
+    kind: DriveListKind,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    quiet: bool,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+    account: String,
+) -> DriveResult<Vec<DriveFile>> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    let files =
+        collect_list_items_drive_error(&client, kind, limit, all, parent, quiet, err, files_url)
+            .await?;
+    access.record_success(account)?;
+    Ok(files)
+}
+
 fn prepare_list_items(kind: DriveListKind, files: &mut [DriveFile]) {
     if kind == DriveListKind::Browse {
         sort_browse_items(files);
@@ -422,6 +863,74 @@ async fn collect_list_items<S: AccountStore>(
     }
 
     Ok(files)
+}
+
+async fn collect_list_items_drive_error<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    kind: DriveListKind,
+    limit: Option<u32>,
+    all: bool,
+    parent: Option<String>,
+    quiet: bool,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> DriveResult<Vec<DriveFile>> {
+    let mut remaining = requested_result_count(limit, all);
+    let mut page_token = None;
+    let mut total = 0_u32;
+    let mut files = Vec::new();
+
+    loop {
+        let Some(page_size) = next_page_size(remaining) else {
+            break;
+        };
+        let options = list_options(
+            page_size,
+            page_token.take(),
+            parent.as_deref(),
+            files_url,
+            kind,
+        );
+
+        let page = list_files(client, &options).await?;
+
+        let page_count = page.files.len() as u32;
+        total += page_count;
+        if let Some(left) = remaining.as_mut() {
+            *left = left.saturating_sub(page_count);
+        }
+
+        if all && !quiet {
+            writeln!(err, "Fetched {total} {}...", kind.item_name()).map_err(DriveError::Io)?;
+        }
+
+        files.extend(page.files);
+
+        match page.next_page_token {
+            Some(token) if should_fetch_next_page(remaining, all) => {
+                page_token = Some(token);
+            }
+            _ => break,
+        }
+    }
+
+    Ok(files)
+}
+
+fn is_target_access_failure(err: &DriveError) -> bool {
+    matches!(err, DriveError::NotFound | DriveError::PermissionDenied)
+}
+
+fn resolve_account_override(
+    config: &Config,
+    account_override: Option<&str>,
+) -> DriveResult<String> {
+    Ok(resolve_account(config, account_override)?
+        .expect("explicit account resolution returns an account"))
+}
+
+fn no_access_candidate_error() -> DriveError {
+    DriveError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
 }
 
 pub(super) fn requested_result_count(limit: Option<u32>, all: bool) -> Option<u32> {

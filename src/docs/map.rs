@@ -133,10 +133,10 @@ impl DocumentMapBuilder {
     fn push_paragraph(&mut self, element: &Value, paragraph: &Value) {
         let text = paragraph_text(paragraph);
         let trimmed_text = text.trim();
-        let has_inline_image = paragraph_has_inline_image(paragraph);
+        let inline_image_start_indexes = paragraph_inline_image_start_indexes(paragraph);
         let positioned_count = paragraph_positioned_object_count(paragraph);
         let style = paragraph_style(paragraph);
-        let is_heading = style.as_deref().map_or(false, is_heading_style);
+        let is_heading = style.as_deref().is_some_and(is_heading_style);
 
         if !trimmed_text.is_empty() {
             self.push_content_line();
@@ -156,16 +156,19 @@ impl DocumentMapBuilder {
                 });
             }
             self.push_entry(location, kind, style.clone(), preview);
-        } else if has_inline_image || positioned_count > 0 {
+        } else if !inline_image_start_indexes.is_empty() || positioned_count > 0 {
             self.push_content_line();
         }
 
-        if has_inline_image {
+        let inline_image_count = inline_image_start_indexes.len();
+        for (image_index, start_index) in inline_image_start_indexes.into_iter().enumerate() {
+            let mut location = self.current_location(element);
+            location.index = start_index;
             self.push_entry(
-                self.current_location(element),
+                location,
                 DocumentMapEntryKind::InlineImage,
                 style.clone(),
-                "[inline image]".into(),
+                inline_image_preview(image_index, inline_image_count),
             );
         }
 
@@ -365,13 +368,23 @@ fn paragraph_style(paragraph: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-fn paragraph_has_inline_image(paragraph: &Value) -> bool {
+fn paragraph_inline_image_start_indexes(paragraph: &Value) -> Vec<Option<i64>> {
     paragraph
         .get("elements")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .any(|element| element.get("inlineObjectElement").is_some())
+        .filter(|element| element.get("inlineObjectElement").is_some())
+        .map(|element| element.get("startIndex").and_then(Value::as_i64))
+        .collect()
+}
+
+fn inline_image_preview(image_index: usize, inline_image_count: usize) -> String {
+    if inline_image_count == 1 {
+        "[inline image]".into()
+    } else {
+        format!("[inline image {}]", image_index + 1)
+    }
 }
 
 fn paragraph_positioned_object_count(paragraph: &Value) -> usize {
@@ -459,7 +472,10 @@ fn preview(text: &str) -> String {
     if compact.chars().count() <= MAX_PREVIEW_CHARS {
         compact
     } else {
-        let mut truncated = compact.chars().take(MAX_PREVIEW_CHARS - 3).collect::<String>();
+        let mut truncated = compact
+            .chars()
+            .take(MAX_PREVIEW_CHARS - 3)
+            .collect::<String>();
         truncated.push_str("...");
         truncated
     }

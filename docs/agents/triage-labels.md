@@ -12,16 +12,15 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-Whenever applying `ready-for-agent` to an issue, also apply the `Sandcastle` label.
+`ready-for-agent` and `bug` are the eligibility gates for the Sandcastle automation loop -- either one makes an issue eligible. There is no separate `Sandcastle` label. `.sandcastle/plan-prompt.md` selects issues via `gh issue list --search "label:ready-for-agent,bug"`. A `bug` report is presumed ready for an agent to fix without the extra `ready-for-agent` triage step.
 
 ## Sandcastle workflow labels
 
 | Label               | Meaning                                                                 |
 | ------------------- | ----------------------------------------------------------------------- |
-| `Sandcastle`        | Issue is eligible for the Sandcastle automation loop                    |
 | `need-human-review` | Sandcastle merged an implementation and a human needs to test/review it |
-| `need-fix`          | Human review found required changes and Sandcastle should run again     |
+| `bug`                | Reported bug ready for an agent to fix, or human review found required changes and Sandcastle should run again |
 
-Sandcastle keeps issues open after implementation. After merging, it adds `need-human-review` and removes `need-fix`. A human closes the issue if it passes. If it needs more work, the human removes `need-human-review`, adds `need-fix`, and leaves review comments for the next implementation pass.
+Sandcastle keeps issues open after implementation. After merging, it adds `need-human-review` and removes `bug`. A human closes the issue if it passes. If it needs more work, the human removes `need-human-review`, adds `bug`, and leaves review comments for the next implementation pass.
 
 Edit the right-hand column to match whatever vocabulary you actually use.

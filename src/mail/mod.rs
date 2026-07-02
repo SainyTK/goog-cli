@@ -19,7 +19,6 @@ pub const GMAIL_READONLY_SCOPES: &[&str] = &[GMAIL_READONLY_SCOPE];
 const GMAIL_MESSAGES_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
-const ATTACHMENT_FILENAME_FIELDS: &str = "payload";
 
 pub type Message = Value;
 
@@ -82,6 +81,8 @@ struct MessagePart {
     #[serde(default)]
     filename: String,
     #[serde(default)]
+    headers: Vec<MessageHeader>,
+    #[serde(default)]
     parts: Vec<MessagePart>,
     body: Option<MessagePartBody>,
 }
@@ -134,9 +135,7 @@ impl DownloadAttachmentOptions {
     fn attachment_url(&self) -> Result<Url, MailError> {
         let mut url = message_url(&self.messages_url, &self.message_id)?;
         url.path_segments_mut()
-            .map_err(|_| {
-                MailError::InvalidResponse("GoogleMail API URL cannot be a base".into())
-            })?
+            .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
             .push("attachments")
             .push(&self.attachment_id);
         Ok(url)
@@ -220,9 +219,7 @@ impl GetMessageOptions {
 fn message_url(messages_url: &str, message_id: &str) -> Result<Url, MailError> {
     let mut url = Url::parse(messages_url)?;
     url.path_segments_mut()
-        .map_err(|_| {
-            MailError::InvalidResponse("GoogleMail API URL cannot be a base".into())
-        })?
+        .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
         .push(message_id);
     Ok(url)
 }
@@ -307,70 +304,136 @@ async fn attachment_filename_path<S: AccountStore>(
     let metadata = fetch_attachment_filename_metadata(client, options).await?;
     let filename = find_attachment_filename(&metadata.payload, &options.attachment_id)
         .ok_or(MailError::MissingAttachmentFilename)?;
-    Ok(std::env::current_dir().map_err(MailError::Io)?.join(filename))
+    Ok(std::env::current_dir()
+        .map_err(MailError::Io)?
+        .join(filename))
 }
 
 async fn fetch_attachment_filename_metadata<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DownloadAttachmentOptions,
 ) -> Result<MetadataMessage, MailError> {
-    let mut url = message_url(&options.messages_url, &options.message_id)?;
-    url.query_pairs_mut()
-        .append_pair("fields", ATTACHMENT_FILENAME_FIELDS);
-
     let response = client
-        .send_with_scopes(client.get(url), GMAIL_READONLY_SCOPES)
+        .send_with_scopes(
+            client.get(message_url(&options.messages_url, &options.message_id)?),
+            GMAIL_READONLY_SCOPES,
+        )
         .await
         .map_err(MailError::Auth)?;
     parse_json_response(response).await
 }
 
 fn find_attachment_filename(payload: &MessagePayload, attachment_id: &str) -> Option<String> {
-    find_attachment_filename_in_node(
+    let attachments = attachment_filenames(payload);
+
+    filename_for_attachment(&attachments, attachment_id)
+        .or_else(|| filename_from_single_attachment(&attachments))
+}
+
+fn filename_for_attachment(
+    attachments: &[AttachmentFilename],
+    attachment_id: &str,
+) -> Option<String> {
+    attachments.iter().find_map(|attachment| {
+        if attachment.id == attachment_id {
+            attachment.filename.clone()
+        } else {
+            None
+        }
+    })
+}
+
+fn attachment_filename_from_headers(headers: &[MessageHeader]) -> Option<String> {
+    headers
+        .iter()
+        .filter(|header| {
+            header.name.eq_ignore_ascii_case("content-disposition")
+                || header.name.eq_ignore_ascii_case("content-type")
+        })
+        .find_map(|header| {
+            header_parameter(&header.value, "filename")
+                .or_else(|| header_parameter(&header.value, "name"))
+        })
+}
+
+fn header_parameter(value: &str, parameter_name: &str) -> Option<String> {
+    value
+        .split(';')
+        .skip(1)
+        .filter_map(|parameter| parameter.split_once('='))
+        .find_map(|(name, value)| {
+            if name.trim().eq_ignore_ascii_case(parameter_name) {
+                let value = value.trim().trim_matches('"').trim();
+                (!value.is_empty()).then(|| value.to_string())
+            } else {
+                None
+            }
+        })
+}
+
+fn attachment_filenames(payload: &MessagePayload) -> Vec<AttachmentFilename> {
+    let mut attachments = Vec::new();
+    collect_attachment_filenames_from_node(
         &payload.filename,
+        &payload.headers,
         payload.body.as_ref(),
         &payload.parts,
-        attachment_id,
-    )
+        &mut attachments,
+    );
+    attachments
 }
 
-fn find_attachment_filename_in_part(part: &MessagePart, attachment_id: &str) -> Option<String> {
-    find_attachment_filename_in_node(
+fn filename_from_single_attachment(attachments: &[AttachmentFilename]) -> Option<String> {
+    let [attachment] = attachments else {
+        return None;
+    };
+
+    attachment.filename.clone()
+}
+
+struct AttachmentFilename {
+    id: String,
+    filename: Option<String>,
+}
+
+fn collect_attachment_filenames_from_part(
+    part: &MessagePart,
+    attachments: &mut Vec<AttachmentFilename>,
+) {
+    collect_attachment_filenames_from_node(
         &part.filename,
+        &part.headers,
         part.body.as_ref(),
         &part.parts,
-        attachment_id,
-    )
+        attachments,
+    );
 }
 
-fn find_attachment_filename_in_node(
+fn collect_attachment_filenames_from_node(
     filename: &str,
+    headers: &[MessageHeader],
     body: Option<&MessagePartBody>,
     parts: &[MessagePart],
-    attachment_id: &str,
-) -> Option<String> {
-    if let Some(filename) = matching_attachment_filename(filename, body, attachment_id) {
-        return Some(filename);
+    attachments: &mut Vec<AttachmentFilename>,
+) {
+    if let Some(attachment_id) = body.and_then(|body| body.attachment_id.as_deref()) {
+        attachments.push(AttachmentFilename {
+            id: attachment_id.to_string(),
+            filename: part_filename(filename, headers),
+        });
     }
 
-    parts
-        .iter()
-        .find_map(|child| find_attachment_filename_in_part(child, attachment_id))
+    for child in parts {
+        collect_attachment_filenames_from_part(child, attachments);
+    }
 }
 
-fn matching_attachment_filename(
-    filename: &str,
-    body: Option<&MessagePartBody>,
-    attachment_id: &str,
-) -> Option<String> {
-    let matches_attachment = body.and_then(|body| body.attachment_id.as_deref())
-        == Some(attachment_id);
-
-    if matches_attachment && !filename.is_empty() {
-        Some(filename.to_string())
-    } else {
-        None
+fn part_filename(filename: &str, headers: &[MessageHeader]) -> Option<String> {
+    if !filename.is_empty() {
+        return Some(filename.to_string());
     }
+
+    attachment_filename_from_headers(headers)
 }
 
 fn decode_base64url(data: &str) -> Result<Vec<u8>, MailError> {

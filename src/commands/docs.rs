@@ -1,26 +1,38 @@
 use std::io::{Read, Write};
+use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
+use crate::auth::config::{resolve_account, Config};
+use crate::auth::state::resource_key;
+use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::DocsCommand;
 use crate::docs::{
     batch_update_document, get_document, map::build_document_map, map::search_document_text,
     map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind, map::DocumentRange,
-    BatchUpdateDocumentOptions, GetDocumentOptions,
+    BatchUpdateDocumentOptions, DocsError, GetDocumentOptions,
 };
 
-pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Result<()> {
+pub fn run<S: AccountStore>(
+    cmd: DocsCommand,
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+) -> Result<()> {
     match cmd {
         DocsCommand::Map { document_id, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_map_to(
-                client,
+            runtime.block_on(run_map_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 json,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -31,12 +43,15 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_search_text_to(
-                client,
+            runtime.block_on(run_search_text_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 text,
                 json,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -52,12 +67,15 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
             let selector = content_selector(index, entry, page, line, heading)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_get_content_to(
-                client,
+            runtime.block_on(run_get_content_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 selector,
                 json,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -68,12 +86,15 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_get_to(
-                client,
+            runtime.block_on(run_get_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 fields,
                 include_tabs_content,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -84,18 +105,22 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             let mut stdin = std::io::stdin();
-            runtime.block_on(run_batch_update_to(
-                client,
+            runtime.block_on(run_batch_update_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 requests,
                 &mut stdin,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
     }
 }
 
+#[cfg(test)]
 pub(super) async fn run_map_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -104,11 +129,29 @@ pub(super) async fn run_map_to<S: AccountStore>(
     documents_url: Option<&str>,
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
-    if json {
-        write_json_line(out, &document_map, "failed to serialize Docs Document Map")
-    } else {
-        write_document_map_table(out, &document_map)
-    }
+    write_document_map(out, &document_map, json)
+}
+
+pub(super) async fn run_map_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    write_document_map(out, &document_map, json)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,6 +162,7 @@ pub(super) enum ContentSelector {
     Heading(String),
 }
 
+#[cfg(test)]
 pub(super) async fn run_search_text_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -129,13 +173,34 @@ pub(super) async fn run_search_text_to<S: AccountStore>(
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
     let ranges = search_document_text(&document_map, &text);
-    if json {
-        write_json_line(out, &ranges, "failed to serialize Docs text matches")
-    } else {
-        write_search_text_table(out, &ranges)
-    }
+    write_search_text_results(out, &ranges, json)
 }
 
+pub(super) async fn run_search_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    text: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let ranges = search_document_text(&document_map, &text);
+    write_search_text_results(out, &ranges, json)
+}
+
+#[cfg(test)]
 pub(super) async fn run_get_content_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -146,13 +211,34 @@ pub(super) async fn run_get_content_to<S: AccountStore>(
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
     let entry = resolve_content_entry(&document_map, &selector)?;
-    if json {
-        write_json_line(out, entry, "failed to serialize Docs content entry")
-    } else {
-        write_document_map_table(out, &document_map_with_entry(&document_map, entry))
-    }
+    write_content_entry(out, &document_map, entry, json)
 }
 
+pub(super) async fn run_get_content_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    selector: ContentSelector,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let entry = resolve_content_entry(&document_map, &selector)?;
+    write_content_entry(out, &document_map, entry, json)
+}
+
+#[cfg(test)]
 pub(super) async fn run_get_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -169,6 +255,39 @@ pub(super) async fn run_get_to<S: AccountStore>(
     write_json_line(out, &document, "failed to serialize Docs Document")
 }
 
+pub(super) async fn run_get_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    fields: Option<String>,
+    include_tabs_content: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let options = get_document_options(
+        document_id.clone(),
+        fields,
+        include_tabs_content,
+        documents_url,
+    );
+    let resource_key = resource_key("docs", &document_id);
+    let document = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::Get(&options),
+        state_path,
+    )
+    .await
+    .context("failed to fetch Google Docs Document")?;
+
+    write_json_line(out, &document, "failed to serialize Docs Document")
+}
+
+#[cfg(test)]
 pub(super) async fn run_batch_update_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -190,6 +309,104 @@ pub(super) async fn run_batch_update_to<S: AccountStore>(
     )
 }
 
+pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    requests: String,
+    input: &mut impl Read,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let request_body = read_request_body(&requests, input)?;
+    let options = batch_update_document_options(document_id.clone(), request_body, documents_url);
+    let resource_key = resource_key("docs", &document_id);
+    let response = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to apply Google Docs Batch Update")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Docs Batch Update response",
+    )
+}
+
+enum DocsAccessAttempt<'a> {
+    Get(&'a GetDocumentOptions),
+    BatchUpdate(&'a BatchUpdateDocumentOptions),
+}
+
+async fn run_with_docs_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    attempt: DocsAccessAttempt<'_>,
+    state_path: Option<&Path>,
+) -> Result<serde_json::Value, DocsError> {
+    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
+
+    if account_override.is_some() {
+        let account = resolve_account(config, account_override)?
+            .expect("explicit account resolution returns an account");
+        return run_docs_access_as_account(config, store, &mut access, &attempt, account).await;
+    }
+
+    let candidates = access.candidates(config);
+    let mut last_target_access_failure = None;
+
+    for account in candidates {
+        match run_docs_access_as_account(config, store, &mut access, &attempt, account).await {
+            Ok(result) => return Ok(result),
+            Err(err) if is_target_access_failure(&err) => {
+                last_target_access_failure = Some(err);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(last_target_access_failure.unwrap_or({
+        DocsError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
+    }))
+}
+
+async fn run_docs_access_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    access: &mut UnifiedAccess,
+    attempt: &DocsAccessAttempt<'_>,
+    account: String,
+) -> Result<serde_json::Value, DocsError> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    let result = attempt_docs_access(&client, attempt).await?;
+    access.record_success(account)?;
+    Ok(result)
+}
+
+async fn attempt_docs_access<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    attempt: &DocsAccessAttempt<'_>,
+) -> Result<serde_json::Value, DocsError> {
+    match attempt {
+        DocsAccessAttempt::Get(options) => get_document(client, options).await,
+        DocsAccessAttempt::BatchUpdate(options) => batch_update_document(client, options).await,
+    }
+}
+
+fn is_target_access_failure(err: &DocsError) -> bool {
+    matches!(err, DocsError::NotFound | DocsError::PermissionDenied)
+}
+
 fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde_json::Value> {
     let (body, request_source) = if path_or_stdin == "-" {
         let mut body = String::new();
@@ -209,6 +426,7 @@ fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde
     })
 }
 
+#[cfg(test)]
 async fn get_document_map<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -221,7 +439,30 @@ async fn get_document_map<S: AccountStore>(
     Ok(build_document_map(&document))
 }
 
-fn content_selector(
+async fn get_document_map_unified<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<DocumentMap> {
+    let options = get_document_options(document_id.clone(), None, true, documents_url);
+    let resource_key = resource_key("docs", &document_id);
+    let document = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::Get(&options),
+        state_path,
+    )
+    .await
+    .context("failed to fetch Google Docs Document")?;
+    Ok(build_document_map(&document))
+}
+
+pub(super) fn content_selector(
     index: Option<i64>,
     entry: Option<usize>,
     page: Option<usize>,
@@ -365,6 +606,39 @@ fn batch_update_document_options(
     options
 }
 
+fn write_document_map(out: &mut impl Write, document_map: &DocumentMap, json: bool) -> Result<()> {
+    if json {
+        write_json_line(out, document_map, "failed to serialize Docs Document Map")
+    } else {
+        write_document_map_table(out, document_map)
+    }
+}
+
+fn write_search_text_results(
+    out: &mut impl Write,
+    ranges: &[DocumentRange],
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, ranges, "failed to serialize Docs text matches")
+    } else {
+        write_search_text_table(out, ranges)
+    }
+}
+
+fn write_content_entry(
+    out: &mut impl Write,
+    document_map: &DocumentMap,
+    entry: &DocumentMapEntry,
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, entry, "failed to serialize Docs content entry")
+    } else {
+        write_document_map_table(out, &document_map_with_entry(document_map, entry))
+    }
+}
+
 fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) -> Result<()> {
     writeln!(
         out,
@@ -424,7 +698,7 @@ fn display_optional<T: ToString>(value: Option<T>) -> String {
         .unwrap_or_else(|| "-".into())
 }
 
-fn write_json_line<T: serde::Serialize>(
+fn write_json_line<T: serde::Serialize + ?Sized>(
     out: &mut impl Write,
     value: &T,
     context: &str,
