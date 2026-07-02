@@ -36,6 +36,58 @@ For each issue, capture every `goog` invocation and its output in `.sandcastle/e
 
 Issue branches (`sandcastle/issue-<ID>`) are never pushed to GitHub, so a link to the file on that branch is always a dead link. The merge step embeds the log's contents directly in the human-review comment instead -- keep it short enough to read comfortably inline (a handful of commands, not a full transcript dump).
 
+Evidence must be reproducible.
+Do not paste a raw transcript and expect the reviewer to infer what passed.
+Write the log as a short checklist of commands, expected result, observed result, and pass/fail status.
+
+Use this shape:
+
+```text
+Issue <ID> E2E evidence, redacted
+Result: PASS|PARTIAL|FAIL
+
+Test setup:
+- Accounts used: [active-account], [account-2]
+- Fixture used: [document-id], [spreadsheet-id], [message-id], or [scratch resource created by this run]
+- Skipped fixture: none, or exact reason
+
+Local checks:
+$ cargo test <targeted filter>
+Result: PASS.
+<short count summary>
+
+Live checks:
+$ goog <exact command with redacted ids>
+Expected: <what this command proves>
+Observed: <short structural result, with sensitive content redacted>
+Result: PASS|FAIL.
+
+Reviewer notes:
+- <anything the human must know before closing or sending back>
+```
+
+Prefer structural checks over dumping full API payloads.
+For example, use `jq -r .id`, row counts, status codes, file sizes, or a redacted JSON projection rather than full message, document, or spreadsheet content.
+If a command needs a fixture, name how the reviewer can obtain an equivalent fixture.
+If a live fixture is unavailable, record the exact unavailable fixture and still run the local and command-surface checks that can run safely.
+
+## Test steps for human review
+
+Every issue handed to `need-human-review` must have a `## Test steps` section in the GitHub issue body before it is merged.
+The implementer is responsible for adding or updating that section after the implementation is working.
+
+The section should translate each acceptance criterion into concrete reviewer actions:
+
+- exact local test commands to run;
+- exact `goog` commands to run, using shell variables when IDs or accounts are environment-specific;
+- how to choose or create each required live fixture;
+- what output or state proves pass/fail;
+- what may be skipped only when a fixture is unavailable;
+- what evidence must be redacted before commenting.
+
+Keep the steps issue-specific.
+Do not write "run E2E tests" or "verify manually" without the actual commands and expected results.
+
 ## Redaction, before committing
 
 `.sandcastle/evidence/` is a tracked directory, not `.sandcastle/logs/` -- anything written there enters git history. Before staging an evidence log, scrub it:

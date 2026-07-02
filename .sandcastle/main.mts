@@ -209,6 +209,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
             agent: sandcastle.codex("gpt-5.5"),
             promptFile: "./.sandcastle/review-prompt.md",
             promptArgs: {
+              TASK_ID: issue.id,
               BRANCH: issue.branch,
             },
           });

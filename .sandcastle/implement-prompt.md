@@ -33,8 +33,23 @@ Before writing any unit tests, verify the change by actually running the `goog` 
 1. Run the `goog` command(s) this issue touches and observe the real output, not a mocked one.
 2. If this surfaces a bug that is out of scope for this issue and too large to fix here, do not attempt it. Open a new GitHub issue describing it (`gh issue create`), comment on issue {{TASK_ID}} linking the new issue, and continue with {{TASK_ID}}'s own scope.
 3. Save every `goog` invocation and its output to `.sandcastle/evidence/issue-{{TASK_ID}}-e2e.log`.
-4. Before staging that log, scrub it per the redaction checklist in `docs/agents/e2e-testing.md`. Real email addresses, message/document/spreadsheet contents, and any token or secret must never enter git history.
-5. Commit the redacted evidence log in the same commit as the change it verifies.
+4. Format the log as reproducible evidence, not a raw transcript: include `Result: PASS|PARTIAL|FAIL`, setup, local checks, live checks, expected result, observed redacted result, and reviewer notes.
+5. Before staging that log, scrub it per the redaction checklist in `docs/agents/e2e-testing.md`. Real email addresses, message/document/spreadsheet contents, and any token or secret must never enter git history.
+6. Commit the redacted evidence log in the same commit as the change it verifies.
+
+# HUMAN REVIEW TEST STEPS
+
+Before the final commit, update issue {{TASK_ID}} so a human reviewer can retest without reconstructing your reasoning from the code.
+
+1. Read the current issue body with `gh issue view {{TASK_ID}} --json body --jq .body`.
+2. Add or replace a `## Test steps` section in the issue body.
+3. Map every acceptance criterion to concrete commands, required fixtures, and pass/fail observations.
+4. Include local regression commands, live `goog` commands, setup variables, skipped-fixture rules, and redaction guidance.
+5. Use `gh issue edit {{TASK_ID}} --body-file <updated-body-file>` to write the updated body.
+
+The test steps must be issue-specific and reviewer-runnable.
+Do not write vague steps like "run the tests", "verify manually", or "check the output".
+Use the exact command shapes from the implementation and help text.
 
 # EXECUTION
 
