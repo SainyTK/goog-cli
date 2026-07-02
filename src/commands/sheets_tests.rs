@@ -133,6 +133,18 @@ fn assert_query_value(url: &Url, name: &str, expected: &str) {
     assert_eq!(query_value(url, name).as_deref(), Some(expected));
 }
 
+fn update_values_command(
+    values: impl Into<String>,
+    value_input_option: SheetsValueInputOption,
+) -> SheetsValuesCommand {
+    SheetsValuesCommand::Update {
+        spreadsheet_id: "spreadsheet-123".into(),
+        range: "Sheet1!A1:B2".into(),
+        values: values.into(),
+        value_input_option,
+    }
+}
+
 fn append_values_command(
     values: impl Into<String>,
     value_input_option: SheetsValueInputOption,
@@ -789,12 +801,10 @@ async fn run_values_update_reads_values_from_file_and_prints_response_json() {
 
     run_values_to(
         &client,
-        SheetsValuesCommand::Update {
-            spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B2".into(),
-            values: values_path.to_string_lossy().into_owned(),
-            value_input_option: SheetsValueInputOption::UserEntered,
-        },
+        update_values_command(
+            values_path.to_string_lossy().into_owned(),
+            SheetsValueInputOption::UserEntered,
+        ),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -837,12 +847,7 @@ async fn run_values_update_reads_values_from_stdin() {
 
     run_values_to(
         &client,
-        SheetsValuesCommand::Update {
-            spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B2".into(),
-            values: "-".into(),
-            value_input_option: SheetsValueInputOption::Raw,
-        },
+        update_values_command("-", SheetsValueInputOption::Raw),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -1394,12 +1399,7 @@ async fn run_values_update_returns_clear_error_for_invalid_request_json() {
 
     let result = run_values_to(
         &client,
-        SheetsValuesCommand::Update {
-            spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B2".into(),
-            values: "-".into(),
-            value_input_option: SheetsValueInputOption::UserEntered,
-        },
+        update_values_command("-", SheetsValueInputOption::UserEntered),
         &mut input,
         &mut out,
         Some("https://example.test/sheets/v4/spreadsheets"),
@@ -1458,6 +1458,32 @@ async fn run_values_batch_update_returns_clear_error_for_invalid_request_json() 
 }
 
 #[tokio::test]
+async fn run_values_batch_update_returns_clear_error_for_invalid_request_json_file() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let values_path = temp_dir.path().join("batch-values.json");
+    std::fs::write(&values_path, "{not json").unwrap();
+    let values_path_arg = values_path.to_string_lossy().into_owned();
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+
+    let result = run_values_to(
+        &client,
+        batch_update_values_command(values_path_arg.clone()),
+        &mut input,
+        &mut out,
+        Some("https://example.test/sheets/v4/spreadsheets"),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to parse Google Sheets Values request body from"));
+    assert!(message.contains(&values_path_arg));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
 async fn run_values_batch_update_returns_clear_error_for_api_failure() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -1496,6 +1522,37 @@ async fn run_values_batch_update_returns_clear_error_for_api_failure() {
         "failed to batch update Google Sheets values",
         "bad batch value update request",
     );
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_values_update_returns_clear_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("bad update request"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new(serde_json::json!({ "values": [["Ada"]] }).to_string());
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_values_to(
+        &client,
+        update_values_command("-", SheetsValueInputOption::UserEntered),
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to update Google Sheets values"));
+    assert!(message.contains("Google Sheets API error (400 Bad Request)"));
+    assert!(message.contains("bad update request"));
     assert!(out.is_empty());
 }
 

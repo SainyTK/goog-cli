@@ -375,7 +375,7 @@ async fn run_with_docs_unified_access<S: AccountStore>(
         }
     }
 
-    Err(last_target_access_failure.unwrap_or_else(|| {
+    Err(last_target_access_failure.unwrap_or({
         DocsError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
     }))
 }
@@ -474,7 +474,9 @@ fn content_selector(
         + usize::from(page.is_some() || line.is_some())
         + usize::from(heading.is_some());
     if selector_count != 1 {
-        bail!("provide exactly one content selector: --index, --entry, --page with --line, or --heading");
+        bail!(
+            "provide exactly one content selector: --index, --entry, --page with --line, or --heading"
+        );
     }
 
     if let Some(index) = index {

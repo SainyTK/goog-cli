@@ -1,17 +1,36 @@
 #!/usr/bin/env bash
-# Installs the latest goog CLI release into ~/.local/bin (or $GOOG_INSTALL_DIR).
+# Installs a Canonical Release of the goog CLI into ~/.local/bin (or $GOOG_INSTALL_DIR).
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.1.0
 set -euo pipefail
 
 REPO="SainyTK/goog-cli"
 INSTALL_DIR="${GOOG_INSTALL_DIR:-$HOME/.local/bin}"
+REQUESTED_VERSION="${GOOG_VERSION:-}"
 
 fail() {
   echo "error: $1" >&2
   exit 1
 }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --version)
+      [ $# -ge 2 ] || fail "--version requires a value"
+      REQUESTED_VERSION="$2"
+      shift 2
+      ;;
+    --version=*)
+      REQUESTED_VERSION="${1#--version=}"
+      shift
+      ;;
+    *)
+      fail "unknown argument: $1"
+      ;;
+  esac
+done
 
 detect_target() {
   os="$(uname -s)"
@@ -38,8 +57,11 @@ main() {
 
   target="$(detect_target)"
 
-  if [ -n "${GOOG_VERSION:-}" ]; then
-    tag="v$GOOG_VERSION"
+  if [ -n "$REQUESTED_VERSION" ]; then
+    case "$REQUESTED_VERSION" in
+      v*) tag="$REQUESTED_VERSION" ;;
+      *) tag="v$REQUESTED_VERSION" ;;
+    esac
   else
     api_url="https://api.github.com/repos/$REPO/releases/latest"
     tag="$(curl -fsSL "$api_url" | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
@@ -56,6 +78,15 @@ main() {
   echo "Downloading goog ${version} for ${target}..."
   curl -fsSL "$download_url" -o "$workdir/$archive" \
     || fail "failed to download $download_url (no release for your platform?)"
+  curl -fsSL "$download_url.sha256" -o "$workdir/$archive.sha256" \
+    || fail "failed to download checksum for $archive"
+
+  echo "Verifying checksum..."
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "$workdir" && sha256sum -c "$archive.sha256") || fail "checksum verification failed for $archive"
+  else
+    (cd "$workdir" && shasum -a 256 -c "$archive.sha256") || fail "checksum verification failed for $archive"
+  fi
 
   tar -xzf "$workdir/$archive" -C "$workdir"
 

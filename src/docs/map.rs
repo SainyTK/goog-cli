@@ -136,7 +136,7 @@ impl DocumentMapBuilder {
         let has_inline_image = paragraph_has_inline_image(paragraph);
         let positioned_count = paragraph_positioned_object_count(paragraph);
         let style = paragraph_style(paragraph);
-        let is_heading = style.as_deref().map_or(false, is_heading_style);
+        let is_heading = style.as_deref().is_some_and(is_heading_style);
 
         if !trimmed_text.is_empty() {
             self.push_content_line();

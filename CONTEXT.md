@@ -223,3 +223,33 @@ _Avoid_: Values batch update, patch, edit
 **Resumable Upload**:
 Google's chunked upload protocol used for files over 5 MB. Allows upload to survive interruptions. Distinct from a simple multipart upload used for small files.
 _Avoid_: Chunked upload, multi-part upload (different thing)
+
+### Distribution
+
+**Early Open-Source CLI**:
+The public maturity position for `goog`: useful and installable for real Google API workflows, with command coverage and interfaces still expected to expand.
+_Avoid_: Stable product, prototype, demo
+
+**Canonical Release**:
+A tagged GitHub Release created from `main` that owns the downloadable `goog` binaries and checksums for a published version.
+_Avoid_: Branch head, installer version, Homebrew version
+
+**Release Asset**:
+A downloadable binary archive or checksum file attached to a Canonical Release for one supported platform.
+_Avoid_: Build artifact, package
+
+**Distribution Channel**:
+A user-facing installation path that resolves to a Canonical Release, such as the GitHub-hosted installer script, Homebrew tap, or Rust-native install command.
+_Avoid_: Release source, package source
+
+**Release Automation**:
+The GitHub Actions workflow that turns a version tag on `main` into Canonical Release assets and updates distribution metadata.
+_Avoid_: Publish script, deploy script
+
+**Installer Script**:
+The GitHub-hosted shell entrypoint that detects the user's platform, downloads a Canonical Release asset, verifies it, and installs the `goog` binary.
+_Avoid_: Bash release, install command
+
+**Homebrew Tap**:
+The Homebrew formula repository that lets Homebrew users install `goog` from Canonical Release assets through `SainyTK/tap/goog`.
+_Avoid_: Brew package, Homebrew release

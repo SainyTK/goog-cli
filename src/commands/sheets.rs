@@ -618,7 +618,7 @@ async fn run_with_sheets_unified_access<S: AccountStore>(
         }
     }
 
-    Err(last_target_access_failure.unwrap_or_else(|| {
+    Err(last_target_access_failure.unwrap_or({
         SheetsError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
     }))
 }
