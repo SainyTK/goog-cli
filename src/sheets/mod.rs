@@ -700,49 +700,52 @@ async fn get_values_via_temporary_conversion<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetValuesOptions,
 ) -> Result<ValueRange, SheetsError> {
-    let temporary_id = create_temporary_google_sheet(
+    read_values_via_temporary_conversion(
         client,
         &options.drive_files_url,
         &options.spreadsheet_id,
+        |temporary_id| {
+            GetValuesOptions::new(temporary_id, options.range.clone())
+                .with_value_render_option(options.value_render_option)
+                .with_spreadsheets_url(&options.spreadsheets_url)
+                .with_drive_files_url(&options.drive_files_url)
+                .request_url()
+        },
     )
-    .await?;
-    let converted_options = GetValuesOptions::new(temporary_id.clone(), options.range.clone())
-        .with_value_render_option(options.value_render_option)
-        .with_spreadsheets_url(&options.spreadsheets_url)
-        .with_drive_files_url(&options.drive_files_url);
-    let response = send_json_request(
-        client,
-        client.get(converted_options.request_url()?),
-        SHEETS_READONLY_SCOPES,
-    )
-    .await;
-
-    finish_temporary_conversion(client, &options.drive_files_url, &temporary_id, response).await
+    .await
 }
 
 async fn batch_get_values_via_temporary_conversion<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchGetValuesOptions,
 ) -> Result<BatchGetValuesResponse, SheetsError> {
-    let temporary_id = create_temporary_google_sheet(
+    read_values_via_temporary_conversion(
         client,
         &options.drive_files_url,
         &options.spreadsheet_id,
+        |temporary_id| {
+            BatchGetValuesOptions::new(temporary_id, options.ranges.clone())
+                .with_value_render_option(options.value_render_option)
+                .with_spreadsheets_url(&options.spreadsheets_url)
+                .with_drive_files_url(&options.drive_files_url)
+                .request_url()
+        },
     )
-    .await?;
-    let converted_options =
-        BatchGetValuesOptions::new(temporary_id.clone(), options.ranges.clone())
-            .with_value_render_option(options.value_render_option)
-            .with_spreadsheets_url(&options.spreadsheets_url)
-            .with_drive_files_url(&options.drive_files_url);
-    let response = send_json_request(
-        client,
-        client.get(converted_options.request_url()?),
-        SHEETS_READONLY_SCOPES,
-    )
-    .await;
+    .await
+}
 
-    finish_temporary_conversion(client, &options.drive_files_url, &temporary_id, response).await
+async fn read_values_via_temporary_conversion<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    drive_files_url: &str,
+    source_file_id: &str,
+    converted_request_url: impl FnOnce(&str) -> Result<Url, SheetsError>,
+) -> Result<Value, SheetsError> {
+    let temporary_id =
+        create_temporary_google_sheet(client, drive_files_url, source_file_id).await?;
+    let request_url = converted_request_url(&temporary_id)?;
+    let response = send_json_request(client, client.get(request_url), SHEETS_READONLY_SCOPES).await;
+
+    finish_temporary_conversion(client, drive_files_url, &temporary_id, response).await
 }
 
 async fn finish_temporary_conversion<S: AccountStore>(
@@ -782,9 +785,7 @@ async fn create_temporary_google_sheet<S: AccountStore>(
         .and_then(Value::as_str)
         .map(str::to_string)
         .ok_or_else(|| {
-            SheetsError::InvalidResponse(
-                "Google Drive copy response did not include an id".into(),
-            )
+            SheetsError::InvalidResponse("Google Drive copy response did not include an id".into())
         })
 }
 
