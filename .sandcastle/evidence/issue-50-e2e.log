@@ -1,8 +1,5 @@
 $ cargo run -- auth list
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.14s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.26s
      Running `target/debug/goog auth list`
   EMAIL                         ACTIVE
 * account-1@redacted.example    *
@@ -11,23 +8,19 @@ $ cargo run -- auth list
   account-4@redacted.example
 
 $ cargo run -- drive list --limit 2 --json
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on build directory
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.14s
      Running `target/debug/goog drive list --limit 2 --json`
 {"name":"[drive file name redacted]","id":"[drive file id redacted]","parentIds":["[drive parent id redacted]"],"mimeType":"application/vnd.google-apps.spreadsheet","modifiedTime":"2026-07-02T10:28:01.512Z"}
 {"name":"[drive file name redacted]","id":"[drive file id redacted]","parentIds":["[drive parent id redacted]"],"mimeType":"application/vnd.google-apps.spreadsheet","modifiedTime":"2026-07-01T15:45:23.990Z"}
 
 $ cargo run -- mail list --limit 2 --json
-    Blocking waiting for file lock on build directory
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
      Running `target/debug/goog mail list --limit 2 --json`
 {"messageId":"[message id redacted]","date":"Thu, 02 Jul 2026 15:44:50 +0000 (UTC)","from":"sender-1@redacted.example","subject":"[subject redacted]"}
 {"messageId":"[message id redacted]","date":"Thu, 2 Jul 2026 13:53:41 +0000","from":"sender-2@redacted.example","subject":"[subject redacted]"}
 
 Note: This Sandcastle run executed on Linux with GOOG_TOKEN_FILE, so it
 verifies real already-connected Google API token use but cannot observe macOS
-Keychain Access Prompt UI. Google browser consent for any newly requested Scope
-is outside issue 50 and would not be treated as a Keychain prompt failure.
+Keychain Access Prompt UI after goog auth login. Google browser consent for any
+newly requested Scope is outside issue 50 and would not be treated as a
+Keychain prompt failure.
