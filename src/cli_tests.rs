@@ -1236,6 +1236,16 @@ fn sheets_batch_update_requires_requests() {
 }
 
 #[test]
+fn sheets_batch_update_help_explains_request_shape() {
+    let help = help(&["sheets", "batch-update", "--help"]);
+
+    assert!(
+        help.contains("--requests reads the full Google Sheets spreadsheets.batchUpdate JSON body")
+    );
+    assert!(help.contains("not only the requests array"));
+}
+
+#[test]
 fn global_account_flag() {
     let cli = parse(&["--account", "me@example.com", "auth", "list"]).unwrap();
     assert_eq!(cli.account.as_deref(), Some("me@example.com"));
