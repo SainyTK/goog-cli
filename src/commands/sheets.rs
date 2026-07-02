@@ -25,17 +25,15 @@ pub fn run<S: AccountStore>(cmd: SheetsCommand, client: &AuthClient<'_, S>) -> R
             fields,
             include_grid_data,
             ranges,
-        } => {
-            run_with_runtime(run_get_to(
-                client,
-                spreadsheet_id,
-                fields,
-                include_grid_data,
-                ranges,
-                &mut std::io::stdout(),
-                None,
-            ))
-        }
+        } => run_with_runtime(run_get_to(
+            client,
+            spreadsheet_id,
+            fields,
+            include_grid_data,
+            ranges,
+            &mut std::io::stdout(),
+            None,
+        )),
         SheetsCommand::Values { command } => {
             let mut stdin = std::io::stdin();
             run_with_runtime(run_values_to(

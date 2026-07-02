@@ -206,11 +206,7 @@ fn get_message_options(message_id: String, messages_url: Option<&str>) -> GetMes
     options
 }
 
-fn write_summaries(
-    summaries: &[MessageSummary],
-    json: bool,
-    out: &mut impl Write,
-) -> Result<()> {
+fn write_summaries(summaries: &[MessageSummary], json: bool, out: &mut impl Write) -> Result<()> {
     if json {
         write_summary_ndjson(summaries, out)
     } else {
