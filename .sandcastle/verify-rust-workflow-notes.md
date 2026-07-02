@@ -16,7 +16,9 @@ Sandbox workflow commands:
 
 ```bash
 rustup --version
+rustup component list --installed
 cargo fmt
+cargo clippy --version
 npm run typecheck
 npm run test
 ```
