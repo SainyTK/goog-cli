@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use crate::auth::config::OAuthAppType;
 
 #[derive(Debug, Parser)]
-#[command(name = "goog", about = "A CLI for Google APIs")]
+#[command(name = "goog", about = "A CLI for Google APIs", version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
