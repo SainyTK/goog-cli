@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -21,6 +21,8 @@ const ALL_PAGE_SIZE: u32 = 1000;
 const TABLE_HEADER: &str = "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED";
 const FOLDER_TABLE_HEADER: &str = "NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED";
 const BROWSE_TABLE_HEADER: &str = "TYPE\tNAME\tID\tMIME TYPE\tMODIFIED";
+
+type DriveResult<T> = std::result::Result<T, DriveError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DriveListKind {
@@ -311,7 +313,7 @@ pub(super) async fn run_upload_unified_to<S: AccountStore>(
     quiet: bool,
     out: &mut impl Write,
     upload_url: Option<&str>,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let Some(folder_id) = folder.clone() else {
         let client = AuthClient::from_config(config.clone(), store, account_override)?;
@@ -369,7 +371,7 @@ pub(super) async fn run_download_unified_to<S: AccountStore>(
     output: Option<PathBuf>,
     quiet: bool,
     files_url: Option<&str>,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let options = download_options(file_id.clone(), output, files_url);
     let resource_key = resource_key("drive", &file_id);
@@ -481,7 +483,7 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
     out: &mut impl Write,
     err: &mut impl Write,
     files_url: Option<&str>,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<()> {
     let Some(parent_id) = parent.clone() else {
         let client = AuthClient::from_config(config.clone(), store, account_override)?;
@@ -620,13 +622,12 @@ async fn upload_with_drive_unified_access<S: AccountStore>(
     target_resource_key: &str,
     options: &UploadFileOptions,
     progress: &Option<ProgressBar>,
-    state_path: Option<&std::path::Path>,
-) -> std::result::Result<UploadedFile, DriveError> {
+    state_path: Option<&Path>,
+) -> DriveResult<UploadedFile> {
     let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
 
     if account_override.is_some() {
-        let account = resolve_account(config, account_override)?
-            .expect("explicit account resolution returns an account");
+        let account = resolve_account_override(config, account_override)?;
         return upload_as_account(config, store, &mut access, options, progress, account).await;
     }
 
@@ -643,9 +644,7 @@ async fn upload_with_drive_unified_access<S: AccountStore>(
         }
     }
 
-    Err(last_target_access_failure.unwrap_or_else(|| {
-        DriveError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
-    }))
+    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
 }
 
 async fn upload_as_account<S: AccountStore>(
@@ -655,7 +654,7 @@ async fn upload_as_account<S: AccountStore>(
     options: &UploadFileOptions,
     progress: &Option<ProgressBar>,
     account: String,
-) -> std::result::Result<UploadedFile, DriveError> {
+) -> DriveResult<UploadedFile> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     let uploaded = upload(&client, options, |bytes| {
         if let Some(progress) = progress {
@@ -674,13 +673,12 @@ async fn download_with_drive_unified_access<S: AccountStore>(
     target_resource_key: &str,
     options: &DownloadFileOptions,
     progress: &Option<ProgressBar>,
-    state_path: Option<&std::path::Path>,
-) -> std::result::Result<DownloadedFile, DriveError> {
+    state_path: Option<&Path>,
+) -> DriveResult<DownloadedFile> {
     let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
 
     if account_override.is_some() {
-        let account = resolve_account(config, account_override)?
-            .expect("explicit account resolution returns an account");
+        let account = resolve_account_override(config, account_override)?;
         return download_as_account(config, store, &mut access, options, progress, account).await;
     }
 
@@ -697,9 +695,7 @@ async fn download_with_drive_unified_access<S: AccountStore>(
         }
     }
 
-    Err(last_target_access_failure.unwrap_or_else(|| {
-        DriveError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
-    }))
+    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
 }
 
 async fn download_as_account<S: AccountStore>(
@@ -709,7 +705,7 @@ async fn download_as_account<S: AccountStore>(
     options: &DownloadFileOptions,
     progress: &Option<ProgressBar>,
     account: String,
-) -> std::result::Result<DownloadedFile, DriveError> {
+) -> DriveResult<DownloadedFile> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     let downloaded = download(&client, options, |bytes| {
         if let Some(progress) = progress {
@@ -734,13 +730,12 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore>(
     quiet: bool,
     err: &mut impl Write,
     files_url: Option<&str>,
-    state_path: Option<&std::path::Path>,
-) -> std::result::Result<Vec<DriveFile>, DriveError> {
+    state_path: Option<&Path>,
+) -> DriveResult<Vec<DriveFile>> {
     let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
 
     if account_override.is_some() {
-        let account = resolve_account(config, account_override)?
-            .expect("explicit account resolution returns an account");
+        let account = resolve_account_override(config, account_override)?;
         return collect_list_items_as_account(
             config,
             store,
@@ -784,9 +779,7 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore>(
         }
     }
 
-    Err(last_target_access_failure.unwrap_or_else(|| {
-        DriveError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
-    }))
+    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -802,7 +795,7 @@ async fn collect_list_items_as_account<S: AccountStore>(
     err: &mut impl Write,
     files_url: Option<&str>,
     account: String,
-) -> std::result::Result<Vec<DriveFile>, DriveError> {
+) -> DriveResult<Vec<DriveFile>> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     let files =
         collect_list_items_drive_error(&client, kind, limit, all, parent, quiet, err, files_url)
@@ -881,7 +874,7 @@ async fn collect_list_items_drive_error<S: AccountStore>(
     quiet: bool,
     err: &mut impl Write,
     files_url: Option<&str>,
-) -> std::result::Result<Vec<DriveFile>, DriveError> {
+) -> DriveResult<Vec<DriveFile>> {
     let mut remaining = requested_result_count(limit, all);
     let mut page_token = None;
     let mut total = 0_u32;
@@ -926,6 +919,18 @@ async fn collect_list_items_drive_error<S: AccountStore>(
 
 fn is_target_access_failure(err: &DriveError) -> bool {
     matches!(err, DriveError::NotFound | DriveError::PermissionDenied)
+}
+
+fn resolve_account_override(
+    config: &Config,
+    account_override: Option<&str>,
+) -> DriveResult<String> {
+    Ok(resolve_account(config, account_override)?
+        .expect("explicit account resolution returns an account"))
+}
+
+fn no_access_candidate_error() -> DriveError {
+    DriveError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
 }
 
 pub(super) fn requested_result_count(limit: Option<u32>, all: bool) -> Option<u32> {
