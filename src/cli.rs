@@ -87,6 +87,30 @@ pub enum AuthCommand {
         #[arg(long)]
         out: String,
     },
+    /// Manage remembered Resource Account Mappings
+    Mappings {
+        #[command(subcommand)]
+        command: AuthMappingsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AuthMappingsCommand {
+    /// List remembered Resource Account Mappings and their Account
+    List {
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Clear Resource Account Mappings from runtime state
+    Clear {
+        /// Google API surface to clear, such as docs. Use with --resource-id.
+        #[arg(long)]
+        surface: Option<String>,
+        /// Resource ID to clear within the Google API surface. Use with --surface.
+        #[arg(long)]
+        resource_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

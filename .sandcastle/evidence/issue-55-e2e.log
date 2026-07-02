@@ -1,0 +1,44 @@
+$ cargo run --quiet -- auth list --json
+{"email":"account-1@redacted.example","active":true}
+{"email":"account-2@redacted.example","active":false}
+{"email":"account-3@redacted.example","active":false}
+{"email":"account-4@redacted.example","active":false}
+
+$ cargo run --quiet -- auth mappings list
+No Resource Account Mappings remembered.
+
+$ cargo run --quiet -- auth mappings --help
+Manage remembered Resource Account Mappings
+
+Usage: goog auth mappings [OPTIONS] <COMMAND>
+
+Commands:
+  list   List remembered Resource Account Mappings and their Account
+  clear  Clear Resource Account Mappings from runtime state
+  help   Print this message or the help of the given subcommand(s)
+
+Options:
+      --account <ACCOUNT>  Override the active account for this invocation
+      --quiet              Suppress progress bars and informational output
+  -h, --help               Print help
+
+$ XDG_CONFIG_HOME=<temp-real-config-copy> cargo run --quiet -- auth mappings list
+SURFACE  RESOURCE ID  ACCOUNT
+docs     doc-123      account-1@redacted.example
+sheets   sheet-456    account-2@redacted.example
+
+$ XDG_CONFIG_HOME=<temp-real-config-copy> cargo run --quiet -- auth mappings list --json
+{"surface":"docs","resource_id":"doc-123","account":"account-1@redacted.example","resource_key":"docs:doc-123"}
+{"surface":"sheets","resource_id":"sheet-456","account":"account-2@redacted.example","resource_key":"sheets:sheet-456"}
+
+$ XDG_CONFIG_HOME=<temp-real-config-copy> cargo run --quiet -- auth mappings clear --surface docs --resource-id doc-123
+Cleared 1 Resource Account Mapping(s).
+
+$ XDG_CONFIG_HOME=<temp-real-config-copy> cargo run --quiet -- auth mappings list --json
+{"surface":"sheets","resource_id":"sheet-456","account":"account-2@redacted.example","resource_key":"sheets:sheet-456"}
+
+$ XDG_CONFIG_HOME=<temp-real-config-copy> cargo run --quiet -- auth mappings clear
+Cleared 1 Resource Account Mapping(s).
+
+$ XDG_CONFIG_HOME=<temp-real-config-copy> cargo run --quiet -- auth mappings list
+No Resource Account Mappings remembered.
