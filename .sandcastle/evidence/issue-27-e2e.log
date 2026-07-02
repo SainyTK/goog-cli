@@ -1,0 +1,12 @@
+Issue 27 E2E evidence (redacted)
+Date: 2026-07-02
+
+Redaction policy used because docs/agents/e2e-testing.md is absent from this repo:
+- Real email addresses redacted as <EMAIL>.
+- Message IDs redacted as <MESSAGE_ID>.
+- Attachment IDs redacted as <ATTACHMENT_ID>.
+- Attachment filenames redacted as <ATTACHMENT_FILENAME>.
+- Message/document/spreadsheet contents and tokens/secrets omitted.
+
+$ ./target/debug/goog mail search "has:attachment" --limit 10 --json
+Output: error: failed to search GoogleMail Messages: auth error: system keychain error: Platform secure storage failure: PermissionDenied
