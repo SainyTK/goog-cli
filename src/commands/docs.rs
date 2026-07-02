@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 
@@ -286,38 +287,42 @@ async fn run_with_docs_unified_access<S: AccountStore>(
     account_override: Option<&str>,
     target_resource_key: &str,
     attempt: DocsAccessAttempt<'_>,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<serde_json::Value, DocsError> {
-    let mut state = match state_path {
-        Some(path) => load_runtime_state_from_path(path),
-        None => load_runtime_state(),
-    }
-    .map_err(DocsError::Auth)?;
+    let mut state = load_docs_runtime_state(state_path)?;
 
     if account_override.is_some() {
         let account = resolve_account(config, account_override)
             .map_err(DocsError::Auth)?
             .expect("explicit account resolution returns an account");
-        let client = AuthClient::from_config(config.clone(), store, Some(&account))
-            .map_err(DocsError::Auth)?;
-        let result = attempt_docs_access(&client, &attempt).await?;
-        state.set_resource_account(target_resource_key, account);
-        save_docs_runtime_state(&state, state_path)?;
-        return Ok(result);
+        return run_docs_access_as_account(
+            config,
+            store,
+            &mut state,
+            state_path,
+            target_resource_key,
+            &attempt,
+            account,
+        )
+        .await;
     }
 
     let candidates = unified_access_candidates(config, &state, target_resource_key);
     let mut last_target_access_failure = None;
 
     for account in candidates {
-        let client = AuthClient::from_config(config.clone(), store, Some(&account))
-            .map_err(DocsError::Auth)?;
-        match attempt_docs_access(&client, &attempt).await {
-            Ok(result) => {
-                state.set_resource_account(target_resource_key, account);
-                save_docs_runtime_state(&state, state_path)?;
-                return Ok(result);
-            }
+        match run_docs_access_as_account(
+            config,
+            store,
+            &mut state,
+            state_path,
+            target_resource_key,
+            &attempt,
+            account,
+        )
+        .await
+        {
+            Ok(result) => return Ok(result),
             Err(err) if is_target_access_failure(&err) => {
                 last_target_access_failure = Some(err);
             }
@@ -330,6 +335,23 @@ async fn run_with_docs_unified_access<S: AccountStore>(
     }))
 }
 
+async fn run_docs_access_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    state: &mut RuntimeState,
+    state_path: Option<&Path>,
+    target_resource_key: &str,
+    attempt: &DocsAccessAttempt<'_>,
+    account: String,
+) -> Result<serde_json::Value, DocsError> {
+    let client =
+        AuthClient::from_config(config.clone(), store, Some(&account)).map_err(DocsError::Auth)?;
+    let result = attempt_docs_access(&client, attempt).await?;
+    state.set_resource_account(target_resource_key, account);
+    save_docs_runtime_state(state, state_path)?;
+    Ok(result)
+}
+
 async fn attempt_docs_access<S: AccountStore>(
     client: &AuthClient<'_, S>,
     attempt: &DocsAccessAttempt<'_>,
@@ -340,9 +362,17 @@ async fn attempt_docs_access<S: AccountStore>(
     }
 }
 
+fn load_docs_runtime_state(state_path: Option<&Path>) -> Result<RuntimeState, DocsError> {
+    match state_path {
+        Some(path) => load_runtime_state_from_path(path),
+        None => load_runtime_state(),
+    }
+    .map_err(DocsError::Auth)
+}
+
 fn save_docs_runtime_state(
     state: &RuntimeState,
-    state_path: Option<&std::path::Path>,
+    state_path: Option<&Path>,
 ) -> Result<(), DocsError> {
     match state_path {
         Some(path) => save_runtime_state_to_path(state, path),

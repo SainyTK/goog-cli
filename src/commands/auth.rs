@@ -5,8 +5,8 @@ use dialoguer::{Input, Password};
 
 use crate::auth::account::{AccountStore, FileAccountStore, KeyringStore};
 use crate::auth::config::{
-    config_path, load_config, resolve_account_selector, save_config, switch_active_account,
-    Config, OAuthAppConfig, OAuthAppType, SettingsConfig,
+    config_path, load_config, resolve_account_selector, save_config, switch_active_account, Config,
+    OAuthAppConfig, OAuthAppType, SettingsConfig,
 };
 use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};

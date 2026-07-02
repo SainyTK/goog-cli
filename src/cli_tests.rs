@@ -409,11 +409,7 @@ fn docs_map_with_document_id_and_json_flag() {
     let cli = parse(&["docs", "map", "document-123", "--json"]).unwrap();
     match cli.command {
         Command::Docs {
-            command:
-                DocsCommand::Map {
-                    document_id,
-                    json,
-                },
+            command: DocsCommand::Map { document_id, json },
         } => {
             assert_eq!(document_id, "document-123");
             assert!(json);
@@ -472,10 +468,7 @@ fn docs_get_content_accepts_location_selectors() {
     let by_entry = parse(&["docs", "get-content", "document-123", "--entry", "44"]).unwrap();
     match by_entry.command {
         Command::Docs {
-            command:
-                DocsCommand::GetContent {
-                    index, entry, ..
-                },
+            command: DocsCommand::GetContent { index, entry, .. },
         } => {
             assert_eq!(index, None);
             assert_eq!(entry, Some(44));

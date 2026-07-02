@@ -507,7 +507,10 @@ async fn run_values_batch_update_reads_values_from_stdin() {
     .await
     .unwrap();
 
-    assert_eq!(String::from_utf8(out).unwrap(), "{\"totalUpdatedCells\":1}\n");
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"totalUpdatedCells\":1}\n"
+    );
 }
 
 #[tokio::test]

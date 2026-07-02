@@ -459,7 +459,10 @@ fn preview(text: &str) -> String {
     if compact.chars().count() <= MAX_PREVIEW_CHARS {
         compact
     } else {
-        let mut truncated = compact.chars().take(MAX_PREVIEW_CHARS - 3).collect::<String>();
+        let mut truncated = compact
+            .chars()
+            .take(MAX_PREVIEW_CHARS - 3)
+            .collect::<String>();
         truncated.push_str("...");
         truncated
     }
