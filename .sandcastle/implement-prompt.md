@@ -24,9 +24,19 @@ Explore the repo and fill your context window with relevant information that wil
 
 Pay extra attention to test files that touch the relevant parts of the code.
 
+# E2E VERIFICATION
+
+Before writing any unit tests, verify the change by actually running the `goog` CLI against a real, already-connected Google account. Follow `docs/agents/e2e-testing.md` for which account to use, which commands are read-only vs. mutating, and the evidence/redaction rules -- do not improvise around it.
+
+1. Run the `goog` command(s) this issue touches and observe the real output, not a mocked one.
+2. If this surfaces a bug that is out of scope for this issue and too large to fix here, do not attempt it. Open a new GitHub issue describing it (`gh issue create`), comment on issue {{TASK_ID}} linking the new issue, and continue with {{TASK_ID}}'s own scope.
+3. Save every `goog` invocation and its output to `.sandcastle/evidence/issue-{{TASK_ID}}-e2e.log`.
+4. Before staging that log, scrub it per the redaction checklist in `docs/agents/e2e-testing.md`. Real email addresses, message/document/spreadsheet contents, and any token or secret must never enter git history.
+5. Commit the redacted evidence log in the same commit as the change it verifies.
+
 # EXECUTION
 
-If applicable, use RGR to complete the task.
+Once E2E verification confirms the real behavior, use RGR to build the regression test suite.
 
 1. RED: write one test
 2. GREEN: write the implementation to pass that test

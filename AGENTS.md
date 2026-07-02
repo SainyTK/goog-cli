@@ -8,8 +8,12 @@ Issues live in GitHub Issues (`gh` CLI). External PRs are not a triage surface. 
 
 Default label vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
 
-Whenever applying `ready-for-agent` to an issue, also apply the `Sandcastle` label.
+`ready-for-agent` or `bug` makes an issue eligible for the Sandcastle automation loop -- there is no separate `Sandcastle` label.
 
 ### Domain docs
 
 Single-context repo: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### End-to-end testing
+
+Sandcastle's implementer verifies real behavior against a live Google account before writing regression unit tests. See `docs/agents/e2e-testing.md`.

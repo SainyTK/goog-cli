@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use goog::{
-    auth::account::KeyringStore,
+    auth::account::resolve_account_store,
     auth::client::AuthClient,
     auth::config::{load_config, resolve_account},
     cli::{Cli, Command},
@@ -27,22 +27,22 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 .as_ref()
                 .and_then(|settings| settings.output.as_deref())
                 == Some("json");
-            let store = KeyringStore;
+            let store = resolve_account_store();
             let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
             commands::drive::run(command, &client, output_json_by_default, cli.quiet)
         }
         Command::Docs { command } => {
-            let store = KeyringStore;
+            let store = resolve_account_store();
             let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
             commands::docs::run(command, &client)
         }
         Command::Mail { command } => {
-            let store = KeyringStore;
+            let store = resolve_account_store();
             let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
             commands::mail::run(command, &client, cli.quiet)
         }
         Command::Sheets { command } => {
-            let store = KeyringStore;
+            let store = resolve_account_store();
             let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
             commands::sheets::run(command, &client)
         }

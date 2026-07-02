@@ -3,10 +3,10 @@ use std::io::Write;
 use anyhow::{Context, Result};
 use dialoguer::{Input, Password};
 
-use crate::auth::account::{AccountStore, KeyringStore};
+use crate::auth::account::{AccountStore, FileAccountStore, KeyringStore};
 use crate::auth::config::{
-    config_path, load_config, save_config, switch_active_account, Config, OAuthAppConfig,
-    OAuthAppType, SettingsConfig,
+    config_path, load_config, resolve_account_selector, save_config, switch_active_account,
+    Config, OAuthAppConfig, OAuthAppType, SettingsConfig,
 };
 use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};
@@ -54,6 +54,7 @@ pub fn run(cmd: AuthCommand, resolved_account: Option<String>) -> Result<()> {
         AuthCommand::Login { no_browser } => run_login(no_browser),
         AuthCommand::List { json } => run_list(json, resolved_account),
         AuthCommand::Switch { email } => run_switch(email),
+        AuthCommand::Export { email, out } => run_export(email.as_deref(), &out),
     }
 }
 
@@ -296,5 +297,54 @@ fn run_switch_to(email: &str, out: &mut impl std::io::Write) -> Result<()> {
     save_config(&config).context("failed to save config")?;
     writeln!(out, "Active Account switched to {active_account}")
         .context("failed to write output")?;
+    Ok(())
+}
+
+fn run_export(email: Option<&str>, out: &str) -> Result<()> {
+    run_export_to(email, out, &mut std::io::stdout())
+}
+
+fn run_export_to(email: Option<&str>, out_path: &str, out: &mut impl std::io::Write) -> Result<()> {
+    let config = load_config().context("failed to load config")?;
+
+    let emails = match email {
+        Some(selector) => vec![resolve_account_selector(&config, selector)?],
+        None => config.accounts.clone(),
+    };
+
+    if emails.is_empty() {
+        anyhow::bail!("no authorized accounts to export -- run `goog auth login` first");
+    }
+
+    let keychain = KeyringStore;
+    let mut tokens = std::collections::HashMap::new();
+    for account_email in &emails {
+        let token = keychain
+            .load_token(account_email)
+            .context("failed to read token from keychain")?
+            .ok_or_else(|| AuthError::TokenNotFound {
+                email: account_email.clone(),
+            })?;
+        tokens.insert(account_email.clone(), token);
+    }
+
+    let file_store = FileAccountStore::new(std::path::PathBuf::from(out_path));
+    file_store
+        .replace_all(&tokens)
+        .with_context(|| format!("failed to write token file to {out_path}"))?;
+
+    writeln!(
+        out,
+        "Exported {} account(s) to {out_path}: {}",
+        emails.len(),
+        emails.join(", ")
+    )
+    .context("failed to write output")?;
+    writeln!(
+        out,
+        "This file grants full access to those accounts within their authorized scopes. \
+         Keep it out of git, mount it read-only wherever it's used, and delete it when done."
+    )
+    .context("failed to write output")?;
     Ok(())
 }

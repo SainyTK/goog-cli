@@ -20,17 +20,18 @@ Do not close issues after merging. A human will test, review, and close each iss
 For each issue whose branch was merged:
 
 1. Add `need-human-review`.
-2. Remove `need-fix` if it is present.
+2. Remove `bug` if it is present.
 3. Leave the issue open.
-4. Add a short comment saying the Sandcastle implementation is ready for human review.
+4. If `.sandcastle/evidence/issue-<ID>-e2e.log` exists on that issue's branch, build its blob URL from `gh repo view --json nameWithOwner --jq .nameWithOwner` and the issue's own branch name: `https://github.com/<owner>/<repo>/blob/<branch>/.sandcastle/evidence/issue-<ID>-e2e.log`.
+5. Add a comment saying the Sandcastle implementation is ready for human review, linking the evidence log from step 4 if one exists.
 
 Use these commands:
 
 `gh issue edit <ID> --add-label "need-human-review"`
 
-`gh issue edit <ID> --remove-label "need-fix" || true`
+`gh issue edit <ID> --remove-label "bug" || true`
 
-`gh issue comment <ID> --body "Implemented by Sandcastle and ready for human review. Please test and close this issue if it passes. If it needs changes, remove need-human-review, add need-fix, and leave review comments."`
+`gh issue comment <ID> --body "Implemented by Sandcastle and ready for human review. E2E evidence: <blob-url-or-omit-if-none>. Please test and close this issue if it passes. If it needs changes, remove need-human-review, add bug, and leave review comments."`
 
 Here are all the issues:
 
