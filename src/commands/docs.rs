@@ -6,10 +6,8 @@ use anyhow::{bail, Context, Result};
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::auth::config::{resolve_account, Config};
-use crate::auth::state::{
-    load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
-    save_runtime_state_to_path, RuntimeState,
-};
+use crate::auth::state::resource_key;
+use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::DocsCommand;
 use crate::docs::{
     batch_update_document, get_document, map::build_document_map, map::search_document_text,
@@ -356,39 +354,19 @@ async fn run_with_docs_unified_access<S: AccountStore>(
     attempt: DocsAccessAttempt<'_>,
     state_path: Option<&Path>,
 ) -> Result<serde_json::Value, DocsError> {
-    let mut state = load_docs_runtime_state(state_path)?;
+    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
 
     if account_override.is_some() {
-        let account = resolve_account(config, account_override)
-            .map_err(DocsError::Auth)?
+        let account = resolve_account(config, account_override)?
             .expect("explicit account resolution returns an account");
-        return run_docs_access_as_account(
-            config,
-            store,
-            &mut state,
-            state_path,
-            target_resource_key,
-            &attempt,
-            account,
-        )
-        .await;
+        return run_docs_access_as_account(config, store, &mut access, &attempt, account).await;
     }
 
-    let candidates = unified_access_candidates(config, &state, target_resource_key);
+    let candidates = access.candidates(config);
     let mut last_target_access_failure = None;
 
     for account in candidates {
-        match run_docs_access_as_account(
-            config,
-            store,
-            &mut state,
-            state_path,
-            target_resource_key,
-            &attempt,
-            account,
-        )
-        .await
-        {
+        match run_docs_access_as_account(config, store, &mut access, &attempt, account).await {
             Ok(result) => return Ok(result),
             Err(err) if is_target_access_failure(&err) => {
                 last_target_access_failure = Some(err);
@@ -405,17 +383,13 @@ async fn run_with_docs_unified_access<S: AccountStore>(
 async fn run_docs_access_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    state: &mut RuntimeState,
-    state_path: Option<&Path>,
-    target_resource_key: &str,
+    access: &mut UnifiedAccess,
     attempt: &DocsAccessAttempt<'_>,
     account: String,
 ) -> Result<serde_json::Value, DocsError> {
-    let client =
-        AuthClient::from_config(config.clone(), store, Some(&account)).map_err(DocsError::Auth)?;
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     let result = attempt_docs_access(&client, attempt).await?;
-    state.set_resource_account(target_resource_key, account);
-    save_docs_runtime_state(state, state_path)?;
+    access.record_success(account)?;
     Ok(result)
 }
 
@@ -426,63 +400,6 @@ async fn attempt_docs_access<S: AccountStore>(
     match attempt {
         DocsAccessAttempt::Get(options) => get_document(client, options).await,
         DocsAccessAttempt::BatchUpdate(options) => batch_update_document(client, options).await,
-    }
-}
-
-fn load_docs_runtime_state(state_path: Option<&Path>) -> Result<RuntimeState, DocsError> {
-    match state_path {
-        Some(path) => load_runtime_state_from_path(path),
-        None => load_runtime_state(),
-    }
-    .map_err(DocsError::Auth)
-}
-
-fn save_docs_runtime_state(
-    state: &RuntimeState,
-    state_path: Option<&Path>,
-) -> Result<(), DocsError> {
-    match state_path {
-        Some(path) => save_runtime_state_to_path(state, path),
-        None => save_runtime_state(state),
-    }
-    .map_err(DocsError::Auth)
-}
-
-fn unified_access_candidates(
-    config: &Config,
-    state: &RuntimeState,
-    target_resource_key: &str,
-) -> Vec<String> {
-    let mut candidates = Vec::new();
-
-    if let Some(mapped) = state.account_for_resource(target_resource_key) {
-        push_if_configured(config, &mut candidates, mapped);
-    }
-
-    if let Some(active) = config.active_account() {
-        push_if_configured(config, &mut candidates, active);
-    }
-
-    for account in &config.accounts {
-        push_candidate(&mut candidates, account);
-    }
-
-    candidates
-}
-
-fn push_if_configured(config: &Config, candidates: &mut Vec<String>, account: &str) {
-    if config
-        .accounts
-        .iter()
-        .any(|configured| configured == account)
-    {
-        push_candidate(candidates, account);
-    }
-}
-
-fn push_candidate(candidates: &mut Vec<String>, account: &str) {
-    if !candidates.iter().any(|candidate| candidate == account) {
-        candidates.push(account.to_string());
     }
 }
 
