@@ -113,6 +113,20 @@ fn file_store_round_trips_a_token_by_email() {
 }
 
 #[test]
+fn file_store_login_save_reports_prompt_free_access_guaranteed() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = FileAccountStore::new(dir.path().join("tokens.json"));
+    let token = sample_token();
+
+    let outcome = store
+        .save_token_for_login("alice@example.com", &token)
+        .unwrap();
+
+    assert!(outcome.prompt_free_access_is_guaranteed());
+    assert_eq!(store.load_token("alice@example.com").unwrap(), Some(token));
+}
+
+#[test]
 fn file_store_returns_none_when_file_is_missing() {
     let dir = tempfile::tempdir().unwrap();
     let store = FileAccountStore::new(dir.path().join("does-not-exist.json"));

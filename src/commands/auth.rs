@@ -3,7 +3,7 @@ use std::io::Write;
 use anyhow::{Context, Result};
 use dialoguer::{Input, Password};
 
-use crate::auth::account::{AccountStore, FileAccountStore, KeyringStore};
+use crate::auth::account::{AccountStore, FileAccountStore, KeyringStore, TokenSaveOutcome};
 use crate::auth::config::{
     config_path, load_config, resolve_account_selector, save_config, switch_active_account, Config,
     OAuthAppConfig, OAuthAppType, SettingsConfig,
@@ -140,20 +140,31 @@ fn run_login(no_browser: bool) -> Result<()> {
         .ok_or(AuthError::OAuthAppNotConfigured)?;
 
     let store = KeyringStore;
-    let email = perform_login(&oauth_app, &store, no_browser)?;
+    let login = perform_login(&oauth_app, &store, no_browser)?;
 
-    add_account_to_config(&mut config, &email);
+    add_account_to_config(&mut config, &login.email);
     save_config(&config).context("failed to save config")?;
 
-    println!("Authorized as {email}");
+    write_login_completion_to(
+        &login.email,
+        &login.token_save,
+        &mut std::io::stdout(),
+        &mut std::io::stderr(),
+    )?;
     Ok(())
+}
+
+#[derive(Debug)]
+pub(super) struct LoginOutcome {
+    email: String,
+    token_save: TokenSaveOutcome,
 }
 
 fn perform_login(
     oauth_app: &OAuthAppConfig,
     store: &impl AccountStore,
     no_browser: bool,
-) -> Result<String> {
+) -> Result<LoginOutcome> {
     if no_browser {
         return perform_device_login(oauth_app, store);
     }
@@ -161,7 +172,10 @@ fn perform_login(
     perform_loopback_login(oauth_app, store)
 }
 
-fn perform_loopback_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore) -> Result<String> {
+fn perform_loopback_login(
+    oauth_app: &OAuthAppConfig,
+    store: &impl AccountStore,
+) -> Result<LoginOutcome> {
     let server = LoopbackServer::bind().context("failed to bind loopback server")?;
     let redirect_uri = server.redirect_uri();
     let state = random_state();
@@ -197,16 +211,16 @@ fn perform_loopback_login(oauth_app: &OAuthAppConfig, store: &impl AccountStore)
         Ok::<_, AuthError>((token, email))
     })?;
 
-    store
-        .save_token(&email, &token)
+    let token_save = store
+        .save_token_for_login(&email, &token)
         .context("failed to save token to keychain")?;
-    Ok(email)
+    Ok(LoginOutcome { email, token_save })
 }
 
 pub(super) fn perform_device_login(
     oauth_app: &OAuthAppConfig,
     store: &impl AccountStore,
-) -> Result<String> {
+) -> Result<LoginOutcome> {
     require_device_oauth_app(oauth_app)?;
 
     let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -236,10 +250,31 @@ pub(super) fn perform_device_login(
         Ok::<_, AuthError>((token, email))
     })?;
 
-    store
-        .save_token(&email, &token)
+    let token_save = store
+        .save_token_for_login(&email, &token)
         .context("failed to save token to keychain")?;
-    Ok(email)
+    Ok(LoginOutcome { email, token_save })
+}
+
+pub(super) fn write_login_completion_to(
+    email: &str,
+    token_save: &TokenSaveOutcome,
+    out: &mut impl std::io::Write,
+    err: &mut impl std::io::Write,
+) -> Result<()> {
+    if !token_save.prompt_free_access_is_guaranteed() {
+        writeln!(
+            err,
+            "Warning: saved Token, but goog could not guarantee prompt-free Keychain access. \
+You may still see Keychain Access Prompts from macOS when goog reads this Token; these are \
+separate from Google browser consent prompts for new Scopes. To repair local Keychain access, \
+rerun `goog auth login` for this Account."
+        )
+        .context("failed to write keychain warning")?;
+    }
+
+    writeln!(out, "Authorized as {email}").context("failed to write output")?;
+    Ok(())
 }
 
 fn require_device_oauth_app(oauth_app: &OAuthAppConfig) -> Result<()> {
