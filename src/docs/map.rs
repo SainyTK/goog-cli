@@ -133,7 +133,7 @@ impl DocumentMapBuilder {
     fn push_paragraph(&mut self, element: &Value, paragraph: &Value) {
         let text = paragraph_text(paragraph);
         let trimmed_text = text.trim();
-        let has_inline_image = paragraph_has_inline_image(paragraph);
+        let inline_image_indexes = paragraph_inline_image_indexes(paragraph);
         let positioned_count = paragraph_positioned_object_count(paragraph);
         let style = paragraph_style(paragraph);
         let is_heading = style.as_deref().map_or(false, is_heading_style);
@@ -156,16 +156,23 @@ impl DocumentMapBuilder {
                 });
             }
             self.push_entry(location, kind, style.clone(), preview);
-        } else if has_inline_image || positioned_count > 0 {
+        } else if !inline_image_indexes.is_empty() || positioned_count > 0 {
             self.push_content_line();
         }
 
-        if has_inline_image {
+        for (image_index, location_index) in inline_image_indexes.iter().enumerate() {
+            let preview = if inline_image_indexes.len() == 1 {
+                "[inline image]".into()
+            } else {
+                format!("[inline image {}]", image_index + 1)
+            };
+            let mut location = self.current_location(element);
+            location.index = *location_index;
             self.push_entry(
-                self.current_location(element),
+                location,
                 DocumentMapEntryKind::InlineImage,
                 style.clone(),
-                "[inline image]".into(),
+                preview,
             );
         }
 
@@ -365,13 +372,15 @@ fn paragraph_style(paragraph: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-fn paragraph_has_inline_image(paragraph: &Value) -> bool {
+fn paragraph_inline_image_indexes(paragraph: &Value) -> Vec<Option<i64>> {
     paragraph
         .get("elements")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .any(|element| element.get("inlineObjectElement").is_some())
+        .filter(|element| element.get("inlineObjectElement").is_some())
+        .map(|element| element.get("startIndex").and_then(Value::as_i64))
+        .collect()
 }
 
 fn paragraph_positioned_object_count(paragraph: &Value) -> usize {
