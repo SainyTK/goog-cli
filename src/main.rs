@@ -48,8 +48,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Sheets { command } => {
             let store = resolve_account_store();
-            let client = AuthClient::from_config(config, &store, resolved_account.as_deref())?;
-            commands::sheets::run(command, &client)
+            commands::sheets::run(command, &config, &store, cli.account.as_deref())
         }
     }
 }
