@@ -8,6 +8,8 @@ Only work on the issue specified.
 
 Work on branch {{BRANCH}}. Make commits and run tests.
 
+This branch may already exist from a previous run and be stale relative to `{{TARGET_BRANCH}}` -- it won't have picked up any infra, dependency, or doc changes merged since. Before doing anything else, sync it: `git merge {{TARGET_BRANCH}} --no-edit`. If there are conflicts, resolve them by reading both sides and keeping the intent of each; if the merge is a no-op, that's fine too.
+
 # CONTEXT
 
 Here are the last 10 commits:
