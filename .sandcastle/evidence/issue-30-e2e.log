@@ -1,0 +1,53 @@
+Issue 30 E2E evidence, redacted
+Result: PARTIAL
+
+Test setup:
+- Accounts used: active configured account [own-account-redacted].
+- Fixture intended: native Google Spreadsheet named goog-e2e-issue-30-values-write, created during this run.
+- Skipped fixture: native Spreadsheet creation was unavailable because the sandbox could not read/export the account token from keychain and no .sandcastle/secrets/token.json was mounted.
+
+Local checks:
+$ cargo build
+Expected: build the debug goog binary used for live checks.
+Observed: dev build completed successfully.
+Result: PASS.
+
+$ cargo test commands::sheets_tests -- --nocapture
+Expected: mocked command-runner coverage for Sheets update/append URL shape, query parameters, body passthrough, write scope, JSON stdout, invalid JSON, and API errors.
+Observed: 30 commands::sheets_tests passed, 0 failed.
+Result: PASS.
+
+Live checks:
+$ ./target/debug/goog auth list
+Expected: confirm the sandbox can see configured accounts.
+Observed: listed configured accounts; active account was present. Account emails redacted.
+Result: PASS.
+
+$ ./target/debug/goog sheets values update --help
+Expected: help exposes --values, --value-input-option raw|user-entered, and the SPREADSHEET_ID/RANGE arguments.
+Observed: help showed the expected update command shape and options.
+Result: PASS.
+
+$ ./target/debug/goog sheets values append --help
+Expected: help exposes --values, --value-input-option raw|user-entered, --insert-data-option insert-rows|overwrite, and the SPREADSHEET_ID/RANGE arguments.
+Observed: help showed the expected append command shape and options.
+Result: PASS.
+
+$ ./target/debug/goog auth export [own-account-redacted] --out /tmp/goog-token.[redacted].json
+Expected: export a temporary token file so this run could create a native scratch Spreadsheet through the Google Sheets API, then run mutating goog commands only against that new Spreadsheet ID.
+Observed: failed before writing a usable token: system keychain error: Platform secure storage failure: PermissionDenied.
+Result: FAIL.
+
+$ ./target/debug/goog sheets values update dummy-spreadsheet-id "Sheet1!A1" --values -
+stdin: {"values":[["probe"]]}
+Expected: in the absence of an exported token, confirm whether the active account already had Sheets write consent available to execute the live write command.
+Observed: command opened an additional Google consent URL for the spreadsheets write scope. The URL, OAuth client id, redirect port, and state are redacted. The command was interrupted before authorization completed and before any mutation could occur.
+Result: FAIL.
+
+Reviewer notes:
+- No live Spreadsheet was mutated in this run.
+- To reproduce the live acceptance path, mount .sandcastle/secrets/token.json and .sandcastle/secrets/config.toml as described in docs/agents/e2e-testing.md, or run the commands below outside the sandbox with an account that has Sheets write consent.
+- Create a native scratch Spreadsheet named goog-e2e-issue-30-values-write during the test run, then run:
+  printf '{"range":"Mismatched!A1:B1","values":[["issue-30",30]]}' | goog sheets values update "$SPREADSHEET_ID" "Sheet1!A1:B1" --values - --value-input-option user-entered
+  printf '{"values":[["append",31]]}' | goog sheets values append "$SPREADSHEET_ID" "Sheet1!A:B" --values - --value-input-option raw --insert-data-option overwrite
+- Redact account emails, OAuth URLs, tokens, secrets, and any non-scratch Spreadsheet contents before sharing live output.
