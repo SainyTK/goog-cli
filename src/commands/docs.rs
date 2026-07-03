@@ -1771,6 +1771,30 @@ struct DocsHighLevelChange {
 struct DocsChangePreview {
     command: String,
     summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    after: Option<String>,
+}
+
+impl DocsChangePreview {
+    fn new(command: &str, summary: String) -> Self {
+        Self {
+            command: command.into(),
+            summary,
+            before: None,
+            after: None,
+        }
+    }
+
+    fn with_context(command: &str, summary: String, before: String, after: String) -> Self {
+        Self {
+            command: command.into(),
+            summary,
+            before: Some(before),
+            after: Some(after),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1844,18 +1868,25 @@ fn prepare_insert_image_change(
         })],
         command.required_revision_id.as_deref(),
     );
+    let preview_after = insert_preview_text(
+        &resolved.preview_before,
+        resolved.preview_offset,
+        "[inline image]",
+    );
     Ok(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
         location: Some(resolved.location),
         range: None,
         request_body,
-        preview: DocsChangePreview {
-            command: "insert-image".into(),
-            summary: format!(
+        preview: DocsChangePreview::with_context(
+            "insert-image",
+            format!(
                 "Insert inline image at index {index} from {}",
                 command.image_uri
             ),
-        },
+            resolved.preview_before,
+            preview_after,
+        ),
     })
 }
 
@@ -1885,13 +1916,13 @@ fn prepare_insert_table_change(
         location: Some(resolved.location),
         range: None,
         request_body,
-        preview: DocsChangePreview {
-            command: "insert-table".into(),
-            summary: format!(
+        preview: DocsChangePreview::new(
+            "insert-table",
+            format!(
                 "Insert {}x{} table at index {index}",
                 command.rows, command.columns
             ),
-        },
+        ),
     })
 }
 
@@ -1929,13 +1960,13 @@ fn prepare_edit_table_change(
         location: Some(table.location.clone()),
         range: None,
         request_body,
-        preview: DocsChangePreview {
-            command: "edit-table".into(),
-            summary: format!(
+        preview: DocsChangePreview::new(
+            "edit-table",
+            format!(
                 "Replace {} with {}x{} table data",
                 command.table_id, rows, columns
             ),
-        },
+        ),
     })
 }
 
@@ -2002,13 +2033,13 @@ fn prepare_apply_styles_change(
         location: None,
         range: Some(range.clone()),
         request_body,
-        preview: DocsChangePreview {
-            command: "apply-styles".into(),
-            summary: format!(
+        preview: DocsChangePreview::new(
+            "apply-styles",
+            format!(
                 "Apply styles to range {}..{}",
                 range.start_index, range.end_index
             ),
-        },
+        ),
     })
 }
 
@@ -2039,13 +2070,13 @@ fn prepare_apply_list_change(
         location: None,
         range: Some(range.clone()),
         request_body,
-        preview: DocsChangePreview {
-            command: "apply-list".into(),
-            summary: format!(
+        preview: DocsChangePreview::new(
+            "apply-list",
+            format!(
                 "Apply list preset to range {}..{}",
                 range.start_index, range.end_index
             ),
-        },
+        ),
     })
 }
 
@@ -2675,6 +2706,12 @@ fn write_docs_change_preview(
             change.preview.command, change.preview.summary
         )
         .context("failed to write Docs dry-run preview")?;
+        if let (Some(before), Some(after)) = (&change.preview.before, &change.preview.after) {
+            writeln!(out, "Before: {before}")
+                .context("failed to write Docs dry-run before preview")?;
+            writeln!(out, "After: {after}")
+                .context("failed to write Docs dry-run after preview")?;
+        }
         Ok(())
     }
 }
@@ -2800,30 +2837,32 @@ fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) ->
 fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntry]) -> Result<()> {
     writeln!(
         out,
-        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<18} {:<15} Preview",
-        "Entry", "Index", "Page", "Line", "Kind", "Object", "Size", "Style", "Confidence"
+        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<10} {:<18} {:<15} Preview",
+        "Entry", "Index", "Page", "Line", "Kind", "Handle", "Object", "Size", "Style", "Confidence"
     )
     .context("failed to write Docs Document Map header")?;
 
     for entry in entries {
         let style = entry.style.as_deref().unwrap_or("-");
-        let object = entry
-            .object_id
+        let handle = entry
+            .image_handle
             .as_deref()
             .or(entry.table_handle.as_deref())
             .unwrap_or("-");
+        let object = entry.object_id.as_deref().unwrap_or("-");
         let size = match (entry.rows, entry.columns) {
             (Some(rows), Some(columns)) => format!("{rows}x{columns}"),
             _ => "-".into(),
         };
         writeln!(
             out,
-            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<18} {:<15} {}",
+            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<10} {:<18} {:<15} {}",
             entry.entry,
             display_optional(entry.location.index),
             display_optional(entry.location.page),
             entry.location.content_line,
             format!("{:?}", entry.kind),
+            handle,
             object,
             size,
             style,
