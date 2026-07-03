@@ -17,3 +17,5 @@ Single-context repo: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/
 ### End-to-end testing
 
 Sandcastle's implementer verifies real behavior against a live Google account before writing regression unit tests. See `docs/agents/e2e-testing.md`.
+
+Real Document/Spreadsheet/Drive/message IDs and URLs discovered during that live verification are for local, throwaway use only -- never commit them into unit test source. Use a placeholder ID instead once the test is written. See `docs/agents/e2e-testing.md`.

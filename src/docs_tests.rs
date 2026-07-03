@@ -516,18 +516,16 @@ async fn batch_update_reports_office_file_precondition_clearly() {
 #[test]
 fn extract_document_id_passes_through_a_bare_document_id() {
     assert_eq!(
-        extract_document_id("1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"),
-        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+        extract_document_id("placeholder-document-id"),
+        "placeholder-document-id"
     );
 }
 
 #[test]
 fn extract_document_id_extracts_id_from_docs_edit_url() {
     assert_eq!(
-        extract_document_id(
-            "https://docs.google.com/document/d/1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa/edit"
-        ),
-        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+        extract_document_id("https://docs.google.com/document/d/placeholder-document-id/edit"),
+        "placeholder-document-id"
     );
 }
 
@@ -535,34 +533,32 @@ fn extract_document_id_extracts_id_from_docs_edit_url() {
 fn extract_document_id_extracts_id_from_docs_edit_url_with_query_and_fragment() {
     assert_eq!(
         extract_document_id(
-            "https://docs.google.com/document/d/1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa/edit?tab=t.0#heading=h.abc"
+            "https://docs.google.com/document/d/placeholder-document-id/edit?tab=t.0#heading=h.abc"
         ),
-        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+        "placeholder-document-id"
     );
 }
 
 #[test]
 fn extract_document_id_extracts_id_from_drive_file_url() {
     assert_eq!(
-        extract_document_id(
-            "https://drive.google.com/file/d/1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa/view"
-        ),
-        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+        extract_document_id("https://drive.google.com/file/d/placeholder-document-id/view"),
+        "placeholder-document-id"
     );
 }
 
 #[test]
 fn extract_document_id_extracts_id_from_drive_open_query_param() {
     assert_eq!(
-        extract_document_id("https://drive.google.com/open?id=1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"),
-        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+        extract_document_id("https://drive.google.com/open?id=placeholder-document-id"),
+        "placeholder-document-id"
     );
 }
 
 #[test]
 fn extract_document_id_trims_surrounding_whitespace() {
     assert_eq!(
-        extract_document_id("  1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa  "),
-        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+        extract_document_id("  placeholder-document-id  "),
+        "placeholder-document-id"
     );
 }

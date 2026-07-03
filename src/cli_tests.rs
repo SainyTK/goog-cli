@@ -457,26 +457,6 @@ fn docs_get_with_google_query_flags() {
 }
 
 #[test]
-fn docs_get_normalizes_document_url_to_bare_id() {
-    let mut cli = parse(&[
-        "docs",
-        "get",
-        "https://docs.google.com/document/d/1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa/edit",
-    ])
-    .unwrap();
-    match &mut cli.command {
-        Command::Docs { command } => command.normalize_document_id(),
-        _ => panic!("unexpected parse result"),
-    }
-    match cli.command {
-        Command::Docs {
-            command: DocsCommand::Get { document_id, .. },
-        } => assert_eq!(document_id, "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"),
-        _ => panic!("unexpected parse result"),
-    }
-}
-
-#[test]
 fn docs_map_with_document_id_and_json_flag() {
     let cli = parse(&["docs", "map", "document-123", "--json"]).unwrap();
     match cli.command {

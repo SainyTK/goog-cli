@@ -232,8 +232,7 @@ async fn search_messages_treats_null_messages_as_empty_results() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = ListMessagesOptions::search("เหรีย", 10)
-        .with_messages_url(messages_url(&server));
+    let options = ListMessagesOptions::search("เหรีย", 10).with_messages_url(messages_url(&server));
 
     let summaries = list_messages(&client, &options).await.unwrap();
 
