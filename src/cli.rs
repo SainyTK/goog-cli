@@ -294,6 +294,214 @@ pub enum DocsCommand {
         #[arg(long)]
         required_revision_id: Option<String>,
     },
+    /// List image-like objects through the Document Map
+    ListImages {
+        /// Google Docs Document ID to inspect
+        document_id: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List tables through the Document Map
+    ListTables {
+        /// Google Docs Document ID to inspect
+        document_id: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Insert an Inline Image through a high-level Document Map location selector
+    InsertImage {
+        /// Google Docs Document ID to update
+        document_id: String,
+        /// Publicly reachable image URI for Google Docs insertInlineImage
+        image_uri: String,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Insert a table through a high-level Document Map location selector
+    InsertTable {
+        /// Google Docs Document ID to update
+        document_id: String,
+        /// Number of table rows
+        #[arg(long)]
+        rows: usize,
+        /// Number of table columns
+        #[arg(long)]
+        columns: usize,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Replace table cell text from CSV or TSV data
+    EditTable {
+        /// Google Docs Document ID to update
+        document_id: String,
+        /// Table handle from list-tables, such as table-3
+        #[arg(long)]
+        table_id: String,
+        /// CSV or TSV data file with replacement cell text
+        #[arg(long)]
+        data: String,
+        /// Allow future structural table resizing
+        #[arg(long)]
+        resize: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Apply common text styles through a high-level Document Range
+    ApplyStyles {
+        /// Google Docs Document ID to update
+        document_id: String,
+        /// Raw Google Docs UTF-16 range start
+        #[arg(long)]
+        from_index: Option<i64>,
+        /// Raw Google Docs UTF-16 range end
+        #[arg(long)]
+        to_index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Matched text span to style
+        #[arg(long)]
+        text: Option<String>,
+        /// Style the Nth text match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
+        /// Apply bold text style
+        #[arg(long)]
+        bold: bool,
+        /// Apply italic text style
+        #[arg(long)]
+        italic: bool,
+        /// Font size in points
+        #[arg(long)]
+        font_size: Option<f64>,
+        /// Foreground color as #RRGGBB
+        #[arg(long)]
+        foreground_color: Option<String>,
+        /// Named paragraph style such as HEADING_1
+        #[arg(long)]
+        heading: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Apply a common list preset through a high-level Document Range
+    ApplyList {
+        /// Google Docs Document ID to update
+        document_id: String,
+        /// Raw Google Docs UTF-16 range start
+        #[arg(long)]
+        from_index: Option<i64>,
+        /// Raw Google Docs UTF-16 range end
+        #[arg(long)]
+        to_index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// List type shorthand
+        #[arg(long = "type", value_enum)]
+        list_type: Option<DocsListType>,
+        /// Raw Google Docs bullet preset
+        #[arg(long)]
+        preset: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
     /// Fetch a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.
@@ -355,6 +563,14 @@ Example:
         #[arg(long)]
         requests: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsListType {
+    Bullet,
+    Numbered,
+    Dash,
+    Checkbox,
 }
 
 #[derive(Debug, Subcommand)]

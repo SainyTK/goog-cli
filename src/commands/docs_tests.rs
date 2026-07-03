@@ -939,6 +939,271 @@ async fn run_replace_text_rejects_ambiguous_match_with_candidates() {
 }
 
 #[tokio::test]
+async fn run_list_images_and_tables_emit_document_map_metadata() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(long_document_with_toc_and_objects()),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut images = Vec::new();
+    run_list_images_to(
+        &client,
+        "document-123".into(),
+        true,
+        &mut images,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let images: serde_json::Value = serde_json::from_slice(&images).unwrap();
+    assert_eq!(images.as_array().unwrap().len(), 2);
+    assert_eq!(images[0]["kind"], "inline-image");
+    assert_eq!(images[0]["objectId"], "inline-image-1");
+    assert_eq!(images[1]["kind"], "positioned-image");
+    assert_eq!(images[1]["objectId"], "positioned-image-1");
+
+    let mut tables = Vec::new();
+    run_list_tables_to(
+        &client,
+        "document-123".into(),
+        true,
+        &mut tables,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let tables: serde_json::Value = serde_json::from_slice(&tables).unwrap();
+    assert_eq!(tables.as_array().unwrap().len(), 1);
+    assert_eq!(tables[0]["kind"], "table");
+    assert_eq!(tables[0]["tableHandle"], "table-1");
+    assert_eq!(tables[0]["rows"], 1);
+    assert_eq!(tables[0]["columns"], 2);
+    assert_eq!(tables[0]["preview"], "หัวข้อ | สถานะ");
+}
+
+#[tokio::test]
+async fn run_insert_image_and_table_dry_run_emit_native_requests() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut image = Vec::new();
+    run_insert_image_to(
+        &client,
+        InsertImageCommand {
+            document_id: "document-123".into(),
+            image_uri: "https://example.test/image.png".into(),
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut image,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let image: serde_json::Value = serde_json::from_slice(&image).unwrap();
+    assert_eq!(image["location"]["index"], 37);
+    assert_eq!(
+        image["requestBody"]["requests"][0]["insertInlineImage"]["location"]["index"],
+        37
+    );
+    assert_eq!(
+        image["requestBody"]["requests"][0]["insertInlineImage"]["uri"],
+        "https://example.test/image.png"
+    );
+    assert_eq!(
+        image["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+
+    let mut table = Vec::new();
+    run_insert_table_to(
+        &client,
+        InsertTableCommand {
+            document_id: "document-123".into(),
+            rows: 2,
+            columns: 3,
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut table,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let table: serde_json::Value = serde_json::from_slice(&table).unwrap();
+    assert_eq!(
+        table["requestBody"]["requests"][0]["insertTable"]["location"]["index"],
+        44
+    );
+    assert_eq!(
+        table["requestBody"]["requests"][0]["insertTable"]["rows"],
+        2
+    );
+    assert_eq!(
+        table["requestBody"]["requests"][0]["insertTable"]["columns"],
+        3
+    );
+}
+
+#[tokio::test]
+async fn run_edit_table_dry_run_replaces_cells_from_document_end() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_table_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("table.csv");
+    std::fs::write(&data_path, "New A,New B\nNew C,New D\n").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_edit_table_to(
+        &client,
+        EditTableCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            data: data_path.to_string_lossy().into_owned(),
+            resize: false,
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-table".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["location"]["index"], 1);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["deleteContentRange"]["range"]["startIndex"],
+        31
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["location"]["index"],
+        31
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["text"],
+        "New D"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-table"
+    );
+}
+
+#[tokio::test]
+async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut styles = Vec::new();
+    run_apply_styles_to(
+        &client,
+        ApplyStylesCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Text {
+                text: "matching text".into(),
+                match_number: None,
+            },
+            bold: true,
+            italic: true,
+            font_size: Some(14.0),
+            foreground_color: Some("#336699".into()),
+            heading: Some("HEADING_2".into()),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut styles,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let styles: serde_json::Value = serde_json::from_slice(&styles).unwrap();
+    assert_eq!(styles["range"]["startIndex"], 17);
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateTextStyle"]["fields"],
+        "bold,italic,fontSize,foregroundColor"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateParagraphStyle"]["paragraphStyle"]
+            ["namedStyleType"],
+        "HEADING_2"
+    );
+    assert_eq!(
+        styles["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+
+    let mut list = Vec::new();
+    run_apply_list_to(
+        &client,
+        ApplyListCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Entry(2),
+            list_type: Some(crate::cli::DocsListType::Checkbox),
+            preset: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut list,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let list: serde_json::Value = serde_json::from_slice(&list).unwrap();
+    assert_eq!(
+        list["requestBody"]["requests"][0]["createParagraphBullets"]["bulletPreset"],
+        "BULLET_CHECKBOX"
+    );
+    assert_eq!(
+        list["requestBody"]["requests"][0]["createParagraphBullets"]["range"]["startIndex"],
+        14
+    );
+}
+
+#[tokio::test]
 async fn run_batch_update_reads_requests_from_file_and_prints_response_json() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
@@ -1789,6 +2054,94 @@ fn ambiguous_heading_document() -> serde_json::Value {
                                 "startIndex": 11,
                                 "endIndex": 20,
                                 "textRun": { "content": "Overview\n" }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    })
+}
+
+fn editable_table_document() -> serde_json::Value {
+    serde_json::json!({
+        "documentId": "document-123",
+        "title": "Editable table",
+        "revisionId": "rev-table",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 40,
+                    "table": {
+                        "tableRows": [
+                            {
+                                "tableCells": [
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [
+                                                        {
+                                                            "startIndex": 5,
+                                                            "endIndex": 11,
+                                                            "textRun": { "content": "Old A\n" }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [
+                                                        {
+                                                            "startIndex": 13,
+                                                            "endIndex": 19,
+                                                            "textRun": { "content": "Old B\n" }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "tableCells": [
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [
+                                                        {
+                                                            "startIndex": 23,
+                                                            "endIndex": 29,
+                                                            "textRun": { "content": "Old C\n" }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [
+                                                        {
+                                                            "startIndex": 31,
+                                                            "endIndex": 37,
+                                                            "textRun": { "content": "Old D\n" }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
                             }
                         ]
                     }

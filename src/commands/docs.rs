@@ -9,7 +9,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::{resolve_account, Config};
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::UnifiedAccess;
-use crate::cli::DocsCommand;
+use crate::cli::{DocsCommand, DocsListType};
 use crate::docs::{
     batch_update_document, get_document, map::build_document_map, map::search_document_text,
     map::DocumentLocation, map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind,
@@ -156,6 +156,230 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DocsCommand::ListImages { document_id, json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_list_images_unified_to(
+                config,
+                store,
+                account_override,
+                document_id,
+                json,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::ListTables { document_id, json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_list_tables_unified_to(
+                config,
+                store,
+                account_override,
+                document_id,
+                json,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::InsertImage {
+            document_id,
+            image_uri,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_insert_image_unified_to(
+                config,
+                store,
+                account_override,
+                InsertImageCommand {
+                    document_id,
+                    image_uri,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::InsertTable {
+            document_id,
+            rows,
+            columns,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_insert_table_unified_to(
+                config,
+                store,
+                account_override,
+                InsertTableCommand {
+                    document_id,
+                    rows,
+                    columns,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::EditTable {
+            document_id,
+            table_id,
+            data,
+            resize,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_edit_table_unified_to(
+                config,
+                store,
+                account_override,
+                EditTableCommand {
+                    document_id,
+                    table_id,
+                    data,
+                    resize,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::ApplyStyles {
+            document_id,
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            text,
+            match_number,
+            bold,
+            italic,
+            font_size,
+            foreground_color,
+            heading,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector =
+                range_selector(from_index, to_index, entry, page, line, text, match_number)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_apply_styles_unified_to(
+                config,
+                store,
+                account_override,
+                ApplyStylesCommand {
+                    document_id,
+                    selector,
+                    bold,
+                    italic,
+                    font_size,
+                    foreground_color,
+                    heading,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::ApplyList {
+            document_id,
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            list_type,
+            preset,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = range_selector(from_index, to_index, entry, page, line, None, None)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_apply_list_unified_to(
+                config,
+                store,
+                account_override,
+                ApplyListCommand {
+                    document_id,
+                    selector,
+                    list_type,
+                    preset,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
         DocsCommand::Get {
             document_id,
             fields,
@@ -270,6 +494,80 @@ pub(super) struct ReplaceTextCommand {
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct InsertImageCommand {
+    pub document_id: String,
+    pub image_uri: String,
+    pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct InsertTableCommand {
+    pub document_id: String,
+    pub rows: usize,
+    pub columns: usize,
+    pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct EditTableCommand {
+    pub document_id: String,
+    pub table_id: String,
+    pub data: String,
+    pub resize: bool,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct ApplyStylesCommand {
+    pub document_id: String,
+    pub selector: RangeSelector,
+    pub bold: bool,
+    pub italic: bool,
+    pub font_size: Option<f64>,
+    pub foreground_color: Option<String>,
+    pub heading: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ApplyListCommand {
+    pub document_id: String,
+    pub selector: RangeSelector,
+    pub list_type: Option<DocsListType>,
+    pub preset: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum RangeSelector {
+    IndexRange {
+        start_index: i64,
+        end_index: i64,
+    },
+    Entry(usize),
+    PageLine {
+        page: usize,
+        line: usize,
+    },
+    Text {
+        text: String,
+        match_number: Option<usize>,
+    },
 }
 
 #[cfg(test)]
@@ -490,6 +788,375 @@ pub(super) async fn run_replace_text_unified_to<S: AccountStore>(
             "failed to serialize Docs replace-text response",
         )
     }
+}
+
+#[cfg(test)]
+pub(super) async fn run_list_images_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, document_id, documents_url).await?;
+    write_filtered_entries(
+        out,
+        &document_map,
+        &[
+            DocumentMapEntryKind::InlineImage,
+            DocumentMapEntryKind::PositionedImage,
+        ],
+        json,
+    )
+}
+
+pub(super) async fn run_list_images_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    write_filtered_entries(
+        out,
+        &document_map,
+        &[
+            DocumentMapEntryKind::InlineImage,
+            DocumentMapEntryKind::PositionedImage,
+        ],
+        json,
+    )
+}
+
+#[cfg(test)]
+pub(super) async fn run_list_tables_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, document_id, documents_url).await?;
+    write_filtered_entries(out, &document_map, &[DocumentMapEntryKind::Table], json)
+}
+
+pub(super) async fn run_list_tables_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    write_filtered_entries(out, &document_map, &[DocumentMapEntryKind::Table], json)
+}
+
+#[cfg(test)]
+pub(super) async fn run_insert_image_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: InsertImageCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_insert_image_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "insert-image",
+    )
+    .await
+}
+
+pub(super) async fn run_insert_image_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: InsertImageCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_insert_image_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "insert-image",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_insert_table_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: InsertTableCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_insert_table_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "insert-table",
+    )
+    .await
+}
+
+pub(super) async fn run_insert_table_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: InsertTableCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_insert_table_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "insert-table",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_edit_table_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: EditTableCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_edit_table_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "edit-table",
+    )
+    .await
+}
+
+pub(super) async fn run_edit_table_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: EditTableCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_edit_table_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "edit-table",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_apply_styles_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: ApplyStylesCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_apply_styles_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "apply-styles",
+    )
+    .await
+}
+
+pub(super) async fn run_apply_styles_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: ApplyStylesCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_apply_styles_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "apply-styles",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_apply_list_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: ApplyListCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_apply_list_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "apply-list",
+    )
+    .await
+}
+
+pub(super) async fn run_apply_list_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: ApplyListCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_apply_list_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "apply-list",
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -807,6 +1474,55 @@ fn insert_text_selector(
     unreachable!("selector count checked above")
 }
 
+fn range_selector(
+    from_index: Option<i64>,
+    to_index: Option<i64>,
+    entry: Option<usize>,
+    page: Option<usize>,
+    line: Option<usize>,
+    text: Option<String>,
+    match_number: Option<usize>,
+) -> Result<RangeSelector> {
+    let selector_count = usize::from(from_index.is_some() || to_index.is_some())
+        + usize::from(entry.is_some())
+        + usize::from(page.is_some() || line.is_some())
+        + usize::from(text.is_some() || match_number.is_some());
+    if selector_count != 1 {
+        bail!("provide exactly one range selector: --from-index with --to-index, --entry, --page with --line, or --text with optional --match");
+    }
+    if from_index.is_some() || to_index.is_some() {
+        let Some(start_index) = from_index else {
+            bail!("--from-index and --to-index must be provided together");
+        };
+        let Some(end_index) = to_index else {
+            bail!("--from-index and --to-index must be provided together");
+        };
+        if end_index <= start_index {
+            bail!("--to-index must be greater than --from-index");
+        }
+        return Ok(RangeSelector::IndexRange {
+            start_index,
+            end_index,
+        });
+    }
+    if let Some(entry) = entry {
+        return Ok(RangeSelector::Entry(entry));
+    }
+    if page.is_some() || line.is_some() {
+        let Some(page) = page else {
+            bail!("--page and --line must be provided together");
+        };
+        let Some(line) = line else {
+            bail!("--page and --line must be provided together");
+        };
+        return Ok(RangeSelector::PageLine { page, line });
+    }
+    let Some(text) = text else {
+        bail!("--text is required when using --match");
+    };
+    Ok(RangeSelector::Text { text, match_number })
+}
+
 fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry) -> DocumentMap {
     DocumentMap {
         document_id: document_map.document_id.clone(),
@@ -848,6 +1564,117 @@ fn resolve_content_entry<'a>(
             .with_context(|| format!("no content found at page {page}, line {line}")),
         ContentSelector::Heading(heading) => resolve_heading(document_map, heading),
     }
+}
+
+fn resolve_range_selector(
+    document_map: &DocumentMap,
+    selector: &RangeSelector,
+) -> Result<DocumentRange> {
+    match selector {
+        RangeSelector::IndexRange {
+            start_index,
+            end_index,
+        } => Ok(DocumentRange {
+            start_index: *start_index,
+            end_index: *end_index,
+            location: DocumentLocation {
+                index: Some(*start_index),
+                page: None,
+                content_line: 0,
+                confidence: crate::docs::map::LocationConfidence::Unknown,
+            },
+            preview: format!("range {start_index}..{end_index}"),
+        }),
+        RangeSelector::Entry(entry_number) => {
+            let entry =
+                resolve_content_entry(document_map, &ContentSelector::Entry(*entry_number))?;
+            range_for_entry(document_map, entry)
+        }
+        RangeSelector::PageLine { page, line } => {
+            let entry = resolve_content_entry(
+                document_map,
+                &ContentSelector::PageLine {
+                    page: *page,
+                    line: *line,
+                },
+            )?;
+            range_for_entry(document_map, entry)
+        }
+        RangeSelector::Text { text, match_number } => {
+            let command = ReplaceTextCommand {
+                document_id: String::new(),
+                old_text: text.clone(),
+                new_text: String::new(),
+                match_number: *match_number,
+                all: false,
+                dry_run: true,
+                json: true,
+                required_revision_id: None,
+            };
+            let ranges = resolve_replace_text_ranges(document_map, &command)?;
+            ranges
+                .into_iter()
+                .next()
+                .context("text range selector did not resolve a match")
+        }
+    }
+}
+
+fn range_for_entry(document_map: &DocumentMap, entry: &DocumentMapEntry) -> Result<DocumentRange> {
+    let start_index = entry
+        .location
+        .index
+        .context("selected Document Map entry has no Google Docs index")?;
+    let end_index = document_map
+        .entries
+        .iter()
+        .filter_map(|candidate| candidate.location.index)
+        .find(|candidate_index| *candidate_index > start_index)
+        .unwrap_or(start_index + 1);
+    Ok(DocumentRange {
+        start_index,
+        end_index,
+        location: entry.location.clone(),
+        preview: entry.preview.clone(),
+    })
+}
+
+fn resolve_table_handle<'a>(
+    document_map: &'a DocumentMap,
+    table_id: &str,
+) -> Result<&'a DocumentMapEntry> {
+    let entry = document_map
+        .entries
+        .iter()
+        .find(|entry| {
+            entry.kind == DocumentMapEntryKind::Table
+                && entry.table_handle.as_deref() == Some(table_id)
+        })
+        .with_context(|| format!("table handle {table_id} was not found"))?;
+    Ok(entry)
+}
+
+fn read_table_data(path: &str) -> Result<Vec<Vec<String>>> {
+    let body = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read table data file: {path}"))?;
+    let delimiter = if path.ends_with(".tsv") { '\t' } else { ',' };
+    let rows = body
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            line.split(delimiter)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        bail!("table data file is empty");
+    }
+    let columns = rows[0].len();
+    if columns == 0 || rows.iter().any(|row| row.len() != columns) {
+        bail!("table data must be rectangular");
+    }
+    Ok(rows)
 }
 
 fn resolve_heading<'a>(
@@ -922,6 +1749,25 @@ struct ReplaceTextPreviewChange {
     after: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocsHighLevelChange {
+    revision_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    location: Option<DocumentLocation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    range: Option<DocumentRange>,
+    request_body: serde_json::Value,
+    preview: DocsChangePreview,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocsChangePreview {
+    command: String,
+    summary: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedInsertTextLocation {
     location: DocumentLocation,
@@ -973,6 +1819,217 @@ fn prepare_replace_text_change(
         ranges,
         request_body,
         preview,
+    })
+}
+
+fn prepare_insert_image_change(
+    document_map: &DocumentMap,
+    command: &InsertImageCommand,
+) -> Result<DocsHighLevelChange> {
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let Some(index) = resolved.location.index else {
+        bail!("insert-image selector resolved without a Google Docs index");
+    };
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "insertInlineImage": {
+                "location": { "index": index },
+                "uri": command.image_uri
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(resolved.location),
+        range: None,
+        request_body,
+        preview: DocsChangePreview {
+            command: "insert-image".into(),
+            summary: format!(
+                "Insert inline image at index {index} from {}",
+                command.image_uri
+            ),
+        },
+    })
+}
+
+fn prepare_insert_table_change(
+    document_map: &DocumentMap,
+    command: &InsertTableCommand,
+) -> Result<DocsHighLevelChange> {
+    if command.rows == 0 || command.columns == 0 {
+        bail!("insert-table requires --rows and --columns to be greater than zero");
+    }
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let Some(index) = resolved.location.index else {
+        bail!("insert-table selector resolved without a Google Docs index");
+    };
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "insertTable": {
+                "location": { "index": index },
+                "rows": command.rows,
+                "columns": command.columns
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(resolved.location),
+        range: None,
+        request_body,
+        preview: DocsChangePreview {
+            command: "insert-table".into(),
+            summary: format!(
+                "Insert {}x{} table at index {index}",
+                command.rows, command.columns
+            ),
+        },
+    })
+}
+
+fn prepare_edit_table_change(
+    document_map: &DocumentMap,
+    command: &EditTableCommand,
+) -> Result<DocsHighLevelChange> {
+    let data = read_table_data(&command.data)?;
+    let table = resolve_table_handle(document_map, &command.table_id)?;
+    let rows = table.rows.unwrap_or(0);
+    let columns = table.columns.unwrap_or(0);
+    if !command.resize && (data.len() != rows || data.iter().any(|row| row.len() != columns)) {
+        bail!(
+            "edit-table data dimensions are {}x{} but {} is {}x{}; pass --resize when structural resizing is supported",
+            data.len(),
+            data.first().map_or(0, Vec::len),
+            command.table_id,
+            rows,
+            columns
+        );
+    }
+    if command.resize {
+        bail!("edit-table --resize is not supported yet");
+    }
+    if table.table_cells.len() != rows || table.table_cells.iter().any(|row| row.len() != columns) {
+        bail!("selected table does not expose editable cell text ranges");
+    }
+
+    let mut requests = Vec::new();
+    for (row_index, row) in table.table_cells.iter().enumerate().rev() {
+        for (column_index, range) in row.iter().enumerate().rev() {
+            let replacement = &data[row_index][column_index];
+            if range.end_index > range.start_index {
+                requests.push(serde_json::json!({
+                    "deleteContentRange": {
+                        "range": docs_range(range)
+                    }
+                }));
+            }
+            requests.push(serde_json::json!({
+                "insertText": {
+                    "location": { "index": range.start_index },
+                    "text": replacement
+                }
+            }));
+        }
+    }
+    let request_body =
+        request_body_with_revision(requests, command.required_revision_id.as_deref());
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(table.location.clone()),
+        range: None,
+        request_body,
+        preview: DocsChangePreview {
+            command: "edit-table".into(),
+            summary: format!(
+                "Replace {} with {}x{} table data",
+                command.table_id, rows, columns
+            ),
+        },
+    })
+}
+
+fn prepare_apply_styles_change(
+    document_map: &DocumentMap,
+    command: &ApplyStylesCommand,
+) -> Result<DocsHighLevelChange> {
+    let range = resolve_range_selector(document_map, &command.selector)?;
+    let (text_style, fields) = text_style_payload(command)?;
+    let mut requests = Vec::new();
+    if !fields.is_empty() {
+        requests.push(serde_json::json!({
+            "updateTextStyle": {
+                "range": docs_range(&range),
+                "textStyle": text_style,
+                "fields": fields.join(",")
+            }
+        }));
+    }
+    if let Some(heading) = &command.heading {
+        requests.push(serde_json::json!({
+            "updateParagraphStyle": {
+                "range": docs_range(&range),
+                "paragraphStyle": { "namedStyleType": heading },
+                "fields": "namedStyleType"
+            }
+        }));
+    }
+    if requests.is_empty() {
+        bail!("apply-styles requires at least one style flag");
+    }
+    let request_body =
+        request_body_with_revision(requests, command.required_revision_id.as_deref());
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: Some(range.clone()),
+        request_body,
+        preview: DocsChangePreview {
+            command: "apply-styles".into(),
+            summary: format!(
+                "Apply styles to range {}..{}",
+                range.start_index, range.end_index
+            ),
+        },
+    })
+}
+
+fn prepare_apply_list_change(
+    document_map: &DocumentMap,
+    command: &ApplyListCommand,
+) -> Result<DocsHighLevelChange> {
+    if command.list_type.is_some() && command.preset.is_some() {
+        bail!("apply-list accepts either --type or --preset, not both");
+    }
+    let preset = command
+        .preset
+        .clone()
+        .or_else(|| command.list_type.map(list_type_preset).map(str::to_string))
+        .context("apply-list requires --type or --preset")?;
+    let range = resolve_range_selector(document_map, &command.selector)?;
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "createParagraphBullets": {
+                "range": docs_range(&range),
+                "bulletPreset": preset
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: Some(range.clone()),
+        request_body,
+        preview: DocsChangePreview {
+            command: "apply-list".into(),
+            summary: format!(
+                "Apply list preset to range {}..{}",
+                range.start_index, range.end_index
+            ),
+        },
     })
 }
 
@@ -1221,6 +2278,81 @@ fn insert_text_request_body(
     body
 }
 
+fn request_body_with_revision(
+    requests: Vec<serde_json::Value>,
+    required_revision_id: Option<&str>,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({ "requests": requests });
+    if let Some(required_revision_id) = required_revision_id {
+        body["writeControl"] = serde_json::json!({
+            "requiredRevisionId": required_revision_id
+        });
+    }
+    body
+}
+
+fn docs_range(range: &DocumentRange) -> serde_json::Value {
+    serde_json::json!({
+        "startIndex": range.start_index,
+        "endIndex": range.end_index
+    })
+}
+
+fn text_style_payload(
+    command: &ApplyStylesCommand,
+) -> Result<(serde_json::Value, Vec<&'static str>)> {
+    let mut style = serde_json::Map::new();
+    let mut fields = Vec::new();
+    if command.bold {
+        style.insert("bold".into(), serde_json::Value::Bool(true));
+        fields.push("bold");
+    }
+    if command.italic {
+        style.insert("italic".into(), serde_json::Value::Bool(true));
+        fields.push("italic");
+    }
+    if let Some(font_size) = command.font_size {
+        style.insert(
+            "fontSize".into(),
+            serde_json::json!({ "magnitude": font_size, "unit": "PT" }),
+        );
+        fields.push("fontSize");
+    }
+    if let Some(color) = &command.foreground_color {
+        style.insert("foregroundColor".into(), foreground_color_payload(color)?);
+        fields.push("foregroundColor");
+    }
+    Ok((serde_json::Value::Object(style), fields))
+}
+
+fn foreground_color_payload(color: &str) -> Result<serde_json::Value> {
+    let hex = color.strip_prefix('#').unwrap_or(color);
+    if hex.len() != 6 || !hex.chars().all(|character| character.is_ascii_hexdigit()) {
+        bail!("--foreground-color must be a #RRGGBB hex color");
+    }
+    let red = u8::from_str_radix(&hex[0..2], 16).context("invalid red color component")?;
+    let green = u8::from_str_radix(&hex[2..4], 16).context("invalid green color component")?;
+    let blue = u8::from_str_radix(&hex[4..6], 16).context("invalid blue color component")?;
+    Ok(serde_json::json!({
+        "color": {
+            "rgbColor": {
+                "red": red as f64 / 255.0,
+                "green": green as f64 / 255.0,
+                "blue": blue as f64 / 255.0
+            }
+        }
+    }))
+}
+
+fn list_type_preset(list_type: DocsListType) -> &'static str {
+    match list_type {
+        DocsListType::Bullet => "BULLET_DISC_CIRCLE_SQUARE",
+        DocsListType::Numbered => "NUMBERED_DECIMAL_ALPHA_ROMAN",
+        DocsListType::Dash => "BULLET_DIAMONDX_ARROW3D_SQUARE",
+        DocsListType::Checkbox => "BULLET_CHECKBOX",
+    }
+}
+
 fn replace_text_request_body(
     ranges: &[DocumentRange],
     new_text: &str,
@@ -1369,6 +2501,88 @@ fn write_replace_text_dry_run(
     }
 }
 
+#[cfg(test)]
+async fn apply_or_preview_docs_change<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    change: DocsHighLevelChange,
+    dry_run: bool,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    command_name: &str,
+) -> Result<()> {
+    if dry_run {
+        write_docs_change_preview(out, &change, json)
+    } else {
+        let options =
+            batch_update_document_options(document_id, change.request_body, documents_url);
+        let response = batch_update_document(client, &options)
+            .await
+            .with_context(|| format!("failed to apply Google Docs {command_name}"))?;
+        write_json_line(
+            out,
+            &response,
+            &format!("failed to serialize Docs {command_name} response"),
+        )
+    }
+}
+
+async fn apply_or_preview_docs_change_unified<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    change: DocsHighLevelChange,
+    dry_run: bool,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+    command_name: &str,
+) -> Result<()> {
+    if dry_run {
+        write_docs_change_preview(out, &change, json)
+    } else {
+        let options =
+            batch_update_document_options(document_id.clone(), change.request_body, documents_url);
+        let resource_key = resource_key("docs", &document_id);
+        let response = run_with_docs_unified_access(
+            config,
+            store,
+            account_override,
+            &resource_key,
+            DocsAccessAttempt::BatchUpdate(&options),
+            state_path,
+        )
+        .await
+        .with_context(|| format!("failed to apply Google Docs {command_name}"))?;
+        write_json_line(
+            out,
+            &response,
+            &format!("failed to serialize Docs {command_name} response"),
+        )
+    }
+}
+
+fn write_docs_change_preview(
+    out: &mut impl Write,
+    change: &DocsHighLevelChange,
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, change, "failed to serialize Docs dry run")
+    } else {
+        writeln!(
+            out,
+            "{}: {}",
+            change.preview.command, change.preview.summary
+        )
+        .context("failed to write Docs dry-run preview")?;
+        Ok(())
+    }
+}
+
 fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -> Result<()> {
     writeln!(
         out,
@@ -1439,6 +2653,25 @@ fn write_document_map(out: &mut impl Write, document_map: &DocumentMap, json: bo
     }
 }
 
+fn write_filtered_entries(
+    out: &mut impl Write,
+    document_map: &DocumentMap,
+    kinds: &[DocumentMapEntryKind],
+    json: bool,
+) -> Result<()> {
+    let entries = document_map
+        .entries
+        .iter()
+        .filter(|entry| kinds.contains(&entry.kind))
+        .cloned()
+        .collect::<Vec<_>>();
+    if json {
+        write_json_line(out, &entries, "failed to serialize Docs filtered entries")
+    } else {
+        write_document_entries_table(out, &entries)
+    }
+}
+
 fn write_search_text_results(
     out: &mut impl Write,
     ranges: &[DocumentRange],
@@ -1465,23 +2698,38 @@ fn write_content_entry(
 }
 
 fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) -> Result<()> {
+    write_document_entries_table(out, &document_map.entries)
+}
+
+fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntry]) -> Result<()> {
     writeln!(
         out,
-        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<18} {:<15} Preview",
-        "Entry", "Index", "Page", "Line", "Kind", "Style", "Confidence"
+        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<18} {:<15} Preview",
+        "Entry", "Index", "Page", "Line", "Kind", "Object", "Size", "Style", "Confidence"
     )
     .context("failed to write Docs Document Map header")?;
 
-    for entry in &document_map.entries {
+    for entry in entries {
         let style = entry.style.as_deref().unwrap_or("-");
+        let object = entry
+            .object_id
+            .as_deref()
+            .or(entry.table_handle.as_deref())
+            .unwrap_or("-");
+        let size = match (entry.rows, entry.columns) {
+            (Some(rows), Some(columns)) => format!("{rows}x{columns}"),
+            _ => "-".into(),
+        };
         writeln!(
             out,
-            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<18} {:<15} {}",
+            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<18} {:<15} {}",
             entry.entry,
             display_optional(entry.location.index),
             display_optional(entry.location.page),
             entry.location.content_line,
             format!("{:?}", entry.kind),
+            object,
+            size,
             style,
             format!("{:?}", entry.location.confidence),
             entry.preview

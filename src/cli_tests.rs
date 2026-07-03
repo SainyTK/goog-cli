@@ -649,6 +649,110 @@ fn docs_replace_text_parses_match_and_write_options() {
 }
 
 #[test]
+fn docs_new_high_level_editing_commands_parse() {
+    assert!(matches!(
+        parse(&["docs", "list-images", "document-123", "--json"])
+            .unwrap()
+            .command,
+        Command::Docs {
+            command: DocsCommand::ListImages { .. }
+        }
+    ));
+    assert!(matches!(
+        parse(&["docs", "list-tables", "document-123", "--json"])
+            .unwrap()
+            .command,
+        Command::Docs {
+            command: DocsCommand::ListTables { .. }
+        }
+    ));
+
+    let Command::Docs {
+        command:
+            DocsCommand::InsertImage {
+                image_uri,
+                page,
+                line,
+                dry_run,
+                json,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "insert-image",
+        "document-123",
+        "https://example.test/image.png",
+        "--page",
+        "2",
+        "--line",
+        "1",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(image_uri, "https://example.test/image.png");
+    assert_eq!(page, Some(2));
+    assert_eq!(line, Some(1));
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command: DocsCommand::ApplyList {
+            list_type, entry, ..
+        },
+    } = parse(&[
+        "docs",
+        "apply-list",
+        "document-123",
+        "--entry",
+        "2",
+        "--type",
+        "checkbox",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(entry, Some(2));
+    assert_eq!(list_type, Some(crate::cli::DocsListType::Checkbox));
+
+    let Command::Docs {
+        command:
+            DocsCommand::EditTable {
+                table_id,
+                data,
+                dry_run,
+                json,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "edit-table",
+        "document-123",
+        "--table-id",
+        "table-3",
+        "--data",
+        "table.csv",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(table_id, "table-3");
+    assert_eq!(data, "table.csv");
+    assert!(dry_run);
+    assert!(json);
+}
+
+#[test]
 fn docs_batch_update_with_requests_path() {
     let cli = parse(&[
         "docs",
