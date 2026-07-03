@@ -31,7 +31,7 @@ pub struct MessageSummary {
     pub subject: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct MessagesPage {
     #[serde(default, deserialize_with = "deserialize_null_vec_as_empty")]
     messages: Vec<ListedMessage>,
@@ -483,7 +483,15 @@ fn header_value(headers: &[MessageHeader], name: &str) -> Option<String> {
 }
 
 async fn parse_messages_page_response(response: Response) -> Result<MessagesPage, MailError> {
-    parse_json_response(response).await
+    let response = ensure_success_response(response).await?;
+    let body = response
+        .text()
+        .await
+        .map_err(|e| MailError::InvalidResponse(e.to_string()))?;
+    if body.trim().is_empty() {
+        return Ok(MessagesPage::default());
+    }
+    serde_json::from_str(&body).map_err(|e| MailError::InvalidResponse(e.to_string()))
 }
 
 async fn parse_message_response(response: Response) -> Result<Message, MailError> {
