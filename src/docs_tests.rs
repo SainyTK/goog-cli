@@ -55,7 +55,7 @@ fn docs_token() -> Token {
         access_token: "docs-access".into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![DOCS_READONLY_SCOPE.into()],
+        scopes: vec![DOCS_SCOPE.into()],
     }
 }
 
@@ -65,6 +65,13 @@ fn docs_write_token() -> Token {
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
         scopes: vec![DOCS_SCOPE.into()],
+    }
+}
+
+fn docs_and_drive_token() -> Token {
+    Token {
+        scopes: vec![DOCS_SCOPE.into(), crate::drive::DRIVE_SCOPE.into()],
+        ..docs_token()
     }
 }
 
@@ -227,7 +234,7 @@ async fn batch_update_posts_full_google_request_body() {
 }
 
 #[tokio::test]
-async fn get_document_requests_only_readonly_docs_scope_when_missing() {
+async fn get_document_requests_full_docs_scope_when_missing() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/token"))
@@ -235,7 +242,7 @@ async fn get_document_requests_only_readonly_docs_scope_when_missing() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "access_token": "docs-access",
             "expires_in": 3600,
-            "scope": DOCS_READONLY_SCOPE,
+            "scope": DOCS_SCOPE,
             "token_type": "Bearer"
         })))
         .expect(1)
@@ -270,12 +277,12 @@ async fn get_document_requests_only_readonly_docs_scope_when_missing() {
 
     assert_eq!(
         scopes_seen.lock().unwrap().clone(),
-        vec![DOCS_READONLY_SCOPE.to_string()]
+        vec![DOCS_SCOPE.to_string()]
     );
     let saved = store.load_token("alice@example.com").unwrap().unwrap();
     assert_eq!(
         saved.scopes,
-        vec!["openid".to_string(), DOCS_READONLY_SCOPE.to_string()]
+        vec!["openid".to_string(), DOCS_SCOPE.to_string()]
     );
 }
 
@@ -415,4 +422,143 @@ async fn get_document_returns_invalid_response_error_for_malformed_json() {
     let err = get_document(&client, &options).await.unwrap_err();
 
     assert!(matches!(err, DocsError::InvalidResponse(_)));
+}
+
+fn office_file_precondition_response() -> ResponseTemplate {
+    ResponseTemplate::new(400).set_body_json(serde_json::json!({
+        "error": {
+            "code": 400,
+            "status": "FAILED_PRECONDITION",
+            "message": "This operation is not supported for this document. The document must not be an Office file."
+        }
+    }))
+}
+
+#[tokio::test]
+async fn get_document_converts_office_file_then_reads_temporary_document() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/office-file-123"))
+        .respond_with(office_file_precondition_response())
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-file-123/copy"))
+        .and(query_param("fields", "id"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(body_json(&serde_json::json!({
+            "mimeType": "application/vnd.google-apps.document",
+            "name": "goog temporary Docs conversion"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "converted-document-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/converted-document-456"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "converted-document-456",
+            "title": "Converted from office-file-123"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/converted-document-456"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_and_drive_token())
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let options = GetDocumentOptions::new("office-file-123")
+        .with_documents_url(format!("{}/docs/v1/documents", server.uri()))
+        .with_drive_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let document = get_document(&client, &options).await.unwrap();
+
+    assert_eq!(document["documentId"], "converted-document-456");
+    assert_eq!(document["title"], "Converted from office-file-123");
+}
+
+#[tokio::test]
+async fn batch_update_reports_office_file_precondition_clearly() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/office-file-123:batchUpdate"))
+        .respond_with(office_file_precondition_response())
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_write_token())
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let options =
+        BatchUpdateDocumentOptions::new("office-file-123", serde_json::json!({ "requests": [] }))
+            .with_documents_url(format!("{}/docs/v1/documents", server.uri()));
+
+    let err = batch_update_document(&client, &options).await.unwrap_err();
+
+    assert!(matches!(err, DocsError::UnsupportedOfficeFile));
+}
+
+#[test]
+fn extract_document_id_passes_through_a_bare_document_id() {
+    assert_eq!(
+        extract_document_id("placeholder-document-id"),
+        "placeholder-document-id"
+    );
+}
+
+#[test]
+fn extract_document_id_extracts_id_from_docs_edit_url() {
+    assert_eq!(
+        extract_document_id("https://docs.google.com/document/d/placeholder-document-id/edit"),
+        "placeholder-document-id"
+    );
+}
+
+#[test]
+fn extract_document_id_extracts_id_from_docs_edit_url_with_query_and_fragment() {
+    assert_eq!(
+        extract_document_id(
+            "https://docs.google.com/document/d/placeholder-document-id/edit?tab=t.0#heading=h.abc"
+        ),
+        "placeholder-document-id"
+    );
+}
+
+#[test]
+fn extract_document_id_extracts_id_from_drive_file_url() {
+    assert_eq!(
+        extract_document_id("https://drive.google.com/file/d/placeholder-document-id/view"),
+        "placeholder-document-id"
+    );
+}
+
+#[test]
+fn extract_document_id_extracts_id_from_drive_open_query_param() {
+    assert_eq!(
+        extract_document_id("https://drive.google.com/open?id=placeholder-document-id"),
+        "placeholder-document-id"
+    );
+}
+
+#[test]
+fn extract_document_id_trims_surrounding_whitespace() {
+    assert_eq!(
+        extract_document_id("  placeholder-document-id  "),
+        "placeholder-document-id"
+    );
 }

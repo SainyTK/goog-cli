@@ -1,3 +1,4 @@
+use base64::Engine;
 use chrono::{Duration, Utc};
 use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
@@ -7,7 +8,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::state::{load_runtime_state_from_path, resource_key};
 use crate::auth::testing::MemoryStore;
-use crate::mail::GMAIL_READONLY_SCOPE;
+use crate::mail::GMAIL_SCOPE;
 use crate::test_support::CurrentDirGuard;
 
 use super::mail::*;
@@ -36,7 +37,7 @@ fn scoped_mail_token(access_token: &str) -> Token {
         access_token: access_token.into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![GMAIL_READONLY_SCOPE.into()],
+        scopes: vec![GMAIL_SCOPE.into()],
     }
 }
 
@@ -282,6 +283,77 @@ async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table
 }
 
 #[tokio::test]
+async fn run_search_prints_no_matches_message_for_empty_table_results() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "10"))
+        .and(query_param("q", "zzzzxyqqqnotexist12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "resultSizeEstimate": 0
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_search_to(
+        &client,
+        "zzzzxyqqqnotexist12345".into(),
+        None,
+        false,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "No matching messages found.\n"
+    );
+}
+
+#[tokio::test]
+async fn run_search_prints_empty_json_array_for_empty_json_results() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "10"))
+        .and(query_param("q", "zzzzxyqqqnotexist12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "resultSizeEstimate": 0
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_search_to(
+        &client,
+        "zzzzxyqqqnotexist12345".into(),
+        None,
+        true,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "[]\n");
+}
+
+#[tokio::test]
 async fn run_attachment_download_writes_bytes_to_output_path() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -393,13 +465,155 @@ async fn run_read_prints_message_json_to_stdout() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_read_to(&client, "message-123".into(), &mut out, Some(&messages_url))
-        .await
-        .unwrap();
+    run_read_to(
+        &client,
+        "message-123".into(),
+        true,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"id\":\"message-123\",\"snippet\":\"Hello from GoogleMail\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_read_prints_message_markdown_to_stdout_by_default() {
+    let server = MockServer::start().await;
+    let body_data =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode("Hi there,\n\nSee you soon.");
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-123"))
+        .and(header("authorization", "Bearer mail-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "message-123",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "Alice <alice@example.com>"},
+                    {"name": "To", "value": "Bob <bob@example.com>"},
+                    {"name": "Subject", "value": "Lunch"},
+                    {"name": "Date", "value": "Fri, 3 Jul 2026 05:29:49 +0000"},
+                ],
+                "mimeType": "text/plain",
+                "body": {"data": body_data},
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_read_to(
+        &client,
+        "message-123".into(),
+        false,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "# Lunch\n\n\
+**From:** Alice <alice@example.com>\n\
+**To:** Bob <bob@example.com>\n\
+**Date:** Fri, 3 Jul 2026 05:29:49 +0000\n\
+\n\
+---\n\
+\n\
+Hi there,\n\n\
+See you soon.\n"
+    );
+}
+
+#[tokio::test]
+async fn run_read_renders_html_tables_formatting_links_and_attachments() {
+    let server = MockServer::start().await;
+    let html = "<html><head><style>p {margin:0;}</style></head><body>\
+<p>Hi <b>Bob</b>, see the <a href=\"https://example.com/report\">report</a>.</p>\
+<table>\
+<tr><th>Name</th><th>Status</th></tr>\
+<tr><td>Alice</td><td><i>Pending</i></td></tr>\
+</table>\
+</body></html>";
+    let body_data = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(html);
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-123"))
+        .and(header("authorization", "Bearer mail-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "message-123",
+            "payload": {
+                "headers": [
+                    {"name": "Subject", "value": "Status update"},
+                ],
+                "mimeType": "multipart/mixed",
+                "parts": [
+                    {
+                        "mimeType": "text/html",
+                        "body": {"data": body_data},
+                    },
+                    {
+                        "filename": "report.pdf",
+                        "mimeType": "application/pdf",
+                        "body": {"attachmentId": "attachment-1", "size": 42},
+                    },
+                    {
+                        "filename": "logo.png",
+                        "mimeType": "image/png",
+                        "headers": [
+                            {"name": "Content-Disposition", "value": "inline; filename=\"logo.png\""},
+                        ],
+                        "body": {"attachmentId": "attachment-2", "size": 7},
+                    }
+                ],
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_read_to(
+        &client,
+        "message-123".into(),
+        false,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(rendered.contains("Hi **Bob**, see the [report](https://example.com/report)."));
+    assert!(rendered.contains("| Name | Status |\n| --- | --- |\n| Alice | *Pending* |"));
+    assert!(!rendered.contains("margin:0"));
+
+    let attachments_section = rendered
+        .split("**Attachments:**\n")
+        .nth(1)
+        .unwrap()
+        .split("**Inline images**")
+        .next()
+        .unwrap();
+    let inline_section = rendered.split("**Inline images**").nth(1).unwrap();
+    assert!(attachments_section
+        .contains("- report.pdf (application/pdf, 42 bytes) — attachment ID: `attachment-1`"));
+    assert!(!attachments_section.contains("logo.png"));
+    assert!(
+        inline_section.contains("- logo.png (image/png, 7 bytes) — attachment ID: `attachment-2`")
     );
 }
 
@@ -436,6 +650,7 @@ async fn run_read_unified_falls_back_for_account_local_message_ids_and_maps_succ
         &store,
         None,
         "message-123".into(),
+        true,
         &mut out,
         Some(&messages_url),
         Some(&state_path),
@@ -488,6 +703,7 @@ async fn run_read_unified_does_not_fallback_for_explicit_account_but_maps_succes
         &store,
         Some("alice@example.com"),
         "message-123".into(),
+        true,
         &mut denied_out,
         Some(&messages_url),
         Some(&state_path),
@@ -505,6 +721,7 @@ async fn run_read_unified_does_not_fallback_for_explicit_account_but_maps_succes
         &store,
         Some("bob@example.com"),
         "message-456".into(),
+        true,
         &mut mapped_out,
         Some(&messages_url),
         Some(&state_path),

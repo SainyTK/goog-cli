@@ -13,7 +13,7 @@ use crate::auth::testing::MemoryStore;
 use crate::cli::{
     SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
-use crate::sheets::{SHEETS_READONLY_SCOPE, SHEETS_SCOPE};
+use crate::sheets::SHEETS_SCOPE;
 
 use super::sheets::*;
 
@@ -37,7 +37,7 @@ fn sheets_token() -> Token {
         access_token: "sheets-access".into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![SHEETS_READONLY_SCOPE.into()],
+        scopes: vec![SHEETS_SCOPE.into()],
     }
 }
 
@@ -50,7 +50,7 @@ fn scoped_sheets_token(access_token: &str) -> Token {
         access_token: access_token.into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![SHEETS_READONLY_SCOPE.into(), SHEETS_SCOPE.into()],
+        scopes: vec![SHEETS_SCOPE.into()],
     }
 }
 
@@ -1354,6 +1354,34 @@ async fn run_batch_update_returns_clear_error_for_invalid_request_json() {
 
     let message = format!("{:#}", result.unwrap_err());
     assert!(message.contains("failed to parse Google Sheets Batch Update request body from stdin"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_batch_update_returns_clear_error_for_invalid_request_json_file() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let requests_path = temp_dir.path().join("invalid-batch-update.json");
+    std::fs::write(&requests_path, "{not json").unwrap();
+    let requests_path_arg = requests_path.to_string_lossy().into_owned();
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+
+    let result = run_batch_update_to(
+        &client,
+        "spreadsheet-123".into(),
+        requests_path_arg.clone(),
+        &mut input,
+        &mut out,
+        Some("https://example.test/sheets/v4/spreadsheets"),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to parse Google Sheets Batch Update request body from"));
+    assert!(message.contains(&requests_path_arg));
     assert!(out.is_empty());
 }
 

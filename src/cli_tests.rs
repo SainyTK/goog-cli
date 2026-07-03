@@ -2,8 +2,8 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand,
-    MailAttachmentCommand, MailCommand, SheetsCommand, SheetsInsertDataOption,
+    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
+    DriveFolderCommand, MailAttachmentCommand, MailCommand, SheetsCommand, SheetsInsertDataOption,
     SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
@@ -550,6 +550,339 @@ fn docs_get_content_accepts_location_selectors() {
 }
 
 #[test]
+fn docs_insert_text_parses_location_and_write_options() {
+    let cli = parse(&[
+        "docs",
+        "insert-text",
+        "document-123",
+        "Hello",
+        "--page",
+        "2",
+        "--line",
+        "1",
+        "--dry-run",
+        "--json",
+        "--required-revision-id",
+        "rev-123",
+    ])
+    .unwrap();
+
+    let Command::Docs { command } = cli.command else {
+        panic!("unexpected parse result");
+    };
+    let DocsCommand::InsertText {
+        document_id,
+        text,
+        index,
+        entry,
+        page,
+        line,
+        after_heading,
+        before_heading,
+        after_text,
+        before_text,
+        dry_run,
+        json,
+        required_revision_id,
+    } = command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(document_id, "document-123");
+    assert_eq!(text, "Hello");
+    assert_eq!(index, None);
+    assert_eq!(entry, None);
+    assert_eq!(page, Some(2));
+    assert_eq!(line, Some(1));
+    assert_eq!(after_heading, None);
+    assert_eq!(before_heading, None);
+    assert_eq!(after_text, None);
+    assert_eq!(before_text, None);
+    assert!(dry_run);
+    assert!(json);
+    assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
+}
+
+#[test]
+fn docs_replace_text_parses_match_and_write_options() {
+    let cli = parse(&[
+        "docs",
+        "replace-text",
+        "document-123",
+        "old",
+        "new",
+        "--match",
+        "2",
+        "--dry-run",
+        "--json",
+        "--required-revision-id",
+        "rev-123",
+    ])
+    .unwrap();
+
+    let Command::Docs { command } = cli.command else {
+        panic!("unexpected parse result");
+    };
+    let DocsCommand::ReplaceText {
+        document_id,
+        old_text,
+        new_text,
+        match_number,
+        all,
+        dry_run,
+        json,
+        required_revision_id,
+    } = command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(document_id, "document-123");
+    assert_eq!(old_text, "old");
+    assert_eq!(new_text, "new");
+    assert_eq!(match_number, Some(2));
+    assert!(!all);
+    assert!(dry_run);
+    assert!(json);
+    assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
+}
+
+#[test]
+fn docs_new_high_level_editing_commands_parse() {
+    assert!(matches!(
+        parse(&["docs", "list-images", "document-123", "--json"])
+            .unwrap()
+            .command,
+        Command::Docs {
+            command: DocsCommand::ListImages { .. }
+        }
+    ));
+    assert!(matches!(
+        parse(&["docs", "list-tables", "document-123", "--json"])
+            .unwrap()
+            .command,
+        Command::Docs {
+            command: DocsCommand::ListTables { .. }
+        }
+    ));
+
+    let Command::Docs {
+        command:
+            DocsCommand::InsertImage {
+                image_uri,
+                page,
+                line,
+                dry_run,
+                json,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "insert-image",
+        "document-123",
+        "https://example.test/image.png",
+        "--page",
+        "2",
+        "--line",
+        "1",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(image_uri, "https://example.test/image.png");
+    assert_eq!(page, Some(2));
+    assert_eq!(line, Some(1));
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command: DocsCommand::ApplyList {
+            list_type, entry, ..
+        },
+    } = parse(&[
+        "docs",
+        "apply-list",
+        "document-123",
+        "--entry",
+        "2",
+        "--type",
+        "checkbox",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(entry, Some(2));
+    assert_eq!(list_type, Some(crate::cli::DocsListType::Checkbox));
+
+    for (value, expected) in [
+        ("bullet", DocsListType::Bullet),
+        ("numbered", DocsListType::Numbered),
+        ("dash", DocsListType::Dash),
+        ("checkbox", DocsListType::Checkbox),
+    ] {
+        let Command::Docs {
+            command:
+                DocsCommand::ApplyList {
+                    list_type,
+                    from_index,
+                    to_index,
+                    ..
+                },
+        } = parse(&[
+            "docs",
+            "apply-list",
+            "document-123",
+            "--from-index",
+            "4",
+            "--to-index",
+            "12",
+            "--type",
+            value,
+        ])
+        .unwrap()
+        .command
+        else {
+            panic!("unexpected parse result");
+        };
+        assert_eq!(from_index, Some(4));
+        assert_eq!(to_index, Some(12));
+        assert_eq!(list_type, Some(expected));
+    }
+
+    let Command::Docs {
+        command:
+            DocsCommand::ApplyList {
+                preset,
+                list_type,
+                page,
+                line,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "apply-list",
+        "document-123",
+        "--page",
+        "3",
+        "--line",
+        "4",
+        "--preset",
+        "BULLET_STAR_CIRCLE_SQUARE",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(page, Some(3));
+    assert_eq!(line, Some(4));
+    assert_eq!(list_type, None);
+    assert_eq!(preset.as_deref(), Some("BULLET_STAR_CIRCLE_SQUARE"));
+
+    let Command::Docs {
+        command:
+            DocsCommand::ApplyStyles {
+                style_json,
+                from_index,
+                to_index,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "apply-styles",
+        "document-123",
+        "--from-index",
+        "1",
+        "--to-index",
+        "9",
+        "--style-json",
+        r#"{"textStyle":{"underline":true}}"#,
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(from_index, Some(1));
+    assert_eq!(to_index, Some(9));
+    assert_eq!(
+        style_json.as_deref(),
+        Some(r#"{"textStyle":{"underline":true}}"#)
+    );
+
+    let Command::Docs {
+        command:
+            DocsCommand::InsertTable {
+                data,
+                page,
+                line,
+                dry_run,
+                json,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "insert-table",
+        "document-123",
+        "--data",
+        "table.csv",
+        "--page",
+        "2",
+        "--line",
+        "1",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(data.as_deref(), Some("table.csv"));
+    assert_eq!(page, Some(2));
+    assert_eq!(line, Some(1));
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::EditTable {
+                table_id,
+                data,
+                dry_run,
+                json,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "edit-table",
+        "document-123",
+        "--table-id",
+        "table-3",
+        "--data",
+        "table.csv",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(table_id, "table-3");
+    assert_eq!(data, "table.csv");
+    assert!(dry_run);
+    assert!(json);
+}
+
+#[test]
 fn docs_batch_update_with_requests_path() {
     let cli = parse(&[
         "docs",
@@ -695,8 +1028,22 @@ fn mail_read_with_message_id() {
     let cli = parse(&["mail", "read", "message-123"]).unwrap();
     match cli.command {
         Command::Mail {
-            command: MailCommand::Read { message_id },
-        } => assert_eq!(message_id, "message-123"),
+            command: MailCommand::Read { message_id, json },
+        } => {
+            assert_eq!(message_id, "message-123");
+            assert!(!json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_read_accepts_json_flag() {
+    let cli = parse(&["mail", "read", "message-123", "--json"]).unwrap();
+    match cli.command {
+        Command::Mail {
+            command: MailCommand::Read { json, .. },
+        } => assert!(json),
         _ => panic!("unexpected parse result"),
     }
 }
@@ -1233,6 +1580,16 @@ fn sheets_batch_update_with_requests_path() {
 #[test]
 fn sheets_batch_update_requires_requests() {
     assert!(parse(&["sheets", "batch-update", "spreadsheet-123"]).is_err());
+}
+
+#[test]
+fn sheets_batch_update_help_explains_request_shape() {
+    let help = help(&["sheets", "batch-update", "--help"]);
+
+    assert!(
+        help.contains("--requests reads the full Google Sheets spreadsheets.batchUpdate JSON body")
+    );
+    assert!(help.contains("not only the requests array"));
 }
 
 #[test]

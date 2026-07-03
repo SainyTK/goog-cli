@@ -1,0 +1,20 @@
+Issues 58 & 59 E2E evidence, human-verified, redacted
+Result: PASS
+
+Test setup:
+- Ran locally against a real Google account (email redacted) on the host machine, using the freshly built ./target/debug/goog binary containing the merged changes for #58 and #59.
+
+Live checks:
+$ ./target/debug/goog auth login
+Expected: one Google consent screen requests identity plus Drive, Docs, Sheets, and Gmail (gmail.modify) scopes together, replacing the old incremental per-command consent prompts.
+Observed: single consent screen approved; CLI reported "Authorized as [redacted-account]".
+Result: PASS.
+
+$ ./target/debug/goog mail search foo --limit 1 --json
+Expected: a Gmail command runs immediately after login with no second/incremental consent prompt, confirming the upfront gmail.modify grant covers mail reads.
+Observed: command completed immediately with a single JSON result (message fields redacted); no additional browser prompt appeared.
+Result: PASS.
+
+Reviewer notes:
+- Account email, message ID, sender, and subject redacted from this log.
+- This closes the last PARTIAL item noted in the agent-generated issue-58-e2e.log and issue-59-e2e.log (interactive OAuth consent could not be completed inside the Sandcastle sandbox).

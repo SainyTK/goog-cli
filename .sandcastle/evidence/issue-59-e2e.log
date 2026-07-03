@@ -1,0 +1,50 @@
+Issue 59 E2E evidence, redacted
+Result: PARTIAL
+
+Test setup:
+- Account used: [active-account]
+- Fixture used: Gmail mailbox on [active-account]
+- Skipped fixture: none
+- CLI binary: installed `goog` was not present on PATH, so live checks used `cargo run -- ...` against the same local CLI binary.
+
+Local checks:
+$ cargo test default_browser_login_scopes_request_identity_drive_docs_sheets_and_gmail
+Expected: browser login default scopes include identity, Drive, Docs, Sheets, and Gmail `https://www.googleapis.com/auth/gmail.modify`.
+Observed: 1 passed; 0 failed.
+Result: PASS.
+
+$ cargo test default_device_login_scopes_request_identity_drive_docs_sheets_and_gmail
+Expected: device login default scopes include identity, Drive, Docs, Sheets, and Gmail `https://www.googleapis.com/auth/gmail.modify`.
+Observed: 1 passed; 0 failed.
+Result: PASS.
+
+$ cargo test gmail_modify
+Expected: mail incremental fallback requests only Gmail `https://www.googleapis.com/auth/gmail.modify` when a pre-existing token lacks Gmail scope.
+Observed: 2 passed; 0 failed.
+Result: PASS.
+
+$ npm run typecheck
+Expected: Rust crate typechecks.
+Observed: `cargo check` completed successfully.
+Result: PASS.
+
+$ npm run test
+Expected: full regression suite passes.
+Observed: 341 unit tests, 6 distribution artifact tests, and 0 doc tests passed.
+Result: PASS.
+
+Live checks:
+$ cargo run -- auth list
+Expected: list already configured accounts so a real account can be selected for the Gmail command.
+Observed: 4 configured accounts; one active account. Email addresses redacted.
+Result: PASS.
+
+$ cargo run -- mail search zzzz-issue-59-no-match-20260703 --limit 1 --json
+Expected: after a fresh `goog auth login` with the new upfront scope list, this read-only Gmail command should complete without opening a second consent prompt.
+Observed: the current active account was authorized before this change and does not yet have `gmail.modify`; the command opened incremental Google consent for scope `https://www.googleapis.com/auth/gmail.modify` at a redacted OAuth URL. The waiting OAuth callback was interrupted with Ctrl-C because browser consent cannot be completed in this Sandcastle session.
+Result: PARTIAL.
+
+Reviewer notes:
+- The code path now requests Gmail `gmail.modify` for all mail commands and includes that same scope in both browser and device upfront login scope lists.
+- Full acceptance criterion 4 still needs a human live check: run `goog auth login` against a real account, complete consent, then run `goog mail search zzzz-issue-59-no-match-20260703 --limit 1 --json`. Passing behavior is no additional "Opening browser for additional Google consent..." prompt and an empty stdout for the no-match query.
+- Redaction performed: account emails and the OAuth URL/client details from the incremental consent prompt are omitted.

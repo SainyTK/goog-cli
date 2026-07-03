@@ -3,7 +3,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use crate::auth::config::OAuthAppType;
 
 #[derive(Debug, Parser)]
-#[command(name = "goog", about = "A CLI for Google APIs", version)]
+#[command(
+    name = "goog",
+    about = "A terminal-native Google APIs CLI for power users and AI agents",
+    version
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -187,11 +191,35 @@ pub enum DriveFolderCommand {
     },
 }
 
+impl DocsCommand {
+    /// Resolves the `document_id` field of any variant to a bare Document ID,
+    /// extracting it first if a Google Docs/Drive URL was passed instead.
+    pub fn normalize_document_id(&mut self) {
+        let document_id = match self {
+            DocsCommand::Map { document_id, .. }
+            | DocsCommand::SearchText { document_id, .. }
+            | DocsCommand::GetContent { document_id, .. }
+            | DocsCommand::InsertText { document_id, .. }
+            | DocsCommand::ReplaceText { document_id, .. }
+            | DocsCommand::ListImages { document_id, .. }
+            | DocsCommand::ListTables { document_id, .. }
+            | DocsCommand::InsertImage { document_id, .. }
+            | DocsCommand::InsertTable { document_id, .. }
+            | DocsCommand::EditTable { document_id, .. }
+            | DocsCommand::ApplyStyles { document_id, .. }
+            | DocsCommand::ApplyList { document_id, .. }
+            | DocsCommand::Get { document_id, .. }
+            | DocsCommand::BatchUpdate { document_id, .. } => document_id,
+        };
+        *document_id = crate::docs::extract_document_id(document_id);
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum DocsCommand {
     /// Print a high-level map of editable Google Docs content
     Map {
-        /// Google Docs Document ID to map
+        /// Google Docs Document ID or URL to map
         document_id: String,
         /// Emit structured JSON
         #[arg(long)]
@@ -199,7 +227,7 @@ pub enum DocsCommand {
     },
     /// Search editable Google Docs content through the Document Map
     SearchText {
-        /// Google Docs Document ID to search
+        /// Google Docs Document ID or URL to search
         document_id: String,
         /// Text to find
         text: String,
@@ -209,7 +237,7 @@ pub enum DocsCommand {
     },
     /// Retrieve one content block through a Document Map location selector
     GetContent {
-        /// Google Docs Document ID to inspect
+        /// Google Docs Document ID or URL to inspect
         document_id: String,
         /// Raw Google Docs UTF-16 index
         #[arg(long)]
@@ -230,6 +258,284 @@ pub enum DocsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Insert text through a high-level Document Map location selector
+    InsertText {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Text to insert
+        text: String,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Replace text through a high-level Document Map text match
+    ReplaceText {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Existing text to replace
+        old_text: String,
+        /// Replacement text
+        new_text: String,
+        /// Replace the Nth text match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
+        /// Replace every text match
+        #[arg(long)]
+        all: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// List image-like objects through the Document Map
+    ListImages {
+        /// Google Docs Document ID or URL to inspect
+        document_id: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List tables through the Document Map
+    ListTables {
+        /// Google Docs Document ID or URL to inspect
+        document_id: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Insert an Inline Image through a high-level Document Map location selector
+    InsertImage {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Publicly reachable image URI for Google Docs insertInlineImage
+        image_uri: String,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Insert a table through a high-level Document Map location selector
+    InsertTable {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// CSV or TSV data file to populate the inserted table
+        #[arg(long)]
+        data: Option<String>,
+        /// Number of table rows
+        #[arg(long)]
+        rows: Option<usize>,
+        /// Number of table columns
+        #[arg(long)]
+        columns: Option<usize>,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Replace table cell text from CSV or TSV data
+    EditTable {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Table handle from list-tables, such as table-3
+        #[arg(long)]
+        table_id: String,
+        /// CSV or TSV data file with replacement cell text
+        #[arg(long)]
+        data: String,
+        /// Allow future structural table resizing
+        #[arg(long)]
+        resize: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Apply common text styles through a high-level Document Range
+    ApplyStyles {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Raw Google Docs UTF-16 range start
+        #[arg(long)]
+        from_index: Option<i64>,
+        /// Raw Google Docs UTF-16 range end
+        #[arg(long)]
+        to_index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Matched text span to style
+        #[arg(long)]
+        text: Option<String>,
+        /// Style the Nth text match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
+        /// Apply bold text style
+        #[arg(long)]
+        bold: bool,
+        /// Apply italic text style
+        #[arg(long)]
+        italic: bool,
+        /// Font size in points
+        #[arg(long)]
+        font_size: Option<f64>,
+        /// Foreground color as #RRGGBB
+        #[arg(long)]
+        foreground_color: Option<String>,
+        /// Named paragraph style such as HEADING_1
+        #[arg(long)]
+        heading: Option<String>,
+        /// Raw Google Docs style JSON with optional textStyle and paragraphStyle objects
+        #[arg(long)]
+        style_json: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Apply a common list preset through a high-level Document Range
+    ApplyList {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Raw Google Docs UTF-16 range start
+        #[arg(long)]
+        from_index: Option<i64>,
+        /// Raw Google Docs UTF-16 range end
+        #[arg(long)]
+        to_index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// List type shorthand
+        #[arg(long = "type", value_enum)]
+        list_type: Option<DocsListType>,
+        /// Raw Google Docs bullet preset
+        #[arg(long)]
+        preset: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
     /// Fetch a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.
@@ -238,6 +544,8 @@ pub enum DocsCommand {
   Common structural elements include paragraph, table, sectionBreak, and tableOfContents.
   Paragraph text is split across paragraph.elements[].textRun.content; indexes are UTF-16 positions used by batch-update requests.
   Tab-aware documents can also return tabs[].documentTab.body.content when --include-tabs-content is set.
+  DOCUMENT_ID also accepts a full Google Docs or Drive URL; the Document ID is extracted automatically.
+  Word (.docx) files stored on Drive are read too: they are converted to a temporary native Google Doc, read, and the temporary copy is deleted, all transparently.
 
 Tips:
   Use --fields to fetch only the paths you need, for example:
@@ -245,7 +553,7 @@ Tips:
   Use jq to inspect text runs:
     goog docs get DOCUMENT_ID | jq -r '.body.content[]?.paragraph?.elements[]?.textRun?.content // empty'")]
     Get {
-        /// Google Docs Document ID to fetch
+        /// Google Docs Document ID or URL to fetch
         document_id: String,
         /// Google partial response field selector
         #[arg(long)]
@@ -285,12 +593,20 @@ Example:
   }
   JSON")]
     BatchUpdate {
-        /// Google Docs Document ID to update
+        /// Google Docs Document ID or URL to update
         document_id: String,
         /// Path to a full documents.batchUpdate JSON request body, or - for stdin
         #[arg(long)]
         requests: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsListType {
+    Bullet,
+    Numbered,
+    Dash,
+    Checkbox,
 }
 
 #[derive(Debug, Subcommand)]
@@ -315,10 +631,13 @@ pub enum MailCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Fetch a raw GoogleMail Message
+    /// Fetch a GoogleMail Message
     Read {
         /// GoogleMail Message ID to fetch
         message_id: String,
+        /// Emit the raw GoogleMail Message as JSON instead of Markdown
+        #[arg(long)]
+        json: bool,
     },
     /// Manage GoogleMail Attachments
     Attachment {
@@ -389,6 +708,32 @@ pub enum SheetsCommand {
         command: SheetsValuesCommand,
     },
     /// Apply a raw Google Sheets structural Batch Update request body
+    #[command(after_long_help = "Request shape:
+  --requests reads the full Google Sheets spreadsheets.batchUpdate JSON body, not only the requests array.
+  The body usually contains requests: an ordered array of structural mutation objects.
+  It may also contain includeSpreadsheetInResponse, responseRanges, and responseIncludeGridData.
+
+Common request types:
+  Sheets: addSheet, duplicateSheet, deleteSheet, updateSheetProperties
+  Formatting: repeatCell, updateCells, updateBorders, mergeCells, unmergeCells
+  Structure: updateDimensionProperties, addFilterView, setBasicFilter, addProtectedRange
+
+Full request type reference:
+  https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request
+
+Example:
+  goog sheets batch-update SPREADSHEET_ID --requests - <<'JSON'
+  {
+    \"requests\": [
+      {
+        \"addSheet\": {
+          \"properties\": { \"title\": \"New sheet\" }
+        }
+      }
+    ],
+    \"includeSpreadsheetInResponse\": false
+  }
+  JSON")]
     BatchUpdate {
         /// Google Sheets Spreadsheet ID to update
         spreadsheet_id: String,

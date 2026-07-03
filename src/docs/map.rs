@@ -21,6 +21,20 @@ pub struct DocumentMapEntry {
     pub kind: DocumentMapEntryKind,
     pub style: Option<String>,
     pub preview: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_handle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub object_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout_metadata: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rows: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub columns: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table_handle: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub table_cells: Vec<Vec<DocumentRange>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,7 +82,10 @@ pub enum DocumentMapEntryKind {
 }
 
 pub fn build_document_map(document: &Value) -> DocumentMap {
-    let mut builder = DocumentMapBuilder::new(collect_table_of_contents_page_hints(document));
+    let mut builder = DocumentMapBuilder::new(
+        collect_table_of_contents_page_hints(document),
+        document.get("positionedObjects"),
+    );
 
     for content in document_content(document) {
         builder.push_structural_element(content);
@@ -97,24 +114,44 @@ pub fn search_document_text(document_map: &DocumentMap, needle: &str) -> Vec<Doc
         .collect()
 }
 
-struct DocumentMapBuilder {
+struct DocumentMapBuilder<'a> {
     entries: Vec<DocumentMapEntry>,
     text_blocks: Vec<DocumentTextBlock>,
     current_page: Option<usize>,
     current_confidence: LocationConfidence,
     content_line: usize,
+    table_count: usize,
+    image_count: usize,
     toc_page_hints: Vec<TableOfContentsPageHint>,
+    positioned_objects: Option<&'a Value>,
 }
 
-impl DocumentMapBuilder {
-    fn new(toc_page_hints: Vec<TableOfContentsPageHint>) -> Self {
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DocumentMapEntryMetadata {
+    image_handle: Option<String>,
+    object_id: Option<String>,
+    layout_metadata: Option<Value>,
+    rows: Option<usize>,
+    columns: Option<usize>,
+    table_handle: Option<String>,
+    table_cells: Vec<Vec<DocumentRange>>,
+}
+
+impl<'a> DocumentMapBuilder<'a> {
+    fn new(
+        toc_page_hints: Vec<TableOfContentsPageHint>,
+        positioned_objects: Option<&'a Value>,
+    ) -> Self {
         Self {
             entries: Vec::new(),
             text_blocks: Vec::new(),
             current_page: None,
             current_confidence: LocationConfidence::Unknown,
             content_line: 0,
+            table_count: 0,
+            image_count: 0,
             toc_page_hints,
+            positioned_objects,
         }
     }
 
@@ -133,8 +170,8 @@ impl DocumentMapBuilder {
     fn push_paragraph(&mut self, element: &Value, paragraph: &Value) {
         let text = paragraph_text(paragraph);
         let trimmed_text = text.trim();
-        let has_inline_image = paragraph_has_inline_image(paragraph);
-        let positioned_count = paragraph_positioned_object_count(paragraph);
+        let inline_images = paragraph_inline_images(paragraph);
+        let positioned_object_ids = paragraph_positioned_object_ids(paragraph);
         let style = paragraph_style(paragraph);
         let is_heading = style.as_deref().is_some_and(is_heading_style);
 
@@ -156,36 +193,66 @@ impl DocumentMapBuilder {
                 });
             }
             self.push_entry(location, kind, style.clone(), preview);
-        } else if has_inline_image || positioned_count > 0 {
+        } else if !inline_images.is_empty() || !positioned_object_ids.is_empty() {
             self.push_content_line();
         }
 
-        if has_inline_image {
-            self.push_entry(
-                self.current_location(element),
+        let inline_image_count = inline_images.len();
+        for (image_index, image) in inline_images.into_iter().enumerate() {
+            let image_handle = self.next_image_handle();
+            let mut location = self.current_location(element);
+            location.index = image.start_index;
+            self.push_entry_with_metadata(
+                location,
                 DocumentMapEntryKind::InlineImage,
                 style.clone(),
-                "[inline image]".into(),
+                inline_image_preview(image_index, inline_image_count),
+                DocumentMapEntryMetadata {
+                    image_handle: Some(image_handle),
+                    object_id: Some(image.object_id),
+                    ..DocumentMapEntryMetadata::default()
+                },
             );
         }
 
-        for object_number in 1..=positioned_count {
-            self.push_entry(
+        for (object_index, object_id) in positioned_object_ids.into_iter().enumerate() {
+            let image_handle = self.next_image_handle();
+            let layout_metadata =
+                positioned_image_layout_metadata(self.positioned_objects, &object_id);
+            self.push_entry_with_metadata(
                 self.current_location(element),
                 DocumentMapEntryKind::PositionedImage,
                 style.clone(),
-                format!("[positioned image {object_number}]"),
+                format!("[positioned image {}]", object_index + 1),
+                DocumentMapEntryMetadata {
+                    image_handle: Some(image_handle),
+                    object_id: Some(object_id),
+                    layout_metadata,
+                    ..DocumentMapEntryMetadata::default()
+                },
             );
         }
     }
 
     fn push_table(&mut self, element: &Value, table: &Value) {
         self.push_content_line();
-        self.push_entry(
-            self.current_location(element),
+        self.table_count += 1;
+        let (rows, columns) = table_dimensions(table);
+        let location = self.current_location(element);
+        let table_cells = table_cell_ranges(table, &location);
+        let table_handle = format!("table-{}", self.table_count);
+        self.push_entry_with_metadata(
+            location,
             DocumentMapEntryKind::Table,
             None,
             preview(&table_preview(table)),
+            DocumentMapEntryMetadata {
+                rows: Some(rows),
+                columns: Some(columns),
+                table_handle: Some(table_handle),
+                table_cells,
+                ..DocumentMapEntryMetadata::default()
+            },
         );
     }
 
@@ -199,6 +266,11 @@ impl DocumentMapBuilder {
         self.content_line += 1;
     }
 
+    fn next_image_handle(&mut self) -> String {
+        self.image_count += 1;
+        format!("image-{}", self.image_count)
+    }
+
     fn push_entry(
         &mut self,
         location: DocumentLocation,
@@ -206,12 +278,36 @@ impl DocumentMapBuilder {
         style: Option<String>,
         preview: String,
     ) {
+        self.push_entry_with_metadata(
+            location,
+            kind,
+            style,
+            preview,
+            DocumentMapEntryMetadata::default(),
+        );
+    }
+
+    fn push_entry_with_metadata(
+        &mut self,
+        location: DocumentLocation,
+        kind: DocumentMapEntryKind,
+        style: Option<String>,
+        preview: String,
+        metadata: DocumentMapEntryMetadata,
+    ) {
         self.entries.push(DocumentMapEntry {
             entry: self.entries.len() + 1,
             location,
             kind,
             style,
             preview,
+            image_handle: metadata.image_handle,
+            object_id: metadata.object_id,
+            layout_metadata: metadata.layout_metadata,
+            rows: metadata.rows,
+            columns: metadata.columns,
+            table_handle: metadata.table_handle,
+            table_cells: metadata.table_cells,
         });
     }
 
@@ -365,20 +461,84 @@ fn paragraph_style(paragraph: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-fn paragraph_has_inline_image(paragraph: &Value) -> bool {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InlineImageElement {
+    start_index: Option<i64>,
+    object_id: String,
+}
+
+fn paragraph_inline_images(paragraph: &Value) -> Vec<InlineImageElement> {
     paragraph
         .get("elements")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .any(|element| element.get("inlineObjectElement").is_some())
+        .filter_map(|element| {
+            let object_id = element
+                .get("inlineObjectElement")
+                .and_then(|inline| inline.get("inlineObjectId"))
+                .and_then(Value::as_str)?;
+            Some(InlineImageElement {
+                start_index: element.get("startIndex").and_then(Value::as_i64),
+                object_id: object_id.to_string(),
+            })
+        })
+        .collect()
 }
 
-fn paragraph_positioned_object_count(paragraph: &Value) -> usize {
+fn inline_image_preview(image_index: usize, inline_image_count: usize) -> String {
+    if inline_image_count == 1 {
+        "[inline image]".into()
+    } else {
+        format!("[inline image {}]", image_index + 1)
+    }
+}
+
+fn paragraph_positioned_object_ids(paragraph: &Value) -> Vec<String> {
     paragraph
         .get("positionedObjectIds")
         .and_then(Value::as_array)
-        .map_or(0, Vec::len)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect()
+}
+
+const POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS: [&str; 5] = [
+    "size",
+    "marginLeft",
+    "marginRight",
+    "marginTop",
+    "marginBottom",
+];
+
+fn positioned_image_layout_metadata(
+    positioned_objects: Option<&Value>,
+    object_id: &str,
+) -> Option<Value> {
+    let properties = positioned_objects?
+        .get(object_id)?
+        .get("positionedObjectProperties")?;
+    let mut metadata = serde_json::Map::new();
+
+    if let Some(positioning) = properties.get("positioning") {
+        metadata.insert("positioning".into(), positioning.clone());
+    }
+
+    if let Some(embedded_object) = properties.get("embeddedObject") {
+        for field in POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS {
+            if let Some(value) = embedded_object.get(field) {
+                metadata.insert(field.into(), value.clone());
+            }
+        }
+    }
+
+    if metadata.is_empty() {
+        None
+    } else {
+        Some(Value::Object(metadata))
+    }
 }
 
 fn contains_page_break(element: &Value) -> bool {
@@ -417,6 +577,22 @@ fn table_preview(table: &Value) -> String {
     }
 }
 
+fn table_dimensions(table: &Value) -> (usize, usize) {
+    let Some(rows) = table.get("tableRows").and_then(Value::as_array) else {
+        return (0, 0);
+    };
+    let columns = rows
+        .iter()
+        .filter_map(|row| {
+            row.get("tableCells")
+                .and_then(Value::as_array)
+                .map(Vec::len)
+        })
+        .max()
+        .unwrap_or(0);
+    (rows.len(), columns)
+}
+
 fn table_cell_text(cell: &Value) -> String {
     cell.get("content")
         .and_then(Value::as_array)
@@ -427,6 +603,58 @@ fn table_cell_text(cell: &Value) -> String {
         .collect::<String>()
         .trim()
         .to_string()
+}
+
+fn table_cell_ranges(table: &Value, table_location: &DocumentLocation) -> Vec<Vec<DocumentRange>> {
+    table
+        .get("tableRows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|row| {
+            row.get("tableCells")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|cell| table_cell_range(cell, table_location))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn table_cell_range(cell: &Value, table_location: &DocumentLocation) -> DocumentRange {
+    let text = table_cell_text(cell);
+    let mut start_index = None;
+    let mut end_index = None;
+    for element in cell
+        .get("content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|element| element.get("paragraph"))
+        .filter_map(|paragraph| paragraph.get("elements").and_then(Value::as_array))
+        .flatten()
+        .filter(|element| element.get("textRun").is_some())
+    {
+        if start_index.is_none() {
+            start_index = element.get("startIndex").and_then(Value::as_i64);
+        }
+        end_index = element.get("endIndex").and_then(Value::as_i64);
+    }
+    let start_index = start_index.unwrap_or(0);
+    let mut end_index = end_index.unwrap_or(start_index);
+    if end_index > start_index {
+        end_index -= 1;
+    }
+    DocumentRange {
+        start_index,
+        end_index,
+        location: DocumentLocation {
+            index: Some(start_index),
+            ..table_location.clone()
+        },
+        preview: text,
+    }
 }
 
 fn text_matches(block: &DocumentTextBlock, needle: &str) -> Vec<DocumentRange> {

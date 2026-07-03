@@ -14,8 +14,8 @@ use url::Url;
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 
-pub const GMAIL_READONLY_SCOPE: &str = "https://www.googleapis.com/auth/gmail.readonly";
-pub const GMAIL_READONLY_SCOPES: &[&str] = &[GMAIL_READONLY_SCOPE];
+pub const GMAIL_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
+pub const GMAIL_SCOPES: &[&str] = &[GMAIL_SCOPE];
 const GMAIL_MESSAGES_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
@@ -31,7 +31,7 @@ pub struct MessageSummary {
     pub subject: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct MessagesPage {
     #[serde(default, deserialize_with = "deserialize_null_vec_as_empty")]
     messages: Vec<ListedMessage>,
@@ -229,7 +229,7 @@ pub async fn get_message<S: AccountStore>(
     options: &GetMessageOptions,
 ) -> Result<Message, MailError> {
     let response = client
-        .send_with_scopes(client.get(options.request_url()?), GMAIL_READONLY_SCOPES)
+        .send_with_scopes(client.get(options.request_url()?), GMAIL_SCOPES)
         .await
         .map_err(MailError::Auth)?;
 
@@ -241,7 +241,7 @@ pub async fn list_messages<S: AccountStore>(
     options: &ListMessagesOptions,
 ) -> Result<Vec<MessageSummary>, MailError> {
     let response = client
-        .send_with_scopes(client.get(options.request_url()?), GMAIL_READONLY_SCOPES)
+        .send_with_scopes(client.get(options.request_url()?), GMAIL_SCOPES)
         .await
         .map_err(MailError::Auth)?;
     let page = parse_messages_page_response(response).await?;
@@ -266,7 +266,7 @@ pub async fn download_attachment<S: AccountStore>(
     ensure_destination_available(&path).await?;
 
     let response = client
-        .send_with_scopes(client.get(options.attachment_url()?), GMAIL_READONLY_SCOPES)
+        .send_with_scopes(client.get(options.attachment_url()?), GMAIL_SCOPES)
         .await
         .map_err(MailError::Auth)?;
     let payload: AttachmentPayload = parse_json_response(response).await?;
@@ -316,7 +316,7 @@ async fn fetch_attachment_filename_metadata<S: AccountStore>(
     let response = client
         .send_with_scopes(
             client.get(message_url(&options.messages_url, &options.message_id)?),
-            GMAIL_READONLY_SCOPES,
+            GMAIL_SCOPES,
         )
         .await
         .map_err(MailError::Auth)?;
@@ -436,7 +436,7 @@ fn part_filename(filename: &str, headers: &[MessageHeader]) -> Option<String> {
     attachment_filename_from_headers(headers)
 }
 
-fn decode_base64url(data: &str) -> Result<Vec<u8>, MailError> {
+pub(crate) fn decode_base64url(data: &str) -> Result<Vec<u8>, MailError> {
     base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(data)
         .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(data))
@@ -460,7 +460,7 @@ async fn fetch_message_metadata<S: AccountStore>(
     }
 
     let response = client
-        .send_with_scopes(client.get(url), GMAIL_READONLY_SCOPES)
+        .send_with_scopes(client.get(url), GMAIL_SCOPES)
         .await
         .map_err(MailError::Auth)?;
     parse_json_response(response).await
@@ -483,7 +483,15 @@ fn header_value(headers: &[MessageHeader], name: &str) -> Option<String> {
 }
 
 async fn parse_messages_page_response(response: Response) -> Result<MessagesPage, MailError> {
-    parse_json_response(response).await
+    let response = ensure_success_response(response).await?;
+    let body = response
+        .text()
+        .await
+        .map_err(|e| MailError::InvalidResponse(e.to_string()))?;
+    if body.trim().is_empty() {
+        return Ok(MessagesPage::default());
+    }
+    serde_json::from_str(&body).map_err(|e| MailError::InvalidResponse(e.to_string()))
 }
 
 async fn parse_message_response(response: Response) -> Result<Message, MailError> {

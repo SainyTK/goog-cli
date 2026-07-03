@@ -8,6 +8,11 @@ pub enum DocsError {
     #[error("Google Docs permission denied")]
     PermissionDenied,
 
+    #[error(
+        "Google Docs cannot write to Office documents; convert to a native Google Docs Document and retry"
+    )]
+    UnsupportedOfficeFile,
+
     #[error("Google Docs API error ({status}): {body}")]
     Api {
         status: reqwest::StatusCode,

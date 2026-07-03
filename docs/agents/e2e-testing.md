@@ -101,6 +101,12 @@ What's safe to leave in: the command line itself, exit codes, HTTP status codes,
 
 If in doubt about whether a piece of output is sensitive, redact it -- the log only needs to prove the command worked, not reproduce its full output.
 
+## Real identifiers never enter unit test source
+
+The redaction rules above cover `.sandcastle/evidence/` logs. Unit test source (`src/**/*_tests.rs`) has a stricter rule: a real Document, Spreadsheet, Drive file, or message ID or URL from live E2E verification must never be committed there, full stop -- not even redacted-looking fragments of one.
+
+It's fine to temporarily hardcode a real ID while iterating against the live account (for example, to confirm a URL-parsing fix against an actual Google Docs URL). Once the behavior is confirmed, replace that real ID with an obviously-fake placeholder (`placeholder-document-id`, `document-123`, and similar patterns already used throughout `src/*_tests.rs`) before committing. If the only thing a test would verify is already covered by a placeholder-based test elsewhere, delete the real-ID version outright instead of swapping in a placeholder.
+
 ## When E2E surfaces something out of scope
 
 If running the real CLI turns up a bug unrelated to, or too large for, the current issue: don't fix it inline. Open a new GitHub issue describing what was observed, comment on the current issue linking the new one, and continue with the current issue's own scope.

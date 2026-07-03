@@ -110,7 +110,8 @@ impl UploadFileOptions {
         let mut url = Url::parse(&self.upload_url)?;
         url.query_pairs_mut()
             .append_pair("uploadType", upload_type.as_query_value())
-            .append_pair("fields", UPLOAD_RESPONSE_FIELDS);
+            .append_pair("fields", UPLOAD_RESPONSE_FIELDS)
+            .append_pair("supportsAllDrives", "true");
         Ok(url)
     }
 }
@@ -160,6 +161,8 @@ impl DownloadFileOptions {
                 DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
             })?
             .push(&self.file_id);
+        url.query_pairs_mut()
+            .append_pair("supportsAllDrives", "true");
         Ok(url)
     }
 }
@@ -240,7 +243,10 @@ impl ListFilesOptions {
                 .append_pair("pageSize", &self.page_size.to_string())
                 .append_pair("orderBy", self.mode.order_by())
                 .append_pair("fields", DRIVE_FILES_FIELDS)
-                .append_pair("q", &self.query());
+                .append_pair("q", &self.query())
+                .append_pair("supportsAllDrives", "true")
+                .append_pair("includeItemsFromAllDrives", "true")
+                .append_pair("corpora", "allDrives");
             if let Some(page_token) = &self.page_token {
                 query.append_pair("pageToken", page_token);
             }

@@ -13,8 +13,6 @@ use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::drive::DRIVE_SCOPES;
 
-pub const SHEETS_READONLY_SCOPE: &str = "https://www.googleapis.com/auth/spreadsheets.readonly";
-pub const SHEETS_READONLY_SCOPES: &[&str] = &[SHEETS_READONLY_SCOPE];
 pub const SHEETS_SCOPE: &str = "https://www.googleapis.com/auth/spreadsheets";
 pub const SHEETS_SCOPES: &[&str] = &[SHEETS_SCOPE];
 const SHEETS_SPREADSHEETS_URL: &str = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -88,6 +86,7 @@ pub struct GetSpreadsheetOptions {
     pub include_grid_data: bool,
     pub ranges: Vec<String>,
     spreadsheets_url: String,
+    drive_files_url: String,
 }
 
 impl GetSpreadsheetOptions {
@@ -98,6 +97,7 @@ impl GetSpreadsheetOptions {
             include_grid_data: false,
             ranges: Vec::new(),
             spreadsheets_url: SHEETS_SPREADSHEETS_URL.to_string(),
+            drive_files_url: DRIVE_FILES_URL.to_string(),
         }
     }
 
@@ -118,6 +118,11 @@ impl GetSpreadsheetOptions {
 
     pub(super) fn with_spreadsheets_url(mut self, spreadsheets_url: impl Into<String>) -> Self {
         self.spreadsheets_url = spreadsheets_url.into();
+        self
+    }
+
+    pub(super) fn with_drive_files_url(mut self, drive_files_url: impl Into<String>) -> Self {
+        self.drive_files_url = drive_files_url.into();
         self
     }
 
@@ -506,6 +511,8 @@ fn drive_file_url(
             segments.push(suffix);
         }
     }
+    url.query_pairs_mut()
+        .append_pair("supportsAllDrives", "true");
     Ok(url)
 }
 
@@ -513,10 +520,11 @@ pub async fn get_spreadsheet<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetSpreadsheetOptions,
 ) -> Result<Spreadsheet, SheetsError> {
-    send_json_request(
+    send_json_request_with_office_file_fallback(
         client,
         client.get(options.request_url()?),
-        SHEETS_READONLY_SCOPES,
+        SHEETS_SCOPES,
+        || get_spreadsheet_via_temporary_conversion(client, options),
     )
     .await
 }
@@ -528,7 +536,7 @@ pub async fn get_values<S: AccountStore>(
     send_json_request_with_office_file_fallback(
         client,
         client.get(options.request_url()?),
-        SHEETS_READONLY_SCOPES,
+        SHEETS_SCOPES,
         || get_values_via_temporary_conversion(client, options),
     )
     .await
@@ -541,7 +549,7 @@ pub async fn batch_get_values<S: AccountStore>(
     send_json_request_with_office_file_fallback(
         client,
         client.get(options.request_url()?),
-        SHEETS_READONLY_SCOPES,
+        SHEETS_SCOPES,
         || batch_get_values_via_temporary_conversion(client, options),
     )
     .await
@@ -696,53 +704,79 @@ async fn send_empty_request<S: AccountStore>(
     Ok(())
 }
 
+async fn get_spreadsheet_via_temporary_conversion<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &GetSpreadsheetOptions,
+) -> Result<Spreadsheet, SheetsError> {
+    read_values_via_temporary_conversion(
+        client,
+        &options.drive_files_url,
+        &options.spreadsheet_id,
+        |temporary_id| {
+            let mut temporary_options = GetSpreadsheetOptions::new(temporary_id)
+                .with_include_grid_data(options.include_grid_data)
+                .with_ranges(options.ranges.clone())
+                .with_spreadsheets_url(&options.spreadsheets_url)
+                .with_drive_files_url(&options.drive_files_url);
+            if let Some(fields) = &options.fields {
+                temporary_options = temporary_options.with_fields(fields.clone());
+            }
+            temporary_options.request_url()
+        },
+    )
+    .await
+}
+
 async fn get_values_via_temporary_conversion<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetValuesOptions,
 ) -> Result<ValueRange, SheetsError> {
-    let temporary_id = create_temporary_google_sheet(
+    read_values_via_temporary_conversion(
         client,
         &options.drive_files_url,
         &options.spreadsheet_id,
+        |temporary_id| {
+            GetValuesOptions::new(temporary_id, options.range.clone())
+                .with_value_render_option(options.value_render_option)
+                .with_spreadsheets_url(&options.spreadsheets_url)
+                .with_drive_files_url(&options.drive_files_url)
+                .request_url()
+        },
     )
-    .await?;
-    let converted_options = GetValuesOptions::new(temporary_id.clone(), options.range.clone())
-        .with_value_render_option(options.value_render_option)
-        .with_spreadsheets_url(&options.spreadsheets_url)
-        .with_drive_files_url(&options.drive_files_url);
-    let response = send_json_request(
-        client,
-        client.get(converted_options.request_url()?),
-        SHEETS_READONLY_SCOPES,
-    )
-    .await;
-
-    finish_temporary_conversion(client, &options.drive_files_url, &temporary_id, response).await
+    .await
 }
 
 async fn batch_get_values_via_temporary_conversion<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchGetValuesOptions,
 ) -> Result<BatchGetValuesResponse, SheetsError> {
-    let temporary_id = create_temporary_google_sheet(
+    read_values_via_temporary_conversion(
         client,
         &options.drive_files_url,
         &options.spreadsheet_id,
+        |temporary_id| {
+            BatchGetValuesOptions::new(temporary_id, options.ranges.clone())
+                .with_value_render_option(options.value_render_option)
+                .with_spreadsheets_url(&options.spreadsheets_url)
+                .with_drive_files_url(&options.drive_files_url)
+                .request_url()
+        },
     )
-    .await?;
-    let converted_options =
-        BatchGetValuesOptions::new(temporary_id.clone(), options.ranges.clone())
-            .with_value_render_option(options.value_render_option)
-            .with_spreadsheets_url(&options.spreadsheets_url)
-            .with_drive_files_url(&options.drive_files_url);
-    let response = send_json_request(
-        client,
-        client.get(converted_options.request_url()?),
-        SHEETS_READONLY_SCOPES,
-    )
-    .await;
+    .await
+}
 
-    finish_temporary_conversion(client, &options.drive_files_url, &temporary_id, response).await
+async fn read_values_via_temporary_conversion<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    drive_files_url: &str,
+    source_file_id: &str,
+    converted_request_url: impl FnOnce(&str) -> Result<Url, SheetsError>,
+) -> Result<Value, SheetsError> {
+    let temporary_id =
+        create_temporary_google_sheet(client, drive_files_url, source_file_id).await?;
+    let request_url = converted_request_url(&temporary_id)?;
+    let response = send_json_request(client, client.get(request_url), SHEETS_SCOPES).await;
+
+    finish_temporary_conversion(client, drive_files_url, &temporary_id, response).await
 }
 
 async fn finish_temporary_conversion<S: AccountStore>(
@@ -782,9 +816,7 @@ async fn create_temporary_google_sheet<S: AccountStore>(
         .and_then(Value::as_str)
         .map(str::to_string)
         .ok_or_else(|| {
-            SheetsError::InvalidResponse(
-                "Google Drive copy response did not include an id".into(),
-            )
+            SheetsError::InvalidResponse("Google Drive copy response did not include an id".into())
         })
 }
 
@@ -833,24 +865,27 @@ fn is_office_file_precondition_error(status: StatusCode, body: &str) -> bool {
         return false;
     }
 
-    let Ok(response) = serde_json::from_str::<GoogleErrorResponse>(body) else {
+    let Ok(response) = serde_json::from_str::<GoogleApiErrorResponse>(body) else {
         return false;
     };
 
-    response.error.status == OFFICE_FILE_PRECONDITION_STATUS
-        && response
-            .error
-            .message
-            .contains(OFFICE_FILE_PRECONDITION_MESSAGE)
+    response.error.is_office_file_precondition()
 }
 
 #[derive(Debug, Deserialize)]
-struct GoogleErrorResponse {
-    error: GoogleError,
+struct GoogleApiErrorResponse {
+    error: GoogleApiError,
 }
 
 #[derive(Debug, Deserialize)]
-struct GoogleError {
+struct GoogleApiError {
     message: String,
     status: String,
+}
+
+impl GoogleApiError {
+    fn is_office_file_precondition(&self) -> bool {
+        self.status == OFFICE_FILE_PRECONDITION_STATUS
+            && self.message.contains(OFFICE_FILE_PRECONDITION_MESSAGE)
+    }
 }

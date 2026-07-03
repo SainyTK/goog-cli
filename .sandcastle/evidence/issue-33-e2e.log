@@ -1,0 +1,86 @@
+Issue 33 E2E evidence, redacted
+Result: PASS
+
+Test setup:
+- Accounts used: active account from `goog auth list`; account email redacted.
+- Fixture used: existing native Google Sheets scratch Spreadsheet `goog-e2e-scratch-sheets-issue-54-20260703`, ID `1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4`.
+- Skipped fixture: none. This fixture is a `goog-e2e-*` scratch Spreadsheet and has MIME type `application/vnd.google-apps.spreadsheet`.
+
+Local checks:
+$ cargo build
+Expected: build the real `goog` CLI used for live checks.
+Observed: build completed successfully.
+Result: PASS.
+
+$ cargo test run_batch_update
+Expected: command-runner regressions cover file and stdin request bodies, URL shape, full body passthrough, write scope, raw JSON stdout, invalid JSON from stdin and file, and mocked API errors.
+Observed: 11 passed, 0 failed.
+Result: PASS.
+
+$ cargo test sheets_batch_update_help_explains_request_shape
+Expected: parser/help regression confirms `sheets batch-update --help` documents full `spreadsheets.batchUpdate` bodies.
+Observed: 1 passed, 0 failed.
+Result: PASS.
+
+$ npm run typecheck
+Expected: repository typecheck passes.
+Observed: `cargo check` completed successfully.
+Result: PASS.
+
+$ npm run test
+Expected: full repository test suite passes.
+Observed: 322 passed, 0 failed; doc-tests 0 passed, 0 failed.
+Result: PASS.
+
+Live checks:
+$ ./target/debug/goog auth list
+Expected: show authorized accounts available to the sandbox.
+Observed:
+  EMAIL                      ACTIVE
+* account-1@redacted.example *
+  account-2@redacted.example
+  account-3@redacted.example
+  account-4@redacted.example
+Result: PASS.
+
+$ ./target/debug/goog drive list --json --all --quiet | rg 'goog-e2e|application/vnd.google-apps.spreadsheet'
+Expected: find a native `goog-e2e-*` scratch Spreadsheet without exposing Sheet contents.
+Observed: found `goog-e2e-scratch-sheets-issue-54-20260703`, ID `1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4`, MIME type `application/vnd.google-apps.spreadsheet`. Non-scratch Drive rows were redacted from this evidence.
+Result: PASS.
+
+$ ./target/debug/goog --quiet sheets batch-update 1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4 --requests /tmp/<request-file> | jq -c '{spreadsheetId, repliesCount: (.replies | length), addedSheetTitle: .replies[0].addSheet.properties.title}'
+Request body:
+  {
+    "requests": [
+      {
+        "addSheet": {
+          "properties": {
+            "title": "goog-e2e-issue-33-20260703015153"
+          }
+        }
+      }
+    ],
+    "includeSpreadsheetInResponse": false
+  }
+Expected: apply a structural `addSheet` request from a file, pass through full native body fields, and emit raw Google JSON that includes one reply.
+Observed:
+  {"spreadsheetId":"1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4","repliesCount":1,"addedSheetTitle":"goog-e2e-issue-33-20260703015153"}
+Result: PASS.
+
+$ printf '%s\n' '{"requests":[{"addSheet":{"properties":{"title":"goog-e2e-issue-33-stdin-20260703015154"}}}],"includeSpreadsheetInResponse":false}' | ./target/debug/goog --quiet sheets batch-update 1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4 --requests - | jq -c '{spreadsheetId, repliesCount: (.replies | length), addedSheetTitle: .replies[0].addSheet.properties.title}'
+Expected: apply a structural `addSheet` request from stdin using the full native body shape and emit raw Google JSON that includes one reply.
+Observed:
+  {"spreadsheetId":"1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4","repliesCount":1,"addedSheetTitle":"goog-e2e-issue-33-stdin-20260703015154"}
+Result: PASS.
+
+$ printf '{not json' | ./target/debug/goog --quiet sheets batch-update 1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4 --requests - > /tmp/issue33-invalid-stdout.txt 2> /tmp/issue33-invalid-stderr.txt; status=$?; printf 'exit=%s\nstdout_bytes=%s\nstderr=%s\n' "$status" "$(wc -c < /tmp/issue33-invalid-stdout.txt)" "$(sed -n '1,2p' /tmp/issue33-invalid-stderr.txt)"
+Expected: invalid JSON from stdin exits nonzero, prints a clear parse error, and writes nothing to stdout.
+Observed:
+  exit=1
+  stdout_bytes=0
+  stderr=error: failed to parse Google Sheets Batch Update request body from stdin: key must be a string at line 1 column 2
+Result: PASS.
+
+Reviewer notes:
+- The mutating command touched only the `goog-e2e-*` scratch Spreadsheet fixture.
+- No real account emails, token values, OAuth URLs, non-scratch file names, spreadsheet contents, or secrets are included in this evidence.

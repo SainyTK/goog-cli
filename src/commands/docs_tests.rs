@@ -9,7 +9,8 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::docs::{DOCS_READONLY_SCOPE, DOCS_SCOPE};
+use crate::cli::DocsListType;
+use crate::docs::DOCS_SCOPE;
 
 use super::docs::*;
 
@@ -37,7 +38,7 @@ fn scoped_docs_token(access_token: &str) -> Token {
         access_token: access_token.into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![DOCS_READONLY_SCOPE.into(), DOCS_SCOPE.into()],
+        scopes: vec![DOCS_SCOPE.into()],
     }
 }
 
@@ -46,6 +47,21 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
         .save_token("alice@example.com", &docs_token())
         .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
+}
+
+fn dry_run_apply_list_command(
+    selector: RangeSelector,
+    list_type: DocsListType,
+) -> ApplyListCommand {
+    ApplyListCommand {
+        document_id: "document-123".into(),
+        selector,
+        list_type: Some(list_type),
+        preset: None,
+        dry_run: true,
+        json: true,
+        required_revision_id: None,
+    }
 }
 
 fn multi_account_config() -> Config {
@@ -205,6 +221,46 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
 }
 
 #[tokio::test]
+async fn run_map_json_emits_each_inline_image_in_a_paragraph() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(document_with_multiple_inline_images()),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_map_to(
+        &client,
+        "document-123".into(),
+        true,
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["entries"].as_array().unwrap().len(), 2);
+    assert_eq!(output["entries"][0]["kind"], "inline-image");
+    assert_eq!(output["entries"][0]["location"]["index"], 1);
+    assert_eq!(output["entries"][0]["preview"], "[inline image 1]");
+    assert_eq!(output["entries"][1]["kind"], "inline-image");
+    assert_eq!(output["entries"][1]["location"]["index"], 2);
+    assert_eq!(output["entries"][1]["preview"], "[inline image 2]");
+    assert_eq!(output["entries"][0]["location"]["contentLine"], 1);
+    assert_eq!(output["entries"][1]["location"]["contentLine"], 1);
+}
+
+#[tokio::test]
 async fn run_search_text_prints_human_matches_from_document_map() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -321,6 +377,37 @@ async fn run_get_content_keeps_index_and_entry_distinct() {
     assert!(by_entry.contains("No matching text here"));
 }
 
+#[test]
+fn get_content_selector_rejects_mixed_or_partial_selectors() {
+    fn assert_selector_error(
+        selector: anyhow::Result<ContentSelector>,
+        expected_message: &str,
+        failure_message: &str,
+    ) {
+        let error = selector.expect_err(failure_message);
+        assert!(
+            error.to_string().contains(expected_message),
+            "expected {error} to contain {expected_message}"
+        );
+    }
+
+    assert_selector_error(
+        content_selector(Some(44), Some(2), None, None, None),
+        "provide exactly one content selector",
+        "index and entry selectors must be mutually exclusive",
+    );
+    assert_selector_error(
+        content_selector(None, None, Some(2), None, None),
+        "--page and --line must be provided together",
+        "page selectors require a matching line",
+    );
+    assert_selector_error(
+        content_selector(None, None, None, Some(1), None),
+        "--page and --line must be provided together",
+        "line selectors require a matching page",
+    );
+}
+
 #[tokio::test]
 async fn run_get_content_json_resolves_page_line_and_heading() {
     let server = MockServer::start().await;
@@ -396,6 +483,1355 @@ async fn run_get_content_ambiguous_heading_returns_candidates() {
     assert!(message.contains("entry 1"));
     assert!(message.contains("entry 2"));
     assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_insert_text_dry_run_json_emits_request_without_mutating() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_insert_text_to(
+        &client,
+        InsertTextCommand {
+            document_id: "document-123".into(),
+            text: "Hello ".into(),
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["revisionId"], "rev-search");
+    assert_eq!(output["location"]["index"], 37);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertText"]["location"]["index"],
+        37
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertText"]["text"],
+        "Hello "
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+    assert_eq!(output["preview"]["before"], "Second Page Plan");
+    assert_eq!(output["preview"]["after"], "Hello Second Page Plan");
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
+async fn run_insert_text_dry_run_json_resolves_exact_heading_and_text_selectors() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(5)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let cases = [
+        (InsertTextSelector::Index(44), 44, "Second Hello Page Plan"),
+        (
+            InsertTextSelector::BeforeHeading("Second Page Plan".into()),
+            37,
+            "Hello Second Page Plan",
+        ),
+        (
+            InsertTextSelector::AfterHeading("Second Page Plan".into()),
+            54,
+            "Second Page PlanHello ",
+        ),
+        (
+            InsertTextSelector::BeforeText("matching text".into()),
+            17,
+            "No Hello matching text here",
+        ),
+        (
+            InsertTextSelector::AfterText("matching text".into()),
+            30,
+            "No matching textHello  here",
+        ),
+    ];
+
+    for (selector, expected_index, expected_preview) in cases {
+        let mut out = Vec::new();
+        run_insert_text_to(
+            &client,
+            InsertTextCommand {
+                document_id: "document-123".into(),
+                text: "Hello ".into(),
+                selector,
+                dry_run: true,
+                json: true,
+                required_revision_id: None,
+            },
+            &mut out,
+            Some(&documents_url),
+        )
+        .await
+        .unwrap();
+
+        let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(output["location"]["index"], expected_index);
+        assert_eq!(
+            output["requestBody"]["requests"][0]["insertText"]["location"]["index"],
+            expected_index
+        );
+        assert_eq!(output["preview"]["after"], expected_preview);
+    }
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 5);
+    assert!(requests
+        .iter()
+        .all(|request| request.method.as_str() == "GET"));
+}
+
+#[tokio::test]
+async fn run_replace_text_dry_run_json_emits_request_without_mutating() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_replace_text_to(
+        &client,
+        ReplaceTextCommand {
+            document_id: "document-123".into(),
+            old_text: "matching text".into(),
+            new_text: "updated copy".into(),
+            match_number: None,
+            all: false,
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["revisionId"], "rev-search");
+    assert_eq!(output["ranges"][0]["startIndex"], 17);
+    assert_eq!(output["ranges"][0]["endIndex"], 30);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["deleteContentRange"]["range"]["startIndex"],
+        17
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["deleteContentRange"]["range"]["endIndex"],
+        30
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["location"]["index"],
+        17
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["text"],
+        "updated copy"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+    assert_eq!(
+        output["preview"]["changes"][0]["before"],
+        "No matching text here"
+    );
+    assert_eq!(
+        output["preview"]["changes"][0]["after"],
+        "No updated copy here"
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
+async fn run_replace_text_all_dry_run_orders_requests_from_document_end() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_replace_text_to(
+        &client,
+        ReplaceTextCommand {
+            document_id: "document-123".into(),
+            old_text: "Plan".into(),
+            new_text: "Strategy".into(),
+            match_number: None,
+            all: true,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["ranges"].as_array().unwrap().len(), 2);
+    assert_eq!(output["ranges"][0]["startIndex"], 9);
+    assert_eq!(output["ranges"][1]["startIndex"], 49);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["deleteContentRange"]["range"]["startIndex"],
+        49
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][2]["deleteContentRange"]["range"]["startIndex"],
+        9
+    );
+    assert_eq!(output["preview"]["changes"][0]["after"], "Project Strategy");
+    assert_eq!(
+        output["preview"]["changes"][1]["after"],
+        "Second Page Strategy"
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
+async fn run_insert_text_posts_resolved_batch_update_request() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "insertText": {
+                    "location": { "index": 37 },
+                    "text": "Hello "
+                }
+            }
+        ],
+        "writeControl": {
+            "requiredRevisionId": "rev-search"
+        }
+    });
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_insert_text_to(
+        &client,
+        InsertTextCommand {
+            document_id: "document-123".into(),
+            text: "Hello ".into(),
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            dry_run: false,
+            json: false,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"documentId\":\"document-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_replace_text_posts_selected_match_batch_update_request() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "deleteContentRange": {
+                    "range": {
+                        "startIndex": 49,
+                        "endIndex": 53
+                    }
+                }
+            },
+            {
+                "insertText": {
+                    "location": { "index": 49 },
+                    "text": "Strategy"
+                }
+            }
+        ],
+        "writeControl": {
+            "requiredRevisionId": "rev-search"
+        }
+    });
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}, {}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_replace_text_to(
+        &client,
+        ReplaceTextCommand {
+            document_id: "document-123".into(),
+            old_text: "Plan".into(),
+            new_text: "Strategy".into(),
+            match_number: Some(2),
+            all: false,
+            dry_run: false,
+            json: false,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"documentId\":\"document-123\",\"replies\":[{},{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_insert_text_rejects_ambiguous_text_anchor_with_candidates() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let result = run_insert_text_to(
+        &client,
+        InsertTextCommand {
+            document_id: "document-123".into(),
+            text: "Hello ".into(),
+            selector: InsertTextSelector::BeforeText("Plan".into()),
+            dry_run: false,
+            json: false,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("ambiguous text selector"));
+    assert!(message.contains("match 1 index 9"));
+    assert!(message.contains("match 2 index 49"));
+    assert!(out.is_empty());
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
+async fn run_replace_text_rejects_ambiguous_match_with_candidates() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let result = run_replace_text_to(
+        &client,
+        ReplaceTextCommand {
+            document_id: "document-123".into(),
+            old_text: "Plan".into(),
+            new_text: "Strategy".into(),
+            match_number: None,
+            all: false,
+            dry_run: false,
+            json: false,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("ambiguous replace-text match"));
+    assert!(message.contains("match 1 index 9"));
+    assert!(message.contains("match 2 index 49"));
+    assert!(out.is_empty());
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
+async fn run_list_images_and_tables_emit_document_map_metadata() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(long_document_with_toc_and_objects()),
+        )
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut images = Vec::new();
+    run_list_images_to(
+        &client,
+        "document-123".into(),
+        true,
+        &mut images,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let images: serde_json::Value = serde_json::from_slice(&images).unwrap();
+    assert_eq!(images.as_array().unwrap().len(), 2);
+    assert_eq!(images[0]["kind"], "inline-image");
+    assert_eq!(images[0]["imageHandle"], "image-1");
+    assert_eq!(images[0]["objectId"], "inline-image-1");
+    assert!(images[0].get("layoutMetadata").is_none());
+    assert_eq!(images[1]["kind"], "positioned-image");
+    assert_eq!(images[1]["imageHandle"], "image-2");
+    assert_eq!(images[1]["objectId"], "positioned-image-1");
+    assert!(images[1]["location"]["index"].is_number());
+    assert_eq!(
+        images[1]["layoutMetadata"]["positioning"]["layout"],
+        "WRAP_TEXT"
+    );
+    assert_eq!(
+        images[1]["layoutMetadata"]["positioning"]["leftOffset"]["magnitude"],
+        12
+    );
+    assert_eq!(
+        images[1]["layoutMetadata"]["size"]["height"]["magnitude"],
+        72
+    );
+
+    let mut human_images = Vec::new();
+    run_list_images_to(
+        &client,
+        "document-123".into(),
+        false,
+        &mut human_images,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let human_images = String::from_utf8(human_images).unwrap();
+    assert!(human_images.contains("Handle"));
+    assert!(human_images.contains("image-1"));
+    assert!(human_images.contains("inline-image-1"));
+    assert!(human_images.contains("image-2"));
+    assert!(human_images.contains("positioned-image-1"));
+
+    let mut tables = Vec::new();
+    run_list_tables_to(
+        &client,
+        "document-123".into(),
+        true,
+        &mut tables,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let tables: serde_json::Value = serde_json::from_slice(&tables).unwrap();
+    assert_eq!(tables.as_array().unwrap().len(), 1);
+    assert_eq!(tables[0]["kind"], "table");
+    assert_eq!(tables[0]["tableHandle"], "table-1");
+    assert_eq!(tables[0]["rows"], 1);
+    assert_eq!(tables[0]["columns"], 2);
+    assert_eq!(tables[0]["preview"], "หัวข้อ | สถานะ");
+}
+
+#[tokio::test]
+async fn run_insert_image_and_table_dry_run_emit_native_requests() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut image = Vec::new();
+    run_insert_image_to(
+        &client,
+        InsertImageCommand {
+            document_id: "document-123".into(),
+            image_uri: "https://example.test/image.png".into(),
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut image,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let image: serde_json::Value = serde_json::from_slice(&image).unwrap();
+    assert_eq!(image["location"]["index"], 37);
+    assert_eq!(
+        image["requestBody"]["requests"][0]["insertInlineImage"]["location"]["index"],
+        37
+    );
+    assert_eq!(
+        image["requestBody"]["requests"][0]["insertInlineImage"]["uri"],
+        "https://example.test/image.png"
+    );
+    assert_eq!(
+        image["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+
+    let mut table = Vec::new();
+    run_insert_table_to(
+        &client,
+        InsertTableCommand {
+            document_id: "document-123".into(),
+            data: None,
+            rows: Some(2),
+            columns: Some(3),
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut table,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let table: serde_json::Value = serde_json::from_slice(&table).unwrap();
+    assert_eq!(
+        table["requestBody"]["requests"][0]["insertTable"]["location"]["index"],
+        44
+    );
+    assert_eq!(
+        table["requestBody"]["requests"][0]["insertTable"]["rows"],
+        2
+    );
+    assert_eq!(
+        table["requestBody"]["requests"][0]["insertTable"]["columns"],
+        3
+    );
+}
+
+#[tokio::test]
+async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("wide-table.csv");
+    std::fs::write(&data_path, "A1,B1,C1,D1\nA2,B2,C2,D2\n").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_table_to(
+        &client,
+        InsertTableCommand {
+            document_id: "document-123".into(),
+            data: Some(data_path.to_string_lossy().into_owned()),
+            rows: None,
+            columns: None,
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertTable"]["rows"],
+        2
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertTable"]["columns"],
+        4
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["location"]["index"],
+        59
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["text"],
+        "D2"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][8]["insertText"]["location"]["index"],
+        48
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][8]["insertText"]["text"],
+        "A1"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+    assert!(output["preview"]["summary"]
+        .as_str()
+        .unwrap()
+        .contains("A1 | B1 | C1 / A2 | B2 | C2"));
+}
+
+#[tokio::test]
+async fn run_insert_table_dry_run_accepts_tsv_data() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("table.tsv");
+    std::fs::write(&data_path, "Left\tRight\nBottom left\tBottom right\n").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_table_to(
+        &client,
+        InsertTableCommand {
+            document_id: "document-123".into(),
+            data: Some(data_path.to_string_lossy().into_owned()),
+            rows: None,
+            columns: None,
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertTable"]["columns"],
+        2
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["text"],
+        "Bottom right"
+    );
+}
+
+#[tokio::test]
+async fn run_insert_image_dry_run_human_shows_placeholder_in_context() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_image_to(
+        &client,
+        InsertImageCommand {
+            document_id: "document-123".into(),
+            image_uri: "https://example.test/image.png".into(),
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            dry_run: true,
+            json: false,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("insert-image: Insert inline image at index 37"));
+    assert!(output.contains("Before: Second Page Plan"));
+    assert!(output.contains("After: [inline image]Second Page Plan"));
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
+async fn run_edit_table_dry_run_replaces_cells_from_document_end() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_table_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("table.csv");
+    std::fs::write(&data_path, "New A,New B\nNew C,New D\n").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_edit_table_to(
+        &client,
+        EditTableCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            data: data_path.to_string_lossy().into_owned(),
+            resize: false,
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-table".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["location"]["index"], 1);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["deleteContentRange"]["range"]["startIndex"],
+        31
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["location"]["index"],
+        31
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["text"],
+        "New D"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-table"
+    );
+}
+
+#[tokio::test]
+async fn run_edit_table_rejects_dimension_changes_without_supported_resize() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_table_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("mismatch.csv");
+    std::fs::write(&data_path, "Only,Two\n").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mismatch = run_edit_table_to(
+        &client,
+        EditTableCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            data: data_path.to_string_lossy().into_owned(),
+            resize: false,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut Vec::new(),
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", mismatch.unwrap_err());
+    assert!(message.contains("edit-table data dimensions are 1x2"));
+    assert!(message.contains("table-1 is 2x2"));
+    assert!(message.contains("pass --resize"));
+
+    let resize = run_edit_table_to(
+        &client,
+        EditTableCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            data: data_path.to_string_lossy().into_owned(),
+            resize: true,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut Vec::new(),
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", resize.unwrap_err());
+    assert!(message.contains("edit-table --resize is not supported yet"));
+}
+
+#[tokio::test]
+async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut styles = Vec::new();
+    run_apply_styles_to(
+        &client,
+        ApplyStylesCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Text {
+                text: "matching text".into(),
+                match_number: None,
+            },
+            bold: true,
+            italic: true,
+            font_size: Some(14.0),
+            foreground_color: Some("#336699".into()),
+            heading: Some("HEADING_2".into()),
+            style_json: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut styles,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let styles: serde_json::Value = serde_json::from_slice(&styles).unwrap();
+    assert_eq!(styles["range"]["startIndex"], 17);
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateTextStyle"]["fields"],
+        "bold,italic,fontSize,foregroundColor"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateParagraphStyle"]["paragraphStyle"]
+            ["namedStyleType"],
+        "HEADING_2"
+    );
+    assert_eq!(
+        styles["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+
+    let mut list = Vec::new();
+    run_apply_list_to(
+        &client,
+        ApplyListCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Entry(2),
+            list_type: Some(crate::cli::DocsListType::Checkbox),
+            preset: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut list,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let list: serde_json::Value = serde_json::from_slice(&list).unwrap();
+    assert_eq!(
+        list["requestBody"]["requests"][0]["createParagraphBullets"]["bulletPreset"],
+        "BULLET_CHECKBOX"
+    );
+    assert_eq!(
+        list["requestBody"]["requests"][0]["createParagraphBullets"]["range"]["startIndex"],
+        14
+    );
+}
+
+#[tokio::test]
+async fn run_apply_list_dry_run_maps_cli_types_and_preserves_raw_preset() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(5)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    for (list_type, expected_preset) in [
+        (DocsListType::Bullet, "BULLET_DISC_CIRCLE_SQUARE"),
+        (DocsListType::Numbered, "NUMBERED_DECIMAL_ALPHA_ROMAN"),
+        (DocsListType::Dash, "BULLET_DIAMONDX_ARROW3D_SQUARE"),
+        (DocsListType::Checkbox, "BULLET_CHECKBOX"),
+    ] {
+        let mut out = Vec::new();
+        run_apply_list_to(
+            &client,
+            dry_run_apply_list_command(
+                RangeSelector::IndexRange {
+                    start_index: 4,
+                    end_index: 12,
+                },
+                list_type,
+            ),
+            &mut out,
+            Some(&documents_url),
+        )
+        .await
+        .unwrap();
+
+        let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let bullets = &output["requestBody"]["requests"][0]["createParagraphBullets"];
+        assert_eq!(bullets["bulletPreset"], expected_preset);
+        assert_eq!(bullets["range"]["startIndex"], 4);
+        assert_eq!(bullets["range"]["endIndex"], 12);
+        assert_eq!(output["range"]["startIndex"], 4);
+        assert_eq!(output["range"]["endIndex"], 12);
+        assert_eq!(output["revisionId"], "rev-search");
+    }
+
+    let mut raw = Vec::new();
+    run_apply_list_to(
+        &client,
+        ApplyListCommand {
+            list_type: None,
+            preset: Some("BULLET_STAR_CIRCLE_SQUARE".into()),
+            required_revision_id: Some("rev-required".into()),
+            ..dry_run_apply_list_command(
+                RangeSelector::IndexRange {
+                    start_index: 6,
+                    end_index: 18,
+                },
+                DocsListType::Bullet,
+            )
+        },
+        &mut raw,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+    let request_body = &output["requestBody"];
+    assert_eq!(
+        request_body["requests"][0]["createParagraphBullets"]["bulletPreset"],
+        "BULLET_STAR_CIRCLE_SQUARE"
+    );
+    assert_eq!(
+        request_body["writeControl"]["requiredRevisionId"],
+        "rev-required"
+    );
+}
+
+#[tokio::test]
+async fn run_apply_list_targets_whole_blocks_and_rejects_ambiguous_text_ranges() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut page_line = Vec::new();
+    run_apply_list_to(
+        &client,
+        dry_run_apply_list_command(
+            RangeSelector::PageLine { page: 2, line: 1 },
+            DocsListType::Bullet,
+        ),
+        &mut page_line,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&page_line).unwrap();
+    assert_eq!(output["range"]["startIndex"], 37);
+    assert_eq!(output["range"]["endIndex"], 54);
+    assert_eq!(output["range"]["preview"], "Second Page Plan");
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createParagraphBullets"]["range"]["startIndex"],
+        37
+    );
+
+    let result = run_apply_list_to(
+        &client,
+        dry_run_apply_list_command(
+            RangeSelector::Text {
+                text: "Plan".into(),
+                match_number: None,
+            },
+            DocsListType::Numbered,
+        ),
+        &mut Vec::new(),
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("ambiguous replace-text match"));
+    assert!(message.contains("index 9"));
+    assert!(message.contains("index 49"));
+}
+
+#[tokio::test]
+async fn run_apply_list_posts_mutation_request_body() {
+    let server = MockServer::start().await;
+    let expected_request = serde_json::json!({
+        "requests": [
+            {
+                "createParagraphBullets": {
+                    "range": {
+                        "startIndex": 1,
+                        "endIndex": 14
+                    },
+                    "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"
+                }
+            }
+        ],
+        "writeControl": {
+            "requiredRevisionId": "rev-search"
+        }
+    });
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(&expected_request))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_apply_list_to(
+        &client,
+        ApplyListCommand {
+            dry_run: false,
+            json: false,
+            required_revision_id: Some("rev-search".into()),
+            ..dry_run_apply_list_command(RangeSelector::Entry(1), DocsListType::Bullet)
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"documentId\":\"document-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_apply_styles_to(
+        &client,
+        ApplyStylesCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::IndexRange {
+                start_index: 17,
+                end_index: 30,
+            },
+            bold: false,
+            italic: false,
+            font_size: None,
+            foreground_color: None,
+            heading: None,
+            style_json: Some(
+                serde_json::json!({
+                    "textStyle": {
+                        "underline": true,
+                        "weightedFontFamily": {
+                            "fontFamily": "Roboto",
+                            "weight": 700
+                        }
+                    },
+                    "paragraphStyle": {
+                        "alignment": "CENTER"
+                    }
+                })
+                .to_string(),
+            ),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["updateTextStyle"]["textStyle"]["underline"],
+        true
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["updateTextStyle"]["textStyle"]["weightedFontFamily"]
+            ["fontFamily"],
+        "Roboto"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["updateTextStyle"]["fields"],
+        "underline,weightedFontFamily"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["updateParagraphStyle"]["paragraphStyle"]["alignment"],
+        "CENTER"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["updateParagraphStyle"]["fields"],
+        "alignment"
+    );
+}
+
+#[tokio::test]
+async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updateTextStyle": {
+                        "range": {
+                            "startIndex": 17,
+                            "endIndex": 30
+                        },
+                        "textStyle": {
+                            "strikethrough": true,
+                            "bold": true
+                        },
+                        "fields": "strikethrough,bold"
+                    }
+                },
+                {
+                    "updateParagraphStyle": {
+                        "range": {
+                            "startIndex": 17,
+                            "endIndex": 30
+                        },
+                        "paragraphStyle": {
+                            "namedStyleType": "HEADING_1"
+                        },
+                        "fields": "namedStyleType"
+                    }
+                }
+            ],
+            "writeControl": {
+                "requiredRevisionId": "rev-search"
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}, {}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_apply_styles_to(
+        &client,
+        ApplyStylesCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Text {
+                text: "matching text".into(),
+                match_number: None,
+            },
+            bold: true,
+            italic: false,
+            font_size: None,
+            foreground_color: None,
+            heading: Some("HEADING_1".into()),
+            style_json: Some(r#"{"textStyle":{"strikethrough":true}}"#.into()),
+            dry_run: false,
+            json: false,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"documentId\":\"document-123\",\"replies\":[{},{}]}\n"
+    );
 }
 
 #[tokio::test]
@@ -1258,6 +2694,94 @@ fn ambiguous_heading_document() -> serde_json::Value {
     })
 }
 
+fn editable_table_document() -> serde_json::Value {
+    serde_json::json!({
+        "documentId": "document-123",
+        "title": "Editable table",
+        "revisionId": "rev-table",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 40,
+                    "table": {
+                        "tableRows": [
+                            {
+                                "tableCells": [
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [
+                                                        {
+                                                            "startIndex": 5,
+                                                            "endIndex": 11,
+                                                            "textRun": { "content": "Old A\n" }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [
+                                                        {
+                                                            "startIndex": 13,
+                                                            "endIndex": 19,
+                                                            "textRun": { "content": "Old B\n" }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "tableCells": [
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [
+                                                        {
+                                                            "startIndex": 23,
+                                                            "endIndex": 29,
+                                                            "textRun": { "content": "Old C\n" }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [
+                                                        {
+                                                            "startIndex": 31,
+                                                            "endIndex": 37,
+                                                            "textRun": { "content": "Old D\n" }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    })
+}
+
 fn long_document_with_toc_and_objects() -> serde_json::Value {
     serde_json::json!({
         "documentId": "document-123",
@@ -1418,11 +2942,66 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
         "positionedObjects": {
             "positioned-image-1": {
                 "positionedObjectProperties": {
+                    "positioning": {
+                        "layout": "WRAP_TEXT",
+                        "leftOffset": {
+                            "magnitude": 12,
+                            "unit": "PT"
+                        },
+                        "topOffset": {
+                            "magnitude": 24,
+                            "unit": "PT"
+                        }
+                    },
                     "embeddedObject": {
+                        "size": {
+                            "height": {
+                                "magnitude": 72,
+                                "unit": "PT"
+                            },
+                            "width": {
+                                "magnitude": 96,
+                                "unit": "PT"
+                            }
+                        },
                         "imageProperties": {}
                     }
                 }
             }
+        }
+    })
+}
+
+fn document_with_multiple_inline_images() -> serde_json::Value {
+    serde_json::json!({
+        "documentId": "document-123",
+        "title": "Images",
+        "revisionId": "rev-images",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 3,
+                    "paragraph": {
+                        "elements": [
+                            {
+                                "startIndex": 1,
+                                "endIndex": 2,
+                                "inlineObjectElement": {
+                                    "inlineObjectId": "inline-image-1"
+                                }
+                            },
+                            {
+                                "startIndex": 2,
+                                "endIndex": 3,
+                                "inlineObjectElement": {
+                                    "inlineObjectId": "inline-image-2"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
         }
     })
 }
