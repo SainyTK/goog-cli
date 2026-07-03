@@ -3,7 +3,8 @@ set -eu
 
 REPO="SainyTK/goog-cli"
 BIN_NAME="goog"
-INSTALL_DIR="${GOOG_INSTALL_DIR:-/usr/local/bin}"
+DEFAULT_INSTALL_DIR="/usr/local/bin"
+INSTALL_DIR="${GOOG_INSTALL_DIR:-}"
 VERSION=""
 
 usage() {
@@ -15,7 +16,8 @@ Usage:
 
 Options:
   --version      Install a specific Canonical Release tag.
-  --install-dir  Install directory for the goog binary. Defaults to /usr/local/bin.
+  --install-dir  Install directory for the goog binary.
+                 Defaults to /usr/local/bin when writable, otherwise $HOME/.local/bin.
   -h, --help     Show this help.
 
 Environment:
@@ -53,6 +55,15 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+if [ -z "$INSTALL_DIR" ]; then
+  if [ -d "$DEFAULT_INSTALL_DIR" ] && [ -w "$DEFAULT_INSTALL_DIR" ]; then
+    INSTALL_DIR="$DEFAULT_INSTALL_DIR"
+  else
+    [ -n "${HOME:-}" ] || fail "HOME is not set and ${DEFAULT_INSTALL_DIR} is not writable; pass --install-dir PATH"
+    INSTALL_DIR="${HOME}/.local/bin"
+  fi
+fi
 
 need_cmd curl
 need_cmd install
@@ -128,6 +139,14 @@ tar -xzf "$archive_path" -C "$tmp_dir"
 [ -x "${tmp_dir}/${BIN_NAME}" ] || fail "release archive did not contain an executable ${BIN_NAME} binary"
 
 mkdir -p "$INSTALL_DIR"
+[ -w "$INSTALL_DIR" ] || fail "install directory is not writable: ${INSTALL_DIR}; pass --install-dir PATH or set GOOG_INSTALL_DIR"
 install -m 0755 "${tmp_dir}/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
 
 printf 'goog %s installed to %s/%s\n' "$VERSION" "$INSTALL_DIR" "$BIN_NAME"
+
+case ":${PATH:-}:" in
+  *:"$INSTALL_DIR":*) ;;
+  *)
+    printf 'goog installer: %s is not on PATH; add it before running goog by name\n' "$INSTALL_DIR" >&2
+    ;;
+esac

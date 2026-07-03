@@ -25,6 +25,8 @@ The CLI uses one OAuth App for all accounts, stores account tokens in the system
 ### Installer Script
 
 The installer script is the default install path for macOS and Linux. It installs the latest Canonical Release from GitHub Releases rather than branch-head code.
+It installs to `/usr/local/bin` when that directory is writable.
+If `/usr/local/bin` is not writable, it installs to `$HOME/.local/bin` and prints a PATH warning if needed.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh

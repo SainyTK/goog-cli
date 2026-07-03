@@ -47,6 +47,10 @@ fn installer_resolves_canonical_releases_and_supported_targets() {
         ".sha256",
         "checksum verification failed",
         "Windows binary releases are not supported yet",
+        "DEFAULT_INSTALL_DIR=\"/usr/local/bin\"",
+        "INSTALL_DIR=\"${HOME}/.local/bin\"",
+        "install directory is not writable",
+        "is not on PATH",
     ] {
         assert!(
             installer.contains(expected),
