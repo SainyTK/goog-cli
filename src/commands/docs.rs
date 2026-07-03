@@ -1440,7 +1440,9 @@ fn insert_text_selector(
         + usize::from(after_text.is_some())
         + usize::from(before_text.is_some());
     if selector_count != 1 {
-        bail!("provide exactly one insert-text selector: --index, --entry, --page with --line, --after-heading, --before-heading, --after-text, or --before-text");
+        bail!(
+            "provide exactly one insert-text selector: --index, --entry, --page with --line, --after-heading, --before-heading, --after-text, or --before-text"
+        );
     }
 
     if let Some(index) = index {
@@ -1488,7 +1490,9 @@ fn range_selector(
         + usize::from(page.is_some() || line.is_some())
         + usize::from(text.is_some() || match_number.is_some());
     if selector_count != 1 {
-        bail!("provide exactly one range selector: --from-index with --to-index, --entry, --page with --line, or --text with optional --match");
+        bail!(
+            "provide exactly one range selector: --from-index with --to-index, --entry, --page with --line, or --text with optional --match"
+        );
     }
     if from_index.is_some() || to_index.is_some() {
         let Some(start_index) = from_index else {
@@ -1915,27 +1919,10 @@ fn prepare_edit_table_change(
         bail!("selected table does not expose editable cell text ranges");
     }
 
-    let mut requests = Vec::new();
-    for (row_index, row) in table.table_cells.iter().enumerate().rev() {
-        for (column_index, range) in row.iter().enumerate().rev() {
-            let replacement = &data[row_index][column_index];
-            if range.end_index > range.start_index {
-                requests.push(serde_json::json!({
-                    "deleteContentRange": {
-                        "range": docs_range(range)
-                    }
-                }));
-            }
-            requests.push(serde_json::json!({
-                "insertText": {
-                    "location": { "index": range.start_index },
-                    "text": replacement
-                }
-            }));
-        }
-    }
-    let request_body =
-        request_body_with_revision(requests, command.required_revision_id.as_deref());
+    let request_body = request_body_with_revision(
+        edit_table_requests(&table.table_cells, &data),
+        command.required_revision_id.as_deref(),
+    );
     Ok(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
         location: Some(table.location.clone()),
@@ -1949,6 +1936,31 @@ fn prepare_edit_table_change(
             ),
         },
     })
+}
+
+fn edit_table_requests(
+    table_cells: &[Vec<DocumentRange>],
+    data: &[Vec<String>],
+) -> Vec<serde_json::Value> {
+    let mut requests = Vec::new();
+    for (row_index, row) in table_cells.iter().enumerate().rev() {
+        for (column_index, range) in row.iter().enumerate().rev() {
+            if range.end_index > range.start_index {
+                requests.push(serde_json::json!({
+                    "deleteContentRange": {
+                        "range": docs_range(range)
+                    }
+                }));
+            }
+            requests.push(serde_json::json!({
+                "insertText": {
+                    "location": { "index": range.start_index },
+                    "text": data[row_index][column_index]
+                }
+            }));
+        }
+    }
+    requests
 }
 
 fn prepare_apply_styles_change(
@@ -2260,22 +2272,15 @@ fn insert_text_request_body(
     text: &str,
     required_revision_id: Option<&str>,
 ) -> serde_json::Value {
-    let mut body = serde_json::json!({
-        "requests": [
-            {
-                "insertText": {
-                    "location": { "index": index },
-                    "text": text
-                }
+    request_body_with_revision(
+        vec![serde_json::json!({
+            "insertText": {
+                "location": { "index": index },
+                "text": text
             }
-        ]
-    });
-    if let Some(required_revision_id) = required_revision_id {
-        body["writeControl"] = serde_json::json!({
-            "requiredRevisionId": required_revision_id
-        });
-    }
-    body
+        })],
+        required_revision_id,
+    )
 }
 
 fn request_body_with_revision(
@@ -2365,10 +2370,7 @@ fn replace_text_request_body(
     for range in ranges_descending {
         requests.push(serde_json::json!({
             "deleteContentRange": {
-                "range": {
-                    "startIndex": range.start_index,
-                    "endIndex": range.end_index
-                }
+                "range": docs_range(&range)
             }
         }));
         requests.push(serde_json::json!({
@@ -2379,13 +2381,7 @@ fn replace_text_request_body(
         }));
     }
 
-    let mut body = serde_json::json!({ "requests": requests });
-    if let Some(required_revision_id) = required_revision_id {
-        body["writeControl"] = serde_json::json!({
-            "requiredRevisionId": required_revision_id
-        });
-    }
-    body
+    request_body_with_revision(requests, required_revision_id)
 }
 
 fn insert_preview_text(before: &str, char_offset: usize, inserted_text: &str) -> String {

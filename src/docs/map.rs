@@ -117,6 +117,15 @@ struct DocumentMapBuilder {
     toc_page_hints: Vec<TableOfContentsPageHint>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DocumentMapEntryMetadata {
+    object_id: Option<String>,
+    rows: Option<usize>,
+    columns: Option<usize>,
+    table_handle: Option<String>,
+    table_cells: Vec<Vec<DocumentRange>>,
+}
+
 impl DocumentMapBuilder {
     fn new(toc_page_hints: Vec<TableOfContentsPageHint>) -> Self {
         Self {
@@ -181,11 +190,10 @@ impl DocumentMapBuilder {
                 DocumentMapEntryKind::InlineImage,
                 style.clone(),
                 inline_image_preview(image_index, inline_image_count),
-                Some(image.object_id),
-                None,
-                None,
-                None,
-                Vec::new(),
+                DocumentMapEntryMetadata {
+                    object_id: Some(image.object_id),
+                    ..DocumentMapEntryMetadata::default()
+                },
             );
         }
 
@@ -195,11 +203,10 @@ impl DocumentMapBuilder {
                 DocumentMapEntryKind::PositionedImage,
                 style.clone(),
                 format!("[positioned image {}]", object_index + 1),
-                Some(object_id),
-                None,
-                None,
-                None,
-                Vec::new(),
+                DocumentMapEntryMetadata {
+                    object_id: Some(object_id),
+                    ..DocumentMapEntryMetadata::default()
+                },
             );
         }
     }
@@ -216,11 +223,13 @@ impl DocumentMapBuilder {
             DocumentMapEntryKind::Table,
             None,
             preview(&table_preview(table)),
-            None,
-            Some(rows),
-            Some(columns),
-            Some(table_handle),
-            table_cells,
+            DocumentMapEntryMetadata {
+                rows: Some(rows),
+                columns: Some(columns),
+                table_handle: Some(table_handle),
+                table_cells,
+                ..DocumentMapEntryMetadata::default()
+            },
         );
     }
 
@@ -246,11 +255,7 @@ impl DocumentMapBuilder {
             kind,
             style,
             preview,
-            None,
-            None,
-            None,
-            None,
-            Vec::new(),
+            DocumentMapEntryMetadata::default(),
         );
     }
 
@@ -260,11 +265,7 @@ impl DocumentMapBuilder {
         kind: DocumentMapEntryKind,
         style: Option<String>,
         preview: String,
-        object_id: Option<String>,
-        rows: Option<usize>,
-        columns: Option<usize>,
-        table_handle: Option<String>,
-        table_cells: Vec<Vec<DocumentRange>>,
+        metadata: DocumentMapEntryMetadata,
     ) {
         self.entries.push(DocumentMapEntry {
             entry: self.entries.len() + 1,
@@ -272,11 +273,11 @@ impl DocumentMapBuilder {
             kind,
             style,
             preview,
-            object_id,
-            rows,
-            columns,
-            table_handle,
-            table_cells,
+            object_id: metadata.object_id,
+            rows: metadata.rows,
+            columns: metadata.columns,
+            table_handle: metadata.table_handle,
+            table_cells: metadata.table_cells,
         });
     }
 
