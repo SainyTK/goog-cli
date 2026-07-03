@@ -1,0 +1,60 @@
+Issues 38, 39, 40, 41 E2E evidence, human-verified, redacted
+Result: PASS
+
+Test setup:
+- Ran locally against a real Google account (email redacted) on the host machine, using the freshly built ./target/debug/goog binary containing the merged changes for #38, #39, #40, and #41.
+- Fixture used: reused existing scratch Google Doc goog-e2e-issue-34-retest (id 1e-zEoJe0OUmzR2zOVoFcBjOYxkW9dsS_jiLchqEacpY), per the goog-e2e- scratch reuse convention.
+- Seeded the doc with three plain paragraphs ("List item one/two/three") via a raw docs batch-update, since the doc started fully empty and the high-level location selectors need at least one Document Map entry to resolve against.
+
+Live checks:
+
+$ goog docs apply-list DOC_ID --entry 1 --type numbered
+Expected: paragraph at entry 1 gets a numbered list bullet.
+Observed: docs get afterward showed paragraph 1 with a populated bullet.listId.
+Result: PASS.
+
+$ goog docs apply-list DOC_ID --entry 2 --preset BULLET_DISC_CIRCLE_SQUARE
+Expected: raw bullet preset applies independently of the --type shorthand.
+Observed: paragraph 2 gained a distinct bullet.listId; paragraph 3 stayed unlisted.
+Result: PASS.
+
+$ goog docs apply-styles DOC_ID --entry 3 --bold --font-size 14 --foreground-color "#FF0000"
+Expected: shorthand flags translate into an updateTextStyle request preserving other style fields.
+Observed: docs get showed textStyle {bold: true, fontSize: 14pt, foregroundColor: red}.
+Result: PASS.
+
+$ goog docs apply-styles DOC_ID --text "List item three" --style-json '{"textStyle":{"underline":true}}'
+Expected: raw --style-json payload merges with the prior shorthand-applied style instead of clobbering it.
+Observed: same run showed textStyle now also had underline: true alongside the earlier bold/fontSize/foregroundColor.
+Result: PASS.
+
+$ goog docs list-images DOC_ID
+Expected: empty list before any image exists.
+Observed: [].
+Result: PASS.
+
+$ goog docs insert-image DOC_ID <public-image-url> --entry 1
+Expected: inline image inserted immediately before entry 1's paragraph.
+Observed: replies contained an insertInlineImage objectId; follow-up list-images returned one inline-image entry at the same location with a tableHandle-style imageHandle.
+Result: PASS.
+
+$ goog docs list-tables DOC_ID
+Expected: empty list before any table exists.
+Observed: [].
+Result: PASS.
+
+$ goog docs insert-table DOC_ID --entry 3 --data table.csv (2x2 CSV)
+Expected: a 2x2 table is created at entry 3's location and populated from the CSV.
+Observed: list-tables afterward showed tableHandle table-1 with preview "R1C1 | R1C2 / R2C1 | R2C2" and matching per-cell previews.
+Result: PASS.
+
+$ goog docs edit-table DOC_ID --table-id table-1 --data table2.csv (2x2 CSV)
+Expected: existing table-1 cell text is replaced in place from the new CSV, without changing table shape.
+Observed: list-tables afterward showed the same tableHandle table-1, still 2x2, preview updated to "Edited1 | Edited2 / Edited3 | Edited4".
+Result: PASS.
+
+Reviewer notes:
+- Account email, document title, and public image URL redacted where not already a goog-e2e- scratch identifier.
+- Every command above was also exercised with --dry-run first to confirm the previewed requestBody matched what the real call then performed; dry-run output omitted here for brevity.
+- This closes the PARTIAL items noted in the agent-generated issue-38-e2e.log, issue-39-e2e.log, issue-40-e2e.log, and issue-41-e2e.log (no goog on PATH / no live account inside the Sandcastle sandbox).
+- Found but out of scope: goog docs insert-text/insert-image/apply-list/apply-styles all fail with "no content found at Google Docs index N" when targeting a completely empty document (zero Document Map entries), even for indices within the document's valid 0..endIndex range. Filed as a separate issue rather than fixed inline; worked around here by seeding initial content via docs batch-update.
