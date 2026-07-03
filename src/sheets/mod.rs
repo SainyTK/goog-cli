@@ -86,6 +86,7 @@ pub struct GetSpreadsheetOptions {
     pub include_grid_data: bool,
     pub ranges: Vec<String>,
     spreadsheets_url: String,
+    drive_files_url: String,
 }
 
 impl GetSpreadsheetOptions {
@@ -96,6 +97,7 @@ impl GetSpreadsheetOptions {
             include_grid_data: false,
             ranges: Vec::new(),
             spreadsheets_url: SHEETS_SPREADSHEETS_URL.to_string(),
+            drive_files_url: DRIVE_FILES_URL.to_string(),
         }
     }
 
@@ -116,6 +118,11 @@ impl GetSpreadsheetOptions {
 
     pub(super) fn with_spreadsheets_url(mut self, spreadsheets_url: impl Into<String>) -> Self {
         self.spreadsheets_url = spreadsheets_url.into();
+        self
+    }
+
+    pub(super) fn with_drive_files_url(mut self, drive_files_url: impl Into<String>) -> Self {
+        self.drive_files_url = drive_files_url.into();
         self
     }
 
@@ -504,6 +511,8 @@ fn drive_file_url(
             segments.push(suffix);
         }
     }
+    url.query_pairs_mut()
+        .append_pair("supportsAllDrives", "true");
     Ok(url)
 }
 
@@ -511,7 +520,13 @@ pub async fn get_spreadsheet<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetSpreadsheetOptions,
 ) -> Result<Spreadsheet, SheetsError> {
-    send_json_request(client, client.get(options.request_url()?), SHEETS_SCOPES).await
+    send_json_request_with_office_file_fallback(
+        client,
+        client.get(options.request_url()?),
+        SHEETS_SCOPES,
+        || get_spreadsheet_via_temporary_conversion(client, options),
+    )
+    .await
 }
 
 pub async fn get_values<S: AccountStore>(
@@ -687,6 +702,29 @@ async fn send_empty_request<S: AccountStore>(
 
     ensure_success_response(response).await?;
     Ok(())
+}
+
+async fn get_spreadsheet_via_temporary_conversion<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &GetSpreadsheetOptions,
+) -> Result<Spreadsheet, SheetsError> {
+    read_values_via_temporary_conversion(
+        client,
+        &options.drive_files_url,
+        &options.spreadsheet_id,
+        |temporary_id| {
+            let mut temporary_options = GetSpreadsheetOptions::new(temporary_id)
+                .with_include_grid_data(options.include_grid_data)
+                .with_ranges(options.ranges.clone())
+                .with_spreadsheets_url(&options.spreadsheets_url)
+                .with_drive_files_url(&options.drive_files_url);
+            if let Some(fields) = &options.fields {
+                temporary_options = temporary_options.with_fields(fields.clone());
+            }
+            temporary_options.request_url()
+        },
+    )
+    .await
 }
 
 async fn get_values_via_temporary_conversion<S: AccountStore>(

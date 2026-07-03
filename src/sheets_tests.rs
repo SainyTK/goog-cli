@@ -433,28 +433,73 @@ async fn get_spreadsheet_returns_sheets_error_for_permission_denied_response() {
 }
 
 #[tokio::test]
-async fn get_spreadsheet_returns_sheets_error_for_office_file_response() {
+async fn get_spreadsheet_converts_office_file_then_reads_temporary_spreadsheet() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/sheets/v4/spreadsheets/office-spreadsheet"))
-        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
-            "error": {
-                "code": 400,
-                "message": "This operation is not supported for this document. The document must not be an Office file.",
-                "status": "FAILED_PRECONDITION"
-            }
+        .and(path("/sheets/v4/spreadsheets/office-file-123"))
+        .respond_with(office_file_precondition_response())
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_temporary_sheet_copy(&server).await;
+    Mock::given(method("GET"))
+        .and(path("/sheets/v4/spreadsheets/converted-spreadsheet-456"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SPREADSHEET_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_temporary_sheet_delete(&server).await;
+
+    let store = MemoryStore::default();
+    let client = sheets_and_drive_test_client(&store);
+    let options = GetSpreadsheetOptions::new("office-file-123")
+        .with_spreadsheets_url(spreadsheets_url(&server))
+        .with_drive_files_url(drive_files_url(&server));
+
+    let spreadsheet = get_spreadsheet(&client, &options).await.unwrap();
+
+    assert_eq!(spreadsheet["spreadsheetId"], "spreadsheet-123");
+}
+
+#[tokio::test]
+async fn create_temporary_google_sheet_requests_supports_all_drives() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/sheets/v4/spreadsheets/shared-drive-file"))
+        .respond_with(office_file_precondition_response())
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/shared-drive-file/copy"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "converted-shared-456"
         })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/sheets/v4/spreadsheets/converted-shared-456"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SPREADSHEET_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/converted-shared-456"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(204))
         .expect(1)
         .mount(&server)
         .await;
 
     let store = MemoryStore::default();
-    let client = test_client(&store);
-    let options = spreadsheet_options(&server, "office-spreadsheet");
+    let client = sheets_and_drive_test_client(&store);
+    let options = GetSpreadsheetOptions::new("shared-drive-file")
+        .with_spreadsheets_url(spreadsheets_url(&server))
+        .with_drive_files_url(drive_files_url(&server));
 
-    let err = get_spreadsheet(&client, &options).await.unwrap_err();
-
-    assert!(matches!(err, SheetsError::UnsupportedOfficeFile));
+    get_spreadsheet(&client, &options).await.unwrap();
 }
 
 #[tokio::test]
