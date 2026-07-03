@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | 
 Install a specific Canonical Release with:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.2.0
 ```
 
 The installer supports macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets.
