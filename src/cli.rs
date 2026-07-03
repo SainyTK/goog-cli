@@ -187,11 +187,35 @@ pub enum DriveFolderCommand {
     },
 }
 
+impl DocsCommand {
+    /// Resolves the `document_id` field of any variant to a bare Document ID,
+    /// extracting it first if a Google Docs/Drive URL was passed instead.
+    pub fn normalize_document_id(&mut self) {
+        let document_id = match self {
+            DocsCommand::Map { document_id, .. }
+            | DocsCommand::SearchText { document_id, .. }
+            | DocsCommand::GetContent { document_id, .. }
+            | DocsCommand::InsertText { document_id, .. }
+            | DocsCommand::ReplaceText { document_id, .. }
+            | DocsCommand::ListImages { document_id, .. }
+            | DocsCommand::ListTables { document_id, .. }
+            | DocsCommand::InsertImage { document_id, .. }
+            | DocsCommand::InsertTable { document_id, .. }
+            | DocsCommand::EditTable { document_id, .. }
+            | DocsCommand::ApplyStyles { document_id, .. }
+            | DocsCommand::ApplyList { document_id, .. }
+            | DocsCommand::Get { document_id, .. }
+            | DocsCommand::BatchUpdate { document_id, .. } => document_id,
+        };
+        *document_id = crate::docs::extract_document_id(document_id);
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum DocsCommand {
     /// Print a high-level map of editable Google Docs content
     Map {
-        /// Google Docs Document ID to map
+        /// Google Docs Document ID or URL to map
         document_id: String,
         /// Emit structured JSON
         #[arg(long)]
@@ -199,7 +223,7 @@ pub enum DocsCommand {
     },
     /// Search editable Google Docs content through the Document Map
     SearchText {
-        /// Google Docs Document ID to search
+        /// Google Docs Document ID or URL to search
         document_id: String,
         /// Text to find
         text: String,
@@ -209,7 +233,7 @@ pub enum DocsCommand {
     },
     /// Retrieve one content block through a Document Map location selector
     GetContent {
-        /// Google Docs Document ID to inspect
+        /// Google Docs Document ID or URL to inspect
         document_id: String,
         /// Raw Google Docs UTF-16 index
         #[arg(long)]
@@ -232,7 +256,7 @@ pub enum DocsCommand {
     },
     /// Insert text through a high-level Document Map location selector
     InsertText {
-        /// Google Docs Document ID to update
+        /// Google Docs Document ID or URL to update
         document_id: String,
         /// Text to insert
         text: String,
@@ -272,7 +296,7 @@ pub enum DocsCommand {
     },
     /// Replace text through a high-level Document Map text match
     ReplaceText {
-        /// Google Docs Document ID to update
+        /// Google Docs Document ID or URL to update
         document_id: String,
         /// Existing text to replace
         old_text: String,
@@ -296,7 +320,7 @@ pub enum DocsCommand {
     },
     /// List image-like objects through the Document Map
     ListImages {
-        /// Google Docs Document ID to inspect
+        /// Google Docs Document ID or URL to inspect
         document_id: String,
         /// Emit structured JSON
         #[arg(long)]
@@ -304,7 +328,7 @@ pub enum DocsCommand {
     },
     /// List tables through the Document Map
     ListTables {
-        /// Google Docs Document ID to inspect
+        /// Google Docs Document ID or URL to inspect
         document_id: String,
         /// Emit structured JSON
         #[arg(long)]
@@ -312,7 +336,7 @@ pub enum DocsCommand {
     },
     /// Insert an Inline Image through a high-level Document Map location selector
     InsertImage {
-        /// Google Docs Document ID to update
+        /// Google Docs Document ID or URL to update
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
         image_uri: String,
@@ -352,7 +376,7 @@ pub enum DocsCommand {
     },
     /// Insert a table through a high-level Document Map location selector
     InsertTable {
-        /// Google Docs Document ID to update
+        /// Google Docs Document ID or URL to update
         document_id: String,
         /// CSV or TSV data file to populate the inserted table
         #[arg(long)]
@@ -399,7 +423,7 @@ pub enum DocsCommand {
     },
     /// Replace table cell text from CSV or TSV data
     EditTable {
-        /// Google Docs Document ID to update
+        /// Google Docs Document ID or URL to update
         document_id: String,
         /// Table handle from list-tables, such as table-3
         #[arg(long)]
@@ -422,7 +446,7 @@ pub enum DocsCommand {
     },
     /// Apply common text styles through a high-level Document Range
     ApplyStyles {
-        /// Google Docs Document ID to update
+        /// Google Docs Document ID or URL to update
         document_id: String,
         /// Raw Google Docs UTF-16 range start
         #[arg(long)]
@@ -475,7 +499,7 @@ pub enum DocsCommand {
     },
     /// Apply a common list preset through a high-level Document Range
     ApplyList {
-        /// Google Docs Document ID to update
+        /// Google Docs Document ID or URL to update
         document_id: String,
         /// Raw Google Docs UTF-16 range start
         #[arg(long)]
@@ -516,6 +540,8 @@ pub enum DocsCommand {
   Common structural elements include paragraph, table, sectionBreak, and tableOfContents.
   Paragraph text is split across paragraph.elements[].textRun.content; indexes are UTF-16 positions used by batch-update requests.
   Tab-aware documents can also return tabs[].documentTab.body.content when --include-tabs-content is set.
+  DOCUMENT_ID also accepts a full Google Docs or Drive URL; the Document ID is extracted automatically.
+  Word (.docx) files stored on Drive are read too: they are converted to a temporary native Google Doc, read, and the temporary copy is deleted, all transparently.
 
 Tips:
   Use --fields to fetch only the paths you need, for example:
@@ -523,7 +549,7 @@ Tips:
   Use jq to inspect text runs:
     goog docs get DOCUMENT_ID | jq -r '.body.content[]?.paragraph?.elements[]?.textRun?.content // empty'")]
     Get {
-        /// Google Docs Document ID to fetch
+        /// Google Docs Document ID or URL to fetch
         document_id: String,
         /// Google partial response field selector
         #[arg(long)]
@@ -563,7 +589,7 @@ Example:
   }
   JSON")]
     BatchUpdate {
-        /// Google Docs Document ID to update
+        /// Google Docs Document ID or URL to update
         document_id: String,
         /// Path to a full documents.batchUpdate JSON request body, or - for stdin
         #[arg(long)]
