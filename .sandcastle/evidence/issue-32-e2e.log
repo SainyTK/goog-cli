@@ -13,6 +13,12 @@ Observed redacted result: returned ID `19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyf
 Result: PASS.
 
 Local checks:
+$ npm run typecheck
+Result: PASS. `cargo check` finished successfully.
+
+$ npm run test
+Result: PASS. 320 library tests passed; binary and doc test targets had 0 tests.
+
 $ cargo test sheets_values_batch_update --lib
 Result: PASS. 2 passed.
 
