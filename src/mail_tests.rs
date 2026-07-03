@@ -32,7 +32,7 @@ fn mail_token() -> Token {
         access_token: "mail-access".into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![GMAIL_READONLY_SCOPE.into()],
+        scopes: vec![GMAIL_SCOPE.into()],
     }
 }
 
@@ -580,7 +580,7 @@ async fn download_attachment_requires_output_when_filename_is_missing() {
 }
 
 #[tokio::test]
-async fn download_attachment_requests_only_gmail_readonly_scope_when_missing() {
+async fn download_attachment_requests_only_gmail_modify_scope_when_missing() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/token"))
@@ -588,7 +588,7 @@ async fn download_attachment_requests_only_gmail_readonly_scope_when_missing() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "access_token": "mail-access",
             "expires_in": 3600,
-            "scope": GMAIL_READONLY_SCOPE,
+            "scope": GMAIL_SCOPE,
             "token_type": "Bearer"
         })))
         .expect(1)
@@ -627,12 +627,12 @@ async fn download_attachment_requests_only_gmail_readonly_scope_when_missing() {
 
     assert_eq!(
         scopes_seen.lock().unwrap().clone(),
-        vec![GMAIL_READONLY_SCOPE.to_string()]
+        vec![GMAIL_SCOPE.to_string()]
     );
     let saved = store.load_token("alice@example.com").unwrap().unwrap();
     assert_eq!(
         saved.scopes,
-        vec!["openid".to_string(), GMAIL_READONLY_SCOPE.to_string()]
+        vec!["openid".to_string(), GMAIL_SCOPE.to_string()]
     );
 }
 
@@ -736,7 +736,7 @@ async fn get_message_fetches_raw_googlemail_message() {
 }
 
 #[tokio::test]
-async fn get_message_requests_only_gmail_readonly_scope_when_missing() {
+async fn get_message_requests_only_gmail_modify_scope_when_missing() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/token"))
@@ -744,7 +744,7 @@ async fn get_message_requests_only_gmail_readonly_scope_when_missing() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "access_token": "mail-access",
             "expires_in": 3600,
-            "scope": GMAIL_READONLY_SCOPE,
+            "scope": GMAIL_SCOPE,
             "token_type": "Bearer"
         })))
         .expect(1)
@@ -780,12 +780,12 @@ async fn get_message_requests_only_gmail_readonly_scope_when_missing() {
 
     assert_eq!(
         scopes_seen.lock().unwrap().clone(),
-        vec![GMAIL_READONLY_SCOPE.to_string()]
+        vec![GMAIL_SCOPE.to_string()]
     );
     let saved = store.load_token("alice@example.com").unwrap().unwrap();
     assert_eq!(
         saved.scopes,
-        vec!["openid".to_string(), GMAIL_READONLY_SCOPE.to_string()]
+        vec!["openid".to_string(), GMAIL_SCOPE.to_string()]
     );
 }
 

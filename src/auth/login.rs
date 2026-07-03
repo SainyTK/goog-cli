@@ -9,6 +9,7 @@ use super::account::Token;
 use super::error::AuthError;
 use crate::docs::DOCS_SCOPE;
 use crate::drive::DRIVE_SCOPE;
+use crate::mail::GMAIL_SCOPE;
 use crate::sheets::SHEETS_SCOPE;
 
 pub const DEFAULT_LOGIN_SCOPES: &[&str] = &[
@@ -18,6 +19,7 @@ pub const DEFAULT_LOGIN_SCOPES: &[&str] = &[
     DRIVE_SCOPE,
     DOCS_SCOPE,
     SHEETS_SCOPE,
+    GMAIL_SCOPE,
 ];
 
 pub const DEFAULT_DEVICE_LOGIN_SCOPES: &[&str] = &[
@@ -27,6 +29,7 @@ pub const DEFAULT_DEVICE_LOGIN_SCOPES: &[&str] = &[
     DRIVE_SCOPE,
     DOCS_SCOPE,
     SHEETS_SCOPE,
+    GMAIL_SCOPE,
 ];
 
 pub const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";

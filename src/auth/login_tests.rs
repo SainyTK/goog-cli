@@ -14,6 +14,7 @@ use super::login::{
 };
 use crate::docs::DOCS_SCOPE;
 use crate::drive::DRIVE_SCOPE;
+use crate::mail::GMAIL_SCOPE;
 use crate::sheets::SHEETS_SCOPE;
 
 struct DeviceTokenSequence {
@@ -68,7 +69,7 @@ fn authorize_url_includes_required_params() {
 }
 
 #[test]
-fn default_browser_login_scopes_request_identity_drive_docs_and_sheets() {
+fn default_browser_login_scopes_request_identity_drive_docs_sheets_and_gmail() {
     assert_eq!(
         DEFAULT_LOGIN_SCOPES,
         &[
@@ -78,12 +79,13 @@ fn default_browser_login_scopes_request_identity_drive_docs_and_sheets() {
             DRIVE_SCOPE,
             DOCS_SCOPE,
             SHEETS_SCOPE,
+            GMAIL_SCOPE,
         ]
     );
 }
 
 #[test]
-fn default_device_login_scopes_request_identity_drive_docs_and_sheets() {
+fn default_device_login_scopes_request_identity_drive_docs_sheets_and_gmail() {
     assert_eq!(
         DEFAULT_DEVICE_LOGIN_SCOPES,
         &[
@@ -92,7 +94,8 @@ fn default_device_login_scopes_request_identity_drive_docs_and_sheets() {
             "profile",
             DRIVE_SCOPE,
             DOCS_SCOPE,
-            SHEETS_SCOPE
+            SHEETS_SCOPE,
+            GMAIL_SCOPE,
         ]
     );
 }
