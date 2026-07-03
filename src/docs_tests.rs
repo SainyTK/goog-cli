@@ -68,6 +68,13 @@ fn docs_write_token() -> Token {
     }
 }
 
+fn docs_and_drive_token() -> Token {
+    Token {
+        scopes: vec![DOCS_READONLY_SCOPE.into(), crate::drive::DRIVE_SCOPE.into()],
+        ..docs_token()
+    }
+}
+
 fn profile_token() -> Token {
     Token {
         access_token: "profile-access".into(),
@@ -415,4 +422,147 @@ async fn get_document_returns_invalid_response_error_for_malformed_json() {
     let err = get_document(&client, &options).await.unwrap_err();
 
     assert!(matches!(err, DocsError::InvalidResponse(_)));
+}
+
+fn office_file_precondition_response() -> ResponseTemplate {
+    ResponseTemplate::new(400).set_body_json(serde_json::json!({
+        "error": {
+            "code": 400,
+            "status": "FAILED_PRECONDITION",
+            "message": "This operation is not supported for this document. The document must not be an Office file."
+        }
+    }))
+}
+
+#[tokio::test]
+async fn get_document_converts_office_file_then_reads_temporary_document() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/office-file-123"))
+        .respond_with(office_file_precondition_response())
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-file-123/copy"))
+        .and(query_param("fields", "id"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(body_json(&serde_json::json!({
+            "mimeType": "application/vnd.google-apps.document",
+            "name": "goog temporary Docs conversion"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "converted-document-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/converted-document-456"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "converted-document-456",
+            "title": "Converted from office-file-123"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/converted-document-456"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_and_drive_token())
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let options = GetDocumentOptions::new("office-file-123")
+        .with_documents_url(format!("{}/docs/v1/documents", server.uri()))
+        .with_drive_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let document = get_document(&client, &options).await.unwrap();
+
+    assert_eq!(document["documentId"], "converted-document-456");
+    assert_eq!(document["title"], "Converted from office-file-123");
+}
+
+#[tokio::test]
+async fn batch_update_reports_office_file_precondition_clearly() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/office-file-123:batchUpdate"))
+        .respond_with(office_file_precondition_response())
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_write_token())
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let options =
+        BatchUpdateDocumentOptions::new("office-file-123", serde_json::json!({ "requests": [] }))
+            .with_documents_url(format!("{}/docs/v1/documents", server.uri()));
+
+    let err = batch_update_document(&client, &options).await.unwrap_err();
+
+    assert!(matches!(err, DocsError::UnsupportedOfficeFile));
+}
+
+#[test]
+fn extract_document_id_passes_through_a_bare_document_id() {
+    assert_eq!(
+        extract_document_id("1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"),
+        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+    );
+}
+
+#[test]
+fn extract_document_id_extracts_id_from_docs_edit_url() {
+    assert_eq!(
+        extract_document_id(
+            "https://docs.google.com/document/d/1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa/edit"
+        ),
+        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+    );
+}
+
+#[test]
+fn extract_document_id_extracts_id_from_docs_edit_url_with_query_and_fragment() {
+    assert_eq!(
+        extract_document_id(
+            "https://docs.google.com/document/d/1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa/edit?tab=t.0#heading=h.abc"
+        ),
+        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+    );
+}
+
+#[test]
+fn extract_document_id_extracts_id_from_drive_file_url() {
+    assert_eq!(
+        extract_document_id(
+            "https://drive.google.com/file/d/1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa/view"
+        ),
+        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+    );
+}
+
+#[test]
+fn extract_document_id_extracts_id_from_drive_open_query_param() {
+    assert_eq!(
+        extract_document_id("https://drive.google.com/open?id=1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"),
+        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+    );
+}
+
+#[test]
+fn extract_document_id_trims_surrounding_whitespace() {
+    assert_eq!(
+        extract_document_id("  1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa  "),
+        "1wTN4bUGmbgg7TMu8lOF_N49bku7THdpa"
+    );
 }

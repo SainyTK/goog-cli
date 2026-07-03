@@ -597,7 +597,9 @@ async fn batch_get_values_uses_repeated_ranges_and_readonly_scope() {
 async fn batch_get_values_converts_office_file_then_reads_temporary_spreadsheet() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/sheets/v4/spreadsheets/office-file-123/values/:batchGet"))
+        .and(path(
+            "/sheets/v4/spreadsheets/office-file-123/values/:batchGet",
+        ))
         .respond_with(office_file_precondition_response())
         .expect(1)
         .mount(&server)
@@ -641,7 +643,10 @@ async fn batch_get_values_converts_office_file_then_reads_temporary_spreadsheet(
     let response = batch_get_values(&client, &options).await.unwrap();
 
     assert_eq!(response["valueRanges"][0]["range"], "Sheet1!A1:B2");
-    assert_eq!(response["valueRanges"][1]["values"][1][0], "=SUM(Sheet1!B:B)");
+    assert_eq!(
+        response["valueRanges"][1]["values"][1][0],
+        "=SUM(Sheet1!B:B)"
+    );
 }
 
 #[tokio::test]
@@ -866,7 +871,9 @@ async fn batch_update_spreadsheet_reports_office_file_precondition_clearly() {
     )
     .with_spreadsheets_url(spreadsheets_url(&server));
 
-    let err = batch_update_spreadsheet(&client, &options).await.unwrap_err();
+    let err = batch_update_spreadsheet(&client, &options)
+        .await
+        .unwrap_err();
 
     assert!(matches!(err, SheetsError::UnsupportedOfficeFile));
 }
