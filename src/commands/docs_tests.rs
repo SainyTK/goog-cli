@@ -1117,6 +1117,47 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
 }
 
 #[tokio::test]
+async fn run_insert_image_dry_run_human_shows_placeholder_in_context() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_image_to(
+        &client,
+        InsertImageCommand {
+            document_id: "document-123".into(),
+            image_uri: "https://example.test/image.png".into(),
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            dry_run: true,
+            json: false,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("insert-image: Insert inline image at index 37"));
+    assert!(output.contains("Before: Second Page Plan"));
+    assert!(output.contains("After: [inline image]Second Page Plan"));
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
 async fn run_edit_table_dry_run_replaces_cells_from_document_end() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

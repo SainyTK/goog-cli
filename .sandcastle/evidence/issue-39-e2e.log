@@ -4,10 +4,10 @@ Result: PARTIAL
 Test setup:
 - Accounts used: none; live Google credentials are unavailable in this sandbox.
 - Fixture used: none.
-- Skipped fixture: live Google Docs fixture skipped because `goog` is not installed on PATH and `.sandcastle/secrets/` contains no exported token/config files. Per docs/agents/e2e-testing.md, this means E2E testing is unavailable and local checks continue.
+- Skipped fixture: live Google Docs fixture skipped because `goog` is not installed on PATH and `.sandcastle/secrets/` contains no exported token/config files. Per docs/agents/e2e-testing.md, this means live E2E is unavailable and local checks continue.
 
 Local checks:
-$ which goog && goog auth list
+$ command -v goog && goog auth list
 Expected: list already-connected Google accounts for selecting an E2E account.
 Observed: command failed because `goog` is not installed on PATH in this sandbox.
 Result: PARTIAL.
@@ -22,14 +22,9 @@ Expected: command help renders for inline image insertion.
 Observed: help rendered with `goog docs insert-image [OPTIONS] <DOCUMENT_ID> <IMAGE_URI>`, Location Selector flags, `--dry-run`, `--json`, and `--required-revision-id`.
 Result: PASS.
 
-$ cargo test run_list_images_and_tables_emit_document_map_metadata
-Expected: mocked Docs command regression covers a document with Inline Images and Positioned Images.
-Observed: 1 targeted test passed; JSON assertions cover `imageHandle`, image kind, object ID, inline location metadata, and positioned `layoutMetadata`.
-Result: PASS.
-
 $ cargo test docs_
 Expected: parser, raw Docs behavior, Document Map, image listing, insert-image dry-run, and related high-level Docs regressions pass.
-Observed: 60 docs-filtered tests passed plus 1 distribution doc test selected by the filter.
+Observed: 66 docs-filtered tests passed plus 1 distribution doc test selected by the filter. Coverage includes documents with Inline Images and Positioned Images, image handles, positioned layout metadata, `insertInlineImage` request construction, and a human dry-run preview with `[inline image]` inserted in context.
 Result: PASS.
 
 $ npm run typecheck
@@ -39,7 +34,7 @@ Result: PASS.
 
 $ npm run test
 Expected: full repo test suite passes.
-Observed: cargo test passed with 337 unit tests, 6 distribution artifact tests, and 0 doctests.
+Observed: cargo test passed with 347 unit tests, 6 distribution artifact tests, and 0 doctests.
 Result: PASS.
 
 Live checks:

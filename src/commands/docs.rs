@@ -1768,6 +1768,10 @@ struct DocsHighLevelChange {
 struct DocsChangePreview {
     command: String,
     summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    after: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1852,6 +1856,12 @@ fn prepare_insert_image_change(
                 "Insert inline image at index {index} from {}",
                 command.image_uri
             ),
+            before: Some(resolved.preview_before.clone()),
+            after: Some(insert_preview_text(
+                &resolved.preview_before,
+                resolved.preview_offset,
+                "[inline image]",
+            )),
         },
     })
 }
@@ -1888,6 +1898,8 @@ fn prepare_insert_table_change(
                 "Insert {}x{} table at index {index}",
                 command.rows, command.columns
             ),
+            before: None,
+            after: None,
         },
     })
 }
@@ -1932,6 +1944,8 @@ fn prepare_edit_table_change(
                 "Replace {} with {}x{} table data",
                 command.table_id, rows, columns
             ),
+            before: None,
+            after: None,
         },
     })
 }
@@ -2002,6 +2016,8 @@ fn prepare_apply_styles_change(
                 "Apply styles to range {}..{}",
                 range.start_index, range.end_index
             ),
+            before: None,
+            after: None,
         },
     })
 }
@@ -2039,6 +2055,8 @@ fn prepare_apply_list_change(
                 "Apply list preset to range {}..{}",
                 range.start_index, range.end_index
             ),
+            before: None,
+            after: None,
         },
     })
 }
@@ -2588,6 +2606,12 @@ fn write_docs_change_preview(
             change.preview.command, change.preview.summary
         )
         .context("failed to write Docs dry-run preview")?;
+        if let (Some(before), Some(after)) = (&change.preview.before, &change.preview.after) {
+            writeln!(out, "Before: {before}")
+                .context("failed to write Docs dry-run before preview")?;
+            writeln!(out, "After: {after}")
+                .context("failed to write Docs dry-run after preview")?;
+        }
         Ok(())
     }
 }
