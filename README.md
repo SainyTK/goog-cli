@@ -152,7 +152,7 @@ cargo test
 npm run typecheck
 ```
 
-Issues live in GitHub Issues. Pick work labeled `ready-for-agent` and `Sandcastle`, keep changes scoped to the issue, and link the issue from the pull request.
+Issues live in GitHub Issues. Pick work labeled `ready-for-agent` or `bug` (there is no separate `Sandcastle` label), keep changes scoped to the issue, and link the issue from the pull request.
 
 Pull requests should include:
 
