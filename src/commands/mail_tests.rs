@@ -282,6 +282,77 @@ async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table
 }
 
 #[tokio::test]
+async fn run_search_prints_no_matches_message_for_empty_table_results() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "10"))
+        .and(query_param("q", "zzzzxyqqqnotexist12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "resultSizeEstimate": 0
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_search_to(
+        &client,
+        "zzzzxyqqqnotexist12345".into(),
+        None,
+        false,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "No matching messages found.\n"
+    );
+}
+
+#[tokio::test]
+async fn run_search_prints_empty_json_array_for_empty_json_results() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "10"))
+        .and(query_param("q", "zzzzxyqqqnotexist12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "resultSizeEstimate": 0
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_search_to(
+        &client,
+        "zzzzxyqqqnotexist12345".into(),
+        None,
+        true,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "[]\n");
+}
+
+#[tokio::test]
 async fn run_attachment_download_writes_bytes_to_output_path() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
