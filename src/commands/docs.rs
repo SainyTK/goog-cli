@@ -1051,29 +1051,27 @@ fn resolve_insert_text_location(
         }
         InsertTextSelector::BeforeText(text) => {
             let range = resolve_text_anchor(document_map, text)?;
+            let preview_offset =
+                text_anchor_preview_offset(document_map, &range, range.start_index);
             Ok(ResolvedInsertTextLocation {
-                location: range.location.clone(),
+                location: crate::docs::map::DocumentLocation {
+                    index: Some(range.start_index),
+                    ..range.location.clone()
+                },
                 preview_before: range.preview.clone(),
-                preview_offset: preview_offset_for_index(
-                    &range.preview,
-                    range.start_index,
-                    range.start_index,
-                ),
+                preview_offset,
             })
         }
         InsertTextSelector::AfterText(text) => {
             let range = resolve_text_anchor(document_map, text)?;
+            let preview_offset = text_anchor_preview_offset(document_map, &range, range.end_index);
             Ok(ResolvedInsertTextLocation {
                 location: crate::docs::map::DocumentLocation {
                     index: Some(range.end_index),
                     ..range.location.clone()
                 },
                 preview_before: range.preview.clone(),
-                preview_offset: preview_offset_for_index(
-                    &range.preview,
-                    range.start_index,
-                    range.end_index,
-                ),
+                preview_offset,
             })
         }
     }
@@ -1143,6 +1141,24 @@ fn resolved_for_entry_end(
         preview_before: entry.preview.clone(),
         preview_offset: entry.preview.chars().count(),
     })
+}
+
+fn text_anchor_preview_offset(
+    document_map: &DocumentMap,
+    range: &DocumentRange,
+    insertion_index: i64,
+) -> usize {
+    let block_start_index = document_map
+        .text_blocks
+        .iter()
+        .find(|block| {
+            let block_end = block.start_index + block.text.encode_utf16().count() as i64;
+            block.start_index <= range.start_index && range.end_index <= block_end
+        })
+        .map(|block| block.start_index)
+        .unwrap_or(range.start_index);
+
+    preview_offset_for_index(&range.preview, block_start_index, insertion_index)
 }
 
 fn resolve_text_anchor(document_map: &DocumentMap, text: &str) -> Result<DocumentRange> {

@@ -524,6 +524,78 @@ async fn run_insert_text_dry_run_json_emits_request_without_mutating() {
 }
 
 #[tokio::test]
+async fn run_insert_text_dry_run_json_resolves_exact_heading_and_text_selectors() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(5)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let cases = [
+        (InsertTextSelector::Index(44), 44, "Second Hello Page Plan"),
+        (
+            InsertTextSelector::BeforeHeading("Second Page Plan".into()),
+            37,
+            "Hello Second Page Plan",
+        ),
+        (
+            InsertTextSelector::AfterHeading("Second Page Plan".into()),
+            54,
+            "Second Page PlanHello ",
+        ),
+        (
+            InsertTextSelector::BeforeText("matching text".into()),
+            17,
+            "No Hello matching text here",
+        ),
+        (
+            InsertTextSelector::AfterText("matching text".into()),
+            30,
+            "No matching textHello  here",
+        ),
+    ];
+
+    for (selector, expected_index, expected_preview) in cases {
+        let mut out = Vec::new();
+        run_insert_text_to(
+            &client,
+            InsertTextCommand {
+                document_id: "document-123".into(),
+                text: "Hello ".into(),
+                selector,
+                dry_run: true,
+                json: true,
+                required_revision_id: None,
+            },
+            &mut out,
+            Some(&documents_url),
+        )
+        .await
+        .unwrap();
+
+        let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(output["location"]["index"], expected_index);
+        assert_eq!(
+            output["requestBody"]["requests"][0]["insertText"]["location"]["index"],
+            expected_index
+        );
+        assert_eq!(output["preview"]["after"], expected_preview);
+    }
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 5);
+    assert!(requests
+        .iter()
+        .all(|request| request.method.as_str() == "GET"));
+}
+
+#[tokio::test]
 async fn run_replace_text_dry_run_json_emits_request_without_mutating() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

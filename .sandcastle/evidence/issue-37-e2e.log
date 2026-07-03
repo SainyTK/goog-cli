@@ -3,20 +3,22 @@ Result: PARTIAL
 
 Test setup:
 - Accounts used: [active-account-redacted].
-- Fixture used: none for mutation. A scratch Google Doc could not be created because the headless setup step blocked while trying to acquire or refresh Google Docs write access.
+- Fixture used: none for mutation. A scratch Google Doc could not be created through the current `goog` CLI because `drive upload` does not expose Google Docs conversion and there is no `docs create` command.
 - Skipped fixture: live non-dry-run Docs mutation fixture unavailable. Per docs/agents/e2e-testing.md, non-dry-run text writes were not run against existing documents discovered by Drive reads.
 
 Local checks:
 $ cargo test commands::docs_tests -- --nocapture
+Expected: Docs command-layer tests cover selector resolution, ambiguity errors, dry-run output, JSON dry-run output, revision guards, successful mutation request shapes, unified access, and unchanged raw get/batch-update behavior.
+Observed: 32 Docs command-layer tests passed. This includes the issue-37 regression for exact `--index`, `--before-heading`, `--after-heading`, `--before-text`, and `--after-text` insert-text dry-run request indexes and previews.
 Result: PASS.
-Observed: 31 Docs command-layer tests passed, including insert-text and replace-text dry-run output, JSON dry-run request bodies, ambiguity errors, revision guards, successful mutation request shapes, and unified-access behavior.
 
 $ cargo test cli_tests::docs_ -- --nocapture
+Expected: Docs parser/help tests cover the new command surfaces and preserve raw docs get/batch-update command behavior.
+Observed: 13 Docs parser/help tests passed.
 Result: PASS.
-Observed: 13 Docs parser/help tests passed, including insert-text and replace-text command shapes and write options.
 
 Live checks:
-$ cargo run --quiet -- docs insert-text --help
+$ ./target/debug/goog docs insert-text --help
 Expected: The new insert-text command is present and exposes location selectors, --dry-run, --json, and --required-revision-id.
 Observed redacted result: Help text printed for "goog docs insert-text [OPTIONS] <DOCUMENT_ID> <TEXT>" with --index, --entry, --page, --line, --after-heading, --before-heading, --after-text, --before-text, --dry-run, --json, and --required-revision-id.
 Result: PASS.
@@ -31,17 +33,23 @@ Expected: Confirm at least one already-connected Google account exists in the sa
 Observed redacted result: 4 account rows printed as newline-delimited JSON; one row had "active": true. Email addresses redacted.
 Result: PASS.
 
-$ ./target/debug/goog drive ls --json --limit 20
-Expected: Read-only Drive discovery works and can identify whether an existing Docs file is available for dry-run-only checks.
-Observed redacted result: 20 Drive rows printed. The result included Google Docs files, folders, images, one presentation, one spreadsheet, and one Office spreadsheet. File names and non-scratch IDs redacted from this evidence.
+$ ./target/debug/goog drive ls --json --limit 5
+Expected: Read-only Drive discovery works and can identify whether existing Docs files are available for dry-run-only checks.
+Observed redacted result: 5 Drive rows printed. File names and non-scratch IDs redacted from this evidence.
 Result: PASS.
 
-$ ./target/debug/goog docs map [existing-doc-id-redacted]
+$ ./target/debug/goog drive ls --json --all | jq -r 'select(.mimeType=="application/vnd.google-apps.document") | [.name,.id] | @tsv' | head -5
+Expected: Identify whether an existing Google Docs file is available for read-only dry-run checks.
+Observed redacted result: 5 Google Docs rows printed after Drive listed 44 items. File names and non-scratch IDs redacted from this evidence.
+Result: PASS.
+
+$ timeout 30 ./target/debug/goog docs map [existing-doc-id-redacted] --json
 Expected: Read-only Docs access returns a Document Map for an existing Doc, enabling dry-run-only insert/replace checks without mutation.
-Observed redacted result: no output before the command was interrupted after 30 seconds. This matched the earlier scratch setup hang and indicates Google Docs scope acquisition or refresh was not completing headlessly in this sandbox.
+Observed redacted result: command printed "Opening browser for additional Google consent..." and a manual Google OAuth consent URL, then timed out after 30 seconds. The OAuth URL, client ID, redirect state, and document ID are redacted from this evidence.
 Result: FAIL.
 
 Reviewer notes:
-- The implementation was still verified locally at the command seam with mocked Google Docs APIs. Those tests assert the exact native batchUpdate request bodies for non-dry-run insert-text and replace-text.
-- Live non-dry-run commands intentionally were not run because the only available Docs resources were existing user documents, and the e2e rules prohibit mutating resources not created by this same test run.
-- No real email addresses, document contents, document names, tokens, or secrets are included in this log.
+- Live Docs dry-run and non-dry-run checks are PARTIAL because unattended Docs readonly/write scope acquisition could not complete in this sandbox.
+- The implementation was verified locally at the command seam with mocked Google Docs APIs. Those tests assert the exact native `documents.batchUpdate` request bodies for non-dry-run insert-text and replace-text.
+- During regression work, a `--before-text`/`--after-text` dry-run preview offset bug was found and fixed so preview placement now matches the native request index.
+- No real email addresses, document contents, document names, tokens, OAuth URLs, client IDs, redirect state values, or secrets are included in this log.
