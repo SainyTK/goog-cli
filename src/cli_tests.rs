@@ -880,6 +880,100 @@ fn docs_new_high_level_editing_commands_parse() {
     assert_eq!(data, "table.csv");
     assert!(dry_run);
     assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::InsertTable {
+                rows,
+                columns,
+                no_auto_style,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "insert-table",
+        "document-123",
+        "--rows",
+        "2",
+        "--columns",
+        "3",
+        "--index",
+        "44",
+        "--no-auto-style",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(rows, Some(2));
+    assert_eq!(columns, Some(3));
+    assert!(no_auto_style);
+
+    let Command::Docs {
+        command:
+            DocsCommand::ApplyStyles {
+                heading,
+                no_auto_style,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "apply-styles",
+        "document-123",
+        "--entry",
+        "2",
+        "--heading",
+        "HEADING_2",
+        "--no-auto-style",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(heading.as_deref(), Some("HEADING_2"));
+    assert!(no_auto_style);
+
+    let Command::Docs {
+        command:
+            DocsCommand::ApplyList {
+                entry,
+                no_auto_style,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "apply-list",
+        "document-123",
+        "--entry",
+        "2",
+        "--no-auto-style",
+        "--preset",
+        "BULLET_DISC_CIRCLE_SQUARE",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(entry, Some(2));
+    assert!(no_auto_style);
+}
+
+#[test]
+fn docs_show_style_template_parse() {
+    let cli = parse(&["docs", "show-style-template", "document-123", "--json"]).unwrap();
+
+    match cli.command {
+        Command::Docs {
+            command: DocsCommand::ShowStyleTemplate { document_id, json },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
 }
 
 #[test]

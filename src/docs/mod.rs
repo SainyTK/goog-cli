@@ -1,7 +1,12 @@
 pub mod error;
 pub mod map;
+pub mod style_template;
+
+#[cfg(test)]
+mod style_template_tests;
 
 pub use error::DocsError;
+pub use style_template::{extract_style_template, load_style_template, save_style_template, StyleTemplate};
 
 use std::future::Future;
 

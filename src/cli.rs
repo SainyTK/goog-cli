@@ -209,7 +209,8 @@ impl DocsCommand {
             | DocsCommand::ApplyStyles { document_id, .. }
             | DocsCommand::ApplyList { document_id, .. }
             | DocsCommand::Get { document_id, .. }
-            | DocsCommand::BatchUpdate { document_id, .. } => document_id,
+            | DocsCommand::BatchUpdate { document_id, .. }
+            | DocsCommand::ShowStyleTemplate { document_id, .. } => document_id,
         };
         *document_id = crate::docs::extract_document_id(document_id);
     }
@@ -424,6 +425,9 @@ pub enum DocsCommand {
         /// Require the document to still be at this revision before applying the edit
         #[arg(long)]
         required_revision_id: Option<String>,
+        /// Skip applying the cached style template's header styling to the new table
+        #[arg(long)]
+        no_auto_style: bool,
     },
     /// Replace table cell text from CSV or TSV data
     EditTable {
@@ -500,6 +504,9 @@ pub enum DocsCommand {
         /// Require the document to still be at this revision before applying the edit
         #[arg(long)]
         required_revision_id: Option<String>,
+        /// Ignore the cached style template for this document
+        #[arg(long)]
+        no_auto_style: bool,
     },
     /// Apply a common list preset through a high-level Document Range
     ApplyList {
@@ -535,6 +542,9 @@ pub enum DocsCommand {
         /// Require the document to still be at this revision before applying the edit
         #[arg(long)]
         required_revision_id: Option<String>,
+        /// Ignore the cached style template for this document
+        #[arg(long)]
+        no_auto_style: bool,
     },
     /// Fetch a raw Google Docs Document
     #[command(after_long_help = "Output shape:
@@ -598,6 +608,14 @@ Example:
         /// Path to a full documents.batchUpdate JSON request body, or - for stdin
         #[arg(long)]
         requests: String,
+    },
+    /// Show the locally cached style template for a Google Doc
+    ShowStyleTemplate {
+        /// Google Docs Document ID whose cached style template to show
+        document_id: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 

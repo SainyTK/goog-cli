@@ -10,6 +10,10 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::DocsListType;
+use crate::docs::style_template::{
+    load_style_template_in, save_style_template_in, ListStyleTemplate, NamedStyleTemplate,
+    StyleTemplate, TextStyleTemplate,
+};
 use crate::docs::DOCS_SCOPE;
 
 use super::docs::*;
@@ -61,6 +65,7 @@ fn dry_run_apply_list_command(
         dry_run: true,
         json: true,
         required_revision_id: None,
+        no_auto_style: false,
     }
 }
 
@@ -123,6 +128,7 @@ async fn run_get_prints_document_json_to_stdout() {
         false,
         &mut out,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
@@ -131,6 +137,134 @@ async fn run_get_prints_document_json_to_stdout() {
         String::from_utf8(out).unwrap(),
         "{\"documentId\":\"document-123\",\"title\":\"Roadmap\"}\n"
     );
+}
+
+#[tokio::test]
+async fn run_get_refreshes_style_template_cache_for_full_document() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "title": "Styled",
+            "revisionId": "rev-search",
+            "body": {
+                "content": [
+                    {
+                        "startIndex": 1,
+                        "endIndex": 12,
+                        "paragraph": {
+                            "paragraphStyle": { "namedStyleType": "HEADING_1" },
+                            "elements": [
+                                {
+                                    "startIndex": 1,
+                                    "endIndex": 12,
+                                    "textRun": {
+                                        "content": "Overview\\n",
+                                        "textStyle": {
+                                            "bold": true,
+                                            "fontSize": { "magnitude": 24.0, "unit": "PT" }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let cache_dir = tempfile::tempdir().unwrap();
+
+    run_get_to(
+        &client,
+        "document-123".into(),
+        None,
+        false,
+        &mut out,
+        Some(&documents_url),
+        Some(cache_dir.path()),
+    )
+    .await
+    .unwrap();
+
+    let template = load_style_template_in(Some(cache_dir.path()), "document-123")
+        .unwrap()
+        .unwrap();
+    assert_eq!(template.document_id, "document-123");
+    assert_eq!(template.source_revision_id.as_deref(), Some("rev-search"));
+    assert!(template.named_styles.contains_key("HEADING_1"));
+}
+
+#[tokio::test]
+async fn run_get_partial_fields_does_not_overwrite_existing_style_template_cache() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "title": "Only Title"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cache_dir = tempfile::tempdir().unwrap();
+    let existing = StyleTemplate {
+        document_id: "document-123".into(),
+        source_revision_id: Some("rev-existing".into()),
+        named_styles: [(
+            "HEADING_2".to_string(),
+            NamedStyleTemplate {
+                text_style: TextStyleTemplate {
+                    bold: Some(true),
+                    italic: Some(true),
+                    font_size_pt: Some(18.0),
+                    foreground_color: Some("#336699".into()),
+                },
+                paragraph_style: None,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        table: None,
+        list: Some(ListStyleTemplate {
+            list_type: Some("Bullet".into()),
+            preset: "BULLET_DISC_CIRCLE_SQUARE".into(),
+        }),
+    };
+    save_style_template_in(Some(cache_dir.path()), &existing).unwrap();
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_get_to(
+        &client,
+        "document-123".into(),
+        Some("title".into()),
+        false,
+        &mut out,
+        Some(&documents_url),
+        Some(cache_dir.path()),
+    )
+    .await
+    .unwrap();
+
+    let persisted = load_style_template_in(Some(cache_dir.path()), "document-123")
+        .unwrap()
+        .unwrap();
+    assert_eq!(persisted, existing);
 }
 
 #[tokio::test]
@@ -1096,9 +1230,11 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
             dry_run: true,
             json: true,
             required_revision_id: None,
+            no_auto_style: false,
         },
         &mut table,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
@@ -1146,9 +1282,11 @@ async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
+            no_auto_style: false,
         },
         &mut out,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
@@ -1217,9 +1355,11 @@ async fn run_insert_table_dry_run_accepts_tsv_data() {
             dry_run: true,
             json: true,
             required_revision_id: None,
+            no_auto_style: false,
         },
         &mut out,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
@@ -1421,20 +1561,22 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
+            no_auto_style: false,
         },
         &mut styles,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
     let styles: serde_json::Value = serde_json::from_slice(&styles).unwrap();
     assert_eq!(styles["range"]["startIndex"], 17);
     assert_eq!(
-        styles["requestBody"]["requests"][0]["updateTextStyle"]["fields"],
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
         "bold,italic,fontSize,foregroundColor"
     );
     assert_eq!(
-        styles["requestBody"]["requests"][1]["updateParagraphStyle"]["paragraphStyle"]
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["namedStyleType"],
         "HEADING_2"
     );
@@ -1454,9 +1596,11 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             dry_run: true,
             json: true,
             required_revision_id: None,
+            no_auto_style: false,
         },
         &mut list,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
@@ -1503,6 +1647,7 @@ async fn run_apply_list_dry_run_maps_cli_types_and_preserves_raw_preset() {
             ),
             &mut out,
             Some(&documents_url),
+            None,
         )
         .await
         .unwrap();
@@ -1534,6 +1679,7 @@ async fn run_apply_list_dry_run_maps_cli_types_and_preserves_raw_preset() {
         },
         &mut raw,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
@@ -1573,6 +1719,7 @@ async fn run_apply_list_targets_whole_blocks_and_rejects_ambiguous_text_ranges()
         ),
         &mut page_line,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
@@ -1597,6 +1744,7 @@ async fn run_apply_list_targets_whole_blocks_and_rejects_ambiguous_text_ranges()
         ),
         &mut Vec::new(),
         Some(&documents_url),
+        None,
     )
     .await;
 
@@ -1659,6 +1807,7 @@ async fn run_apply_list_posts_mutation_request_body() {
         },
         &mut out,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
@@ -1715,33 +1864,35 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
             dry_run: true,
             json: true,
             required_revision_id: None,
+            no_auto_style: false,
         },
         &mut out,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(
-        output["requestBody"]["requests"][0]["updateTextStyle"]["textStyle"]["underline"],
+        output["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["underline"],
         true
     );
     assert_eq!(
-        output["requestBody"]["requests"][0]["updateTextStyle"]["textStyle"]["weightedFontFamily"]
+        output["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["weightedFontFamily"]
             ["fontFamily"],
         "Roboto"
     );
     assert_eq!(
-        output["requestBody"]["requests"][0]["updateTextStyle"]["fields"],
+        output["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
         "underline,weightedFontFamily"
     );
     assert_eq!(
-        output["requestBody"]["requests"][1]["updateParagraphStyle"]["paragraphStyle"]["alignment"],
+        output["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["alignment"],
         "CENTER"
     );
     assert_eq!(
-        output["requestBody"]["requests"][1]["updateParagraphStyle"]["fields"],
+        output["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
         "alignment"
     );
 }
@@ -1762,19 +1913,6 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
         .and(body_json(serde_json::json!({
             "requests": [
                 {
-                    "updateTextStyle": {
-                        "range": {
-                            "startIndex": 17,
-                            "endIndex": 30
-                        },
-                        "textStyle": {
-                            "strikethrough": true,
-                            "bold": true
-                        },
-                        "fields": "strikethrough,bold"
-                    }
-                },
-                {
                     "updateParagraphStyle": {
                         "range": {
                             "startIndex": 17,
@@ -1793,7 +1931,40 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "documentId": "document-123",
-            "replies": [{}, {}]
+            "replies": [{}],
+            "writeControl": {
+                "requiredRevisionId": "rev-after-paragraph"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updateTextStyle": {
+                        "range": {
+                            "startIndex": 17,
+                            "endIndex": 30
+                        },
+                        "textStyle": {
+                            "strikethrough": true,
+                            "bold": true
+                        },
+                        "fields": "strikethrough,bold"
+                    }
+                }
+            ],
+            "writeControl": {
+                "requiredRevisionId": "rev-after-paragraph"
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}]
         })))
         .expect(1)
         .mount(&server)
@@ -1821,16 +1992,346 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
             dry_run: false,
             json: false,
             required_revision_id: Some("rev-search".into()),
+            no_auto_style: false,
         },
         &mut out,
         Some(&documents_url),
+        None,
     )
     .await
     .unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
-        "{\"documentId\":\"document-123\",\"replies\":[{},{}]}\n"
+        "{\"documentId\":\"document-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cache_dir = tempfile::tempdir().unwrap();
+    save_style_template_in(
+        Some(cache_dir.path()),
+        &StyleTemplate {
+            document_id: "document-123".into(),
+            source_revision_id: Some("rev-style".into()),
+            named_styles: [(
+                "HEADING_2".to_string(),
+                NamedStyleTemplate {
+                    text_style: TextStyleTemplate {
+                        bold: Some(true),
+                        italic: Some(true),
+                        font_size_pt: Some(14.0),
+                        foreground_color: Some("#336699".into()),
+                    },
+                    paragraph_style: Some(serde_json::json!({
+                        "borderBottom": {
+                            "dashStyle": "SOLID",
+                            "padding": { "magnitude": 4.0, "unit": "PT" },
+                            "width": { "magnitude": 1.5, "unit": "PT" }
+                        },
+                        "spaceAbove": { "magnitude": 14.0, "unit": "PT" },
+                        "spaceBelow": { "magnitude": 7.0, "unit": "PT" },
+                        "spacingMode": "NEVER_COLLAPSE"
+                    })),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            table: None,
+            list: None,
+        },
+    )
+    .unwrap();
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_apply_styles_to(
+        &client,
+        ApplyStylesCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Text {
+                text: "matching text".into(),
+                match_number: None,
+            },
+            bold: false,
+            italic: false,
+            font_size: None,
+            foreground_color: None,
+            heading: Some("HEADING_2".into()),
+            style_json: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+            no_auto_style: false,
+        },
+        &mut out,
+        Some(&documents_url),
+        Some(cache_dir.path()),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["bold"],
+        true
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["italic"],
+        true
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["fontSize"]["magnitude"],
+        14.0
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
+        "bold,italic,fontSize,foregroundColor"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["namedStyleType"],
+        "HEADING_2"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["spacingMode"],
+        "NEVER_COLLAPSE"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
+        "namedStyleType,borderBottom,spaceAbove,spaceBelow,spacingMode"
+    );
+}
+
+#[tokio::test]
+async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updates() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}],
+            "writeControl": {
+                "requiredRevisionId": "rev-after-paragraph"
+            }
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let cache_dir = tempfile::tempdir().unwrap();
+    save_style_template_in(
+        Some(cache_dir.path()),
+        &StyleTemplate {
+            document_id: "document-123".into(),
+            source_revision_id: Some("rev-style".into()),
+            named_styles: [(
+                "HEADING_1".to_string(),
+                NamedStyleTemplate {
+                    text_style: TextStyleTemplate {
+                        bold: Some(true),
+                        italic: None,
+                        font_size_pt: Some(15.0),
+                        foreground_color: Some("#00595B".into()),
+                    },
+                    paragraph_style: Some(serde_json::json!({
+                        "borderBottom": {
+                            "dashStyle": "SOLID",
+                            "padding": { "magnitude": 4.0, "unit": "PT" },
+                            "width": { "magnitude": 1.5, "unit": "PT" }
+                        },
+                        "spaceAbove": { "magnitude": 14.0, "unit": "PT" },
+                        "spaceBelow": { "magnitude": 7.0, "unit": "PT" },
+                        "spacingMode": "NEVER_COLLAPSE"
+                    })),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            table: None,
+            list: None,
+        },
+    )
+    .unwrap();
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_apply_styles_to(
+        &client,
+        ApplyStylesCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Text {
+                text: "matching text".into(),
+                match_number: None,
+            },
+            bold: false,
+            italic: false,
+            font_size: None,
+            foreground_color: None,
+            heading: Some("HEADING_1".into()),
+            style_json: None,
+            dry_run: false,
+            json: true,
+            required_revision_id: Some("rev-initial".into()),
+            no_auto_style: false,
+        },
+        &mut out,
+        Some(&documents_url),
+        Some(cache_dir.path()),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["writeControl"]["requiredRevisionId"], "rev-after-paragraph");
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 3);
+    let first_post: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
+    let second_post: serde_json::Value = serde_json::from_slice(&requests[2].body).unwrap();
+
+    assert_eq!(first_post["writeControl"]["requiredRevisionId"], "rev-initial");
+    assert!(first_post["requests"][0]["updateParagraphStyle"].is_object());
+    assert!(first_post["requests"][0]["updateTextStyle"].is_null());
+
+    assert_eq!(
+        second_post["writeControl"]["requiredRevisionId"],
+        "rev-after-paragraph"
+    );
+    assert!(second_post["requests"][0]["updateTextStyle"].is_object());
+    assert!(second_post["requests"][0]["updateParagraphStyle"].is_null());
+}
+
+#[tokio::test]
+async fn run_apply_list_uses_cached_preset_when_flags_are_omitted() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cache_dir = tempfile::tempdir().unwrap();
+    save_style_template_in(
+        Some(cache_dir.path()),
+        &StyleTemplate {
+            document_id: "document-123".into(),
+            source_revision_id: Some("rev-style".into()),
+            named_styles: Default::default(),
+            table: None,
+            list: Some(ListStyleTemplate {
+                list_type: Some("Checkbox".into()),
+                preset: "BULLET_CHECKBOX".into(),
+            }),
+        },
+    )
+    .unwrap();
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_apply_list_to(
+        &client,
+        ApplyListCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Entry(2),
+            list_type: None,
+            preset: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+            no_auto_style: false,
+        },
+        &mut out,
+        Some(&documents_url),
+        Some(cache_dir.path()),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createParagraphBullets"]["bulletPreset"],
+        "BULLET_CHECKBOX"
+    );
+}
+
+#[test]
+fn run_show_style_template_supports_json_and_missing_cache_message() {
+    let cache_dir = tempfile::tempdir().unwrap();
+    let template = StyleTemplate {
+        document_id: "document-123".into(),
+        source_revision_id: Some("rev-style".into()),
+        named_styles: [(
+            "HEADING_2".to_string(),
+            NamedStyleTemplate {
+                text_style: TextStyleTemplate {
+                    bold: Some(true),
+                    italic: None,
+                    font_size_pt: Some(16.0),
+                    foreground_color: Some("#336699".into()),
+                },
+                paragraph_style: None,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        table: None,
+        list: Some(ListStyleTemplate {
+            list_type: Some("Bullet".into()),
+            preset: "BULLET_DISC_CIRCLE_SQUARE".into(),
+        }),
+    };
+    save_style_template_in(Some(cache_dir.path()), &template).unwrap();
+
+    let mut json_out = Vec::new();
+    run_show_style_template(
+        "document-123",
+        true,
+        &mut json_out,
+        Some(cache_dir.path()),
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&json_out).unwrap();
+    assert_eq!(json["document_id"], "document-123");
+    assert_eq!(json["source_revision_id"], "rev-style");
+
+    let mut missing_out = Vec::new();
+    run_show_style_template(
+        "missing-document",
+        false,
+        &mut missing_out,
+        Some(cache_dir.path()),
+    )
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(missing_out).unwrap(),
+        "no cached style template for this document; run `docs get missing-document` first\n"
     );
 }
 
@@ -1968,6 +2469,7 @@ async fn run_get_unified_tries_mapped_account_before_active_account() {
         &mut out,
         Some(&documents_url),
         Some(&state_path),
+        None,
     )
     .await
     .unwrap();
@@ -2248,6 +2750,7 @@ async fn run_get_unified_falls_back_on_target_access_failure_and_repairs_stale_m
         &mut out,
         Some(&documents_url),
         Some(&state_path),
+        None,
     )
     .await
     .unwrap();
@@ -2302,6 +2805,7 @@ async fn run_get_unified_does_not_fallback_for_explicit_account_but_maps_success
         &mut denied_out,
         Some(&documents_url),
         Some(&state_path),
+        None,
     )
     .await;
 
@@ -2321,6 +2825,7 @@ async fn run_get_unified_does_not_fallback_for_explicit_account_but_maps_success
         &mut mapped_out,
         Some(&documents_url),
         Some(&state_path),
+        None,
     )
     .await
     .unwrap();
@@ -2361,6 +2866,7 @@ async fn run_get_unified_does_not_fallback_on_non_target_api_error() {
         &mut out,
         Some(&documents_url),
         Some(&state_path),
+        None,
     )
     .await;
 
@@ -2513,6 +3019,7 @@ async fn run_get_returns_clear_error_for_not_found_response() {
         false,
         &mut out,
         Some(&documents_url),
+        None,
     )
     .await;
 
