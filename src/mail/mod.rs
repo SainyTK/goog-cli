@@ -436,7 +436,7 @@ fn part_filename(filename: &str, headers: &[MessageHeader]) -> Option<String> {
     attachment_filename_from_headers(headers)
 }
 
-fn decode_base64url(data: &str) -> Result<Vec<u8>, MailError> {
+pub(crate) fn decode_base64url(data: &str) -> Result<Vec<u8>, MailError> {
     base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(data)
         .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(data))

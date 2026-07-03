@@ -898,8 +898,22 @@ fn mail_read_with_message_id() {
     let cli = parse(&["mail", "read", "message-123"]).unwrap();
     match cli.command {
         Command::Mail {
-            command: MailCommand::Read { message_id },
-        } => assert_eq!(message_id, "message-123"),
+            command: MailCommand::Read { message_id, json },
+        } => {
+            assert_eq!(message_id, "message-123");
+            assert!(!json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_read_accepts_json_flag() {
+    let cli = parse(&["mail", "read", "message-123", "--json"]).unwrap();
+    match cli.command {
+        Command::Mail {
+            command: MailCommand::Read { json, .. },
+        } => assert!(json),
         _ => panic!("unexpected parse result"),
     }
 }

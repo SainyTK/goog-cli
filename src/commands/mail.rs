@@ -12,8 +12,8 @@ use crate::auth::state::{
 };
 use crate::cli::{MailAttachmentCommand, MailCommand};
 use crate::mail::{
-    download_attachment, get_message, list_messages, DownloadAttachmentOptions, GetMessageOptions,
-    ListMessagesOptions, MailError, MessageSummary,
+    decode_base64url, download_attachment, get_message, list_messages, DownloadAttachmentOptions,
+    GetMessageOptions, ListMessagesOptions, MailError, MessageSummary,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 10;
@@ -52,7 +52,7 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        MailCommand::Read { message_id } => {
+        MailCommand::Read { message_id, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_read_unified_to(
@@ -60,6 +60,7 @@ pub fn run<S: AccountStore>(
                 store,
                 account_override,
                 message_id,
+                json,
                 &mut std::io::stdout(),
                 None,
                 None,
@@ -143,6 +144,7 @@ async fn run_summary_to<S: AccountStore>(
 pub(super) async fn run_read_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     message_id: String,
+    json: bool,
     out: &mut impl Write,
     messages_url: Option<&str>,
 ) -> Result<()> {
@@ -151,14 +153,16 @@ pub(super) async fn run_read_to<S: AccountStore>(
     let message = get_message(client, &options)
         .await
         .context("failed to fetch GoogleMail Message")?;
-    write_json_line(out, &message, "failed to serialize GoogleMail Message")
+    write_message(&message, json, out)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn run_read_unified_to<S: AccountStore>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
     message_id: String,
+    json: bool,
     out: &mut impl Write,
     messages_url: Option<&str>,
     state_path: Option<&Path>,
@@ -180,7 +184,7 @@ pub(super) async fn run_read_unified_to<S: AccountStore>(
         unreachable!("read access returns a message")
     };
 
-    write_json_line(out, &message, "failed to serialize GoogleMail Message")
+    write_message(&message, json, out)
 }
 
 #[cfg(test)]
@@ -486,4 +490,555 @@ fn write_json_line(out: &mut impl Write, value: &serde_json::Value, context: &st
     serde_json::to_writer(&mut *out, value).context(context.to_string())?;
     writeln!(out).context("failed to write output")?;
     Ok(())
+}
+
+fn write_message(message: &serde_json::Value, json: bool, out: &mut impl Write) -> Result<()> {
+    if json {
+        write_json_line(out, message, "failed to serialize GoogleMail Message")
+    } else {
+        write_message_markdown(message, out)
+    }
+}
+
+fn write_message_markdown(message: &serde_json::Value, out: &mut impl Write) -> Result<()> {
+    let payload = message.get("payload");
+    let headers: Vec<(&str, &str)> = payload
+        .and_then(|payload| payload.get("headers"))
+        .and_then(serde_json::Value::as_array)
+        .map(|headers| {
+            headers
+                .iter()
+                .filter_map(|header| {
+                    let name = header.get("name")?.as_str()?;
+                    let value = header.get("value")?.as_str()?;
+                    Some((name, value))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let header_value = |name: &str| -> Option<&str> {
+        headers
+            .iter()
+            .find(|(header_name, _)| header_name.eq_ignore_ascii_case(name))
+            .map(|(_, value)| *value)
+    };
+
+    writeln!(
+        out,
+        "# {}",
+        header_value("Subject").unwrap_or("(no subject)")
+    )
+    .context("failed to write output")?;
+    writeln!(out).context("failed to write output")?;
+    for (label, name) in [
+        ("From", "From"),
+        ("To", "To"),
+        ("Cc", "Cc"),
+        ("Date", "Date"),
+    ] {
+        if let Some(value) = header_value(name) {
+            writeln!(out, "**{label}:** {value}").context("failed to write output")?;
+        }
+    }
+    writeln!(out).context("failed to write output")?;
+    writeln!(out, "---").context("failed to write output")?;
+    writeln!(out).context("failed to write output")?;
+
+    let body = payload.map(extract_body_text).unwrap_or_default();
+    writeln!(out, "{}", body.trim()).context("failed to write output")?;
+
+    let mut attachments = Vec::new();
+    if let Some(payload) = payload {
+        collect_attachments(payload, &mut attachments);
+    }
+    let (inline, real): (Vec<_>, Vec<_>) = attachments.into_iter().partition(|a| a.inline);
+
+    if !real.is_empty() {
+        writeln!(out).context("failed to write output")?;
+        writeln!(out, "---").context("failed to write output")?;
+        writeln!(out).context("failed to write output")?;
+        writeln!(out, "**Attachments:**").context("failed to write output")?;
+        for attachment in &real {
+            write_attachment_line(out, attachment)?;
+        }
+    }
+
+    if !inline.is_empty() {
+        writeln!(out).context("failed to write output")?;
+        if real.is_empty() {
+            writeln!(out, "---").context("failed to write output")?;
+            writeln!(out).context("failed to write output")?;
+        }
+        writeln!(
+            out,
+            "**Inline images** (embedded in the message body, e.g. signature icons/logos — not separate files):"
+        )
+        .context("failed to write output")?;
+        for attachment in &inline {
+            write_attachment_line(out, attachment)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn write_attachment_line(out: &mut impl Write, attachment: &Attachment) -> Result<()> {
+    writeln!(
+        out,
+        "- {} ({}, {} bytes) — attachment ID: `{}`",
+        attachment.filename.as_deref().unwrap_or("(untitled)"),
+        attachment.mime_type,
+        attachment.size,
+        attachment.attachment_id,
+    )
+    .context("failed to write output")
+}
+
+struct Attachment {
+    filename: Option<String>,
+    mime_type: String,
+    size: u64,
+    attachment_id: String,
+    inline: bool,
+}
+
+fn collect_attachments(payload: &serde_json::Value, attachments: &mut Vec<Attachment>) {
+    if let Some(attachment_id) = payload
+        .get("body")
+        .and_then(|body| body.get("attachmentId"))
+        .and_then(serde_json::Value::as_str)
+    {
+        let filename = payload
+            .get("filename")
+            .and_then(serde_json::Value::as_str)
+            .filter(|filename| !filename.is_empty())
+            .map(str::to_string);
+        let mime_type = payload
+            .get("mimeType")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        let size = payload
+            .get("body")
+            .and_then(|body| body.get("size"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0);
+        let inline = part_content_disposition(payload)
+            .map(|disposition| disposition.eq_ignore_ascii_case("inline"))
+            .unwrap_or(false);
+        attachments.push(Attachment {
+            filename,
+            mime_type,
+            size,
+            attachment_id: attachment_id.to_string(),
+            inline,
+        });
+    }
+
+    if let Some(parts) = payload.get("parts").and_then(serde_json::Value::as_array) {
+        for part in parts {
+            collect_attachments(part, attachments);
+        }
+    }
+}
+
+fn part_content_disposition(payload: &serde_json::Value) -> Option<&str> {
+    let headers = payload.get("headers")?.as_array()?;
+    let value = headers.iter().find_map(|header| {
+        let name = header.get("name")?.as_str()?;
+        if name.eq_ignore_ascii_case("Content-Disposition") {
+            header.get("value")?.as_str()
+        } else {
+            None
+        }
+    })?;
+    Some(value.split(';').next().unwrap_or(value).trim())
+}
+
+fn extract_body_text(payload: &serde_json::Value) -> String {
+    if let Some(html) = find_body_part(payload, "text/html") {
+        return html_to_markdown(&html);
+    }
+    find_body_part(payload, "text/plain").unwrap_or_default()
+}
+
+fn find_body_part(payload: &serde_json::Value, mime_type: &str) -> Option<String> {
+    let this_mime_type = payload
+        .get("mimeType")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    if this_mime_type == mime_type {
+        if let Some(data) = payload
+            .get("body")
+            .and_then(|body| body.get("data"))
+            .and_then(serde_json::Value::as_str)
+        {
+            if let Ok(bytes) = decode_base64url(data) {
+                return Some(String::from_utf8_lossy(&bytes).into_owned());
+            }
+        }
+    }
+
+    payload
+        .get("parts")
+        .and_then(serde_json::Value::as_array)?
+        .iter()
+        .find_map(|part| find_body_part(part, mime_type))
+}
+
+const BUFFERED_TAGS: &[&str] = &["a", "b", "strong", "i", "em", "td", "th"];
+
+#[derive(Default)]
+struct TableCtx {
+    rows: Vec<Vec<String>>,
+    current_row: Vec<String>,
+}
+
+struct Frame {
+    tag: String,
+    href: Option<String>,
+    buf: String,
+}
+
+#[derive(Default)]
+struct HtmlToMarkdown {
+    output: String,
+    frames: Vec<Frame>,
+    tables: Vec<TableCtx>,
+    skip_depth: u32,
+}
+
+impl HtmlToMarkdown {
+    fn write_str(&mut self, s: &str) {
+        match self.frames.last_mut() {
+            Some(frame) => frame.buf.push_str(s),
+            None => self.output.push_str(s),
+        }
+    }
+
+    fn handle_text(&mut self, raw: &str) {
+        if self.skip_depth > 0 {
+            return;
+        }
+        let collapsed = collapse_whitespace(&decode_html_entities(raw));
+        if !collapsed.is_empty() {
+            self.write_str(&collapsed);
+        }
+    }
+
+    fn handle_tag(&mut self, raw: &str) {
+        let raw = raw.trim();
+        let closing = raw.starts_with('/');
+        let self_closing = raw.ends_with('/');
+        let body = raw.trim_start_matches('/').trim_end_matches('/').trim();
+        let mut parts = body.splitn(2, |c: char| c.is_whitespace());
+        let name = parts.next().unwrap_or("").to_ascii_lowercase();
+        let attrs = parts.next().unwrap_or("");
+
+        if name.is_empty() || name.starts_with('!') || name.starts_with('?') {
+            return;
+        }
+
+        if self.skip_depth > 0 {
+            if matches!(name.as_str(), "style" | "script" | "head") {
+                if closing {
+                    self.skip_depth = self.skip_depth.saturating_sub(1);
+                } else if !self_closing {
+                    self.skip_depth += 1;
+                }
+            }
+            return;
+        }
+
+        if !closing && !self_closing && matches!(name.as_str(), "style" | "script" | "head") {
+            self.skip_depth += 1;
+            return;
+        }
+
+        if closing {
+            self.handle_end(&name);
+        } else {
+            self.handle_start(&name, attrs);
+            if self_closing {
+                if name == "br" {
+                    // already emitted by handle_start
+                } else if BUFFERED_TAGS.contains(&name.as_str()) {
+                    self.handle_end(&name);
+                }
+            }
+        }
+    }
+
+    fn handle_start(&mut self, name: &str, attrs: &str) {
+        match name {
+            "br" => self.write_str("\n"),
+            "hr" => self.write_str("\n\n---\n\n"),
+            "li" => self.write_str("- "),
+            "table" => self.tables.push(TableCtx::default()),
+            "tr" => {
+                if let Some(table) = self.tables.last_mut() {
+                    table.current_row.clear();
+                }
+            }
+            _ if BUFFERED_TAGS.contains(&name) => {
+                let href = if name == "a" {
+                    extract_attr(attrs, "href").map(|href| decode_html_entities(&href))
+                } else {
+                    None
+                };
+                self.frames.push(Frame {
+                    tag: name.to_string(),
+                    href,
+                    buf: String::new(),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_end(&mut self, name: &str) {
+        match name {
+            "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
+                self.write_str("\n\n");
+            }
+            "li" | "ul" | "ol" => {
+                self.write_str("\n");
+            }
+            "tr" => {
+                if let Some(table) = self.tables.last_mut() {
+                    let row = std::mem::take(&mut table.current_row);
+                    table.rows.push(row);
+                }
+            }
+            "table" => {
+                if let Some(table) = self.tables.pop() {
+                    let rendered = render_table(&table.rows);
+                    self.write_str(&rendered);
+                }
+            }
+            _ if BUFFERED_TAGS.contains(&name) => {
+                let Some(frame) = self.frames.pop() else {
+                    return;
+                };
+                if frame.tag != name {
+                    // Mismatched close; put the frame back and give up gracefully.
+                    let text = frame.buf.trim().to_string();
+                    self.write_str(&text);
+                    return;
+                }
+                let text = frame.buf.trim().to_string();
+                if name == "td" || name == "th" {
+                    if let Some(table) = self.tables.last_mut() {
+                        table
+                            .current_row
+                            .push(text.replace('|', "\\|").replace('\n', " "));
+                    }
+                    return;
+                }
+                let formatted = match name {
+                    "b" | "strong" if !text.is_empty() => format!("**{text}**"),
+                    "i" | "em" if !text.is_empty() => format!("*{text}*"),
+                    "a" => match &frame.href {
+                        Some(href) if !text.is_empty() => format!("[{text}]({href})"),
+                        Some(href) => href.clone(),
+                        None => text,
+                    },
+                    _ => text,
+                };
+                self.write_str(&formatted);
+            }
+            _ => {}
+        }
+    }
+
+    fn finish(mut self) -> String {
+        while let Some(frame) = self.frames.pop() {
+            self.output.push_str(frame.buf.trim());
+        }
+        while let Some(table) = self.tables.pop() {
+            let rendered = render_table(&table.rows);
+            self.output.push_str(&rendered);
+        }
+        collapse_blank_lines(&self.output).trim().to_string()
+    }
+}
+
+fn html_to_markdown(html: &str) -> String {
+    let mut converter = HtmlToMarkdown::default();
+    let mut text_buf = String::new();
+    let mut raw_tag = String::new();
+    let mut in_tag = false;
+
+    for ch in html.chars() {
+        if ch == '<' {
+            if !text_buf.is_empty() {
+                converter.handle_text(&text_buf);
+                text_buf.clear();
+            }
+            in_tag = true;
+            raw_tag.clear();
+            continue;
+        }
+        if ch == '>' && in_tag {
+            in_tag = false;
+            converter.handle_tag(&raw_tag);
+            continue;
+        }
+        if in_tag {
+            raw_tag.push(ch);
+        } else {
+            text_buf.push(ch);
+        }
+    }
+    if !text_buf.is_empty() {
+        converter.handle_text(&text_buf);
+    }
+
+    converter.finish()
+}
+
+fn render_table(rows: &[Vec<String>]) -> String {
+    let col_count = rows.iter().map(Vec::len).max().unwrap_or(0);
+    if col_count == 0 {
+        return String::new();
+    }
+
+    let mut out = String::from("\n\n");
+    for (row_index, row) in rows.iter().enumerate() {
+        out.push('|');
+        for column in 0..col_count {
+            let cell = row.get(column).map(String::as_str).unwrap_or("");
+            out.push(' ');
+            out.push_str(cell);
+            out.push_str(" |");
+        }
+        out.push('\n');
+        if row_index == 0 {
+            out.push('|');
+            for _ in 0..col_count {
+                out.push_str(" --- |");
+            }
+            out.push('\n');
+        }
+    }
+    out.push('\n');
+    out
+}
+
+fn extract_attr(attrs: &str, attr_name: &str) -> Option<String> {
+    let lower = attrs.to_ascii_lowercase();
+    let needle = format!("{attr_name}=");
+    let pos = lower.find(&needle)?;
+    let after = &attrs[pos + needle.len()..];
+    let mut chars = after.chars();
+    let quote = chars.next()?;
+    if quote == '"' || quote == '\'' {
+        let rest = &after[quote.len_utf8()..];
+        let end = rest.find(quote)?;
+        Some(rest[..end].to_string())
+    } else {
+        let end = after
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(after.len());
+        Some(after[..end].to_string())
+    }
+}
+
+fn collapse_whitespace(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut last_was_space = false;
+    for ch in s.chars() {
+        if ch.is_whitespace() {
+            if !last_was_space {
+                out.push(' ');
+            }
+            last_was_space = true;
+        } else {
+            out.push(ch);
+            last_was_space = false;
+        }
+    }
+    out
+}
+
+fn collapse_blank_lines(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut newline_run = 0;
+    for ch in s.chars() {
+        if ch == '\n' {
+            newline_run += 1;
+            if newline_run <= 2 {
+                out.push('\n');
+            }
+        } else {
+            newline_run = 0;
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn decode_html_entities(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(amp_pos) = rest.find('&') {
+        out.push_str(&rest[..amp_pos]);
+        let after_amp = &rest[amp_pos + 1..];
+        let semicolon = after_amp
+            .as_bytes()
+            .iter()
+            .take(12)
+            .position(|byte| *byte == b';');
+        if let Some(semicolon) = semicolon {
+            let entity = &after_amp[..semicolon];
+            if let Some(resolved) = resolve_entity(entity) {
+                out.push_str(&resolved);
+                rest = &after_amp[semicolon + 1..];
+                continue;
+            }
+        }
+        out.push('&');
+        rest = after_amp;
+    }
+    out.push_str(rest);
+    out
+}
+
+fn resolve_entity(entity: &str) -> Option<String> {
+    if let Some(hex) = entity
+        .strip_prefix("#x")
+        .or_else(|| entity.strip_prefix("#X"))
+    {
+        return u32::from_str_radix(hex, 16)
+            .ok()
+            .and_then(char::from_u32)
+            .map(String::from);
+    }
+    if let Some(dec) = entity.strip_prefix('#') {
+        return dec
+            .parse::<u32>()
+            .ok()
+            .and_then(char::from_u32)
+            .map(String::from);
+    }
+    let resolved = match entity {
+        "amp" => "&",
+        "lt" => "<",
+        "gt" => ">",
+        "quot" => "\"",
+        "apos" => "'",
+        "nbsp" => "\u{a0}",
+        "mdash" => "\u{2014}",
+        "ndash" => "\u{2013}",
+        "hellip" => "\u{2026}",
+        "lsquo" => "\u{2018}",
+        "rsquo" => "\u{2019}",
+        "ldquo" => "\u{201c}",
+        "rdquo" => "\u{201d}",
+        "copy" => "\u{a9}",
+        "reg" => "\u{ae}",
+        "trade" => "\u{2122}",
+        _ => return None,
+    };
+    Some(resolved.to_string())
 }
