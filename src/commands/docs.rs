@@ -2324,9 +2324,11 @@ fn docs_range(range: &DocumentRange) -> serde_json::Value {
 
 #[derive(Debug, Default)]
 struct RawStylePayload {
-    text_style: Option<serde_json::Map<String, serde_json::Value>>,
-    paragraph_style: Option<serde_json::Map<String, serde_json::Value>>,
+    text_style: Option<StyleObject>,
+    paragraph_style: Option<StyleObject>,
 }
+
+type StyleObject = serde_json::Map<String, serde_json::Value>;
 
 fn raw_style_payload(style_json: Option<&str>) -> Result<RawStylePayload> {
     let Some(style_json) = style_json else {
@@ -2363,10 +2365,7 @@ fn raw_style_payload(style_json: Option<&str>) -> Result<RawStylePayload> {
     })
 }
 
-fn expect_json_object(
-    value: serde_json::Value,
-    label: &str,
-) -> Result<serde_json::Map<String, serde_json::Value>> {
+fn expect_json_object(value: serde_json::Value, label: &str) -> Result<StyleObject> {
     match value {
         serde_json::Value::Object(object) => Ok(object),
         _ => bail!("{label} must be a JSON object"),
@@ -2375,51 +2374,59 @@ fn expect_json_object(
 
 fn text_style_payload(
     command: &ApplyStylesCommand,
-    raw_text_style: Option<serde_json::Map<String, serde_json::Value>>,
+    raw_text_style: Option<StyleObject>,
 ) -> Result<(serde_json::Value, Vec<String>)> {
-    let mut style = raw_text_style.unwrap_or_default();
-    let mut fields = style.keys().cloned().collect::<Vec<_>>();
+    let mut payload = StylePayloadParts::from_raw(raw_text_style);
     if command.bold {
-        style.insert("bold".into(), serde_json::Value::Bool(true));
-        push_field(&mut fields, "bold");
+        payload.set_field("bold", serde_json::Value::Bool(true));
     }
     if command.italic {
-        style.insert("italic".into(), serde_json::Value::Bool(true));
-        push_field(&mut fields, "italic");
+        payload.set_field("italic", serde_json::Value::Bool(true));
     }
     if let Some(font_size) = command.font_size {
-        style.insert(
-            "fontSize".into(),
+        payload.set_field(
+            "fontSize",
             serde_json::json!({ "magnitude": font_size, "unit": "PT" }),
         );
-        push_field(&mut fields, "fontSize");
     }
     if let Some(color) = &command.foreground_color {
-        style.insert("foregroundColor".into(), foreground_color_payload(color)?);
-        push_field(&mut fields, "foregroundColor");
+        payload.set_field("foregroundColor", foreground_color_payload(color)?);
     }
-    Ok((serde_json::Value::Object(style), fields))
+    Ok(payload.into_json_parts())
 }
 
 fn paragraph_style_payload(
     heading: Option<&str>,
-    raw_paragraph_style: Option<serde_json::Map<String, serde_json::Value>>,
+    raw_paragraph_style: Option<StyleObject>,
 ) -> Result<(serde_json::Value, Vec<String>)> {
-    let mut style = raw_paragraph_style.unwrap_or_default();
-    let mut fields = style.keys().cloned().collect::<Vec<_>>();
+    let mut payload = StylePayloadParts::from_raw(raw_paragraph_style);
     if let Some(heading) = heading {
-        style.insert(
-            "namedStyleType".into(),
-            serde_json::Value::String(heading.into()),
-        );
-        push_field(&mut fields, "namedStyleType");
+        payload.set_field("namedStyleType", serde_json::Value::String(heading.into()));
     }
-    Ok((serde_json::Value::Object(style), fields))
+    Ok(payload.into_json_parts())
 }
 
-fn push_field(fields: &mut Vec<String>, field: &str) {
-    if !fields.iter().any(|existing| existing == field) {
-        fields.push(field.to_string());
+struct StylePayloadParts {
+    style: StyleObject,
+    fields: Vec<String>,
+}
+
+impl StylePayloadParts {
+    fn from_raw(raw_style: Option<StyleObject>) -> Self {
+        let style = raw_style.unwrap_or_default();
+        let fields = style.keys().cloned().collect::<Vec<_>>();
+        Self { style, fields }
+    }
+
+    fn set_field(&mut self, field: &str, value: serde_json::Value) {
+        self.style.insert(field.into(), value);
+        if !self.fields.iter().any(|existing| existing == field) {
+            self.fields.push(field.to_string());
+        }
+    }
+
+    fn into_json_parts(self) -> (serde_json::Value, Vec<String>) {
+        (serde_json::Value::Object(self.style), self.fields)
     }
 }
 
