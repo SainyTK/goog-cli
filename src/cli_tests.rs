@@ -2,8 +2,8 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand,
-    MailAttachmentCommand, MailCommand, SheetsCommand, SheetsInsertDataOption,
+    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
+    DriveFolderCommand, MailAttachmentCommand, MailCommand, SheetsCommand, SheetsInsertDataOption,
     SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
@@ -722,10 +722,10 @@ fn docs_new_high_level_editing_commands_parse() {
     assert_eq!(list_type, Some(crate::cli::DocsListType::Checkbox));
 
     for (value, expected) in [
-        ("bullet", crate::cli::DocsListType::Bullet),
-        ("numbered", crate::cli::DocsListType::Numbered),
-        ("dash", crate::cli::DocsListType::Dash),
-        ("checkbox", crate::cli::DocsListType::Checkbox),
+        ("bullet", DocsListType::Bullet),
+        ("numbered", DocsListType::Numbered),
+        ("dash", DocsListType::Dash),
+        ("checkbox", DocsListType::Checkbox),
     ] {
         let Command::Docs {
             command:

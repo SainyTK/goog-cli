@@ -9,6 +9,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
+use crate::cli::DocsListType;
 use crate::docs::{DOCS_READONLY_SCOPE, DOCS_SCOPE};
 
 use super::docs::*;
@@ -46,6 +47,21 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
         .save_token("alice@example.com", &docs_token())
         .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
+}
+
+fn dry_run_apply_list_command(
+    selector: RangeSelector,
+    list_type: DocsListType,
+) -> ApplyListCommand {
+    ApplyListCommand {
+        document_id: "document-123".into(),
+        selector,
+        list_type: Some(list_type),
+        preset: None,
+        dry_run: true,
+        json: true,
+        required_revision_id: None,
+    }
 }
 
 fn multi_account_config() -> Config {
@@ -1178,15 +1194,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     let mut list = Vec::new();
     run_apply_list_to(
         &client,
-        ApplyListCommand {
-            document_id: "document-123".into(),
-            selector: RangeSelector::Entry(2),
-            list_type: Some(crate::cli::DocsListType::Checkbox),
-            preset: None,
-            dry_run: true,
-            json: true,
-            required_revision_id: None,
-        },
+        dry_run_apply_list_command(RangeSelector::Entry(2), DocsListType::Checkbox),
         &mut list,
         Some(&documents_url),
     )
@@ -1218,35 +1226,21 @@ async fn run_apply_list_dry_run_maps_cli_types_and_preserves_raw_preset() {
     let documents_url = format!("{}/docs/v1/documents", server.uri());
 
     for (list_type, expected_preset) in [
-        (
-            crate::cli::DocsListType::Bullet,
-            "BULLET_DISC_CIRCLE_SQUARE",
-        ),
-        (
-            crate::cli::DocsListType::Numbered,
-            "NUMBERED_DECIMAL_ALPHA_ROMAN",
-        ),
-        (
-            crate::cli::DocsListType::Dash,
-            "BULLET_DIAMONDX_ARROW3D_SQUARE",
-        ),
-        (crate::cli::DocsListType::Checkbox, "BULLET_CHECKBOX"),
+        (DocsListType::Bullet, "BULLET_DISC_CIRCLE_SQUARE"),
+        (DocsListType::Numbered, "NUMBERED_DECIMAL_ALPHA_ROMAN"),
+        (DocsListType::Dash, "BULLET_DIAMONDX_ARROW3D_SQUARE"),
+        (DocsListType::Checkbox, "BULLET_CHECKBOX"),
     ] {
         let mut out = Vec::new();
         run_apply_list_to(
             &client,
-            ApplyListCommand {
-                document_id: "document-123".into(),
-                selector: RangeSelector::IndexRange {
+            dry_run_apply_list_command(
+                RangeSelector::IndexRange {
                     start_index: 4,
                     end_index: 12,
                 },
-                list_type: Some(list_type),
-                preset: None,
-                dry_run: true,
-                json: true,
-                required_revision_id: None,
-            },
+                list_type,
+            ),
             &mut out,
             Some(&documents_url),
         )
@@ -1267,16 +1261,16 @@ async fn run_apply_list_dry_run_maps_cli_types_and_preserves_raw_preset() {
     run_apply_list_to(
         &client,
         ApplyListCommand {
-            document_id: "document-123".into(),
-            selector: RangeSelector::IndexRange {
-                start_index: 6,
-                end_index: 18,
-            },
             list_type: None,
             preset: Some("BULLET_STAR_CIRCLE_SQUARE".into()),
-            dry_run: true,
-            json: true,
             required_revision_id: Some("rev-required".into()),
+            ..dry_run_apply_list_command(
+                RangeSelector::IndexRange {
+                    start_index: 6,
+                    end_index: 18,
+                },
+                DocsListType::Bullet,
+            )
         },
         &mut raw,
         Some(&documents_url),
@@ -1313,15 +1307,10 @@ async fn run_apply_list_targets_whole_blocks_and_rejects_ambiguous_text_ranges()
     let mut page_line = Vec::new();
     run_apply_list_to(
         &client,
-        ApplyListCommand {
-            document_id: "document-123".into(),
-            selector: RangeSelector::PageLine { page: 2, line: 1 },
-            list_type: Some(crate::cli::DocsListType::Bullet),
-            preset: None,
-            dry_run: true,
-            json: true,
-            required_revision_id: None,
-        },
+        dry_run_apply_list_command(
+            RangeSelector::PageLine { page: 2, line: 1 },
+            DocsListType::Bullet,
+        ),
         &mut page_line,
         Some(&documents_url),
     )
@@ -1339,18 +1328,13 @@ async fn run_apply_list_targets_whole_blocks_and_rejects_ambiguous_text_ranges()
 
     let result = run_apply_list_to(
         &client,
-        ApplyListCommand {
-            document_id: "document-123".into(),
-            selector: RangeSelector::Text {
+        dry_run_apply_list_command(
+            RangeSelector::Text {
                 text: "Plan".into(),
                 match_number: None,
             },
-            list_type: Some(crate::cli::DocsListType::Numbered),
-            preset: None,
-            dry_run: true,
-            json: true,
-            required_revision_id: None,
-        },
+            DocsListType::Numbered,
+        ),
         &mut Vec::new(),
         Some(&documents_url),
     )
@@ -1408,13 +1392,10 @@ async fn run_apply_list_posts_mutation_request_body() {
     run_apply_list_to(
         &client,
         ApplyListCommand {
-            document_id: "document-123".into(),
-            selector: RangeSelector::Entry(1),
-            list_type: Some(crate::cli::DocsListType::Bullet),
-            preset: None,
             dry_run: false,
             json: false,
             required_revision_id: Some("rev-search".into()),
+            ..dry_run_apply_list_command(RangeSelector::Entry(1), DocsListType::Bullet)
         },
         &mut out,
         Some(&documents_url),
