@@ -12,8 +12,9 @@ use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::DocsCommand;
 use crate::docs::{
     batch_update_document, get_document, map::build_document_map, map::search_document_text,
-    map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind, map::DocumentRange,
-    BatchUpdateDocumentOptions, DocsError, GetDocumentOptions,
+    map::DocumentLocation, map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind,
+    map::DocumentRange, map::DocumentTextBlock, BatchUpdateDocumentOptions, DocsError,
+    GetDocumentOptions,
 };
 
 pub fn run<S: AccountStore>(
@@ -355,38 +356,12 @@ pub(super) async fn run_insert_text_to<S: AccountStore>(
     documents_url: Option<&str>,
 ) -> Result<()> {
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
-    let resolved = resolve_insert_text_location(&document_map, &command.selector)?;
-    let request_body = insert_text_request_body(
-        resolved.location.index,
-        &command.text,
-        command.required_revision_id.as_deref(),
-    );
-    let preview = InsertTextPreview {
-        before: resolved.preview_before.clone(),
-        after: insert_preview_text(
-            &resolved.preview_before,
-            resolved.preview_offset,
-            &command.text,
-        ),
-    };
+    let change = prepare_insert_text_change(&document_map, &command)?;
 
     if command.dry_run {
-        let dry_run = InsertTextDryRun {
-            revision_id: document_map.revision_id.clone(),
-            location: resolved.location,
-            request_body,
-            preview,
-        };
-        if command.json {
-            write_json_line(
-                out,
-                &dry_run,
-                "failed to serialize Docs insert-text dry run",
-            )
-        } else {
-            write_insert_text_preview(out, &dry_run)
-        }
+        write_insert_text_dry_run(out, &change, command.json)
     } else {
+        let request_body = change.request_body;
         let options =
             batch_update_document_options(command.document_id, request_body, documents_url);
         let response = batch_update_document(client, &options)
@@ -418,38 +393,12 @@ pub(super) async fn run_insert_text_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
-    let resolved = resolve_insert_text_location(&document_map, &command.selector)?;
-    let request_body = insert_text_request_body(
-        resolved.location.index,
-        &command.text,
-        command.required_revision_id.as_deref(),
-    );
-    let preview = InsertTextPreview {
-        before: resolved.preview_before.clone(),
-        after: insert_preview_text(
-            &resolved.preview_before,
-            resolved.preview_offset,
-            &command.text,
-        ),
-    };
+    let change = prepare_insert_text_change(&document_map, &command)?;
 
     if command.dry_run {
-        let dry_run = InsertTextDryRun {
-            revision_id: document_map.revision_id.clone(),
-            location: resolved.location,
-            request_body,
-            preview,
-        };
-        if command.json {
-            write_json_line(
-                out,
-                &dry_run,
-                "failed to serialize Docs insert-text dry run",
-            )
-        } else {
-            write_insert_text_preview(out, &dry_run)
-        }
+        write_insert_text_dry_run(out, &change, command.json)
     } else {
+        let request_body = change.request_body;
         let options =
             batch_update_document_options(command.document_id.clone(), request_body, documents_url);
         let resource_key = resource_key("docs", &command.document_id);
@@ -479,32 +428,12 @@ pub(super) async fn run_replace_text_to<S: AccountStore>(
     documents_url: Option<&str>,
 ) -> Result<()> {
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
-    let ranges = resolve_replace_text_ranges(&document_map, &command)?;
-    let request_body = replace_text_request_body(
-        &ranges,
-        &command.new_text,
-        command.required_revision_id.as_deref(),
-    );
-    let preview =
-        replace_text_preview(&document_map, &ranges, &command.old_text, &command.new_text);
+    let change = prepare_replace_text_change(&document_map, &command)?;
 
     if command.dry_run {
-        let dry_run = ReplaceTextDryRun {
-            revision_id: document_map.revision_id.clone(),
-            ranges,
-            request_body,
-            preview,
-        };
-        if command.json {
-            write_json_line(
-                out,
-                &dry_run,
-                "failed to serialize Docs replace-text dry run",
-            )
-        } else {
-            write_replace_text_preview(out, &dry_run)
-        }
+        write_replace_text_dry_run(out, &change, command.json)
     } else {
+        let request_body = change.request_body;
         let options =
             batch_update_document_options(command.document_id, request_body, documents_url);
         let response = batch_update_document(client, &options)
@@ -536,32 +465,12 @@ pub(super) async fn run_replace_text_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
-    let ranges = resolve_replace_text_ranges(&document_map, &command)?;
-    let request_body = replace_text_request_body(
-        &ranges,
-        &command.new_text,
-        command.required_revision_id.as_deref(),
-    );
-    let preview =
-        replace_text_preview(&document_map, &ranges, &command.old_text, &command.new_text);
+    let change = prepare_replace_text_change(&document_map, &command)?;
 
     if command.dry_run {
-        let dry_run = ReplaceTextDryRun {
-            revision_id: document_map.revision_id.clone(),
-            ranges,
-            request_body,
-            preview,
-        };
-        if command.json {
-            write_json_line(
-                out,
-                &dry_run,
-                "failed to serialize Docs replace-text dry run",
-            )
-        } else {
-            write_replace_text_preview(out, &dry_run)
-        }
+        write_replace_text_dry_run(out, &change, command.json)
     } else {
+        let request_body = change.request_body;
         let options =
             batch_update_document_options(command.document_id.clone(), request_body, documents_url);
         let resource_key = resource_key("docs", &command.document_id);
@@ -1015,9 +924,56 @@ struct ReplaceTextPreviewChange {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedInsertTextLocation {
-    location: crate::docs::map::DocumentLocation,
+    location: DocumentLocation,
     preview_before: String,
     preview_offset: usize,
+}
+
+fn prepare_insert_text_change(
+    document_map: &DocumentMap,
+    command: &InsertTextCommand,
+) -> Result<InsertTextDryRun> {
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let request_body = insert_text_request_body(
+        resolved.location.index,
+        &command.text,
+        command.required_revision_id.as_deref(),
+    );
+    let preview = InsertTextPreview {
+        before: resolved.preview_before.clone(),
+        after: insert_preview_text(
+            &resolved.preview_before,
+            resolved.preview_offset,
+            &command.text,
+        ),
+    };
+
+    Ok(InsertTextDryRun {
+        revision_id: document_map.revision_id.clone(),
+        location: resolved.location,
+        request_body,
+        preview,
+    })
+}
+
+fn prepare_replace_text_change(
+    document_map: &DocumentMap,
+    command: &ReplaceTextCommand,
+) -> Result<ReplaceTextDryRun> {
+    let ranges = resolve_replace_text_ranges(document_map, command)?;
+    let request_body = replace_text_request_body(
+        &ranges,
+        &command.new_text,
+        command.required_revision_id.as_deref(),
+    );
+    let preview = replace_text_preview(document_map, &ranges, &command.old_text, &command.new_text);
+
+    Ok(ReplaceTextDryRun {
+        revision_id: document_map.revision_id.clone(),
+        ranges,
+        request_body,
+        preview,
+    })
 }
 
 fn resolve_insert_text_location(
@@ -1029,7 +985,7 @@ fn resolve_insert_text_location(
         InsertTextSelector::Entry(entry_number) => {
             let entry =
                 resolve_content_entry(document_map, &ContentSelector::Entry(*entry_number))?;
-            resolved_for_entry_start(document_map, entry)
+            resolved_for_entry_start(entry)
         }
         InsertTextSelector::PageLine { page, line } => {
             let entry = resolve_content_entry(
@@ -1039,11 +995,11 @@ fn resolve_insert_text_location(
                     line: *line,
                 },
             )?;
-            resolved_for_entry_start(document_map, entry)
+            resolved_for_entry_start(entry)
         }
         InsertTextSelector::BeforeHeading(heading) => {
             let entry = resolve_heading(document_map, heading)?;
-            resolved_for_entry_start(document_map, entry)
+            resolved_for_entry_start(entry)
         }
         InsertTextSelector::AfterHeading(heading) => {
             let entry = resolve_heading(document_map, heading)?;
@@ -1054,7 +1010,7 @@ fn resolve_insert_text_location(
             let preview_offset =
                 text_anchor_preview_offset(document_map, &range, range.start_index);
             Ok(ResolvedInsertTextLocation {
-                location: crate::docs::map::DocumentLocation {
+                location: DocumentLocation {
                     index: Some(range.start_index),
                     ..range.location.clone()
                 },
@@ -1066,7 +1022,7 @@ fn resolve_insert_text_location(
             let range = resolve_text_anchor(document_map, text)?;
             let preview_offset = text_anchor_preview_offset(document_map, &range, range.end_index);
             Ok(ResolvedInsertTextLocation {
-                location: crate::docs::map::DocumentLocation {
+                location: DocumentLocation {
                     index: Some(range.end_index),
                     ..range.location.clone()
                 },
@@ -1088,7 +1044,7 @@ fn resolved_for_index(
         .map(|start| preview_offset_for_index(&entry.preview, start, index))
         .unwrap_or(0);
     Ok(ResolvedInsertTextLocation {
-        location: crate::docs::map::DocumentLocation {
+        location: DocumentLocation {
             index: Some(index),
             ..entry.location.clone()
         },
@@ -1097,10 +1053,7 @@ fn resolved_for_index(
     })
 }
 
-fn resolved_for_entry_start(
-    _document_map: &DocumentMap,
-    entry: &DocumentMapEntry,
-) -> Result<ResolvedInsertTextLocation> {
+fn resolved_for_entry_start(entry: &DocumentMapEntry) -> Result<ResolvedInsertTextLocation> {
     let Some(index) = entry.location.index else {
         bail!(
             "Document Map entry {} does not have a Google Docs index",
@@ -1108,7 +1061,7 @@ fn resolved_for_entry_start(
         );
     };
     Ok(ResolvedInsertTextLocation {
-        location: crate::docs::map::DocumentLocation {
+        location: DocumentLocation {
             index: Some(index),
             ..entry.location.clone()
         },
@@ -1131,10 +1084,10 @@ fn resolved_for_entry_end(
         .text_blocks
         .iter()
         .find(|block| block.start_index == start_index)
-        .map(|block| block.start_index + block.text.encode_utf16().count() as i64)
+        .map(text_block_end_index)
         .unwrap_or(start_index);
     Ok(ResolvedInsertTextLocation {
-        location: crate::docs::map::DocumentLocation {
+        location: DocumentLocation {
             index: Some(end_index),
             ..entry.location.clone()
         },
@@ -1151,14 +1104,19 @@ fn text_anchor_preview_offset(
     let block_start_index = document_map
         .text_blocks
         .iter()
-        .find(|block| {
-            let block_end = block.start_index + block.text.encode_utf16().count() as i64;
-            block.start_index <= range.start_index && range.end_index <= block_end
-        })
+        .find(|block| text_block_contains_range(block, range))
         .map(|block| block.start_index)
         .unwrap_or(range.start_index);
 
     preview_offset_for_index(&range.preview, block_start_index, insertion_index)
+}
+
+fn text_block_contains_range(block: &DocumentTextBlock, range: &DocumentRange) -> bool {
+    block.start_index <= range.start_index && range.end_index <= text_block_end_index(block)
+}
+
+fn text_block_end_index(block: &DocumentTextBlock) -> i64 {
+    block.start_index + block.text.encode_utf16().count() as i64
 }
 
 fn resolve_text_anchor(document_map: &DocumentMap, text: &str) -> Result<DocumentRange> {
@@ -1167,21 +1125,7 @@ fn resolve_text_anchor(document_map: &DocumentMap, text: &str) -> Result<Documen
         [range] => Ok(range.clone()),
         [] => bail!("text selector {text:?} did not match any Document Map entries"),
         candidates => {
-            let candidate_list = candidates
-                .iter()
-                .enumerate()
-                .map(|(index, range)| {
-                    format!(
-                        "match {} index {} page {} line {} preview {}",
-                        index + 1,
-                        range.start_index,
-                        display_optional(range.location.page),
-                        range.location.content_line,
-                        range.preview
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("; ");
+            let candidate_list = format_range_candidates(candidates);
             bail!("ambiguous text selector {text:?}; candidates: {candidate_list}")
         }
     }
@@ -1227,27 +1171,31 @@ fn resolve_replace_text_ranges(
     match matches.as_slice() {
         [range] => Ok(vec![range.clone()]),
         candidates => {
-            let candidate_list = candidates
-                .iter()
-                .enumerate()
-                .map(|(index, range)| {
-                    format!(
-                        "match {} index {} page {} line {} preview {}",
-                        index + 1,
-                        range.start_index,
-                        display_optional(range.location.page),
-                        range.location.content_line,
-                        range.preview
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("; ");
+            let candidate_list = format_range_candidates(candidates);
             bail!(
                 "ambiguous replace-text match {old_text:?}; candidates: {candidate_list}",
                 old_text = command.old_text.as_str()
             )
         }
     }
+}
+
+fn format_range_candidates(candidates: &[DocumentRange]) -> String {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(index, range)| {
+            format!(
+                "match {} index {} page {} line {} preview {}",
+                index + 1,
+                range.start_index,
+                display_optional(range.location.page),
+                range.location.content_line,
+                range.preview
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn insert_text_request_body(
@@ -1343,10 +1291,10 @@ fn replace_text_preview_after(
     old_text: &str,
     new_text: &str,
 ) -> String {
-    let block = document_map.text_blocks.iter().find(|block| {
-        let block_end = block.start_index + block.text.encode_utf16().count() as i64;
-        block.start_index <= range.start_index && range.end_index <= block_end
-    });
+    let block = document_map
+        .text_blocks
+        .iter()
+        .find(|block| text_block_contains_range(block, range));
     let Some(block) = block else {
         return range.preview.replacen(old_text, new_text, 1);
     };
@@ -1391,6 +1339,34 @@ fn compact_preview(text: &str) -> String {
 fn preview_offset_for_index(preview: &str, block_start_index: i64, insertion_index: i64) -> usize {
     let requested_offset = insertion_index.saturating_sub(block_start_index) as usize;
     requested_offset.min(preview.chars().count())
+}
+
+fn write_insert_text_dry_run(
+    out: &mut impl Write,
+    dry_run: &InsertTextDryRun,
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, dry_run, "failed to serialize Docs insert-text dry run")
+    } else {
+        write_insert_text_preview(out, dry_run)
+    }
+}
+
+fn write_replace_text_dry_run(
+    out: &mut impl Write,
+    dry_run: &ReplaceTextDryRun,
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(
+            out,
+            dry_run,
+            "failed to serialize Docs replace-text dry run",
+        )
+    } else {
+        write_replace_text_preview(out, dry_run)
+    }
 }
 
 fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -> Result<()> {
