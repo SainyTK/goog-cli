@@ -12,8 +12,6 @@ use crate::auth::client::AuthClient;
 
 pub const DOCS_SCOPE: &str = "https://www.googleapis.com/auth/documents";
 pub const DOCS_SCOPES: &[&str] = &[DOCS_SCOPE];
-pub const DOCS_READONLY_SCOPE: &str = "https://www.googleapis.com/auth/documents.readonly";
-pub const DOCS_READONLY_SCOPES: &[&str] = &[DOCS_READONLY_SCOPE];
 const DOCS_DOCUMENTS_URL: &str = "https://docs.googleapis.com/v1/documents";
 
 pub type Document = Value;
@@ -109,7 +107,7 @@ pub async fn get_document<S: AccountStore>(
     options: &GetDocumentOptions,
 ) -> Result<Document, DocsError> {
     let response = client
-        .send_with_scopes(client.get(options.request_url()?), DOCS_READONLY_SCOPES)
+        .send_with_scopes(client.get(options.request_url()?), DOCS_SCOPES)
         .await
         .map_err(DocsError::Auth)?;
 

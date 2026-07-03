@@ -18,6 +18,7 @@ use crate::mail::{
 
 const DEFAULT_LIST_LIMIT: u32 = 10;
 const SUMMARY_TABLE_HEADER: &str = "DATE\tFROM\tSUBJECT\tMESSAGE ID";
+const SEARCH_EMPTY_TABLE_MESSAGE: &str = "No matching messages found.";
 
 pub fn run<S: AccountStore>(
     cmd: MailCommand,
@@ -103,6 +104,7 @@ pub(super) async fn run_list_to<S: AccountStore>(
         json,
         out,
         "failed to list GoogleMail Messages",
+        None,
     )
     .await
 }
@@ -122,6 +124,7 @@ pub(super) async fn run_search_to<S: AccountStore>(
         json,
         out,
         "failed to search GoogleMail Messages",
+        Some(SEARCH_EMPTY_TABLE_MESSAGE),
     )
     .await
 }
@@ -132,11 +135,12 @@ async fn run_summary_to<S: AccountStore>(
     json: bool,
     out: &mut impl Write,
     error_context: &'static str,
+    empty_result_message: Option<&'static str>,
 ) -> Result<()> {
     let summaries = list_messages(client, options)
         .await
         .context(error_context)?;
-    write_summaries(&summaries, json, out)
+    write_summaries(&summaries, json, out, empty_result_message)
 }
 
 #[cfg(test)]
@@ -452,11 +456,22 @@ fn get_message_options(message_id: String, messages_url: Option<&str>) -> GetMes
     options
 }
 
-fn write_summaries(summaries: &[MessageSummary], json: bool, out: &mut impl Write) -> Result<()> {
+fn write_summaries(
+    summaries: &[MessageSummary],
+    json: bool,
+    out: &mut impl Write,
+    empty_result_message: Option<&str>,
+) -> Result<()> {
     if json {
-        write_summary_ndjson(summaries, out)
-    } else {
-        write_summary_table(summaries, out)
+        return match (summaries.is_empty(), empty_result_message) {
+            (true, Some(_)) => writeln!(out, "[]").context("failed to write output"),
+            _ => write_summary_ndjson(summaries, out),
+        };
+    }
+
+    match (summaries.is_empty(), empty_result_message) {
+        (true, Some(message)) => writeln!(out, "{message}").context("failed to write output"),
+        _ => write_summary_table(summaries, out),
     }
 }
 
