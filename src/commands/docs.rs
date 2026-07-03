@@ -1664,17 +1664,22 @@ struct TableData {
     rows: Vec<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TableDimensions {
+    rows: usize,
+    columns: usize,
+}
+
 impl TableData {
     fn new(rows: Vec<Vec<String>>) -> Self {
         Self { rows }
     }
 
-    fn row_count(&self) -> usize {
-        self.rows.len()
-    }
-
-    fn column_count(&self) -> usize {
-        self.rows[0].len()
+    fn dimensions(&self) -> TableDimensions {
+        TableDimensions {
+            rows: self.rows.len(),
+            columns: self.rows[0].len(),
+        }
     }
 
     fn rows(&self) -> &[Vec<String>] {
@@ -1890,7 +1895,7 @@ fn prepare_insert_table_change(
         Some(path) => Some(read_table_data(path)?),
         None => None,
     };
-    let (rows, columns) = insert_table_dimensions(command, data.as_ref())?;
+    let dimensions = insert_table_dimensions(command, data.as_ref())?;
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
     let Some(index) = resolved.location.index else {
         bail!("insert-table selector resolved without a Google Docs index");
@@ -1898,8 +1903,8 @@ fn prepare_insert_table_change(
     let mut requests = vec![serde_json::json!({
         "insertTable": {
             "location": { "index": index },
-            "rows": rows,
-            "columns": columns
+            "rows": dimensions.rows,
+            "columns": dimensions.columns
         }
     })];
     if let Some(data) = &data {
@@ -1910,12 +1915,15 @@ fn prepare_insert_table_change(
     let summary = if let Some(data) = &data {
         format!(
             "Insert {}x{} table at index {index}: {}",
-            rows,
-            columns,
+            dimensions.rows,
+            dimensions.columns,
             compact_table_data_preview(data)
         )
     } else {
-        format!("Insert {rows}x{columns} table at index {index}")
+        format!(
+            "Insert {}x{} table at index {index}",
+            dimensions.rows, dimensions.columns
+        )
     };
     Ok(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
@@ -1932,23 +1940,28 @@ fn prepare_insert_table_change(
 fn insert_table_dimensions(
     command: &InsertTableCommand,
     data: Option<&TableData>,
-) -> Result<(usize, usize)> {
+) -> Result<TableDimensions> {
     if data.is_some() && (command.rows.is_some() || command.columns.is_some()) {
         bail!("insert-table accepts either --data or --rows with --columns, not both");
     }
     if let Some(data) = data {
-        return Ok((data.row_count(), data.column_count()));
+        return Ok(data.dimensions());
     }
-    let Some(rows) = command.rows else {
-        bail!("insert-table requires --data or --rows with --columns");
-    };
-    let Some(columns) = command.columns else {
+    let dimensions = explicit_table_dimensions(command.rows, command.columns)?;
+    Ok(dimensions)
+}
+
+fn explicit_table_dimensions(
+    rows: Option<usize>,
+    columns: Option<usize>,
+) -> Result<TableDimensions> {
+    let (Some(rows), Some(columns)) = (rows, columns) else {
         bail!("insert-table requires --data or --rows with --columns");
     };
     if rows == 0 || columns == 0 {
         bail!("insert-table requires --rows and --columns to be greater than zero");
     }
-    Ok((rows, columns))
+    Ok(TableDimensions { rows, columns })
 }
 
 fn insert_table_data_requests(table_index: i64, data: &TableData) -> Vec<serde_json::Value> {
@@ -1984,25 +1997,31 @@ fn prepare_edit_table_change(
     command: &EditTableCommand,
 ) -> Result<DocsHighLevelChange> {
     let data = read_table_data(&command.data)?;
+    let data_dimensions = data.dimensions();
     let table = resolve_table_handle(document_map, &command.table_id)?;
-    let rows = table.rows.unwrap_or(0);
-    let columns = table.columns.unwrap_or(0);
-    if !command.resize
-        && (data.row_count() != rows || data.rows().iter().any(|row| row.len() != columns))
-    {
+    let table_dimensions = TableDimensions {
+        rows: table.rows.unwrap_or(0),
+        columns: table.columns.unwrap_or(0),
+    };
+    if !command.resize && data_dimensions != table_dimensions {
         bail!(
             "edit-table data dimensions are {}x{} but {} is {}x{}; pass --resize when structural resizing is supported",
-            data.row_count(),
-            data.column_count(),
+            data_dimensions.rows,
+            data_dimensions.columns,
             command.table_id,
-            rows,
-            columns
+            table_dimensions.rows,
+            table_dimensions.columns
         );
     }
     if command.resize {
         bail!("edit-table --resize is not supported yet");
     }
-    if table.table_cells.len() != rows || table.table_cells.iter().any(|row| row.len() != columns) {
+    if table.table_cells.len() != table_dimensions.rows
+        || table
+            .table_cells
+            .iter()
+            .any(|row| row.len() != table_dimensions.columns)
+    {
         bail!("selected table does not expose editable cell text ranges");
     }
 
@@ -2019,7 +2038,7 @@ fn prepare_edit_table_change(
             command: "edit-table".into(),
             summary: format!(
                 "Replace {} with {}x{} table data",
-                command.table_id, rows, columns
+                command.table_id, table_dimensions.rows, table_dimensions.columns
             ),
         },
     })

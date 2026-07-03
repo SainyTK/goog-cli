@@ -1149,12 +1149,10 @@ async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
         output["requestBody"]["writeControl"]["requiredRevisionId"],
         "rev-search"
     );
-    assert!(
-        output["preview"]["summary"]
-            .as_str()
-            .unwrap()
-            .contains("A1 | B1 | C1 / A2 | B2 | C2")
-    );
+    assert!(output["preview"]["summary"]
+        .as_str()
+        .unwrap()
+        .contains("A1 | B1 | C1 / A2 | B2 | C2"));
 }
 
 #[tokio::test]
