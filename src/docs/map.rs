@@ -84,10 +84,7 @@ pub enum DocumentMapEntryKind {
 pub fn build_document_map(document: &Value) -> DocumentMap {
     let mut builder = DocumentMapBuilder::new(
         collect_table_of_contents_page_hints(document),
-        document
-            .get("positionedObjects")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({})),
+        document.get("positionedObjects"),
     );
 
     for content in document_content(document) {
@@ -117,7 +114,7 @@ pub fn search_document_text(document_map: &DocumentMap, needle: &str) -> Vec<Doc
         .collect()
 }
 
-struct DocumentMapBuilder {
+struct DocumentMapBuilder<'a> {
     entries: Vec<DocumentMapEntry>,
     text_blocks: Vec<DocumentTextBlock>,
     current_page: Option<usize>,
@@ -126,7 +123,7 @@ struct DocumentMapBuilder {
     table_count: usize,
     image_count: usize,
     toc_page_hints: Vec<TableOfContentsPageHint>,
-    positioned_objects: Value,
+    positioned_objects: Option<&'a Value>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -140,8 +137,11 @@ struct DocumentMapEntryMetadata {
     table_cells: Vec<Vec<DocumentRange>>,
 }
 
-impl DocumentMapBuilder {
-    fn new(toc_page_hints: Vec<TableOfContentsPageHint>, positioned_objects: Value) -> Self {
+impl<'a> DocumentMapBuilder<'a> {
+    fn new(
+        toc_page_hints: Vec<TableOfContentsPageHint>,
+        positioned_objects: Option<&'a Value>,
+    ) -> Self {
         Self {
             entries: Vec::new(),
             text_blocks: Vec::new(),
@@ -199,7 +199,7 @@ impl DocumentMapBuilder {
 
         let inline_image_count = inline_images.len();
         for (image_index, image) in inline_images.into_iter().enumerate() {
-            self.image_count += 1;
+            let image_handle = self.next_image_handle();
             let mut location = self.current_location(element);
             location.index = image.start_index;
             self.push_entry_with_metadata(
@@ -208,7 +208,7 @@ impl DocumentMapBuilder {
                 style.clone(),
                 inline_image_preview(image_index, inline_image_count),
                 DocumentMapEntryMetadata {
-                    image_handle: Some(format!("image-{}", self.image_count)),
+                    image_handle: Some(image_handle),
                     object_id: Some(image.object_id),
                     ..DocumentMapEntryMetadata::default()
                 },
@@ -216,16 +216,16 @@ impl DocumentMapBuilder {
         }
 
         for (object_index, object_id) in positioned_object_ids.into_iter().enumerate() {
-            self.image_count += 1;
+            let image_handle = self.next_image_handle();
             let layout_metadata =
-                positioned_image_layout_metadata(&self.positioned_objects, &object_id);
+                positioned_image_layout_metadata(self.positioned_objects, &object_id);
             self.push_entry_with_metadata(
                 self.current_location(element),
                 DocumentMapEntryKind::PositionedImage,
                 style.clone(),
                 format!("[positioned image {}]", object_index + 1),
                 DocumentMapEntryMetadata {
-                    image_handle: Some(format!("image-{}", self.image_count)),
+                    image_handle: Some(image_handle),
                     object_id: Some(object_id),
                     layout_metadata,
                     ..DocumentMapEntryMetadata::default()
@@ -264,6 +264,11 @@ impl DocumentMapBuilder {
 
     fn push_content_line(&mut self) {
         self.content_line += 1;
+    }
+
+    fn next_image_handle(&mut self) -> String {
+        self.image_count += 1;
+        format!("image-{}", self.image_count)
     }
 
     fn push_entry(
@@ -500,8 +505,19 @@ fn paragraph_positioned_object_ids(paragraph: &Value) -> Vec<String> {
         .collect()
 }
 
-fn positioned_image_layout_metadata(positioned_objects: &Value, object_id: &str) -> Option<Value> {
-    let properties = positioned_objects
+const POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS: [&str; 5] = [
+    "size",
+    "marginLeft",
+    "marginRight",
+    "marginTop",
+    "marginBottom",
+];
+
+fn positioned_image_layout_metadata(
+    positioned_objects: Option<&Value>,
+    object_id: &str,
+) -> Option<Value> {
+    let properties = positioned_objects?
         .get(object_id)?
         .get("positionedObjectProperties")?;
     let mut metadata = serde_json::Map::new();
@@ -511,13 +527,7 @@ fn positioned_image_layout_metadata(positioned_objects: &Value, object_id: &str)
     }
 
     if let Some(embedded_object) = properties.get("embeddedObject") {
-        for field in [
-            "size",
-            "marginLeft",
-            "marginRight",
-            "marginTop",
-            "marginBottom",
-        ] {
+        for field in POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS {
             if let Some(value) = embedded_object.get(field) {
                 metadata.insert(field.into(), value.clone());
             }
