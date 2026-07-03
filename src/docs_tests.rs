@@ -55,7 +55,7 @@ fn docs_token() -> Token {
         access_token: "docs-access".into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![DOCS_READONLY_SCOPE.into()],
+        scopes: vec![DOCS_SCOPE.into()],
     }
 }
 
@@ -227,7 +227,7 @@ async fn batch_update_posts_full_google_request_body() {
 }
 
 #[tokio::test]
-async fn get_document_requests_only_readonly_docs_scope_when_missing() {
+async fn get_document_requests_full_docs_scope_when_missing() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/token"))
@@ -235,7 +235,7 @@ async fn get_document_requests_only_readonly_docs_scope_when_missing() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "access_token": "docs-access",
             "expires_in": 3600,
-            "scope": DOCS_READONLY_SCOPE,
+            "scope": DOCS_SCOPE,
             "token_type": "Bearer"
         })))
         .expect(1)
@@ -270,12 +270,12 @@ async fn get_document_requests_only_readonly_docs_scope_when_missing() {
 
     assert_eq!(
         scopes_seen.lock().unwrap().clone(),
-        vec![DOCS_READONLY_SCOPE.to_string()]
+        vec![DOCS_SCOPE.to_string()]
     );
     let saved = store.load_token("alice@example.com").unwrap().unwrap();
     assert_eq!(
         saved.scopes,
-        vec!["openid".to_string(), DOCS_READONLY_SCOPE.to_string()]
+        vec!["openid".to_string(), DOCS_SCOPE.to_string()]
     );
 }
 

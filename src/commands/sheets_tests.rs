@@ -13,7 +13,7 @@ use crate::auth::testing::MemoryStore;
 use crate::cli::{
     SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
-use crate::sheets::{SHEETS_READONLY_SCOPE, SHEETS_SCOPE};
+use crate::sheets::SHEETS_SCOPE;
 
 use super::sheets::*;
 
@@ -37,7 +37,7 @@ fn sheets_token() -> Token {
         access_token: "sheets-access".into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![SHEETS_READONLY_SCOPE.into()],
+        scopes: vec![SHEETS_SCOPE.into()],
     }
 }
 
@@ -50,7 +50,7 @@ fn scoped_sheets_token(access_token: &str) -> Token {
         access_token: access_token.into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![SHEETS_READONLY_SCOPE.into(), SHEETS_SCOPE.into()],
+        scopes: vec![SHEETS_SCOPE.into()],
     }
 }
 

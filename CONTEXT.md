@@ -37,16 +37,12 @@ Trust is local to the machine and OS user account.
 _Avoid_: Trusted app, trusted account, trusted Google session
 
 **Scope**:
-A Google OAuth permission string (e.g., `https://www.googleapis.com/auth/drive`) that grants access to a specific API. Scopes are acquired incrementally -- only when a command first needs them.
+A Google OAuth permission string (e.g., `https://www.googleapis.com/auth/drive`) that grants access to a specific API. `goog auth login` requests every Scope the CLI supports upfront; a command still checks the Token has the Scope it needs before calling the API, as a safety net for Tokens issued before this was true.
 _Avoid_: Permission, capability
-
-**Incremental Authorization**:
-The pattern of requesting only the Scopes a command needs, on first use, rather than all Scopes upfront at login.
-_Avoid_: Lazy auth, on-demand auth, progressive scopes
 
 **Target Access Failure**:
 A definitive Google API response showing that an Account cannot access a target resource after it has the required Scope.
-It does not include malformed targets, network failures, rate limits, revoked Tokens, missing OAuth setup, or Incremental Authorization failures.
+It does not include malformed targets, network failures, rate limits, revoked Tokens, missing OAuth setup, or scope-check failures.
 _Avoid_: Resolve failure, command failure, auth failure
 
 **Resource Account Mapping**:

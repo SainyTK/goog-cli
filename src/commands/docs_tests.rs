@@ -9,7 +9,8 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::docs::{DOCS_READONLY_SCOPE, DOCS_SCOPE};
+use crate::cli::DocsListType;
+use crate::docs::DOCS_SCOPE;
 
 use super::docs::*;
 
@@ -37,7 +38,7 @@ fn scoped_docs_token(access_token: &str) -> Token {
         access_token: access_token.into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![DOCS_READONLY_SCOPE.into(), DOCS_SCOPE.into()],
+        scopes: vec![DOCS_SCOPE.into()],
     }
 }
 
@@ -46,6 +47,21 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
         .save_token("alice@example.com", &docs_token())
         .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
+}
+
+fn dry_run_apply_list_command(
+    selector: RangeSelector,
+    list_type: DocsListType,
+) -> ApplyListCommand {
+    ApplyListCommand {
+        document_id: "document-123".into(),
+        selector,
+        list_type: Some(list_type),
+        preset: None,
+        dry_run: true,
+        json: true,
+        required_revision_id: None,
+    }
 }
 
 fn multi_account_config() -> Config {
@@ -1299,15 +1315,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     let mut list = Vec::new();
     run_apply_list_to(
         &client,
-        ApplyListCommand {
-            document_id: "document-123".into(),
-            selector: RangeSelector::Entry(2),
-            list_type: Some(crate::cli::DocsListType::Checkbox),
-            preset: None,
-            dry_run: true,
-            json: true,
-            required_revision_id: None,
-        },
+        dry_run_apply_list_command(RangeSelector::Entry(2), DocsListType::Checkbox),
         &mut list,
         Some(&documents_url),
     )
@@ -1321,6 +1329,204 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     assert_eq!(
         list["requestBody"]["requests"][0]["createParagraphBullets"]["range"]["startIndex"],
         14
+    );
+}
+
+#[tokio::test]
+async fn run_apply_list_dry_run_maps_cli_types_and_preserves_raw_preset() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(5)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    for (list_type, expected_preset) in [
+        (DocsListType::Bullet, "BULLET_DISC_CIRCLE_SQUARE"),
+        (DocsListType::Numbered, "NUMBERED_DECIMAL_ALPHA_ROMAN"),
+        (DocsListType::Dash, "BULLET_DIAMONDX_ARROW3D_SQUARE"),
+        (DocsListType::Checkbox, "BULLET_CHECKBOX"),
+    ] {
+        let mut out = Vec::new();
+        run_apply_list_to(
+            &client,
+            dry_run_apply_list_command(
+                RangeSelector::IndexRange {
+                    start_index: 4,
+                    end_index: 12,
+                },
+                list_type,
+            ),
+            &mut out,
+            Some(&documents_url),
+        )
+        .await
+        .unwrap();
+
+        let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+        let bullets = &output["requestBody"]["requests"][0]["createParagraphBullets"];
+        assert_eq!(bullets["bulletPreset"], expected_preset);
+        assert_eq!(bullets["range"]["startIndex"], 4);
+        assert_eq!(bullets["range"]["endIndex"], 12);
+        assert_eq!(output["range"]["startIndex"], 4);
+        assert_eq!(output["range"]["endIndex"], 12);
+        assert_eq!(output["revisionId"], "rev-search");
+    }
+
+    let mut raw = Vec::new();
+    run_apply_list_to(
+        &client,
+        ApplyListCommand {
+            list_type: None,
+            preset: Some("BULLET_STAR_CIRCLE_SQUARE".into()),
+            required_revision_id: Some("rev-required".into()),
+            ..dry_run_apply_list_command(
+                RangeSelector::IndexRange {
+                    start_index: 6,
+                    end_index: 18,
+                },
+                DocsListType::Bullet,
+            )
+        },
+        &mut raw,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&raw).unwrap();
+    let request_body = &output["requestBody"];
+    assert_eq!(
+        request_body["requests"][0]["createParagraphBullets"]["bulletPreset"],
+        "BULLET_STAR_CIRCLE_SQUARE"
+    );
+    assert_eq!(
+        request_body["writeControl"]["requiredRevisionId"],
+        "rev-required"
+    );
+}
+
+#[tokio::test]
+async fn run_apply_list_targets_whole_blocks_and_rejects_ambiguous_text_ranges() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut page_line = Vec::new();
+    run_apply_list_to(
+        &client,
+        dry_run_apply_list_command(
+            RangeSelector::PageLine { page: 2, line: 1 },
+            DocsListType::Bullet,
+        ),
+        &mut page_line,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&page_line).unwrap();
+    assert_eq!(output["range"]["startIndex"], 37);
+    assert_eq!(output["range"]["endIndex"], 54);
+    assert_eq!(output["range"]["preview"], "Second Page Plan");
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createParagraphBullets"]["range"]["startIndex"],
+        37
+    );
+
+    let result = run_apply_list_to(
+        &client,
+        dry_run_apply_list_command(
+            RangeSelector::Text {
+                text: "Plan".into(),
+                match_number: None,
+            },
+            DocsListType::Numbered,
+        ),
+        &mut Vec::new(),
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("ambiguous replace-text match"));
+    assert!(message.contains("index 9"));
+    assert!(message.contains("index 49"));
+}
+
+#[tokio::test]
+async fn run_apply_list_posts_mutation_request_body() {
+    let server = MockServer::start().await;
+    let expected_request = serde_json::json!({
+        "requests": [
+            {
+                "createParagraphBullets": {
+                    "range": {
+                        "startIndex": 1,
+                        "endIndex": 14
+                    },
+                    "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE"
+                }
+            }
+        ],
+        "writeControl": {
+            "requiredRevisionId": "rev-search"
+        }
+    });
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(&expected_request))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_apply_list_to(
+        &client,
+        ApplyListCommand {
+            dry_run: false,
+            json: false,
+            required_revision_id: Some("rev-search".into()),
+            ..dry_run_apply_list_command(RangeSelector::Entry(1), DocsListType::Bullet)
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"documentId\":\"document-123\",\"replies\":[{}]}\n"
     );
 }
 

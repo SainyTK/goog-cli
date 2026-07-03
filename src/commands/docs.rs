@@ -1632,11 +1632,9 @@ fn range_for_entry(document_map: &DocumentMap, entry: &DocumentMapEntry) -> Resu
         .location
         .index
         .context("selected Document Map entry has no Google Docs index")?;
-    let end_index = document_map
-        .entries
-        .iter()
-        .filter_map(|candidate| candidate.location.index)
-        .find(|candidate_index| *candidate_index > start_index)
+    let end_index = text_block_starting_at(document_map, start_index)
+        .map(text_block_end_index)
+        .or_else(|| next_entry_index_after(document_map, start_index))
         .unwrap_or(start_index + 1);
     Ok(DocumentRange {
         start_index,
@@ -2238,10 +2236,7 @@ fn resolved_for_entry_end(
             entry.entry
         );
     };
-    let end_index = document_map
-        .text_blocks
-        .iter()
-        .find(|block| block.start_index == start_index)
+    let end_index = text_block_starting_at(document_map, start_index)
         .map(text_block_end_index)
         .unwrap_or(start_index);
     Ok(ResolvedInsertTextLocation {
@@ -2271,6 +2266,24 @@ fn text_anchor_preview_offset(
 
 fn text_block_contains_range(block: &DocumentTextBlock, range: &DocumentRange) -> bool {
     block.start_index <= range.start_index && range.end_index <= text_block_end_index(block)
+}
+
+fn text_block_starting_at(
+    document_map: &DocumentMap,
+    start_index: i64,
+) -> Option<&DocumentTextBlock> {
+    document_map
+        .text_blocks
+        .iter()
+        .find(|block| block.start_index == start_index)
+}
+
+fn next_entry_index_after(document_map: &DocumentMap, start_index: i64) -> Option<i64> {
+    document_map
+        .entries
+        .iter()
+        .filter_map(|candidate| candidate.location.index)
+        .find(|candidate_index| *candidate_index > start_index)
 }
 
 fn text_block_end_index(block: &DocumentTextBlock) -> i64 {
