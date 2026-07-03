@@ -946,7 +946,7 @@ async fn run_list_images_and_tables_emit_document_map_metadata() {
         .respond_with(
             ResponseTemplate::new(200).set_body_json(long_document_with_toc_and_objects()),
         )
-        .expect(2)
+        .expect(3)
         .mount(&server)
         .await;
 
@@ -967,9 +967,42 @@ async fn run_list_images_and_tables_emit_document_map_metadata() {
     let images: serde_json::Value = serde_json::from_slice(&images).unwrap();
     assert_eq!(images.as_array().unwrap().len(), 2);
     assert_eq!(images[0]["kind"], "inline-image");
+    assert_eq!(images[0]["imageHandle"], "image-1");
     assert_eq!(images[0]["objectId"], "inline-image-1");
+    assert!(images[0].get("layoutMetadata").is_none());
     assert_eq!(images[1]["kind"], "positioned-image");
+    assert_eq!(images[1]["imageHandle"], "image-2");
     assert_eq!(images[1]["objectId"], "positioned-image-1");
+    assert!(images[1]["location"]["index"].is_number());
+    assert_eq!(
+        images[1]["layoutMetadata"]["positioning"]["layout"],
+        "WRAP_TEXT"
+    );
+    assert_eq!(
+        images[1]["layoutMetadata"]["positioning"]["leftOffset"]["magnitude"],
+        12
+    );
+    assert_eq!(
+        images[1]["layoutMetadata"]["size"]["height"]["magnitude"],
+        72
+    );
+
+    let mut human_images = Vec::new();
+    run_list_images_to(
+        &client,
+        "document-123".into(),
+        false,
+        &mut human_images,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let human_images = String::from_utf8(human_images).unwrap();
+    assert!(human_images.contains("Handle"));
+    assert!(human_images.contains("image-1"));
+    assert!(human_images.contains("inline-image-1"));
+    assert!(human_images.contains("image-2"));
+    assert!(human_images.contains("positioned-image-1"));
 
     let mut tables = Vec::new();
     run_list_tables_to(
@@ -2311,7 +2344,28 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
         "positionedObjects": {
             "positioned-image-1": {
                 "positionedObjectProperties": {
+                    "positioning": {
+                        "layout": "WRAP_TEXT",
+                        "leftOffset": {
+                            "magnitude": 12,
+                            "unit": "PT"
+                        },
+                        "topOffset": {
+                            "magnitude": 24,
+                            "unit": "PT"
+                        }
+                    },
                     "embeddedObject": {
+                        "size": {
+                            "height": {
+                                "magnitude": 72,
+                                "unit": "PT"
+                            },
+                            "width": {
+                                "magnitude": 96,
+                                "unit": "PT"
+                            }
+                        },
                         "imageProperties": {}
                     }
                 }

@@ -2700,30 +2700,32 @@ fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) ->
 fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntry]) -> Result<()> {
     writeln!(
         out,
-        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<18} {:<15} Preview",
-        "Entry", "Index", "Page", "Line", "Kind", "Object", "Size", "Style", "Confidence"
+        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<10} {:<18} {:<15} Preview",
+        "Entry", "Index", "Page", "Line", "Kind", "Handle", "Object", "Size", "Style", "Confidence"
     )
     .context("failed to write Docs Document Map header")?;
 
     for entry in entries {
         let style = entry.style.as_deref().unwrap_or("-");
-        let object = entry
-            .object_id
+        let handle = entry
+            .image_handle
             .as_deref()
             .or(entry.table_handle.as_deref())
             .unwrap_or("-");
+        let object = entry.object_id.as_deref().unwrap_or("-");
         let size = match (entry.rows, entry.columns) {
             (Some(rows), Some(columns)) => format!("{rows}x{columns}"),
             _ => "-".into(),
         };
         writeln!(
             out,
-            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<18} {:<15} {}",
+            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<10} {:<18} {:<15} {}",
             entry.entry,
             display_optional(entry.location.index),
             display_optional(entry.location.page),
             entry.location.content_line,
             format!("{:?}", entry.kind),
+            handle,
             object,
             size,
             style,

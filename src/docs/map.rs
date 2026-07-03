@@ -22,7 +22,11 @@ pub struct DocumentMapEntry {
     pub style: Option<String>,
     pub preview: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_handle: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub object_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout_metadata: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rows: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -78,7 +82,13 @@ pub enum DocumentMapEntryKind {
 }
 
 pub fn build_document_map(document: &Value) -> DocumentMap {
-    let mut builder = DocumentMapBuilder::new(collect_table_of_contents_page_hints(document));
+    let mut builder = DocumentMapBuilder::new(
+        collect_table_of_contents_page_hints(document),
+        document
+            .get("positionedObjects")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+    );
 
     for content in document_content(document) {
         builder.push_structural_element(content);
@@ -114,12 +124,16 @@ struct DocumentMapBuilder {
     current_confidence: LocationConfidence,
     content_line: usize,
     table_count: usize,
+    image_count: usize,
     toc_page_hints: Vec<TableOfContentsPageHint>,
+    positioned_objects: Value,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct DocumentMapEntryMetadata {
+    image_handle: Option<String>,
     object_id: Option<String>,
+    layout_metadata: Option<Value>,
     rows: Option<usize>,
     columns: Option<usize>,
     table_handle: Option<String>,
@@ -127,7 +141,7 @@ struct DocumentMapEntryMetadata {
 }
 
 impl DocumentMapBuilder {
-    fn new(toc_page_hints: Vec<TableOfContentsPageHint>) -> Self {
+    fn new(toc_page_hints: Vec<TableOfContentsPageHint>, positioned_objects: Value) -> Self {
         Self {
             entries: Vec::new(),
             text_blocks: Vec::new(),
@@ -135,7 +149,9 @@ impl DocumentMapBuilder {
             current_confidence: LocationConfidence::Unknown,
             content_line: 0,
             table_count: 0,
+            image_count: 0,
             toc_page_hints,
+            positioned_objects,
         }
     }
 
@@ -183,6 +199,7 @@ impl DocumentMapBuilder {
 
         let inline_image_count = inline_images.len();
         for (image_index, image) in inline_images.into_iter().enumerate() {
+            self.image_count += 1;
             let mut location = self.current_location(element);
             location.index = image.start_index;
             self.push_entry_with_metadata(
@@ -191,6 +208,7 @@ impl DocumentMapBuilder {
                 style.clone(),
                 inline_image_preview(image_index, inline_image_count),
                 DocumentMapEntryMetadata {
+                    image_handle: Some(format!("image-{}", self.image_count)),
                     object_id: Some(image.object_id),
                     ..DocumentMapEntryMetadata::default()
                 },
@@ -198,13 +216,18 @@ impl DocumentMapBuilder {
         }
 
         for (object_index, object_id) in positioned_object_ids.into_iter().enumerate() {
+            self.image_count += 1;
+            let layout_metadata =
+                positioned_image_layout_metadata(&self.positioned_objects, &object_id);
             self.push_entry_with_metadata(
                 self.current_location(element),
                 DocumentMapEntryKind::PositionedImage,
                 style.clone(),
                 format!("[positioned image {}]", object_index + 1),
                 DocumentMapEntryMetadata {
+                    image_handle: Some(format!("image-{}", self.image_count)),
                     object_id: Some(object_id),
+                    layout_metadata,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -273,7 +296,9 @@ impl DocumentMapBuilder {
             kind,
             style,
             preview,
+            image_handle: metadata.image_handle,
             object_id: metadata.object_id,
+            layout_metadata: metadata.layout_metadata,
             rows: metadata.rows,
             columns: metadata.columns,
             table_handle: metadata.table_handle,
@@ -473,6 +498,37 @@ fn paragraph_positioned_object_ids(paragraph: &Value) -> Vec<String> {
         .filter_map(Value::as_str)
         .map(str::to_string)
         .collect()
+}
+
+fn positioned_image_layout_metadata(positioned_objects: &Value, object_id: &str) -> Option<Value> {
+    let properties = positioned_objects
+        .get(object_id)?
+        .get("positionedObjectProperties")?;
+    let mut metadata = serde_json::Map::new();
+
+    if let Some(positioning) = properties.get("positioning") {
+        metadata.insert("positioning".into(), positioning.clone());
+    }
+
+    if let Some(embedded_object) = properties.get("embeddedObject") {
+        for field in [
+            "size",
+            "marginLeft",
+            "marginRight",
+            "marginTop",
+            "marginBottom",
+        ] {
+            if let Some(value) = embedded_object.get(field) {
+                metadata.insert(field.into(), value.clone());
+            }
+        }
+    }
+
+    if metadata.is_empty() {
+        None
+    } else {
+        Some(Value::Object(metadata))
+    }
 }
 
 fn contains_page_break(element: &Value) -> bool {
