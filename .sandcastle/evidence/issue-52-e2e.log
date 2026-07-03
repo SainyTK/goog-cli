@@ -1,0 +1,64 @@
+$ cargo run --quiet -- auth list --json
+{"email":"account-1@redacted.example","active":true}
+{"email":"account-2@redacted.example","active":false}
+{"email":"account-3@redacted.example","active":false}
+{"email":"account-4@redacted.example","active":false}
+
+$ cargo run --quiet -- drive list --limit 20 --json
+[redacted: returned 20 Drive items, including Google Docs/Sheets files; real file names and non-scratch resource IDs omitted]
+
+$ cargo run --quiet -- docs map 1azx12C1V4lf9MXUUCsEzgvnvzxvW8kx1ZVB4Pj7WRyk
+Opening browser for additional Google consent...
+Could not open a browser automatically. Open this URL manually:
+  [redacted OAuth consent URL requesting https://www.googleapis.com/auth/documents.readonly]
+
+# Aborted: active account lacked Docs readonly scope, so this did not test target access fallback.
+
+$ cargo run --quiet -- --account account-3@redacted.example docs map 1ss8G9EOjyWlOjyj5ehjVe5Dw1uGe38LQnvHaN0jYP4Y
+Entry Index   Page  Line Kind                 Style              Confidence      Preview
+
+$ cargo run --quiet -- --account account-3@redacted.example docs search-text 1ss8G9EOjyWlOjyj5ehjVe5Dw1uGe38LQnvHaN0jYP4Y goog-e2e --json
+[]
+
+$ cargo run --quiet -- --account account-3@redacted.example docs get-content 1ss8G9EOjyWlOjyj5ehjVe5Dw1uGe38LQnvHaN0jYP4Y --entry 1 --json
+error: Document Map entry 1 was not found
+
+# The issue-51 scratch Document was accessible but empty, so get-content had no entry to return.
+
+$ cargo run --quiet -- --account account-3@redacted.example docs batch-update 1ss8G9EOjyWlOjyj5ehjVe5Dw1uGe38LQnvHaN0jYP4Y --requests /tmp/issue-52-insert.json
+error: failed to parse Google Docs Batch Update request body from /tmp/issue-52-insert.json: control character (\u0000-\u001F) found while parsing a string at line 2 column 0
+
+$ cargo run --quiet -- --account account-3@redacted.example docs batch-update 1ss8G9EOjyWlOjyj5ehjVe5Dw1uGe38LQnvHaN0jYP4Y --requests /tmp/issue-52-insert.json
+Opening browser for additional Google consent...
+Could not open a browser automatically. Open this URL manually:
+  [redacted OAuth consent URL requesting https://www.googleapis.com/auth/documents]
+
+# Aborted: no write scope was available in the sandbox, matching issue 51's note. No scratch content was inserted.
+
+$ cargo run --quiet -- --account account-3@redacted.example drive list --limit 20 --json
+[redacted: returned 20 Drive items for account-3, including the issue-51 scratch Doc and existing content-bearing Google Docs files; real file names and non-scratch resource IDs omitted]
+
+$ cargo run --quiet -- --account account-3@redacted.example docs map 1fjvNBOo-Te4YvFcD08lA3AGHv31ofn9-60J203yUsnU
+Entry Index   Page  Line Kind                 Style              Confidence      Preview
+[redacted: returned 50 Document Map entries for a real existing Document; previews and document content omitted]
+
+$ cargo run --quiet -- --account account-3@redacted.example docs search-text 1fjvNBOo-Te4YvFcD08lA3AGHv31ofn9-60J203yUsnU OCR --json
+[{"startIndex":31,"endIndex":34,"location":{"index":31,"page":null,"contentLine":1,"confidence":"unknown"},"preview":"[redacted]"},{"startIndex":177,"endIndex":180,"location":{"index":177,"page":null,"contentLine":2,"confidence":"unknown"},"preview":"[redacted]"},{"startIndex":756,"endIndex":759,"location":{"index":756,"page":null,"contentLine":12,"confidence":"unknown"},"preview":"[redacted]"},{"startIndex":894,"endIndex":897,"location":{"index":894,"page":null,"contentLine":13,"confidence":"unknown"},"preview":"[redacted]"},{"startIndex":2530,"endIndex":2533,"location":{"index":2530,"page":null,"contentLine":36,"confidence":"unknown"},"preview":"[redacted]"}]
+
+$ cargo run --quiet -- --account account-3@redacted.example docs get-content 1fjvNBOo-Te4YvFcD08lA3AGHv31ofn9-60J203yUsnU --entry 1 --json
+{"entry":1,"location":{"index":1,"page":null,"contentLine":1,"confidence":"unknown"},"kind":"heading","style":"HEADING_2","preview":"[redacted]"}
+
+# After implementation: seed the Resource Account Mapping with an explicit successful Docs read, then run the three issue commands without --account.
+
+$ cargo run --quiet -- --account account-3@redacted.example docs get 1fjvNBOo-Te4YvFcD08lA3AGHv31ofn9-60J203yUsnU --fields documentId,title
+{"documentId":"1fjvNBOo-Te4YvFcD08lA3AGHv31ofn9-60J203yUsnU","title":"[redacted]"}
+
+$ cargo run --quiet -- docs map 1fjvNBOo-Te4YvFcD08lA3AGHv31ofn9-60J203yUsnU
+Entry Index   Page  Line Kind                 Style              Confidence      Preview
+[redacted: returned 50 Document Map entries via Unified Access mapping; previews and document content omitted]
+
+$ cargo run --quiet -- docs search-text 1fjvNBOo-Te4YvFcD08lA3AGHv31ofn9-60J203yUsnU OCR --json
+[{"startIndex":31,"endIndex":34,"location":{"index":31,"page":null,"contentLine":1,"confidence":"unknown"},"preview":"[redacted]"},{"startIndex":177,"endIndex":180,"location":{"index":177,"page":null,"contentLine":2,"confidence":"unknown"},"preview":"[redacted]"},{"startIndex":756,"endIndex":759,"location":{"index":756,"page":null,"contentLine":12,"confidence":"unknown"},"preview":"[redacted]"},{"startIndex":894,"endIndex":897,"location":{"index":894,"page":null,"contentLine":13,"confidence":"unknown"},"preview":"[redacted]"},{"startIndex":2530,"endIndex":2533,"location":{"index":2530,"page":null,"contentLine":36,"confidence":"unknown"},"preview":"[redacted]"}]
+
+$ cargo run --quiet -- docs get-content 1fjvNBOo-Te4YvFcD08lA3AGHv31ofn9-60J203yUsnU --entry 1 --json
+{"entry":1,"location":{"index":1,"page":null,"contentLine":1,"confidence":"unknown"},"kind":"heading","style":"HEADING_2","preview":"[redacted]"}

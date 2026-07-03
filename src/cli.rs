@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use crate::auth::config::OAuthAppType;
 
 #[derive(Debug, Parser)]
-#[command(name = "goog", about = "A CLI for Google APIs")]
+#[command(name = "goog", about = "A CLI for Google APIs", version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -73,6 +73,43 @@ pub enum AuthCommand {
     Switch {
         /// Email address or partial email of the account to activate
         email: String,
+    },
+    /// Export account tokens to a file, for use with GOOG_TOKEN_FILE in
+    /// headless environments that have no access to the OS keychain (e.g. a
+    /// Sandcastle sandbox). The output file grants full access to every
+    /// account it contains, within their authorized scopes -- never commit
+    /// it, and delete it once the headless environment no longer needs it.
+    Export {
+        /// Email address or partial email of one account to export. Omit to
+        /// export every authorized account.
+        email: Option<String>,
+        /// Path to write the token JSON to. Overwrites any existing file.
+        #[arg(long)]
+        out: String,
+    },
+    /// Manage remembered Resource Account Mappings
+    Mappings {
+        #[command(subcommand)]
+        command: AuthMappingsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AuthMappingsCommand {
+    /// List remembered Resource Account Mappings and their Account
+    List {
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Clear Resource Account Mappings from runtime state
+    Clear {
+        /// Google API surface to clear, such as docs. Use with --resource-id.
+        #[arg(long)]
+        surface: Option<String>,
+        /// Resource ID to clear within the Google API surface. Use with --surface.
+        #[arg(long)]
+        resource_id: Option<String>,
     },
 }
 
@@ -233,7 +270,7 @@ pub enum DocsCommand {
         #[arg(long)]
         required_revision_id: Option<String>,
     },
-    /// Replace text through the high-level Document Map editing layer
+    /// Replace text through a high-level Document Map text match
     ReplaceText {
         /// Google Docs Document ID to update
         document_id: String,
@@ -241,10 +278,10 @@ pub enum DocsCommand {
         old_text: String,
         /// Replacement text
         new_text: String,
-        /// Replace the Nth match
+        /// Replace the Nth text match
         #[arg(long = "match")]
         match_number: Option<usize>,
-        /// Replace every match
+        /// Replace every text match
         #[arg(long)]
         all: bool,
         /// Preview the edit without calling documents.batchUpdate
@@ -416,6 +453,32 @@ pub enum SheetsCommand {
         command: SheetsValuesCommand,
     },
     /// Apply a raw Google Sheets structural Batch Update request body
+    #[command(after_long_help = "Request shape:
+  --requests reads the full Google Sheets spreadsheets.batchUpdate JSON body, not only the requests array.
+  The body usually contains requests: an ordered array of structural mutation objects.
+  It may also contain includeSpreadsheetInResponse, responseRanges, and responseIncludeGridData.
+
+Common request types:
+  Sheets: addSheet, duplicateSheet, deleteSheet, updateSheetProperties
+  Formatting: repeatCell, updateCells, updateBorders, mergeCells, unmergeCells
+  Structure: updateDimensionProperties, addFilterView, setBasicFilter, addProtectedRange
+
+Full request type reference:
+  https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request
+
+Example:
+  goog sheets batch-update SPREADSHEET_ID --requests - <<'JSON'
+  {
+    \"requests\": [
+      {
+        \"addSheet\": {
+          \"properties\": { \"title\": \"New sheet\" }
+        }
+      }
+    ],
+    \"includeSpreadsheetInResponse\": false
+  }
+  JSON")]
     BatchUpdate {
         /// Google Sheets Spreadsheet ID to update
         spreadsheet_id: String,

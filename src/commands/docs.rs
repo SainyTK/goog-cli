@@ -1,27 +1,40 @@
 use std::io::{Read, Write};
+use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
+use crate::auth::config::{resolve_account, Config};
+use crate::auth::state::resource_key;
+use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::DocsCommand;
 use crate::docs::{
     batch_update_document, get_document, map::build_document_map, map::search_document_text,
-    map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind, map::DocumentRange,
-    BatchUpdateDocumentOptions, GetDocumentOptions,
+    map::DocumentLocation, map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind,
+    map::DocumentRange, map::DocumentTextBlock, BatchUpdateDocumentOptions, DocsError,
+    GetDocumentOptions,
 };
 
-pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Result<()> {
+pub fn run<S: AccountStore>(
+    cmd: DocsCommand,
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+) -> Result<()> {
     match cmd {
         DocsCommand::Map { document_id, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_map_to(
-                client,
+            runtime.block_on(run_map_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 json,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -32,12 +45,15 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_search_text_to(
-                client,
+            runtime.block_on(run_search_text_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 text,
                 json,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -53,12 +69,15 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
             let selector = content_selector(index, entry, page, line, heading)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_get_content_to(
-                client,
+            runtime.block_on(run_get_content_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 selector,
                 json,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -89,8 +108,10 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
             )?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_insert_text_to(
-                client,
+            runtime.block_on(run_insert_text_unified_to(
+                config,
+                store,
+                account_override,
                 InsertTextCommand {
                     document_id,
                     text,
@@ -100,6 +121,7 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
                     required_revision_id,
                 },
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -115,8 +137,10 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_replace_text_to(
-                client,
+            runtime.block_on(run_replace_text_unified_to(
+                config,
+                store,
+                account_override,
                 ReplaceTextCommand {
                     document_id,
                     old_text,
@@ -129,6 +153,7 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
                 },
                 &mut std::io::stdout(),
                 None,
+                None,
             ))
         }
         DocsCommand::Get {
@@ -138,12 +163,15 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_get_to(
-                client,
+            runtime.block_on(run_get_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 fields,
                 include_tabs_content,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -154,18 +182,22 @@ pub fn run<S: AccountStore>(cmd: DocsCommand, client: &AuthClient<'_, S>) -> Res
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             let mut stdin = std::io::stdin();
-            runtime.block_on(run_batch_update_to(
-                client,
+            runtime.block_on(run_batch_update_unified_to(
+                config,
+                store,
+                account_override,
                 document_id,
                 requests,
                 &mut stdin,
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
     }
 }
 
+#[cfg(test)]
 pub(super) async fn run_map_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -174,11 +206,29 @@ pub(super) async fn run_map_to<S: AccountStore>(
     documents_url: Option<&str>,
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
-    if json {
-        write_json_line(out, &document_map, "failed to serialize Docs Document Map")
-    } else {
-        write_document_map_table(out, &document_map)
-    }
+    write_document_map(out, &document_map, json)
+}
+
+pub(super) async fn run_map_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    write_document_map(out, &document_map, json)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -222,6 +272,7 @@ pub(super) struct ReplaceTextCommand {
     pub required_revision_id: Option<String>,
 }
 
+#[cfg(test)]
 pub(super) async fn run_search_text_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -232,13 +283,34 @@ pub(super) async fn run_search_text_to<S: AccountStore>(
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
     let ranges = search_document_text(&document_map, &text);
-    if json {
-        write_json_line(out, &ranges, "failed to serialize Docs text matches")
-    } else {
-        write_search_text_table(out, &ranges)
-    }
+    write_search_text_results(out, &ranges, json)
 }
 
+pub(super) async fn run_search_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    text: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let ranges = search_document_text(&document_map, &text);
+    write_search_text_results(out, &ranges, json)
+}
+
+#[cfg(test)]
 pub(super) async fn run_get_content_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -249,13 +321,34 @@ pub(super) async fn run_get_content_to<S: AccountStore>(
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
     let entry = resolve_content_entry(&document_map, &selector)?;
-    if json {
-        write_json_line(out, entry, "failed to serialize Docs content entry")
-    } else {
-        write_document_map_table(out, &document_map_with_entry(&document_map, entry))
-    }
+    write_content_entry(out, &document_map, entry, json)
 }
 
+pub(super) async fn run_get_content_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    selector: ContentSelector,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let entry = resolve_content_entry(&document_map, &selector)?;
+    write_content_entry(out, &document_map, entry, json)
+}
+
+#[cfg(test)]
 pub(super) async fn run_insert_text_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     command: InsertTextCommand,
@@ -263,94 +356,143 @@ pub(super) async fn run_insert_text_to<S: AccountStore>(
     documents_url: Option<&str>,
 ) -> Result<()> {
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
-    let resolved = resolve_insert_text_location(&document_map, &command.selector)?;
-    let request_body = insert_text_request_body(
-        resolved.location.index,
-        &command.text,
-        command.required_revision_id.as_deref(),
-    );
-    let preview = InsertTextPreview {
-        before: resolved.preview_before.clone(),
-        after: insert_preview_text(
-            &resolved.preview_before,
-            resolved.preview_offset,
-            &command.text,
-        ),
-    };
+    let change = prepare_insert_text_change(&document_map, &command)?;
 
     if command.dry_run {
-        let dry_run = InsertTextDryRun {
-            revision_id: document_map.revision_id.clone(),
-            location: resolved.location,
-            request_body,
-            preview,
-        };
-        if command.json {
-            write_json_line(out, &dry_run, "failed to serialize Docs insert-text dry run")
-        } else {
-            write_insert_text_preview(out, &dry_run)
-        }
+        write_insert_text_dry_run(out, &change, command.json)
     } else {
+        let request_body = change.request_body;
         let options =
             batch_update_document_options(command.document_id, request_body, documents_url);
         let response = batch_update_document(client, &options)
             .await
             .context("failed to apply Google Docs insert-text")?;
-        write_json_line(out, &response, "failed to serialize Docs insert-text response")
+        write_json_line(
+            out,
+            &response,
+            "failed to serialize Docs insert-text response",
+        )
     }
 }
 
+pub(super) async fn run_insert_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: InsertTextCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_insert_text_change(&document_map, &command)?;
+
+    if command.dry_run {
+        write_insert_text_dry_run(out, &change, command.json)
+    } else {
+        let request_body = change.request_body;
+        let options =
+            batch_update_document_options(command.document_id.clone(), request_body, documents_url);
+        let resource_key = resource_key("docs", &command.document_id);
+        let response = run_with_docs_unified_access(
+            config,
+            store,
+            account_override,
+            &resource_key,
+            DocsAccessAttempt::BatchUpdate(&options),
+            state_path,
+        )
+        .await
+        .context("failed to apply Google Docs insert-text")?;
+        write_json_line(
+            out,
+            &response,
+            "failed to serialize Docs insert-text response",
+        )
+    }
+}
+
+#[cfg(test)]
 pub(super) async fn run_replace_text_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     command: ReplaceTextCommand,
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
-    if command.all && command.match_number.is_some() {
-        bail!("replace-text accepts either --all or --match, not both");
-    }
-
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
-    let ranges = resolve_replace_text_ranges(
-        &document_map,
-        &command.old_text,
-        command.match_number,
-        command.all,
-    )?;
-    let request_body = replace_text_request_body(
-        &ranges,
-        &command.new_text,
-        command.required_revision_id.as_deref(),
-    );
-    let preview = replace_text_preview(&ranges, &command.old_text, &command.new_text);
+    let change = prepare_replace_text_change(&document_map, &command)?;
 
     if command.dry_run {
-        let dry_run = ReplaceTextDryRun {
-            revision_id: document_map.revision_id.clone(),
-            range: if ranges.len() == 1 {
-                ranges.first().cloned()
-            } else {
-                None
-            },
-            ranges,
-            request_body,
-            preview,
-        };
-        if command.json {
-            write_json_line(out, &dry_run, "failed to serialize Docs replace-text dry run")
-        } else {
-            write_replace_text_preview(out, &dry_run)
-        }
+        write_replace_text_dry_run(out, &change, command.json)
     } else {
+        let request_body = change.request_body;
         let options =
             batch_update_document_options(command.document_id, request_body, documents_url);
         let response = batch_update_document(client, &options)
             .await
             .context("failed to apply Google Docs replace-text")?;
-        write_json_line(out, &response, "failed to serialize Docs replace-text response")
+        write_json_line(
+            out,
+            &response,
+            "failed to serialize Docs replace-text response",
+        )
     }
 }
 
+pub(super) async fn run_replace_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: ReplaceTextCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_replace_text_change(&document_map, &command)?;
+
+    if command.dry_run {
+        write_replace_text_dry_run(out, &change, command.json)
+    } else {
+        let request_body = change.request_body;
+        let options =
+            batch_update_document_options(command.document_id.clone(), request_body, documents_url);
+        let resource_key = resource_key("docs", &command.document_id);
+        let response = run_with_docs_unified_access(
+            config,
+            store,
+            account_override,
+            &resource_key,
+            DocsAccessAttempt::BatchUpdate(&options),
+            state_path,
+        )
+        .await
+        .context("failed to apply Google Docs replace-text")?;
+        write_json_line(
+            out,
+            &response,
+            "failed to serialize Docs replace-text response",
+        )
+    }
+}
+
+#[cfg(test)]
 pub(super) async fn run_get_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -367,6 +509,39 @@ pub(super) async fn run_get_to<S: AccountStore>(
     write_json_line(out, &document, "failed to serialize Docs Document")
 }
 
+pub(super) async fn run_get_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    fields: Option<String>,
+    include_tabs_content: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let options = get_document_options(
+        document_id.clone(),
+        fields,
+        include_tabs_content,
+        documents_url,
+    );
+    let resource_key = resource_key("docs", &document_id);
+    let document = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::Get(&options),
+        state_path,
+    )
+    .await
+    .context("failed to fetch Google Docs Document")?;
+
+    write_json_line(out, &document, "failed to serialize Docs Document")
+}
+
+#[cfg(test)]
 pub(super) async fn run_batch_update_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -388,6 +563,104 @@ pub(super) async fn run_batch_update_to<S: AccountStore>(
     )
 }
 
+pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    requests: String,
+    input: &mut impl Read,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let request_body = read_request_body(&requests, input)?;
+    let options = batch_update_document_options(document_id.clone(), request_body, documents_url);
+    let resource_key = resource_key("docs", &document_id);
+    let response = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to apply Google Docs Batch Update")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Docs Batch Update response",
+    )
+}
+
+enum DocsAccessAttempt<'a> {
+    Get(&'a GetDocumentOptions),
+    BatchUpdate(&'a BatchUpdateDocumentOptions),
+}
+
+async fn run_with_docs_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    attempt: DocsAccessAttempt<'_>,
+    state_path: Option<&Path>,
+) -> Result<serde_json::Value, DocsError> {
+    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
+
+    if account_override.is_some() {
+        let account = resolve_account(config, account_override)?
+            .expect("explicit account resolution returns an account");
+        return run_docs_access_as_account(config, store, &mut access, &attempt, account).await;
+    }
+
+    let candidates = access.candidates(config);
+    let mut last_target_access_failure = None;
+
+    for account in candidates {
+        match run_docs_access_as_account(config, store, &mut access, &attempt, account).await {
+            Ok(result) => return Ok(result),
+            Err(err) if is_target_access_failure(&err) => {
+                last_target_access_failure = Some(err);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    Err(last_target_access_failure.unwrap_or(DocsError::Auth(
+        crate::auth::error::AuthError::ActiveAccountNotConfigured,
+    )))
+}
+
+async fn run_docs_access_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    access: &mut UnifiedAccess,
+    attempt: &DocsAccessAttempt<'_>,
+    account: String,
+) -> Result<serde_json::Value, DocsError> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    let result = attempt_docs_access(&client, attempt).await?;
+    access.record_success(account)?;
+    Ok(result)
+}
+
+async fn attempt_docs_access<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    attempt: &DocsAccessAttempt<'_>,
+) -> Result<serde_json::Value, DocsError> {
+    match attempt {
+        DocsAccessAttempt::Get(options) => get_document(client, options).await,
+        DocsAccessAttempt::BatchUpdate(options) => batch_update_document(client, options).await,
+    }
+}
+
+fn is_target_access_failure(err: &DocsError) -> bool {
+    matches!(err, DocsError::NotFound | DocsError::PermissionDenied)
+}
+
 fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde_json::Value> {
     let (body, request_source) = if path_or_stdin == "-" {
         let mut body = String::new();
@@ -407,6 +680,7 @@ fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde
     })
 }
 
+#[cfg(test)]
 async fn get_document_map<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -419,7 +693,30 @@ async fn get_document_map<S: AccountStore>(
     Ok(build_document_map(&document))
 }
 
-fn content_selector(
+async fn get_document_map_unified<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<DocumentMap> {
+    let options = get_document_options(document_id.clone(), None, true, documents_url);
+    let resource_key = resource_key("docs", &document_id);
+    let document = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::Get(&options),
+        state_path,
+    )
+    .await
+    .context("failed to fetch Google Docs Document")?;
+    Ok(build_document_map(&document))
+}
+
+pub(super) fn content_selector(
     index: Option<i64>,
     entry: Option<usize>,
     page: Option<usize>,
@@ -431,7 +728,9 @@ fn content_selector(
         + usize::from(page.is_some() || line.is_some())
         + usize::from(heading.is_some());
     if selector_count != 1 {
-        bail!("provide exactly one content selector: --index, --entry, --page with --line, or --heading");
+        bail!(
+            "provide exactly one content selector: --index, --entry, --page with --line, or --heading"
+        );
     }
 
     if let Some(index) = index {
@@ -527,7 +826,12 @@ fn resolve_content_entry<'a>(
         ContentSelector::Index(index) => document_map
             .entries
             .iter()
-            .filter(|entry| entry.location.index.is_some_and(|entry_index| entry_index <= *index))
+            .filter(|entry| {
+                entry
+                    .location
+                    .index
+                    .is_some_and(|entry_index| entry_index <= *index)
+            })
             .max_by_key(|entry| entry.location.index)
             .with_context(|| format!("no content found at Google Docs index {index}")),
         ContentSelector::Entry(entry_number) => document_map
@@ -599,8 +903,6 @@ struct InsertTextPreview {
 #[serde(rename_all = "camelCase")]
 struct ReplaceTextDryRun {
     revision_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    range: Option<DocumentRange>,
     ranges: Vec<DocumentRange>,
     request_body: serde_json::Value,
     preview: ReplaceTextPreview,
@@ -609,15 +911,69 @@ struct ReplaceTextDryRun {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ReplaceTextPreview {
+    changes: Vec<ReplaceTextPreviewChange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplaceTextPreviewChange {
+    range: DocumentRange,
     before: String,
     after: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedInsertTextLocation {
-    location: crate::docs::map::DocumentLocation,
+    location: DocumentLocation,
     preview_before: String,
     preview_offset: usize,
+}
+
+fn prepare_insert_text_change(
+    document_map: &DocumentMap,
+    command: &InsertTextCommand,
+) -> Result<InsertTextDryRun> {
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let request_body = insert_text_request_body(
+        resolved.location.index,
+        &command.text,
+        command.required_revision_id.as_deref(),
+    );
+    let preview = InsertTextPreview {
+        before: resolved.preview_before.clone(),
+        after: insert_preview_text(
+            &resolved.preview_before,
+            resolved.preview_offset,
+            &command.text,
+        ),
+    };
+
+    Ok(InsertTextDryRun {
+        revision_id: document_map.revision_id.clone(),
+        location: resolved.location,
+        request_body,
+        preview,
+    })
+}
+
+fn prepare_replace_text_change(
+    document_map: &DocumentMap,
+    command: &ReplaceTextCommand,
+) -> Result<ReplaceTextDryRun> {
+    let ranges = resolve_replace_text_ranges(document_map, command)?;
+    let request_body = replace_text_request_body(
+        &ranges,
+        &command.new_text,
+        command.required_revision_id.as_deref(),
+    );
+    let preview = replace_text_preview(document_map, &ranges, &command.old_text, &command.new_text);
+
+    Ok(ReplaceTextDryRun {
+        revision_id: document_map.revision_id.clone(),
+        ranges,
+        request_body,
+        preview,
+    })
 }
 
 fn resolve_insert_text_location(
@@ -629,7 +985,7 @@ fn resolve_insert_text_location(
         InsertTextSelector::Entry(entry_number) => {
             let entry =
                 resolve_content_entry(document_map, &ContentSelector::Entry(*entry_number))?;
-            resolved_for_entry_start(document_map, entry)
+            resolved_for_entry_start(entry)
         }
         InsertTextSelector::PageLine { page, line } => {
             let entry = resolve_content_entry(
@@ -639,11 +995,11 @@ fn resolve_insert_text_location(
                     line: *line,
                 },
             )?;
-            resolved_for_entry_start(document_map, entry)
+            resolved_for_entry_start(entry)
         }
         InsertTextSelector::BeforeHeading(heading) => {
             let entry = resolve_heading(document_map, heading)?;
-            resolved_for_entry_start(document_map, entry)
+            resolved_for_entry_start(entry)
         }
         InsertTextSelector::AfterHeading(heading) => {
             let entry = resolve_heading(document_map, heading)?;
@@ -651,29 +1007,27 @@ fn resolve_insert_text_location(
         }
         InsertTextSelector::BeforeText(text) => {
             let range = resolve_text_anchor(document_map, text)?;
+            let preview_offset =
+                text_anchor_preview_offset(document_map, &range, range.start_index);
             Ok(ResolvedInsertTextLocation {
-                location: range.location.clone(),
+                location: DocumentLocation {
+                    index: Some(range.start_index),
+                    ..range.location.clone()
+                },
                 preview_before: range.preview.clone(),
-                preview_offset: preview_offset_for_index(
-                    &range.preview,
-                    range.start_index,
-                    range.start_index,
-                ),
+                preview_offset,
             })
         }
         InsertTextSelector::AfterText(text) => {
             let range = resolve_text_anchor(document_map, text)?;
+            let preview_offset = text_anchor_preview_offset(document_map, &range, range.end_index);
             Ok(ResolvedInsertTextLocation {
-                location: crate::docs::map::DocumentLocation {
+                location: DocumentLocation {
                     index: Some(range.end_index),
                     ..range.location.clone()
                 },
                 preview_before: range.preview.clone(),
-                preview_offset: preview_offset_for_index(
-                    &range.preview,
-                    range.start_index,
-                    range.end_index,
-                ),
+                preview_offset,
             })
         }
     }
@@ -690,7 +1044,7 @@ fn resolved_for_index(
         .map(|start| preview_offset_for_index(&entry.preview, start, index))
         .unwrap_or(0);
     Ok(ResolvedInsertTextLocation {
-        location: crate::docs::map::DocumentLocation {
+        location: DocumentLocation {
             index: Some(index),
             ..entry.location.clone()
         },
@@ -699,15 +1053,15 @@ fn resolved_for_index(
     })
 }
 
-fn resolved_for_entry_start(
-    _document_map: &DocumentMap,
-    entry: &DocumentMapEntry,
-) -> Result<ResolvedInsertTextLocation> {
+fn resolved_for_entry_start(entry: &DocumentMapEntry) -> Result<ResolvedInsertTextLocation> {
     let Some(index) = entry.location.index else {
-        bail!("Document Map entry {} does not have a Google Docs index", entry.entry);
+        bail!(
+            "Document Map entry {} does not have a Google Docs index",
+            entry.entry
+        );
     };
     Ok(ResolvedInsertTextLocation {
-        location: crate::docs::map::DocumentLocation {
+        location: DocumentLocation {
             index: Some(index),
             ..entry.location.clone()
         },
@@ -721,16 +1075,19 @@ fn resolved_for_entry_end(
     entry: &DocumentMapEntry,
 ) -> Result<ResolvedInsertTextLocation> {
     let Some(start_index) = entry.location.index else {
-        bail!("Document Map entry {} does not have a Google Docs index", entry.entry);
+        bail!(
+            "Document Map entry {} does not have a Google Docs index",
+            entry.entry
+        );
     };
     let end_index = document_map
         .text_blocks
         .iter()
         .find(|block| block.start_index == start_index)
-        .map(|block| block.start_index + block.text.encode_utf16().count() as i64)
+        .map(text_block_end_index)
         .unwrap_or(start_index);
     Ok(ResolvedInsertTextLocation {
-        location: crate::docs::map::DocumentLocation {
+        location: DocumentLocation {
             index: Some(end_index),
             ..entry.location.clone()
         },
@@ -739,30 +1096,106 @@ fn resolved_for_entry_end(
     })
 }
 
+fn text_anchor_preview_offset(
+    document_map: &DocumentMap,
+    range: &DocumentRange,
+    insertion_index: i64,
+) -> usize {
+    let block_start_index = document_map
+        .text_blocks
+        .iter()
+        .find(|block| text_block_contains_range(block, range))
+        .map(|block| block.start_index)
+        .unwrap_or(range.start_index);
+
+    preview_offset_for_index(&range.preview, block_start_index, insertion_index)
+}
+
+fn text_block_contains_range(block: &DocumentTextBlock, range: &DocumentRange) -> bool {
+    block.start_index <= range.start_index && range.end_index <= text_block_end_index(block)
+}
+
+fn text_block_end_index(block: &DocumentTextBlock) -> i64 {
+    block.start_index + block.text.encode_utf16().count() as i64
+}
+
 fn resolve_text_anchor(document_map: &DocumentMap, text: &str) -> Result<DocumentRange> {
     let matches = search_document_text(document_map, text);
     match matches.as_slice() {
         [range] => Ok(range.clone()),
         [] => bail!("text selector {text:?} did not match any Document Map entries"),
         candidates => {
-            let candidate_list = candidates
-                .iter()
-                .enumerate()
-                .map(|(index, range)| {
-                    format!(
-                        "match {} index {} page {} line {} preview {}",
-                        index + 1,
-                        range.start_index,
-                        display_optional(range.location.page),
-                        range.location.content_line,
-                        range.preview
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("; ");
+            let candidate_list = format_range_candidates(candidates);
             bail!("ambiguous text selector {text:?}; candidates: {candidate_list}")
         }
     }
+}
+
+fn resolve_replace_text_ranges(
+    document_map: &DocumentMap,
+    command: &ReplaceTextCommand,
+) -> Result<Vec<DocumentRange>> {
+    if command.old_text.is_empty() {
+        bail!("replace-text old text must not be empty");
+    }
+    if command.all && command.match_number.is_some() {
+        bail!("provide only one replace-text disambiguator: --match or --all");
+    }
+    if command.match_number == Some(0) {
+        bail!("--match must be 1 or greater");
+    }
+
+    let matches = search_document_text(document_map, &command.old_text);
+    if matches.is_empty() {
+        bail!(
+            "replace-text did not match {old_text:?}",
+            old_text = command.old_text.as_str()
+        );
+    }
+    if command.all {
+        return Ok(matches);
+    }
+    if let Some(match_number) = command.match_number {
+        return matches
+            .get(match_number - 1)
+            .cloned()
+            .map(|range| vec![range])
+            .with_context(|| {
+                format!(
+                    "replace-text match {match_number} was not found; {} matches available",
+                    matches.len()
+                )
+            });
+    }
+
+    match matches.as_slice() {
+        [range] => Ok(vec![range.clone()]),
+        candidates => {
+            let candidate_list = format_range_candidates(candidates);
+            bail!(
+                "ambiguous replace-text match {old_text:?}; candidates: {candidate_list}",
+                old_text = command.old_text.as_str()
+            )
+        }
+    }
+}
+
+fn format_range_candidates(candidates: &[DocumentRange]) -> String {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(index, range)| {
+            format!(
+                "match {} index {} page {} line {} preview {}",
+                index + 1,
+                range.start_index,
+                display_optional(range.location.page),
+                range.location.content_line,
+                range.preview
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn insert_text_request_body(
@@ -788,70 +1221,16 @@ fn insert_text_request_body(
     body
 }
 
-fn resolve_replace_text_ranges(
-    document_map: &DocumentMap,
-    old_text: &str,
-    match_number: Option<usize>,
-    all: bool,
-) -> Result<Vec<DocumentRange>> {
-    let matches = search_document_text(document_map, old_text);
-    if matches.is_empty() {
-        bail!("replace-text target {old_text:?} did not match any Document Map entries");
-    }
-
-    if all {
-        return Ok(matches);
-    }
-
-    if let Some(match_number) = match_number {
-        if match_number == 0 {
-            bail!("--match must be 1 or greater");
-        }
-        return matches
-            .get(match_number - 1)
-            .cloned()
-            .map(|range| vec![range])
-            .with_context(|| {
-                format!(
-                    "replace-text match {match_number} was not found; {} match(es) available",
-                    matches.len()
-                )
-            });
-    }
-
-    match matches.as_slice() {
-        [range] => Ok(vec![range.clone()]),
-        candidates => {
-            let candidate_list = candidates
-                .iter()
-                .enumerate()
-                .map(|(index, range)| {
-                    format!(
-                        "match {} index {} page {} line {} preview {}",
-                        index + 1,
-                        range.start_index,
-                        display_optional(range.location.page),
-                        range.location.content_line,
-                        range.preview
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("; ");
-            bail!(
-                "ambiguous replace-text target {old_text:?}; \
-                 pass --match N or --all; candidates: {candidate_list}"
-            )
-        }
-    }
-}
-
 fn replace_text_request_body(
     ranges: &[DocumentRange],
     new_text: &str,
     required_revision_id: Option<&str>,
 ) -> serde_json::Value {
     let mut requests = Vec::new();
-    for range in ranges.iter().rev() {
+    let mut ranges_descending = ranges.to_vec();
+    ranges_descending.sort_by_key(|range| std::cmp::Reverse(range.start_index));
+
+    for range in ranges_descending {
         requests.push(serde_json::json!({
             "deleteContentRange": {
                 "range": {
@@ -877,23 +1256,6 @@ fn replace_text_request_body(
     body
 }
 
-fn replace_text_preview(
-    ranges: &[DocumentRange],
-    old_text: &str,
-    new_text: &str,
-) -> ReplaceTextPreview {
-    let before = ranges
-        .first()
-        .map(|range| range.preview.clone())
-        .unwrap_or_default();
-    let after = if ranges.len() == 1 {
-        before.replacen(old_text, new_text, 1)
-    } else {
-        format!("{} replacement(s) selected", ranges.len())
-    };
-    ReplaceTextPreview { before, after }
-}
-
 fn insert_preview_text(before: &str, char_offset: usize, inserted_text: &str) -> String {
     let byte_offset = before
         .char_indices()
@@ -905,9 +1267,106 @@ fn insert_preview_text(before: &str, char_offset: usize, inserted_text: &str) ->
     after
 }
 
+fn replace_text_preview(
+    document_map: &DocumentMap,
+    ranges: &[DocumentRange],
+    old_text: &str,
+    new_text: &str,
+) -> ReplaceTextPreview {
+    ReplaceTextPreview {
+        changes: ranges
+            .iter()
+            .map(|range| ReplaceTextPreviewChange {
+                range: range.clone(),
+                before: range.preview.clone(),
+                after: replace_text_preview_after(document_map, range, old_text, new_text),
+            })
+            .collect(),
+    }
+}
+
+fn replace_text_preview_after(
+    document_map: &DocumentMap,
+    range: &DocumentRange,
+    old_text: &str,
+    new_text: &str,
+) -> String {
+    let block = document_map
+        .text_blocks
+        .iter()
+        .find(|block| text_block_contains_range(block, range));
+    let Some(block) = block else {
+        return range.preview.replacen(old_text, new_text, 1);
+    };
+
+    let start_offset = utf16_byte_offset(&block.text, range.start_index - block.start_index);
+    let end_offset = utf16_byte_offset(&block.text, range.end_index - block.start_index);
+    let mut after = block.text.clone();
+    after.replace_range(start_offset..end_offset, new_text);
+    compact_preview(&after)
+}
+
+fn utf16_byte_offset(text: &str, utf16_offset: i64) -> usize {
+    if utf16_offset <= 0 {
+        return 0;
+    }
+
+    let mut units = 0;
+    for (byte_index, character) in text.char_indices() {
+        if units >= utf16_offset {
+            return byte_index;
+        }
+        units += character.len_utf16() as i64;
+    }
+    text.len()
+}
+
+fn compact_preview(text: &str) -> String {
+    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    const MAX_PREVIEW_CHARS: usize = 80;
+    if compact.chars().count() <= MAX_PREVIEW_CHARS {
+        compact
+    } else {
+        let mut truncated = compact
+            .chars()
+            .take(MAX_PREVIEW_CHARS - 3)
+            .collect::<String>();
+        truncated.push_str("...");
+        truncated
+    }
+}
+
 fn preview_offset_for_index(preview: &str, block_start_index: i64, insertion_index: i64) -> usize {
     let requested_offset = insertion_index.saturating_sub(block_start_index) as usize;
     requested_offset.min(preview.chars().count())
+}
+
+fn write_insert_text_dry_run(
+    out: &mut impl Write,
+    dry_run: &InsertTextDryRun,
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, dry_run, "failed to serialize Docs insert-text dry run")
+    } else {
+        write_insert_text_preview(out, dry_run)
+    }
+}
+
+fn write_replace_text_dry_run(
+    out: &mut impl Write,
+    dry_run: &ReplaceTextDryRun,
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(
+            out,
+            dry_run,
+            "failed to serialize Docs replace-text dry run",
+        )
+    } else {
+        write_replace_text_preview(out, dry_run)
+    }
 }
 
 fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -> Result<()> {
@@ -927,10 +1386,19 @@ fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -
 fn write_replace_text_preview(out: &mut impl Write, dry_run: &ReplaceTextDryRun) -> Result<()> {
     writeln!(out, "Replace text in {} match(es)", dry_run.ranges.len())
         .context("failed to write Docs replace-text preview header")?;
-    writeln!(out, "Before: {}", dry_run.preview.before)
-        .context("failed to write Docs replace-text before preview")?;
-    writeln!(out, "After: {}", dry_run.preview.after)
-        .context("failed to write Docs replace-text after preview")?;
+    for (index, change) in dry_run.preview.changes.iter().enumerate() {
+        writeln!(
+            out,
+            "Match {} at index {}",
+            index + 1,
+            change.range.start_index
+        )
+        .context("failed to write Docs replace-text match preview")?;
+        writeln!(out, "Before: {}", change.before)
+            .context("failed to write Docs replace-text before preview")?;
+        writeln!(out, "After: {}", change.after)
+            .context("failed to write Docs replace-text after preview")?;
+    }
     Ok(())
 }
 
@@ -961,6 +1429,39 @@ fn batch_update_document_options(
         options = options.with_documents_url(documents_url);
     }
     options
+}
+
+fn write_document_map(out: &mut impl Write, document_map: &DocumentMap, json: bool) -> Result<()> {
+    if json {
+        write_json_line(out, document_map, "failed to serialize Docs Document Map")
+    } else {
+        write_document_map_table(out, document_map)
+    }
+}
+
+fn write_search_text_results(
+    out: &mut impl Write,
+    ranges: &[DocumentRange],
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, ranges, "failed to serialize Docs text matches")
+    } else {
+        write_search_text_table(out, ranges)
+    }
+}
+
+fn write_content_entry(
+    out: &mut impl Write,
+    document_map: &DocumentMap,
+    entry: &DocumentMapEntry,
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, entry, "failed to serialize Docs content entry")
+    } else {
+        write_document_map_table(out, &document_map_with_entry(document_map, entry))
+    }
 }
 
 fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) -> Result<()> {
@@ -1022,7 +1523,7 @@ fn display_optional<T: ToString>(value: Option<T>) -> String {
         .unwrap_or_else(|| "-".into())
 }
 
-fn write_json_line<T: serde::Serialize>(
+fn write_json_line<T: serde::Serialize + ?Sized>(
     out: &mut impl Write,
     value: &T,
     context: &str,

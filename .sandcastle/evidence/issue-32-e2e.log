@@ -1,0 +1,73 @@
+Issue 32 E2E evidence, redacted
+Result: PASS
+
+Test setup:
+- Account used: <active-account-with-drive-and-sheets-write-scope>.
+- Fixture used: native Google Sheets spreadsheet created during this run with title prefix `goog-e2e-issue-32-`; spreadsheet ID `19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM`.
+- Skipped fixture: none.
+
+Fixture creation:
+$ curl https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType -d '{"name":"goog-e2e-issue-32-<timestamp>","mimeType":"application/vnd.google-apps.spreadsheet"}'
+Expected: create a native Google Sheets scratch resource for this run before any mutating `goog` command.
+Observed redacted result: returned ID `19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM`, title prefix `goog-e2e-issue-32-`, and mimeType `application/vnd.google-apps.spreadsheet`.
+Result: PASS.
+
+Local checks:
+$ npm run typecheck
+Result: PASS. `cargo check` finished successfully.
+
+$ npm run test
+Result: PASS. 320 library tests passed; binary and doc test targets had 0 tests.
+
+$ cargo test sheets_values_batch_update --lib
+Result: PASS. 2 passed.
+
+$ cargo test sheets_values_clear --lib
+Result: PASS. 1 passed.
+
+$ cargo test sheets_values_batch_clear --lib
+Result: PASS. 2 passed.
+
+$ cargo test run_values_batch_update --lib
+Result: PASS. 5 passed.
+
+$ cargo test run_values_clear --lib
+Result: PASS. 2 passed.
+
+$ cargo test run_values_batch_clear --lib
+Result: PASS. 2 passed.
+
+Live checks:
+$ ./target/debug/goog --account <active-account> sheets values batch-update 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM --values - <<'JSON'
+{"valueInputOption":"RAW","data":[{"range":"Sheet1!A1:C1","values":[["issue-32","batch-update","stdin"]]},{"range":"Sheet1!Z1:Z3","values":[["clear-one"],["clear-two"],["clear-three"]]}]}
+JSON
+Expected: send the full native `spreadsheets.values.batchUpdate` body from stdin, with the body controlling `valueInputOption`.
+Observed redacted result: JSON response included two range responses for `Sheet1!A1:C1` and `Sheet1!Z1:Z3`, `totalUpdatedCells: 6`, `totalUpdatedColumns: 4`, `totalUpdatedRows: 3`, and `totalUpdatedSheets: 1`.
+Result: PASS.
+
+$ tmp_body="$(mktemp)"
+$ printf '%s\n' '{"valueInputOption":"USER_ENTERED","data":[{"range":"Sheet1!D1:E1","values":[["file","body"]]}]}' > "$tmp_body"
+$ ./target/debug/goog --account <active-account> sheets values batch-update 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM --values "$tmp_body"
+$ rm -f "$tmp_body"
+Expected: read the native batch update body from a file path.
+Observed redacted result: JSON response included one range response for `Sheet1!D1:E1`, `totalUpdatedCells: 2`, `totalUpdatedColumns: 2`, `totalUpdatedRows: 1`, and `totalUpdatedSheets: 1`.
+Result: PASS.
+
+$ ./target/debug/goog --account <active-account> sheets values clear 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM 'Sheet1!Z1:Z1'
+Expected: clear one range without requiring a JSON request body.
+Observed redacted result: `{"clearedRange":"Sheet1!Z1","spreadsheetId":"19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM"}`.
+Result: PASS.
+
+$ ./target/debug/goog --account <active-account> sheets values batch-clear 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM --range 'Sheet1!Z2:Z2' --range 'Sheet1!Z3:Z3'
+Expected: clear multiple ranges using repeated `--range` flags.
+Observed redacted result: `{"clearedRanges":["Sheet1!Z2","Sheet1!Z3"],"spreadsheetId":"19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM"}`.
+Result: PASS.
+
+$ printf '{not json}\n' | ./target/debug/goog --account <active-account> sheets values batch-update 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM --values -
+Expected: command exits non-zero, stderr contains a clear parse error, and stdout is empty.
+Observed redacted result: exit code 1; stdout byte count 0; stderr was `error: failed to parse Google Sheets Values request body from stdin: key must be a string at line 1 column 2`.
+Result: PASS.
+
+Reviewer notes:
+- The issue-specific mutating commands passed against a native Google Sheets scratch spreadsheet created during this run.
+- Real account emails, OAuth tokens, refresh tokens, client secrets, and API keys are not included in this log.

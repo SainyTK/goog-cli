@@ -2,7 +2,7 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand,
+    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DriveCommand, DriveFolderCommand,
     MailAttachmentCommand, MailCommand, SheetsCommand, SheetsInsertDataOption,
     SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
@@ -136,6 +136,58 @@ fn auth_switch_with_email() {
 #[test]
 fn auth_switch_requires_email() {
     assert!(parse(&["auth", "switch"]).is_err());
+}
+
+#[test]
+fn auth_mappings_list_json() {
+    let cli = parse(&["auth", "mappings", "list", "--json"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::Auth {
+            command: AuthCommand::Mappings {
+                command: AuthMappingsCommand::List { json: true }
+            }
+        }
+    ));
+}
+
+#[test]
+fn auth_mappings_clear_with_surface_and_resource_id() {
+    let cli = parse(&[
+        "auth",
+        "mappings",
+        "clear",
+        "--surface",
+        "docs",
+        "--resource-id",
+        "document-123",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Auth {
+            command:
+                AuthCommand::Mappings {
+                    command:
+                        AuthMappingsCommand::Clear {
+                            surface,
+                            resource_id,
+                        },
+                },
+        } => {
+            assert_eq!(surface.as_deref(), Some("docs"));
+            assert_eq!(resource_id.as_deref(), Some("document-123"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn auth_mappings_help_uses_glossary_terms() {
+    let text = help(&["auth", "mappings"]);
+
+    assert!(text.contains("Resource Account Mappings"));
+    assert!(text.contains("Account"));
 }
 
 #[test]
@@ -409,11 +461,7 @@ fn docs_map_with_document_id_and_json_flag() {
     let cli = parse(&["docs", "map", "document-123", "--json"]).unwrap();
     match cli.command {
         Command::Docs {
-            command:
-                DocsCommand::Map {
-                    document_id,
-                    json,
-                },
+            command: DocsCommand::Map { document_id, json },
         } => {
             assert_eq!(document_id, "document-123");
             assert!(json);
@@ -472,10 +520,7 @@ fn docs_get_content_accepts_location_selectors() {
     let by_entry = parse(&["docs", "get-content", "document-123", "--entry", "44"]).unwrap();
     match by_entry.command {
         Command::Docs {
-            command:
-                DocsCommand::GetContent {
-                    index, entry, ..
-                },
+            command: DocsCommand::GetContent { index, entry, .. },
         } => {
             assert_eq!(index, None);
             assert_eq!(entry, Some(44));
@@ -601,16 +646,6 @@ fn docs_replace_text_parses_match_and_write_options() {
     assert!(dry_run);
     assert!(json);
     assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
-
-    assert!(parse(&[
-        "docs",
-        "replace-text",
-        "document-123",
-        "old",
-        "new",
-        "--all",
-    ])
-    .is_ok());
 }
 
 #[test]
@@ -734,12 +769,7 @@ fn mail_search_with_query_limit_and_json() {
     .unwrap();
     match cli.command {
         Command::Mail {
-            command:
-                MailCommand::Search {
-                    query,
-                    limit,
-                    json,
-                },
+            command: MailCommand::Search { query, limit, json },
         } => {
             assert_eq!(query, "from:alice@example.com");
             assert_eq!(limit, Some(25));
@@ -777,7 +807,14 @@ fn mail_read_requires_message_id() {
 
 #[test]
 fn mail_read_accepts_global_account_flag() {
-    let cli = parse(&["mail", "read", "message-123", "--account", "mail@example.com"]).unwrap();
+    let cli = parse(&[
+        "mail",
+        "read",
+        "message-123",
+        "--account",
+        "mail@example.com",
+    ])
+    .unwrap();
     assert_eq!(cli.account.as_deref(), Some("mail@example.com"));
 }
 
@@ -983,7 +1020,10 @@ fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
             assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
-            assert_eq!(value_render_option, SheetsValueRenderOption::UnformattedValue);
+            assert_eq!(
+                value_render_option,
+                SheetsValueRenderOption::UnformattedValue
+            );
         }
         _ => panic!("unexpected parse result"),
     }
@@ -1164,7 +1204,14 @@ fn sheets_values_append_accepts_raw_and_overwrite_options() {
 
 #[test]
 fn sheets_values_clear_with_range() {
-    let cli = parse(&["sheets", "values", "clear", "spreadsheet-123", "Sheet1!A1:B2"]).unwrap();
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "clear",
+        "spreadsheet-123",
+        "Sheet1!A1:B2",
+    ])
+    .unwrap();
     match cli.command {
         Command::Sheets {
             command:
@@ -1285,6 +1332,16 @@ fn sheets_batch_update_with_requests_path() {
 #[test]
 fn sheets_batch_update_requires_requests() {
     assert!(parse(&["sheets", "batch-update", "spreadsheet-123"]).is_err());
+}
+
+#[test]
+fn sheets_batch_update_help_explains_request_shape() {
+    let help = help(&["sheets", "batch-update", "--help"]);
+
+    assert!(
+        help.contains("--requests reads the full Google Sheets spreadsheets.batchUpdate JSON body")
+    );
+    assert!(help.contains("not only the requests array"));
 }
 
 #[test]

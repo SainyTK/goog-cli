@@ -26,6 +26,16 @@ _Avoid_: Account query, account search, email prefix
 The pair of (access token, refresh token) issued by Google for a specific Account and set of Scopes. Stored in the system keychain, never in config files.
 _Avoid_: Credentials (overloaded), auth token, OAuth token
 
+**Keychain Access Prompt**:
+An operating-system prompt that appears when `goog` reads or writes a Token from the system keychain.
+It is distinct from Google consent and does not grant new Scopes.
+_Avoid_: Google password prompt, OAuth prompt, browser login
+
+**Trusted CLI**:
+The local `goog` executable that the OS user has approved to read and write Tokens without a Keychain Access Prompt on every command invocation.
+Trust is local to the machine and OS user account.
+_Avoid_: Trusted app, trusted account, trusted Google session
+
 **Scope**:
 A Google OAuth permission string (e.g., `https://www.googleapis.com/auth/drive`) that grants access to a specific API. Scopes are acquired incrementally -- only when a command first needs them.
 _Avoid_: Permission, capability
@@ -33,6 +43,26 @@ _Avoid_: Permission, capability
 **Incremental Authorization**:
 The pattern of requesting only the Scopes a command needs, on first use, rather than all Scopes upfront at login.
 _Avoid_: Lazy auth, on-demand auth, progressive scopes
+
+**Target Access Failure**:
+A definitive Google API response showing that an Account cannot access a target resource after it has the required Scope.
+It does not include malformed targets, network failures, rate limits, revoked Tokens, missing OAuth setup, or Incremental Authorization failures.
+_Avoid_: Resolve failure, command failure, auth failure
+
+**Resource Account Mapping**:
+A remembered association between a target resource on a Google API surface and the Account that last accessed it successfully.
+It is an optimization for future commands, not an ownership claim.
+_Avoid_: Resource owner, account cache, file owner
+
+**Account Fallback**:
+The automatic attempt to access a target resource with other Accounts after the default Account receives a Target Access Failure.
+Explicit Account selection disables Account Fallback.
+_Avoid_: Account switching, account guessing, auto-login
+
+**Unified Access**:
+The user experience where a person logs in to multiple Accounts once, then targets Google resources without manually switching Accounts for each command.
+Unified Access applies to both read and write commands that target existing resources.
+_Avoid_: Multi-account mode, account pooling, global access
 
 ### Commands
 
@@ -193,3 +223,33 @@ _Avoid_: Values batch update, patch, edit
 **Resumable Upload**:
 Google's chunked upload protocol used for files over 5 MB. Allows upload to survive interruptions. Distinct from a simple multipart upload used for small files.
 _Avoid_: Chunked upload, multi-part upload (different thing)
+
+### Distribution
+
+**Early Open-Source CLI**:
+The public maturity position for `goog`: useful and installable for real Google API workflows, with command coverage and interfaces still expected to expand.
+_Avoid_: Stable product, prototype, demo
+
+**Canonical Release**:
+A tagged GitHub Release created from `main` that owns the downloadable `goog` binaries and checksums for a published version.
+_Avoid_: Branch head, installer version, Homebrew version
+
+**Release Asset**:
+A downloadable binary archive or checksum file attached to a Canonical Release for one supported platform.
+_Avoid_: Build artifact, package
+
+**Distribution Channel**:
+A user-facing installation path that resolves to a Canonical Release, such as the GitHub-hosted installer script, Homebrew tap, or Rust-native install command.
+_Avoid_: Release source, package source
+
+**Release Automation**:
+The GitHub Actions workflow that turns a version tag on `main` into Canonical Release assets and updates distribution metadata.
+_Avoid_: Publish script, deploy script
+
+**Installer Script**:
+The GitHub-hosted shell entrypoint that detects the user's platform, downloads a Canonical Release asset, verifies it, and installs the `goog` binary.
+_Avoid_: Bash release, install command
+
+**Homebrew Tap**:
+The Homebrew formula repository that lets Homebrew users install `goog` from Canonical Release assets through `SainyTK/tap/goog`.
+_Avoid_: Brew package, Homebrew release
