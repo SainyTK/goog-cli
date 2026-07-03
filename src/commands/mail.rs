@@ -135,12 +135,12 @@ async fn run_summary_to<S: AccountStore>(
     json: bool,
     out: &mut impl Write,
     error_context: &'static str,
-    empty_table_message: Option<&'static str>,
+    empty_result_message: Option<&'static str>,
 ) -> Result<()> {
     let summaries = list_messages(client, options)
         .await
         .context(error_context)?;
-    write_summaries(&summaries, json, out, empty_table_message)
+    write_summaries(&summaries, json, out, empty_result_message)
 }
 
 #[cfg(test)]
@@ -460,20 +460,18 @@ fn write_summaries(
     summaries: &[MessageSummary],
     json: bool,
     out: &mut impl Write,
-    empty_table_message: Option<&str>,
+    empty_result_message: Option<&str>,
 ) -> Result<()> {
-    if json && summaries.is_empty() && empty_table_message.is_some() {
-        writeln!(out, "[]").context("failed to write output")
-    } else if json {
-        write_summary_ndjson(summaries, out)
-    } else if summaries.is_empty() {
-        if let Some(message) = empty_table_message {
-            writeln!(out, "{message}").context("failed to write output")
-        } else {
-            write_summary_table(summaries, out)
-        }
-    } else {
-        write_summary_table(summaries, out)
+    if json {
+        return match (summaries.is_empty(), empty_result_message) {
+            (true, Some(_)) => writeln!(out, "[]").context("failed to write output"),
+            _ => write_summary_ndjson(summaries, out),
+        };
+    }
+
+    match (summaries.is_empty(), empty_result_message) {
+        (true, Some(message)) => writeln!(out, "{message}").context("failed to write output"),
+        _ => write_summary_table(summaries, out),
     }
 }
 
