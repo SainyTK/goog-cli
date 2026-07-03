@@ -1,0 +1,150 @@
+Issues 31, 34, 35, 36, 37 E2E evidence, human-verified, redacted
+Result: PASS
+
+Test setup:
+- Ran locally against a real Google account (email redacted) on the host machine, using the freshly built ./target/debug/goog binary containing the merged changes for #31, #34, #35, #36, and #37.
+- Docs fixture: reused existing scratch Google Doc goog-e2e-scratch-docs-issue-51 (id 1ss8G9EOjyWlOjyj5ehjVe5Dw1uGe38LQnvHaN0jYP4Y), per the goog-e2e- scratch reuse convention. Extended it in place via docs batch-update with two headings, an explicit page break, a table, and an inline image so it has the heading/table/image/page-break shape issue 35 needs, plus alpha/beta/target text spans issue 37 needs for anchor and ambiguity checks.
+- Sheets fixture: the spreadsheet ID recorded in issue 31's prior evidence was no longer reachable from any configured account (Spreadsheet was not found), so a new scratch Office-format fixture was created: generated goog-e2e-scratch-sheets-issue31.xlsx locally (3 rows x 5 cols, one formula cell) and uploaded it with `drive upload`, producing a fresh scratch spreadsheet ID used below.
+
+Live checks -- issue 35 (Document Map):
+
+$ goog docs map DOC_ID
+Expected: human table with Entry/Index/Page/Line/Kind/Style/Confidence/Preview columns; content after an explicit page break shows a derived page and ExplicitPageBreak confidence; content with no page evidence shows no page.
+Observed: table printed with all columns; entries after the inserted page break showed Page 2 / ExplicitPageBreak; the first two entries (heading + inline image sharing one paragraph) showed no page and Unknown confidence.
+Result: PASS.
+
+$ goog docs map DOC_ID --json | jq '{revisionId, entries:[.entries[]|{entry,location,kind,style,preview}], documentLocations}'
+Expected: revisionId, entries, and documentLocations present; every entry has location.contentLine, location.confidence, kind, and preview.
+Observed: matched expectations; entryCount == locationCount == 8.
+Result: PASS.
+
+$ jq '{entryCount, locationCount, kinds, confidences, hasRevision}' (structural projection of the map JSON)
+Expected: kinds include heading, paragraph, table, and inline-image; confidences include explicit-page-break and unknown.
+Observed: kinds = [heading, inline-image, paragraph, table]; confidences = [explicit-page-break, unknown]. table-of-contents confidence and positioned-image kind were not exercised live (no native TOC element in the fixture) -- both remain covered by the existing local mocked tests, noted here as the one skipped live fixture per issue 35's own allowance.
+Result: PASS (with one noted, allowed skip).
+
+$ jq '.entries[]|{entry,page,line,kind}' (content-line semantics)
+Expected: a heading and an inline image in the same top-level paragraph share content line 1; line numbers advance by top-level block afterward.
+Observed: entries 1 and 2 (heading + inline-image) both showed line 1; subsequent entries incremented 2..6 in document order.
+Result: PASS.
+
+$ goog docs get DOC_ID --fields documentId,title,revisionId | jq keys
+Expected: raw Docs get still returns exactly the requested fields.
+Observed: ["documentId","revisionId","title"].
+Result: PASS.
+
+$ printf '{"requests":[]}' | goog docs batch-update DOC_ID --requests -
+Expected: raw batch-update forwards the body to Google and surfaces Google's own response/error.
+Observed: Google Docs API returned 400 "Must specify at least one request" -- this is real, expected Google API behavior for an empty request list, not a goog defect; it confirms the command reaches the API with the given body.
+Result: PASS.
+
+Live checks -- issue 36 (search-text / get-content):
+
+$ goog docs search-text DOC_ID "goog-e2e issue 51 redo"
+$ goog docs search-text DOC_ID "goog-e2e issue 51 redo" --json
+Expected: human output with Match/Page/Line/Index/Confidence/Preview columns; JSON array of ranges with startIndex/endIndex/location/preview.
+Observed: 2 matches found (the fixture doc naturally contains this text twice); both output shapes matched expectations.
+Result: PASS.
+
+$ goog docs get-content DOC_ID --index <n>
+$ goog docs get-content DOC_ID --entry <n>
+$ goog docs get-content DOC_ID --page 2 --line 5
+$ goog docs get-content DOC_ID --heading "Fixture Heading Two"
+$ goog docs get-content DOC_ID --entry <n> --json
+Expected: each selector resolves the same content block through a different addressing scheme; --index and --entry stay distinct.
+Observed: all five commands returned the expected single block (heading, then the same heading by entry, a table by page/line, the same heading by heading text, and the JSON form of the entry lookup).
+Result: PASS.
+
+Reviewer notes:
+- No duplicate-heading fixture was available, so the ambiguous-heading get-content case was not exercised live; it remains covered by cargo test run_get_content_ambiguous_heading_returns_candidates, per issue 36's own allowance to skip when unavailable.
+
+Live checks -- issue 37 (insert-text / replace-text):
+
+$ goog docs insert-text DOC_ID "..." --after-heading "Issue 37 Heading" --dry-run
+$ goog docs insert-text DOC_ID "..." --before-heading "Issue 37 Heading" --dry-run --json
+$ goog docs insert-text DOC_ID "Before alpha " --before-text "Alpha" --dry-run --json
+$ goog docs insert-text DOC_ID "After alpha " --after-text "Alpha" --dry-run --json
+Expected: dry-run previews show Before/After (human) or requestBody.requests[0].insertText.location.index plus preview.before/after (JSON); before-text/after-text place the index immediately before/after the matched span, not at the paragraph start.
+Observed: all four previews matched; before-text placed insert index exactly at the start of "Alpha", after-text exactly after it.
+Result: PASS.
+
+$ goog docs replace-text DOC_ID "target" "replacement" --all --dry-run
+$ goog docs replace-text DOC_ID "target" "replacement" --match 2 --dry-run --json --required-revision-id "$(goog docs map DOC_ID --json | jq -r .revisionId)"
+Expected: --all previews every match; --match N plus --required-revision-id includes requestBody.writeControl.requiredRevisionId.
+Observed: --all showed 3 matches with correct before/after text; --match 2 --required-revision-id included the write guard in the request body.
+Result: PASS.
+
+$ goog docs insert-text DOC_ID "Ambiguous " --before-text "target"
+$ goog docs replace-text DOC_ID "target" "replacement"
+Expected: both fail before mutating, listing candidate matches (index/page/line/preview).
+Observed: both failed with the expected ambiguous-selector errors and 3 candidates each.
+Result: PASS.
+
+$ goog docs insert-text DOC_ID "..." --page 1 --line 1
+$ goog docs insert-text DOC_ID "..." --index 1
+$ goog docs insert-text DOC_ID "..." --after-heading "Issue 37 Heading"
+$ goog docs replace-text DOC_ID "Beta" "Gamma"
+$ goog docs replace-text DOC_ID "target" "TARGET" --match 1
+$ goog docs replace-text DOC_ID "target" "TARGET" --all
+$ goog docs search-text DOC_ID "Gamma"
+$ goog docs search-text DOC_ID "TARGET"
+Expected: every non-dry-run write returns a batchUpdate JSON response; the closing search-text calls find the replacement text.
+Observed: all writes returned documentId/replies/writeControl; search-text confirmed "Gamma" and "TARGET" present at the expected locations.
+Result: PASS.
+
+$ goog docs insert-text DOC_ID "stale " --index 1 --required-revision-id "stale-fake-revision-id"
+Expected: Google rejects the write because the revision ID is stale.
+Observed: 400 INVALID_ARGUMENT, "The required revision ID ... does not match the latest revision."
+Result: PASS.
+
+Live checks -- issue 34 (high-level Docs editing, cross-cutting checks not already covered by issues 38-41's own human evidence):
+
+$ goog docs apply-list DOC_ID --entry 1 --type bullet --preset BULLET_DISC_CIRCLE_SQUARE
+Expected: fails because --type and --preset are mutually exclusive.
+Observed: "apply-list accepts either --type or --preset, not both".
+Result: PASS.
+
+$ goog docs apply-styles DOC_ID --text "TARGET" --bold
+Expected: fails on ambiguous text match (3 occurrences of TARGET in the fixture) unless --match is given.
+Observed: ambiguous replace-text-style error with 3 candidates.
+Result: PASS.
+
+$ goog docs edit-table DOC_ID --table-id table-1 --data <1x3 csv> --resize
+$ goog docs edit-table DOC_ID --table-id table-1 --data <1x3 csv>
+Expected: --resize reports structural resizing is not supported yet; without --resize, a dimension mismatch (1x3 data vs 2x2 table) is rejected.
+Observed: "edit-table --resize is not supported yet"; then "edit-table data dimensions are 1x3 but table-1 is 2x2; pass --resize when structural resizing is supported".
+Result: PASS.
+Reviewer note: list-images/list-tables/map read checks and the insert-image/insert-table/apply-styles/apply-list dry-run and mutating request shapes for issue 34's own acceptance criteria are already covered end-to-end in issue-38-39-40-41-e2e-human.log; not repeated here.
+
+Live checks -- issue 31 (Sheets value reads):
+
+$ goog sheets values get SHEET_ID "Sheet1!A1:E5" | jq '{range, majorDimension, hasValues, rowCount}'
+Expected: valid ValueRange JSON with no CLI table formatting, read through the Office-format-file fallback path (the uploaded fixture is an .xlsx, not a native Google Sheet).
+Observed: range "Sheet1!A1:E5", hasValues true, rowCount 3.
+Result: PASS.
+
+$ goog sheets values get SHEET_ID "Sheet1!A1:E5" --value-render-option formatted-value|unformatted-value|formula
+Expected: all three render options return valid ValueRange JSON.
+Observed: all three returned range + matching rowCount.
+Result: PASS.
+
+$ goog sheets values batch-get SHEET_ID --range "Sheet1!A1:B2" --range "Sheet1!D1:E2" | jq '{spreadsheetId, valueRangeCount, ranges}'
+Expected: valueRangeCount 2, both requested ranges present.
+Observed: valueRangeCount 2, ranges ["Sheet1!A1:B2","Sheet1!D1:E2"].
+Result: PASS.
+
+$ goog sheets values batch-get SHEET_ID --range "Sheet1!A1:B2" --range "Sheet1!D1:E2" --value-render-option formula | jq '{spreadsheetId, valueRangeCount}'
+Expected: valid batch-get JSON with the formula render option.
+Observed: valueRangeCount 2.
+Result: PASS.
+
+$ goog sheets values batch-get SHEET_ID
+$ goog sheets values get SHEET_ID "Sheet1!A1:E5" --value-render-option displayed
+Expected: both rejected client-side before any Sheets API request: missing required --range, and an invalid render-option value.
+Observed: clap usage errors for both, before any network call.
+Result: PASS.
+
+Reviewer notes (all issues):
+- Account email, document/spreadsheet titles beyond their goog-e2e- scratch names, and any pre-existing personal Drive content were not read into this log; only structural JSON shapes, counts, and goog-e2e- scratch resource IDs are included.
+- This closes the PARTIAL items noted in the agent-generated issue-31-e2e.log, issue-34-e2e.log, issue-35-e2e.log, issue-36-e2e.log, and issue-37-e2e.log (incremental OAuth consent / missing goog on PATH / no live account inside the Sandcastle sandbox). The upfront full-scope login fixed in issues 58/59 eliminated the incremental-consent prompts those agent runs hit.
+- Two fixture IDs referenced in the prior agent evidence (a scratch Doc for issue 34's retest and the spreadsheet ID recorded in issue 31) were no longer reachable from any configured account by the time of this human review; fresh goog-e2e- scratch resources were created/reused instead. Not investigated further as it is unrelated to these issues' own scope.
