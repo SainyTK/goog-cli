@@ -1,6 +1,9 @@
 # goog CLI
 
-A Rust CLI for managing multiple Google accounts and interacting with Google APIs (Drive, Docs, Sheets, Slides, Gmail). Designed for developers and power users who want a scriptable, terminal-native alternative to the browser.
+A Rust CLI for managing multiple Google accounts and interacting with Google APIs (Drive, Docs, Sheets, Slides, Gmail).
+Designed first for power users and AI agents who want a scriptable, terminal-native alternative to the browser.
+Human-readable terminal workflows are the default.
+JSON output is supported for programmatic integration, but it is not the primary product surface.
 
 ## Language
 
