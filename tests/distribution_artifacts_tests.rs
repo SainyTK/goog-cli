@@ -7,8 +7,9 @@ fn readme_covers_public_distribution_and_usage_contract() {
 
     for expected in [
         "Early Open-Source CLI",
+        "power users and AI agents",
+        "JSON is also supported for programmatic use, but it is not the primary product surface.",
         "Installer Script",
-        "Homebrew Tap",
         "Rust-Native Fallback",
         "goog auth setup",
         "goog auth login",
@@ -25,6 +26,11 @@ fn readme_covers_public_distribution_and_usage_contract() {
             "README.md should contain {expected:?}"
         );
     }
+
+    assert!(
+        !readme.contains("brew install SainyTK/tap/goog"),
+        "README.md should not advertise Homebrew installation until the tap is actually public"
+    );
 }
 
 #[test]

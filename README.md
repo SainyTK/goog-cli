@@ -1,6 +1,12 @@
 # goog
 
-`goog` is an Early Open-Source CLI for Google APIs. It is built for developers and power users who want scriptable, terminal-native access to Google Drive, Google Docs, Google Sheets, and GoogleMail while the command surface continues to grow.
+![goog CLI wallpaper](./public/goog-cli-wallpaper.png)
+
+`goog` is an Early Open-Source CLI for Google APIs.
+It is built first for power users and AI agents who want terminal-native access to Google Drive, Google Docs, Google Sheets, and GoogleMail without getting forced down a browser UI path.
+
+Human-readable terminal workflows are the default experience.
+JSON is also supported for programmatic use, but it is not the primary product surface.
 
 The CLI uses one OAuth App for all accounts, stores account tokens in the system keychain, and requests API scopes incrementally when commands need them.
 
@@ -32,16 +38,6 @@ curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | 
 
 The installer supports macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets.
 
-### Homebrew Tap
-
-Homebrew users can install from the project tap after a Canonical Release has been published:
-
-```sh
-brew install SainyTK/tap/goog
-```
-
-This is the supported tap install path. `goog` is not advertised as available through the official Homebrew core registry.
-
 ### Rust-Native Fallback
 
 Users outside the binary release support matrix can install from source with Cargo:
@@ -59,6 +55,88 @@ Create a Google OAuth client for a desktop or web application, then configure `g
 ```sh
 goog auth setup
 ```
+
+### Google Cloud Console Setup Guide
+
+Open <https://console.cloud.google.com>, create a project or select an existing one, then complete the setup below before running `goog auth setup`.
+
+#### 1. Enable the required APIs
+
+Go to **APIs & Services -> Library**.
+
+![API Library](./public/readme/01-api-library.png)
+
+Enable these APIs:
+
+- Google Drive API
+- Google Docs API
+- Google Sheets API
+- Gmail API
+
+If an API already shows **Manage** with an **API Enabled** badge, skip it.
+
+![API already enabled](./public/readme/02-apis-enabled.png)
+
+#### 2. Configure the OAuth consent screen
+
+If this is a brand-new project, go to **APIs & Services -> OAuth consent screen**.
+
+In the newer GCP layout, this may appear under **Google Auth Platform -> Branding**.
+
+If the consent screen is already configured, skip to the next step.
+
+Choose **External** for personal Google accounts.
+
+Fill in the required fields:
+
+- **App name**: any descriptive name, such as `My Office Agent`
+- **User support email**: your email address
+- **Developer contact information**: your email address
+
+All other fields can stay blank.
+
+![App information form](./public/readme/03-app-information.png)
+
+Click **Save and Continue**.
+
+Because the app stays in **Testing** mode by default, add your own Google account under **Test users** before finishing the flow.
+
+![Add test users](./public/readme/04-add-test-users.png)
+
+#### 3. Create OAuth credentials
+
+Go to **APIs & Services -> Credentials**.
+
+Click **+ Create credentials**.
+
+![Credentials page](./public/readme/05-credentials-page.png)
+
+Select **OAuth client ID**.
+
+![Create credentials dropdown](./public/readme/06-create-credential-menu.png)
+
+#### 4. Choose Desktop app
+
+On the client creation form, set **Application type** to **Desktop app**.
+
+![Application type dropdown](./public/readme/07-app-type-dropdown.png)
+
+Enter any descriptive name, then click **Create**.
+
+![Name filled in](./public/readme/08-name-filled.png)
+
+#### 5. Copy the client ID and client secret
+
+After the client is created, copy both values from the dialog:
+
+- **Client ID**: a long value ending in `.apps.googleusercontent.com`
+- **Client secret**: a shorter value usually starting with `GOCSPX-`
+
+![OAuth client created](./public/readme/09-oauth-client-created.png)
+
+Copy both values before closing the dialog.
+
+You can also use **Download JSON** if you prefer the file-based `--client-secret-file` setup path.
 
 You can also import a downloaded Google client secret file:
 
