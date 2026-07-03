@@ -50,6 +50,25 @@ cargo install --git https://github.com/SainyTK/goog-cli goog
 
 This path requires a local Rust toolchain.
 
+### Uninstall
+
+If you installed with the installer script, remove the binary from the supported install locations:
+
+```sh
+rm -f /usr/local/bin/goog "$HOME/.local/bin/goog"
+```
+
+If you installed with Cargo, uninstall the Cargo package:
+
+```sh
+cargo uninstall goog
+```
+
+Those commands remove the executable only.
+To fully reset local `goog` state, delete the `goog` directory from your OS config directory and remove saved `goog` entries from your system keychain.
+On macOS, the config directory is usually `$HOME/Library/Application Support/goog`.
+On Linux, it is usually `$HOME/.config/goog`.
+
 ## OAuth Setup
 
 Create a Google OAuth client for a desktop or web application, then configure `goog` once:
