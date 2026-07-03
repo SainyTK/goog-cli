@@ -1260,6 +1260,64 @@ async fn run_edit_table_dry_run_replaces_cells_from_document_end() {
 }
 
 #[tokio::test]
+async fn run_edit_table_rejects_dimension_changes_without_supported_resize() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_table_document()))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("mismatch.csv");
+    std::fs::write(&data_path, "Only,Two\n").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mismatch = run_edit_table_to(
+        &client,
+        EditTableCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            data: data_path.to_string_lossy().into_owned(),
+            resize: false,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut Vec::new(),
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", mismatch.unwrap_err());
+    assert!(message.contains("edit-table data dimensions are 1x2"));
+    assert!(message.contains("table-1 is 2x2"));
+    assert!(message.contains("pass --resize"));
+
+    let resize = run_edit_table_to(
+        &client,
+        EditTableCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            data: data_path.to_string_lossy().into_owned(),
+            resize: true,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut Vec::new(),
+        Some(&documents_url),
+    )
+    .await;
+
+    let message = format!("{:#}", resize.unwrap_err());
+    assert!(message.contains("edit-table --resize is not supported yet"));
+}
+
+#[tokio::test]
 async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

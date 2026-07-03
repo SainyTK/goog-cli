@@ -7,9 +7,9 @@ Test setup:
 - Skipped fixture: live Google Docs fixture skipped because `goog` is not installed on PATH and `.sandcastle/secrets/` contains no exported token/config files. Per docs/agents/e2e-testing.md, this means E2E testing is unavailable and local checks continue.
 
 Local checks:
-$ command -v goog
-Expected: find an installed `goog` executable for live Google E2E.
-Observed: no executable path was returned.
+$ command -v goog && goog auth list --json
+Expected: find an installed `goog` executable and list already-connected Google accounts for selecting an E2E account.
+Observed: no executable path was returned; command exited before account listing.
 Result: PARTIAL.
 
 $ goog auth list --json
@@ -27,14 +27,14 @@ Expected: mocked Docs command tests prove CSV and TSV table insertion builds nat
 Observed: 2 tests passed; dry-run JSON included `insertTable` followed by reverse-ordered cell `insertText` requests.
 Result: PASS.
 
-$ cargo test docs_new_high_level_editing_commands_parse -- --nocapture
-Expected: CLI parser accepts `docs insert-table DOC_ID --data table.csv --page PAGE --line LINE --dry-run --json`.
-Observed: parser test passed.
+$ cargo test run_edit_table_rejects_dimension_changes_without_supported_resize -- --nocapture
+Expected: full-table edits fail on row/column mismatch unless resize is requested, and `--resize` reports the current unsupported structural operation.
+Observed: 1 test passed; mismatch and unsupported resize errors were asserted.
 Result: PASS.
 
 $ cargo test docs_ -- --nocapture
-Expected: Docs parser, command, and client regression tests pass, including list-tables, insert-table, edit-table, dry-run JSON, and raw get/batch-update coverage.
-Observed: 62 docs-filtered tests and 1 distribution filtered test passed.
+Expected: Docs parser, command, and client regression tests pass, including list-tables, insert-table, edit-table, dry-run JSON, dimension guards, and raw get/batch-update coverage.
+Observed: 68 docs-filtered unit tests and 1 distribution artifact filtered test passed.
 Result: PASS.
 
 $ npm run typecheck
@@ -44,7 +44,7 @@ Result: PASS.
 
 $ npm run test
 Expected: Full repo test suite passes through the repo npm script.
-Observed: 339 unit tests, 6 distribution artifact tests, and 0 doc tests passed.
+Observed: 349 unit tests, 6 distribution artifact tests, and 0 doc tests passed.
 Result: PASS.
 
 Live checks:
