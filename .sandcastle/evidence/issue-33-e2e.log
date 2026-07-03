@@ -12,9 +12,24 @@ Expected: build the real `goog` CLI used for live checks.
 Observed: build completed successfully.
 Result: PASS.
 
+$ cargo test run_batch_update
+Expected: command-runner regressions cover file and stdin request bodies, URL shape, full body passthrough, write scope, raw JSON stdout, invalid JSON from stdin and file, and mocked API errors.
+Observed: 11 passed, 0 failed.
+Result: PASS.
+
 $ cargo test sheets_batch_update_help_explains_request_shape
 Expected: parser/help regression confirms `sheets batch-update --help` documents full `spreadsheets.batchUpdate` bodies.
 Observed: 1 passed, 0 failed.
+Result: PASS.
+
+$ npm run typecheck
+Expected: repository typecheck passes.
+Observed: `cargo check` completed successfully.
+Result: PASS.
+
+$ npm run test
+Expected: full repository test suite passes.
+Observed: 322 passed, 0 failed; doc-tests 0 passed, 0 failed.
 Result: PASS.
 
 Live checks:
@@ -40,7 +55,7 @@ Request body:
       {
         "addSheet": {
           "properties": {
-            "title": "goog-e2e-issue-33-20260702-structural"
+            "title": "goog-e2e-issue-33-20260703015153"
           }
         }
       }
@@ -49,7 +64,13 @@ Request body:
   }
 Expected: apply a structural `addSheet` request from a file, pass through full native body fields, and emit raw Google JSON that includes one reply.
 Observed:
-  {"spreadsheetId":"1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4","repliesCount":1,"addedSheetTitle":"goog-e2e-issue-33-20260702-structural"}
+  {"spreadsheetId":"1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4","repliesCount":1,"addedSheetTitle":"goog-e2e-issue-33-20260703015153"}
+Result: PASS.
+
+$ printf '%s\n' '{"requests":[{"addSheet":{"properties":{"title":"goog-e2e-issue-33-stdin-20260703015154"}}}],"includeSpreadsheetInResponse":false}' | ./target/debug/goog --quiet sheets batch-update 1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4 --requests - | jq -c '{spreadsheetId, repliesCount: (.replies | length), addedSheetTitle: .replies[0].addSheet.properties.title}'
+Expected: apply a structural `addSheet` request from stdin using the full native body shape and emit raw Google JSON that includes one reply.
+Observed:
+  {"spreadsheetId":"1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4","repliesCount":1,"addedSheetTitle":"goog-e2e-issue-33-stdin-20260703015154"}
 Result: PASS.
 
 $ printf '{not json' | ./target/debug/goog --quiet sheets batch-update 1CTgAMo-RZDkXkYl8FeyK5SmKyKZ-J-WdsQJOI9Zi3x4 --requests - > /tmp/issue33-invalid-stdout.txt 2> /tmp/issue33-invalid-stderr.txt; status=$?; printf 'exit=%s\nstdout_bytes=%s\nstderr=%s\n' "$status" "$(wc -c < /tmp/issue33-invalid-stdout.txt)" "$(sed -n '1,2p' /tmp/issue33-invalid-stderr.txt)"

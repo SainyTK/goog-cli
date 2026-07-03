@@ -1358,6 +1358,33 @@ async fn run_batch_update_returns_clear_error_for_invalid_request_json() {
 }
 
 #[tokio::test]
+async fn run_batch_update_returns_clear_error_for_invalid_request_json_file() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let requests_path = temp_dir.path().join("invalid-batch-update.json");
+    std::fs::write(&requests_path, "{not json").unwrap();
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+
+    let result = run_batch_update_to(
+        &client,
+        "spreadsheet-123".into(),
+        requests_path.to_string_lossy().into_owned(),
+        &mut input,
+        &mut out,
+        Some("https://example.test/sheets/v4/spreadsheets"),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to parse Google Sheets Batch Update request body from"));
+    assert!(message.contains("invalid-batch-update.json"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
 async fn run_batch_update_returns_clear_error_for_api_failure() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
