@@ -16,8 +16,6 @@ use crate::drive::DRIVE_SCOPES;
 
 pub const DOCS_SCOPE: &str = "https://www.googleapis.com/auth/documents";
 pub const DOCS_SCOPES: &[&str] = &[DOCS_SCOPE];
-pub const DOCS_READONLY_SCOPE: &str = "https://www.googleapis.com/auth/documents.readonly";
-pub const DOCS_READONLY_SCOPES: &[&str] = &[DOCS_READONLY_SCOPE];
 const DOCS_DOCUMENTS_URL: &str = "https://docs.googleapis.com/v1/documents";
 const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const OFFICE_FILE_PRECONDITION_STATUS: &str = "FAILED_PRECONDITION";
@@ -160,7 +158,7 @@ pub async fn get_document<S: AccountStore>(
     send_json_request_with_office_file_fallback(
         client,
         client.get(options.request_url()?),
-        DOCS_READONLY_SCOPES,
+        DOCS_SCOPES,
         || get_document_via_temporary_conversion(client, options),
     )
     .await
@@ -201,7 +199,7 @@ async fn get_document_via_temporary_conversion<S: AccountStore>(
     let response = send_json_request(
         client,
         client.get(temporary_options.request_url()?),
-        DOCS_READONLY_SCOPES,
+        DOCS_SCOPES,
     )
     .await;
 

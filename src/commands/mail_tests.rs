@@ -7,7 +7,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::state::{load_runtime_state_from_path, resource_key};
 use crate::auth::testing::MemoryStore;
-use crate::mail::GMAIL_READONLY_SCOPE;
+use crate::mail::GMAIL_SCOPE;
 use crate::test_support::CurrentDirGuard;
 
 use super::mail::*;
@@ -36,7 +36,7 @@ fn scoped_mail_token(access_token: &str) -> Token {
         access_token: access_token.into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![GMAIL_READONLY_SCOPE.into()],
+        scopes: vec![GMAIL_SCOPE.into()],
     }
 }
 

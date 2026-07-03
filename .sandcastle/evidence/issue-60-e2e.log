@@ -1,0 +1,39 @@
+Issue 60 E2E evidence, redacted
+Result: PASS
+
+Test setup:
+- Accounts used: active Gmail account, redacted.
+- Fixture used: no created fixture; read-only Gmail search query intentionally chosen to have zero matches.
+- Skipped fixture: none.
+- Note: `goog` was not installed on PATH in this sandbox, so live checks used the same local CLI binary through `cargo run --quiet --`.
+
+Local checks:
+$ cargo test search_messages_treats
+Expected: Gmail list responses with null, missing, or empty `messages` data are treated as empty result sets.
+Observed: 3 tests passed.
+Result: PASS.
+
+$ cargo test run_search
+Expected: Existing mail search command rendering still works.
+Observed: 5 tests passed, including the mail search command tests.
+Result: PASS.
+
+Live checks:
+$ goog auth list
+Expected: Confirm whether the installed `goog` binary is available.
+Observed: command failed with `/bin/bash: line 1: goog: command not found`.
+Result: PARTIAL.
+
+$ cargo run --quiet -- --account [active-account] mail search "zzzzxyqqqnotexist12345" --limit 10
+Expected: A zero-result Gmail search exits 0 and prints an empty table instead of a decode error.
+Observed: exit 0 with only the table header: `DATE FROM SUBJECT MESSAGE ID`.
+Result: PASS.
+
+$ cargo run --quiet -- --account [active-account] mail search "zzzzxyqqqnotexist12345" --limit 10 --json
+Expected: A zero-result Gmail search in JSON mode exits 0 instead of a decode error.
+Observed: exit 0 with empty stdout, matching the command's existing NDJSON convention for empty result sets.
+Result: PASS.
+
+Reviewer notes:
+- This fix is scoped to Gmail message-list pages. Empty successful bodies for raw message reads or attachment payloads still remain invalid JSON.
+- No message subjects, snippets, senders, recipients, tokens, or message IDs were recorded.

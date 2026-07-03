@@ -7,14 +7,30 @@ use url::Url;
 
 use super::account::Token;
 use super::error::AuthError;
+use crate::docs::DOCS_SCOPE;
+use crate::drive::DRIVE_SCOPE;
+use crate::mail::GMAIL_SCOPE;
+use crate::sheets::SHEETS_SCOPE;
 
 pub const DEFAULT_LOGIN_SCOPES: &[&str] = &[
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
+    DRIVE_SCOPE,
+    DOCS_SCOPE,
+    SHEETS_SCOPE,
+    GMAIL_SCOPE,
 ];
 
-pub const DEFAULT_DEVICE_LOGIN_SCOPES: &[&str] = &["openid", "email", "profile"];
+pub const DEFAULT_DEVICE_LOGIN_SCOPES: &[&str] = &[
+    "openid",
+    "email",
+    "profile",
+    DRIVE_SCOPE,
+    DOCS_SCOPE,
+    SHEETS_SCOPE,
+    GMAIL_SCOPE,
+];
 
 pub const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const GOOGLE_DEVICE_CODE_URL: &str = "https://oauth2.googleapis.com/device/code";
