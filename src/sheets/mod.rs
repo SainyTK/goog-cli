@@ -13,8 +13,6 @@ use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::drive::DRIVE_SCOPES;
 
-pub const SHEETS_READONLY_SCOPE: &str = "https://www.googleapis.com/auth/spreadsheets.readonly";
-pub const SHEETS_READONLY_SCOPES: &[&str] = &[SHEETS_READONLY_SCOPE];
 pub const SHEETS_SCOPE: &str = "https://www.googleapis.com/auth/spreadsheets";
 pub const SHEETS_SCOPES: &[&str] = &[SHEETS_SCOPE];
 const SHEETS_SPREADSHEETS_URL: &str = "https://sheets.googleapis.com/v4/spreadsheets";
@@ -513,12 +511,7 @@ pub async fn get_spreadsheet<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetSpreadsheetOptions,
 ) -> Result<Spreadsheet, SheetsError> {
-    send_json_request(
-        client,
-        client.get(options.request_url()?),
-        SHEETS_READONLY_SCOPES,
-    )
-    .await
+    send_json_request(client, client.get(options.request_url()?), SHEETS_SCOPES).await
 }
 
 pub async fn get_values<S: AccountStore>(
@@ -528,7 +521,7 @@ pub async fn get_values<S: AccountStore>(
     send_json_request_with_office_file_fallback(
         client,
         client.get(options.request_url()?),
-        SHEETS_READONLY_SCOPES,
+        SHEETS_SCOPES,
         || get_values_via_temporary_conversion(client, options),
     )
     .await
@@ -541,7 +534,7 @@ pub async fn batch_get_values<S: AccountStore>(
     send_json_request_with_office_file_fallback(
         client,
         client.get(options.request_url()?),
-        SHEETS_READONLY_SCOPES,
+        SHEETS_SCOPES,
         || batch_get_values_via_temporary_conversion(client, options),
     )
     .await
@@ -743,7 +736,7 @@ async fn read_values_via_temporary_conversion<S: AccountStore>(
     let temporary_id =
         create_temporary_google_sheet(client, drive_files_url, source_file_id).await?;
     let request_url = converted_request_url(&temporary_id)?;
-    let response = send_json_request(client, client.get(request_url), SHEETS_READONLY_SCOPES).await;
+    let response = send_json_request(client, client.get(request_url), SHEETS_SCOPES).await;
 
     finish_temporary_conversion(client, drive_files_url, &temporary_id, response).await
 }

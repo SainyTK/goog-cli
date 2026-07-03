@@ -10,8 +10,12 @@ use super::error::AuthError;
 use super::login::{
     build_authorize_url, exchange_code, fetch_email, parse_callback_params, poll_device_token,
     render_device_authorization_prompt, request_device_authorization, DeviceAuthorization,
-    DEFAULT_DEVICE_LOGIN_SCOPES, GOOGLE_AUTH_URL,
+    DEFAULT_DEVICE_LOGIN_SCOPES, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL,
 };
+use crate::docs::DOCS_SCOPE;
+use crate::drive::DRIVE_SCOPE;
+use crate::mail::GMAIL_SCOPE;
+use crate::sheets::SHEETS_SCOPE;
 
 struct DeviceTokenSequence {
     responses: Mutex<VecDeque<ResponseTemplate>>,
@@ -62,6 +66,38 @@ fn authorize_url_includes_required_params() {
     assert_eq!(pairs.get("include_granted_scopes").unwrap(), "true");
     assert_eq!(pairs.get("prompt").unwrap(), "consent");
     assert!(url.starts_with(GOOGLE_AUTH_URL));
+}
+
+#[test]
+fn default_browser_login_scopes_request_identity_drive_docs_sheets_and_gmail() {
+    assert_eq!(
+        DEFAULT_LOGIN_SCOPES,
+        &[
+            "openid",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            DRIVE_SCOPE,
+            DOCS_SCOPE,
+            SHEETS_SCOPE,
+            GMAIL_SCOPE,
+        ]
+    );
+}
+
+#[test]
+fn default_device_login_scopes_request_identity_drive_docs_sheets_and_gmail() {
+    assert_eq!(
+        DEFAULT_DEVICE_LOGIN_SCOPES,
+        &[
+            "openid",
+            "email",
+            "profile",
+            DRIVE_SCOPE,
+            DOCS_SCOPE,
+            SHEETS_SCOPE,
+            GMAIL_SCOPE,
+        ]
+    );
 }
 
 #[tokio::test]

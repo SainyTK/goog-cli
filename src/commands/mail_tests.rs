@@ -7,7 +7,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::state::{load_runtime_state_from_path, resource_key};
 use crate::auth::testing::MemoryStore;
-use crate::mail::GMAIL_READONLY_SCOPE;
+use crate::mail::GMAIL_SCOPE;
 use crate::test_support::CurrentDirGuard;
 
 use super::mail::*;
@@ -36,7 +36,7 @@ fn scoped_mail_token(access_token: &str) -> Token {
         access_token: access_token.into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![GMAIL_READONLY_SCOPE.into()],
+        scopes: vec![GMAIL_SCOPE.into()],
     }
 }
 
@@ -279,6 +279,77 @@ async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table
         String::from_utf8(out).unwrap(),
         "DATE\tFROM\tSUBJECT\tMESSAGE ID\nWed, 24 Jun 2026 10:00:00 +0000\tAlice <alice@example.com>\tRoadmap\tmessage-1\n"
     );
+}
+
+#[tokio::test]
+async fn run_search_prints_no_matches_message_for_empty_table_results() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "10"))
+        .and(query_param("q", "zzzzxyqqqnotexist12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "resultSizeEstimate": 0
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_search_to(
+        &client,
+        "zzzzxyqqqnotexist12345".into(),
+        None,
+        false,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "No matching messages found.\n"
+    );
+}
+
+#[tokio::test]
+async fn run_search_prints_empty_json_array_for_empty_json_results() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("maxResults", "10"))
+        .and(query_param("q", "zzzzxyqqqnotexist12345"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "resultSizeEstimate": 0
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_search_to(
+        &client,
+        "zzzzxyqqqnotexist12345".into(),
+        None,
+        true,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "[]\n");
 }
 
 #[tokio::test]
