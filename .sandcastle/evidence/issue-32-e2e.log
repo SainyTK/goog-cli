@@ -2,81 +2,66 @@ Issue 32 E2E evidence, redacted
 Result: PASS
 
 Test setup:
-- Accounts used: <active-account>, <account-with-sheets-write-scope>.
-- Fixture used: native Google Sheets spreadsheet created during this run with title prefix `goog-e2e-issue-32-`; spreadsheet ID `1P3pordo8nnu_6yCbuvJuXPUUkPQUjBXjRYBROeRwny0`.
-- Skipped fixture: the earlier spreadsheet ID from the reopened issue was not reused because it was reported as an Office file and the E2E rules require mutating only resources created during this test run.
+- Account used: <active-account-with-drive-and-sheets-write-scope>.
+- Fixture used: native Google Sheets spreadsheet created during this run with title prefix `goog-e2e-issue-32-`; spreadsheet ID `19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM`.
+- Skipped fixture: none.
 
-Local setup checks:
-$ ./target/debug/goog auth list --json
-Expected: show authorized accounts available to the sandbox.
-Observed redacted result: four authorized accounts were listed; one was active.
+Fixture creation:
+$ curl https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType -d '{"name":"goog-e2e-issue-32-<timestamp>","mimeType":"application/vnd.google-apps.spreadsheet"}'
+Expected: create a native Google Sheets scratch resource for this run before any mutating `goog` command.
+Observed redacted result: returned ID `19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM`, title prefix `goog-e2e-issue-32-`, and mimeType `application/vnd.google-apps.spreadsheet`.
 Result: PASS.
 
-$ ./target/debug/goog auth export <active-account> --out .sandcastle/secrets/issue-32-token.json
-Expected: optional token export for setup.
-Observed redacted result: failed with `failed to read token from keychain: system keychain error: Platform secure storage failure: PermissionDenied`.
-Result: PARTIAL. Existing `GOOG_TOKEN_FILE` credentials were available, so E2E continued without exporting tokens.
+Local checks:
+$ cargo test sheets_values_batch_update --lib
+Result: PASS. 2 passed.
+
+$ cargo test sheets_values_clear --lib
+Result: PASS. 1 passed.
+
+$ cargo test sheets_values_batch_clear --lib
+Result: PASS. 2 passed.
+
+$ cargo test run_values_batch_update --lib
+Result: PASS. 5 passed.
+
+$ cargo test run_values_clear --lib
+Result: PASS. 2 passed.
+
+$ cargo test run_values_batch_clear --lib
+Result: PASS. 2 passed.
 
 Live checks:
-$ ./target/debug/goog sheets values batch-update dummy --values - <<'JSON'
-{"valueInputOption":"RAW","data":[]}
-JSON
-Expected: setup probe only; confirm whether the active account already had Sheets write consent.
-Observed redacted result: opened an OAuth browser flow for `https://www.googleapis.com/auth/spreadsheets`; no API write occurred.
-Result: PARTIAL.
-
-$ ./target/debug/goog --account <account-without-sheets-write-scope> sheets values batch-update 1iEWwwHqW7Nma9SQSqGsuNh0sG0BdibyF6ti2dJ_DLxg --values - <<'JSON'
-{"valueInputOption":"RAW","data":[{"range":"Sheet1!A1:C1","values":[["issue-32","batch-update","stdin"]]},{"range":"Sheet1!Z1:Z3","values":[["clear-one"],["clear-two"],["clear-three"]]}]}
-JSON
-Expected: setup probe against the first scratch spreadsheet with an account that did not have CLI-visible Sheets write consent.
-Observed redacted result: opened an OAuth browser flow for `https://www.googleapis.com/auth/spreadsheets`; no API write occurred.
-Result: PARTIAL.
-
-$ ./target/debug/goog --account <account-without-target-access> sheets values batch-update 1iEWwwHqW7Nma9SQSqGsuNh0sG0BdibyF6ti2dJ_DLxg --values - <<'JSON'
-{"valueInputOption":"RAW","data":[{"range":"Sheet1!A1:C1","values":[["issue-32","batch-update","stdin"]]},{"range":"Sheet1!Z1:Z3","values":[["clear-one"],["clear-two"],["clear-three"]]}]}
-JSON
-Expected: initial attempt against a scratch spreadsheet accidentally created by another account.
-Observed redacted result: `error: failed to batch update Google Sheets values: Google Sheets permission denied`.
-Result: FAIL for setup target selection; not an issue-32 command failure.
-
-$ ./target/debug/goog --account <account-without-target-access> sheets values clear 1iEWwwHqW7Nma9SQSqGsuNh0sG0BdibyF6ti2dJ_DLxg 'Sheet1!Z1:Z1'
-Expected: initial attempt against the wrong scratch spreadsheet owner.
-Observed redacted result: `error: failed to clear Google Sheets values: Google Sheets permission denied`.
-Result: FAIL for setup target selection; not an issue-32 command failure.
-
-$ ./target/debug/goog --account <account-without-target-access> sheets values batch-clear 1iEWwwHqW7Nma9SQSqGsuNh0sG0BdibyF6ti2dJ_DLxg --range 'Sheet1!Z2:Z2' --range 'Sheet1!Z3:Z3'
-Expected: initial attempt against the wrong scratch spreadsheet owner.
-Observed redacted result: `error: failed to batch clear Google Sheets values: Google Sheets permission denied`.
-Result: FAIL for setup target selection; not an issue-32 command failure.
-
-$ ./target/debug/goog --account <account-without-readonly-scope> sheets values get 1iEWwwHqW7Nma9SQSqGsuNh0sG0BdibyF6ti2dJ_DLxg 'Sheet1!Z1:Z3'
-Expected: optional readback after the wrong-account attempt.
-Observed redacted result: opened an OAuth browser flow for `https://www.googleapis.com/auth/spreadsheets.readonly`; no read occurred.
-Result: PARTIAL. Tracked separately as issue #57.
-
-$ ./target/debug/goog --account <account-with-sheets-write-scope> sheets values batch-update 1P3pordo8nnu_6yCbuvJuXPUUkPQUjBXjRYBROeRwny0 --values - <<'JSON'
+$ ./target/debug/goog --account <active-account> sheets values batch-update 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM --values - <<'JSON'
 {"valueInputOption":"RAW","data":[{"range":"Sheet1!A1:C1","values":[["issue-32","batch-update","stdin"]]},{"range":"Sheet1!Z1:Z3","values":[["clear-one"],["clear-two"],["clear-three"]]}]}
 JSON
 Expected: send the full native `spreadsheets.values.batchUpdate` body from stdin, with the body controlling `valueInputOption`.
-Observed redacted result: JSON response included `spreadsheetId`, two range responses, `totalUpdatedCells: 6`, `totalUpdatedColumns: 4`, `totalUpdatedRows: 3`, and `totalUpdatedSheets: 1`.
+Observed redacted result: JSON response included two range responses for `Sheet1!A1:C1` and `Sheet1!Z1:Z3`, `totalUpdatedCells: 6`, `totalUpdatedColumns: 4`, `totalUpdatedRows: 3`, and `totalUpdatedSheets: 1`.
 Result: PASS.
 
-$ ./target/debug/goog --account <account-with-sheets-write-scope> sheets values clear 1P3pordo8nnu_6yCbuvJuXPUUkPQUjBXjRYBROeRwny0 'Sheet1!Z1:Z1'
-Expected: clear one range without a JSON request body.
-Observed redacted result: `{"clearedRange":"Sheet1!Z1","spreadsheetId":"1P3pordo8nnu_6yCbuvJuXPUUkPQUjBXjRYBROeRwny0"}`.
+$ tmp_body="$(mktemp)"
+$ printf '%s\n' '{"valueInputOption":"USER_ENTERED","data":[{"range":"Sheet1!D1:E1","values":[["file","body"]]}]}' > "$tmp_body"
+$ ./target/debug/goog --account <active-account> sheets values batch-update 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM --values "$tmp_body"
+$ rm -f "$tmp_body"
+Expected: read the native batch update body from a file path.
+Observed redacted result: JSON response included one range response for `Sheet1!D1:E1`, `totalUpdatedCells: 2`, `totalUpdatedColumns: 2`, `totalUpdatedRows: 1`, and `totalUpdatedSheets: 1`.
 Result: PASS.
 
-$ ./target/debug/goog --account <account-with-sheets-write-scope> sheets values batch-clear 1P3pordo8nnu_6yCbuvJuXPUUkPQUjBXjRYBROeRwny0 --range 'Sheet1!Z2:Z2' --range 'Sheet1!Z3:Z3'
+$ ./target/debug/goog --account <active-account> sheets values clear 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM 'Sheet1!Z1:Z1'
+Expected: clear one range without requiring a JSON request body.
+Observed redacted result: `{"clearedRange":"Sheet1!Z1","spreadsheetId":"19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM"}`.
+Result: PASS.
+
+$ ./target/debug/goog --account <active-account> sheets values batch-clear 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM --range 'Sheet1!Z2:Z2' --range 'Sheet1!Z3:Z3'
 Expected: clear multiple ranges using repeated `--range` flags.
-Observed redacted result: `{"clearedRanges":["Sheet1!Z2","Sheet1!Z3"],"spreadsheetId":"1P3pordo8nnu_6yCbuvJuXPUUkPQUjBXjRYBROeRwny0"}`.
+Observed redacted result: `{"clearedRanges":["Sheet1!Z2","Sheet1!Z3"],"spreadsheetId":"19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM"}`.
 Result: PASS.
 
-$ ./target/debug/goog --account <account-with-sheets-write-scope> sheets values get 1P3pordo8nnu_6yCbuvJuXPUUkPQUjBXjRYBROeRwny0 'Sheet1!Z1:Z3'
-Expected: optional readback after the successful issue commands.
-Observed redacted result: opened an OAuth browser flow for `https://www.googleapis.com/auth/spreadsheets.readonly`; no read occurred.
-Result: PARTIAL. Tracked separately as issue #57.
+$ printf '{not json}\n' | ./target/debug/goog --account <active-account> sheets values batch-update 19CX9jmX46b0801UZjdIJd8pK9WlDc3kWyj9X_nyfDdM --values -
+Expected: command exits non-zero, stderr contains a clear parse error, and stdout is empty.
+Observed redacted result: exit code 1; stdout byte count 0; stderr was `error: failed to parse Google Sheets Values request body from stdin: key must be a string at line 1 column 2`.
+Result: PASS.
 
 Reviewer notes:
-- The issue-specific mutating commands passed against a native Google Sheets scratch spreadsheet created in this run.
-- The failed permission-denied attempts were caused by creating the first scratch spreadsheet under a different account than the one used for the `goog` commands.
-- The readonly follow-up prompt is out of scope for issue 32 and is tracked as issue #57.
+- The issue-specific mutating commands passed against a native Google Sheets scratch spreadsheet created during this run.
+- Real account emails, OAuth tokens, refresh tokens, client secrets, and API keys are not included in this log.
