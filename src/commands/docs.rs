@@ -11,10 +11,11 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::{DocsCommand, DocsListType};
 use crate::docs::{
-    batch_update_document, get_document, map::build_document_map, map::search_document_text,
-    map::DocumentLocation, map::DocumentMap, map::DocumentMapEntry, map::DocumentMapEntryKind,
-    map::DocumentRange, map::DocumentTextBlock, BatchUpdateDocumentOptions, DocsError,
-    GetDocumentOptions,
+    batch_update_document, extract_style_template, get_document, map::build_document_map,
+    map::search_document_text, map::DocumentLocation, map::DocumentMap, map::DocumentMapEntry,
+    map::DocumentMapEntryKind, map::DocumentRange, map::DocumentTextBlock,
+    style_template::{load_style_template_in, save_style_template_in},
+    BatchUpdateDocumentOptions, DocsError, GetDocumentOptions, StyleTemplate,
 };
 
 pub fn run<S: AccountStore>(
@@ -245,6 +246,7 @@ pub fn run<S: AccountStore>(
             dry_run,
             json,
             required_revision_id,
+            no_auto_style,
         } => {
             let selector = insert_text_selector(
                 index,
@@ -271,8 +273,10 @@ pub fn run<S: AccountStore>(
                     dry_run,
                     json,
                     required_revision_id,
+                    no_auto_style,
                 },
                 &mut std::io::stdout(),
+                None,
                 None,
                 None,
             ))
@@ -324,6 +328,7 @@ pub fn run<S: AccountStore>(
             dry_run,
             json,
             required_revision_id,
+            no_auto_style,
         } => {
             let selector =
                 range_selector(from_index, to_index, entry, page, line, text, match_number)?;
@@ -345,8 +350,10 @@ pub fn run<S: AccountStore>(
                     dry_run,
                     json,
                     required_revision_id,
+                    no_auto_style,
                 },
                 &mut std::io::stdout(),
+                None,
                 None,
                 None,
             ))
@@ -363,6 +370,7 @@ pub fn run<S: AccountStore>(
             dry_run,
             json,
             required_revision_id,
+            no_auto_style,
         } => {
             let selector = range_selector(from_index, to_index, entry, page, line, None, None)?;
             let runtime =
@@ -379,8 +387,10 @@ pub fn run<S: AccountStore>(
                     dry_run,
                     json,
                     required_revision_id,
+                    no_auto_style,
                 },
                 &mut std::io::stdout(),
+                None,
                 None,
                 None,
             ))
@@ -400,6 +410,7 @@ pub fn run<S: AccountStore>(
                 fields,
                 include_tabs_content,
                 &mut std::io::stdout(),
+                None,
                 None,
                 None,
             ))
@@ -422,6 +433,9 @@ pub fn run<S: AccountStore>(
                 None,
                 None,
             ))
+        }
+        DocsCommand::ShowStyleTemplate { document_id, json } => {
+            run_show_style_template(&document_id, json, &mut std::io::stdout(), None)
         }
     }
 }
@@ -521,6 +535,7 @@ pub(super) struct InsertTableCommand {
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
+    pub no_auto_style: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -547,6 +562,7 @@ pub(super) struct ApplyStylesCommand {
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
+    pub no_auto_style: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -558,6 +574,7 @@ pub(super) struct ApplyListCommand {
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
+    pub no_auto_style: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -944,9 +961,13 @@ pub(super) async fn run_insert_table_to<S: AccountStore>(
     command: InsertTableCommand,
     out: &mut impl Write,
     documents_url: Option<&str>,
+    style_cache_dir: Option<&Path>,
 ) -> Result<()> {
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
     let change = prepare_insert_table_change(&document_map, &command)?;
+    let dry_run = command.dry_run;
+    let no_auto_style = command.no_auto_style;
+    let document_id = command.document_id.clone();
     apply_or_preview_docs_change(
         client,
         command.document_id,
@@ -957,7 +978,12 @@ pub(super) async fn run_insert_table_to<S: AccountStore>(
         documents_url,
         "insert-table",
     )
-    .await
+    .await?;
+
+    if !dry_run && !no_auto_style {
+        apply_table_header_auto_style_to(client, &document_id, documents_url, style_cache_dir).await;
+    }
+    Ok(())
 }
 
 pub(super) async fn run_insert_table_unified_to<S: AccountStore>(
@@ -968,6 +994,7 @@ pub(super) async fn run_insert_table_unified_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
     state_path: Option<&Path>,
+    style_cache_dir: Option<&Path>,
 ) -> Result<()> {
     let document_map = get_document_map_unified(
         config,
@@ -979,6 +1006,9 @@ pub(super) async fn run_insert_table_unified_to<S: AccountStore>(
     )
     .await?;
     let change = prepare_insert_table_change(&document_map, &command)?;
+    let dry_run = command.dry_run;
+    let no_auto_style = command.no_auto_style;
+    let document_id = command.document_id.clone();
     apply_or_preview_docs_change_unified(
         config,
         store,
@@ -992,7 +1022,206 @@ pub(super) async fn run_insert_table_unified_to<S: AccountStore>(
         state_path,
         "insert-table",
     )
-    .await
+    .await?;
+
+    if !dry_run && !no_auto_style {
+        apply_table_header_auto_style_unified_to(
+            config,
+            store,
+            account_override,
+            &document_id,
+            documents_url,
+            state_path,
+            style_cache_dir,
+        )
+        .await;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+async fn apply_table_header_auto_style_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: &str,
+    documents_url: Option<&str>,
+    style_cache_dir: Option<&Path>,
+) {
+    let outcome: Result<()> = async {
+        let Some(table_style) = load_cached_style_template(document_id, style_cache_dir)
+            .and_then(|template| template.table)
+        else {
+            return Ok(());
+        };
+        let document_map = get_document_map(client, document_id.to_string(), documents_url).await?;
+        let Some(requests) = table_header_style_requests(&document_map, &table_style) else {
+            return Ok(());
+        };
+        if requests.is_empty() {
+            return Ok(());
+        }
+        let options = batch_update_document_options(
+            document_id.to_string(),
+            request_body_with_revision(requests, None),
+            documents_url,
+        );
+        batch_update_document(client, &options).await?;
+        Ok(())
+    }
+    .await;
+
+    if let Err(err) = outcome {
+        eprintln!("warning: failed to apply cached table header style to {document_id}: {err:#}");
+    }
+}
+
+async fn apply_table_header_auto_style_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: &str,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+    style_cache_dir: Option<&Path>,
+) {
+    let outcome: Result<()> = async {
+        let Some(table_style) = load_cached_style_template(document_id, style_cache_dir)
+            .and_then(|template| template.table)
+        else {
+            return Ok(());
+        };
+        let document_map = get_document_map_unified(
+            config,
+            store,
+            account_override,
+            document_id.to_string(),
+            documents_url,
+            state_path,
+        )
+        .await?;
+        let Some(requests) = table_header_style_requests(&document_map, &table_style) else {
+            return Ok(());
+        };
+        if requests.is_empty() {
+            return Ok(());
+        }
+        let options = batch_update_document_options(
+            document_id.to_string(),
+            request_body_with_revision(requests, None),
+            documents_url,
+        );
+        let resource_key = resource_key("docs", document_id);
+        run_with_docs_unified_access(
+            config,
+            store,
+            account_override,
+            &resource_key,
+            DocsAccessAttempt::BatchUpdate(&options),
+            state_path,
+        )
+        .await?;
+        Ok(())
+    }
+    .await;
+
+    if let Err(err) = outcome {
+        eprintln!("warning: failed to apply cached table header style to {document_id}: {err:#}");
+    }
+}
+
+fn table_header_style_requests(
+    document_map: &DocumentMap,
+    table_style: &crate::docs::style_template::TableStyleTemplate,
+) -> Option<Vec<serde_json::Value>> {
+    let table_entry = document_map
+        .entries
+        .iter()
+        .rev()
+        .find(|entry| entry.kind == DocumentMapEntryKind::Table)?;
+    let table_start_index = table_entry.location.index?;
+    let header_row = table_entry.table_cells.first()?;
+    if header_row.is_empty() {
+        return None;
+    }
+
+    let mut requests = Vec::new();
+
+    if let Some(color) = &table_style.header_row.background_color {
+        let background_color = foreground_color_payload(color).ok()?;
+        for column_index in 0..header_row.len() {
+            requests.push(serde_json::json!({
+                "updateTableCellStyle": {
+                    "tableCellStyle": { "backgroundColor": background_color },
+                    "tableRange": {
+                        "tableCellLocation": {
+                            "tableStartLocation": { "index": table_start_index },
+                            "rowIndex": 0,
+                            "columnIndex": column_index
+                        },
+                        "rowSpan": 1,
+                        "columnSpan": 1
+                    },
+                    "fields": "backgroundColor"
+                }
+            }));
+        }
+    }
+
+    if !table_style.header_row.text_style.is_empty() {
+        let (style, fields) = direct_text_style_payload(
+            table_style.header_row.text_style.bold,
+            table_style.header_row.text_style.italic,
+            table_style.header_row.text_style.font_size_pt,
+            table_style.header_row.text_style.foreground_color.as_deref(),
+        )
+        .ok()?;
+        if !fields.is_empty() {
+            for range in header_row {
+                if range.end_index > range.start_index {
+                    requests.push(serde_json::json!({
+                        "updateTextStyle": {
+                            "range": docs_range(range),
+                            "textStyle": style,
+                            "fields": fields.join(",")
+                        }
+                    }));
+                }
+            }
+        }
+    }
+
+    Some(requests)
+}
+
+fn direct_text_style_payload(
+    bold: Option<bool>,
+    italic: Option<bool>,
+    font_size: Option<f64>,
+    foreground_color: Option<&str>,
+) -> Result<(serde_json::Value, Vec<String>)> {
+    let mut style = serde_json::Map::new();
+    let mut fields = Vec::new();
+
+    if let Some(bold) = bold {
+        style.insert("bold".into(), serde_json::Value::Bool(bold));
+        fields.push("bold".to_string());
+    }
+    if let Some(italic) = italic {
+        style.insert("italic".into(), serde_json::Value::Bool(italic));
+        fields.push("italic".to_string());
+    }
+    if let Some(font_size) = font_size {
+        style.insert(
+            "fontSize".into(),
+            serde_json::json!({ "magnitude": font_size, "unit": "PT" }),
+        );
+        fields.push("fontSize".to_string());
+    }
+    if let Some(color) = foreground_color {
+        style.insert("foregroundColor".into(), foreground_color_payload(color)?);
+        fields.push("foregroundColor".to_string());
+    }
+
+    Ok((serde_json::Value::Object(style), fields))
 }
 
 #[cfg(test)]
@@ -1058,9 +1287,15 @@ pub(super) async fn run_apply_styles_to<S: AccountStore>(
     command: ApplyStylesCommand,
     out: &mut impl Write,
     documents_url: Option<&str>,
+    style_cache_dir: Option<&Path>,
 ) -> Result<()> {
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
-    let change = prepare_apply_styles_change(&document_map, &command)?;
+    let style_template = if command.no_auto_style {
+        None
+    } else {
+        load_cached_style_template(&command.document_id, style_cache_dir)
+    };
+    let change = prepare_apply_styles_change(&document_map, &command, style_template.as_ref())?;
     apply_or_preview_docs_change(
         client,
         command.document_id,
@@ -1082,6 +1317,7 @@ pub(super) async fn run_apply_styles_unified_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
     state_path: Option<&Path>,
+    style_cache_dir: Option<&Path>,
 ) -> Result<()> {
     let document_map = get_document_map_unified(
         config,
@@ -1092,7 +1328,12 @@ pub(super) async fn run_apply_styles_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
-    let change = prepare_apply_styles_change(&document_map, &command)?;
+    let style_template = if command.no_auto_style {
+        None
+    } else {
+        load_cached_style_template(&command.document_id, style_cache_dir)
+    };
+    let change = prepare_apply_styles_change(&document_map, &command, style_template.as_ref())?;
     apply_or_preview_docs_change_unified(
         config,
         store,
@@ -1115,9 +1356,15 @@ pub(super) async fn run_apply_list_to<S: AccountStore>(
     command: ApplyListCommand,
     out: &mut impl Write,
     documents_url: Option<&str>,
+    style_cache_dir: Option<&Path>,
 ) -> Result<()> {
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
-    let change = prepare_apply_list_change(&document_map, &command)?;
+    let style_template = if command.no_auto_style {
+        None
+    } else {
+        load_cached_style_template(&command.document_id, style_cache_dir)
+    };
+    let change = prepare_apply_list_change(&document_map, &command, style_template.as_ref())?;
     apply_or_preview_docs_change(
         client,
         command.document_id,
@@ -1139,6 +1386,7 @@ pub(super) async fn run_apply_list_unified_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
     state_path: Option<&Path>,
+    style_cache_dir: Option<&Path>,
 ) -> Result<()> {
     let document_map = get_document_map_unified(
         config,
@@ -1149,7 +1397,12 @@ pub(super) async fn run_apply_list_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
-    let change = prepare_apply_list_change(&document_map, &command)?;
+    let style_template = if command.no_auto_style {
+        None
+    } else {
+        load_cached_style_template(&command.document_id, style_cache_dir)
+    };
+    let change = prepare_apply_list_change(&document_map, &command, style_template.as_ref())?;
     apply_or_preview_docs_change_unified(
         config,
         store,
@@ -1174,12 +1427,15 @@ pub(super) async fn run_get_to<S: AccountStore>(
     include_tabs_content: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
+    style_cache_dir: Option<&Path>,
 ) -> Result<()> {
-    let options = get_document_options(document_id, fields, include_tabs_content, documents_url);
+    let options =
+        get_document_options(document_id.clone(), fields, include_tabs_content, documents_url);
 
     let document = get_document(client, &options)
         .await
         .context("failed to fetch Google Docs Document")?;
+    refresh_style_template_cache(&document_id, &document, style_cache_dir);
     write_json_line(out, &document, "failed to serialize Docs Document")
 }
 
@@ -1193,6 +1449,7 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
     state_path: Option<&Path>,
+    style_cache_dir: Option<&Path>,
 ) -> Result<()> {
     let options = get_document_options(
         document_id.clone(),
@@ -1212,6 +1469,7 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
     .await
     .context("failed to fetch Google Docs Document")?;
 
+    refresh_style_template_cache(&document_id, &document, style_cache_dir);
     write_json_line(out, &document, "failed to serialize Docs Document")
 }
 
@@ -2104,28 +2362,46 @@ fn edit_table_requests(
 fn prepare_apply_styles_change(
     document_map: &DocumentMap,
     command: &ApplyStylesCommand,
+    style_template: Option<&StyleTemplate>,
 ) -> Result<DocsHighLevelChange> {
     let range = resolve_range_selector(document_map, &command.selector)?;
     let raw_payload = raw_style_payload(command.style_json.as_deref())?;
-    let (text_style, fields) = text_style_payload(command, raw_payload.text_style)?;
-    let (paragraph_style, paragraph_fields) =
-        paragraph_style_payload(command.heading.as_deref(), raw_payload.paragraph_style)?;
+
+    let has_heading = command.heading.is_some();
+    let cached_named_style = command.heading.as_ref().and_then(|heading| {
+        style_template
+            .and_then(|template| template.named_styles.get(heading))
+    });
+    let cached_text_style = cached_named_style.map(|named| &named.text_style);
+    let cached_paragraph_style = cached_named_style.and_then(|named| named.paragraph_style.clone());
+
+    let (text_style, fields) = text_style_payload(
+        command,
+        raw_payload.text_style,
+        has_heading,
+        cached_text_style,
+    )?;
+    let (paragraph_style, paragraph_fields) = paragraph_style_payload(
+        command.heading.as_deref(),
+        raw_payload.paragraph_style,
+        cached_paragraph_style,
+    )?;
     let mut requests = Vec::new();
-    if !fields.is_empty() {
-        requests.push(serde_json::json!({
-            "updateTextStyle": {
-                "range": docs_range(&range),
-                "textStyle": text_style,
-                "fields": fields.join(",")
-            }
-        }));
-    }
     if !paragraph_fields.is_empty() {
         requests.push(serde_json::json!({
             "updateParagraphStyle": {
                 "range": docs_range(&range),
                 "paragraphStyle": paragraph_style,
                 "fields": paragraph_fields.join(",")
+            }
+        }));
+    }
+    if !fields.is_empty() {
+        requests.push(serde_json::json!({
+            "updateTextStyle": {
+                "range": docs_range(&range),
+                "textStyle": text_style,
+                "fields": fields.join(",")
             }
         }));
     }
@@ -2152,6 +2428,7 @@ fn prepare_apply_styles_change(
 fn prepare_apply_list_change(
     document_map: &DocumentMap,
     command: &ApplyListCommand,
+    style_template: Option<&StyleTemplate>,
 ) -> Result<DocsHighLevelChange> {
     if command.list_type.is_some() && command.preset.is_some() {
         bail!("apply-list accepts either --type or --preset, not both");
@@ -2160,7 +2437,14 @@ fn prepare_apply_list_change(
         .preset
         .clone()
         .or_else(|| command.list_type.map(list_type_preset).map(str::to_string))
-        .context("apply-list requires --type or --preset")?;
+        .or_else(|| {
+            style_template
+                .and_then(|template| template.list.as_ref())
+                .map(|list| list.preset.clone())
+        })
+        .context(
+            "apply-list requires --type or --preset, and no cached style template was found for this document",
+        )?;
     let range = resolve_range_selector(document_map, &command.selector)?;
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
@@ -2512,22 +2796,43 @@ fn expect_json_object(value: serde_json::Value, label: &str) -> Result<StyleObje
 fn text_style_payload(
     command: &ApplyStylesCommand,
     raw_text_style: Option<StyleObject>,
+    has_heading: bool,
+    cached_text_style: Option<&crate::docs::style_template::TextStyleTemplate>,
 ) -> Result<(serde_json::Value, Vec<String>)> {
     let mut payload = StylePayloadParts::from_raw(raw_text_style);
     if command.bold {
         payload.set_field("bold", serde_json::Value::Bool(true));
+    } else if has_heading && !payload.contains_field("bold") {
+        if let Some(bold) = cached_text_style.and_then(|style| style.bold) {
+            payload.set_field("bold", serde_json::Value::Bool(bold));
+        }
     }
     if command.italic {
         payload.set_field("italic", serde_json::Value::Bool(true));
+    } else if has_heading && !payload.contains_field("italic") {
+        if let Some(italic) = cached_text_style.and_then(|style| style.italic) {
+            payload.set_field("italic", serde_json::Value::Bool(italic));
+        }
     }
     if let Some(font_size) = command.font_size {
         payload.set_field(
             "fontSize",
             serde_json::json!({ "magnitude": font_size, "unit": "PT" }),
         );
+    } else if has_heading && !payload.contains_field("fontSize") {
+        if let Some(font_size) = cached_text_style.and_then(|style| style.font_size_pt) {
+            payload.set_field(
+                "fontSize",
+                serde_json::json!({ "magnitude": font_size, "unit": "PT" }),
+            );
+        }
     }
     if let Some(color) = &command.foreground_color {
         payload.set_field("foregroundColor", foreground_color_payload(color)?);
+    } else if has_heading && !payload.contains_field("foregroundColor") {
+        if let Some(color) = cached_text_style.and_then(|style| style.foreground_color.as_deref()) {
+            payload.set_field("foregroundColor", foreground_color_payload(color)?);
+        }
     }
     Ok(payload.into_json_parts())
 }
@@ -2535,10 +2840,14 @@ fn text_style_payload(
 fn paragraph_style_payload(
     heading: Option<&str>,
     raw_paragraph_style: Option<StyleObject>,
+    cached_paragraph_style: Option<serde_json::Value>,
 ) -> Result<(serde_json::Value, Vec<String>)> {
-    let mut payload = StylePayloadParts::from_raw(raw_paragraph_style);
+    let base_paragraph_style = cached_paragraph_style
+        .map(|value| expect_json_object(value, "cached paragraph style"))
+        .transpose()?;
+    let mut payload = StylePayloadParts::from_base_and_raw(base_paragraph_style, raw_paragraph_style);
     if let Some(heading) = heading {
-        payload.set_field("namedStyleType", serde_json::Value::String(heading.into()));
+        payload.set_field_first("namedStyleType", serde_json::Value::String(heading.into()));
     }
     Ok(payload.into_json_parts())
 }
@@ -2550,8 +2859,20 @@ struct StylePayloadParts {
 
 impl StylePayloadParts {
     fn from_raw(raw_style: Option<StyleObject>) -> Self {
-        let style = raw_style.unwrap_or_default();
-        let fields = style.keys().cloned().collect::<Vec<_>>();
+        Self::from_base_and_raw(None, raw_style)
+    }
+
+    fn from_base_and_raw(base_style: Option<StyleObject>, raw_style: Option<StyleObject>) -> Self {
+        let mut style = base_style.unwrap_or_default();
+        let mut fields = style.keys().cloned().collect::<Vec<_>>();
+        if let Some(raw_style) = raw_style {
+            for (key, value) in raw_style {
+                style.insert(key.clone(), value);
+                if !fields.iter().any(|existing| existing == &key) {
+                    fields.push(key);
+                }
+            }
+        }
         Self { style, fields }
     }
 
@@ -2560,6 +2881,16 @@ impl StylePayloadParts {
         if !self.fields.iter().any(|existing| existing == field) {
             self.fields.push(field.to_string());
         }
+    }
+
+    fn contains_field(&self, field: &str) -> bool {
+        self.style.contains_key(field)
+    }
+
+    fn set_field_first(&mut self, field: &str, value: serde_json::Value) {
+        self.style.insert(field.into(), value);
+        self.fields.retain(|existing| existing != field);
+        self.fields.insert(0, field.to_string());
     }
 
     fn into_json_parts(self) -> (serde_json::Value, Vec<String>) {
@@ -2765,11 +3096,9 @@ async fn apply_or_preview_docs_change<S: AccountStore>(
     if dry_run {
         write_docs_change_preview(out, &change, json)
     } else {
-        let options =
-            batch_update_document_options(document_id, change.request_body, documents_url);
-        let response = batch_update_document(client, &options)
-            .await
-            .with_context(|| format!("failed to apply Google Docs {command_name}"))?;
+        let response =
+            apply_docs_change_requests(client, document_id, change, documents_url, command_name)
+                .await?;
         write_json_line(
             out,
             &response,
@@ -2794,19 +3123,17 @@ async fn apply_or_preview_docs_change_unified<S: AccountStore>(
     if dry_run {
         write_docs_change_preview(out, &change, json)
     } else {
-        let options =
-            batch_update_document_options(document_id.clone(), change.request_body, documents_url);
-        let resource_key = resource_key("docs", &document_id);
-        let response = run_with_docs_unified_access(
+        let response = apply_docs_change_requests_unified(
             config,
             store,
             account_override,
-            &resource_key,
-            DocsAccessAttempt::BatchUpdate(&options),
+            document_id,
+            change,
+            documents_url,
             state_path,
+            command_name,
         )
-        .await
-        .with_context(|| format!("failed to apply Google Docs {command_name}"))?;
+        .await?;
         write_json_line(
             out,
             &response,
@@ -2839,6 +3166,117 @@ fn write_docs_change_preview(
     }
 }
 
+#[cfg(test)]
+async fn apply_docs_change_requests<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    change: DocsHighLevelChange,
+    documents_url: Option<&str>,
+    command_name: &str,
+) -> Result<serde_json::Value> {
+    let mut required_revision_id = request_body_required_revision_id(&change.request_body);
+    let request_bodies = split_docs_request_bodies(&change.request_body, command_name);
+    let mut final_response = serde_json::Value::Null;
+
+    for mut request_body in request_bodies.into_iter() {
+        set_request_body_required_revision_id(&mut request_body, required_revision_id.as_deref());
+        let options = batch_update_document_options(document_id.clone(), request_body, documents_url);
+        let response = batch_update_document(client, &options)
+            .await
+            .with_context(|| format!("failed to apply Google Docs {command_name}"))?;
+        required_revision_id = request_body_required_revision_id(&response);
+        final_response = response;
+    }
+
+    Ok(final_response)
+}
+
+async fn apply_docs_change_requests_unified<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    change: DocsHighLevelChange,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+    command_name: &str,
+) -> Result<serde_json::Value> {
+    let resource_key = resource_key("docs", &document_id);
+    let mut required_revision_id = request_body_required_revision_id(&change.request_body);
+    let request_bodies = split_docs_request_bodies(&change.request_body, command_name);
+    let mut final_response = serde_json::Value::Null;
+
+    for mut request_body in request_bodies.into_iter() {
+        set_request_body_required_revision_id(&mut request_body, required_revision_id.as_deref());
+        let options =
+            batch_update_document_options(document_id.clone(), request_body, documents_url);
+        let response = run_with_docs_unified_access(
+            config,
+            store,
+            account_override,
+            &resource_key,
+            DocsAccessAttempt::BatchUpdate(&options),
+            state_path,
+        )
+        .await
+        .with_context(|| format!("failed to apply Google Docs {command_name}"))?;
+        required_revision_id = request_body_required_revision_id(&response);
+        final_response = response;
+    }
+
+    Ok(final_response)
+}
+
+fn split_docs_request_bodies(
+    request_body: &serde_json::Value,
+    command_name: &str,
+) -> Vec<serde_json::Value> {
+    if command_name != "apply-styles" {
+        return vec![request_body.clone()];
+    }
+
+    let Some(requests) = request_body.get("requests").and_then(serde_json::Value::as_array) else {
+        return vec![request_body.clone()];
+    };
+    if requests.len() <= 1 {
+        return vec![request_body.clone()];
+    }
+
+    requests
+        .iter()
+        .map(|request| serde_json::json!({ "requests": [request.clone()] }))
+        .collect()
+}
+
+fn request_body_required_revision_id(request_body: &serde_json::Value) -> Option<String> {
+    request_body
+        .get("writeControl")
+        .and_then(|write_control| write_control.get("requiredRevisionId"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+}
+
+fn set_request_body_required_revision_id(
+    request_body: &mut serde_json::Value,
+    required_revision_id: Option<&str>,
+) {
+    let Some(object) = request_body.as_object_mut() else {
+        return;
+    };
+
+    match required_revision_id {
+        Some(required_revision_id) => {
+            object.insert(
+                "writeControl".into(),
+                serde_json::json!({ "requiredRevisionId": required_revision_id }),
+            );
+        }
+        None => {
+            object.remove("writeControl");
+        }
+    }
+}
+
 fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -> Result<()> {
     writeln!(
         out,
@@ -2868,6 +3306,98 @@ fn write_replace_text_preview(out: &mut impl Write, dry_run: &ReplaceTextDryRun)
             .context("failed to write Docs replace-text before preview")?;
         writeln!(out, "After: {}", change.after)
             .context("failed to write Docs replace-text after preview")?;
+    }
+    Ok(())
+}
+
+/// Refreshes the on-disk style template cache for a document after a
+/// successful `docs get`. This is a side effect only: failures are logged to
+/// stderr and never cause the `get` command itself to fail.
+fn refresh_style_template_cache(
+    document_id: &str,
+    document: &serde_json::Value,
+    style_cache_dir: Option<&Path>,
+) {
+    let Some(template) = extract_style_template(document_id, document) else {
+        return;
+    };
+    if let Err(err) = save_style_template_in(style_cache_dir, &template) {
+        eprintln!("warning: failed to update cached style template for {document_id}: {err}");
+    }
+}
+
+fn load_cached_style_template(
+    document_id: &str,
+    style_cache_dir: Option<&Path>,
+) -> Option<StyleTemplate> {
+    load_style_template_in(style_cache_dir, document_id).ok().flatten()
+}
+
+pub(super) fn run_show_style_template(
+    document_id: &str,
+    json: bool,
+    out: &mut impl Write,
+    style_cache_dir: Option<&Path>,
+) -> Result<()> {
+    match load_style_template_in(style_cache_dir, document_id)
+        .context("failed to read cached style template")?
+    {
+        Some(template) => {
+            if json {
+                write_json_line(out, &template, "failed to serialize cached style template")
+            } else {
+                write_style_template_summary(out, &template)
+            }
+        }
+        None => {
+            writeln!(
+                out,
+                "no cached style template for this document; run `docs get {document_id}` first"
+            )
+            .context("failed to write missing style template message")?;
+            Ok(())
+        }
+    }
+}
+
+fn write_style_template_summary(out: &mut impl Write, template: &StyleTemplate) -> Result<()> {
+    writeln!(out, "Style template for {}", template.document_id)
+        .context("failed to write style template header")?;
+    if let Some(revision_id) = &template.source_revision_id {
+        writeln!(out, "Source revision: {revision_id}")
+            .context("failed to write style template revision")?;
+    }
+    let mut named_style_types: Vec<&String> = template.named_styles.keys().collect();
+    named_style_types.sort();
+    for style_type in named_style_types {
+        let named_style = &template.named_styles[style_type];
+        writeln!(
+            out,
+            "{style_type}: bold={:?} italic={:?} fontSize={:?} color={:?}",
+            named_style.text_style.bold,
+            named_style.text_style.italic,
+            named_style.text_style.font_size_pt,
+            named_style.text_style.foreground_color
+        )
+        .context("failed to write named style summary")?;
+    }
+    if let Some(table) = &template.table {
+        writeln!(
+            out,
+            "table header: background={:?} bold={:?} italic={:?}",
+            table.header_row.background_color,
+            table.header_row.text_style.bold,
+            table.header_row.text_style.italic
+        )
+        .context("failed to write table style summary")?;
+    }
+    if let Some(list) = &template.list {
+        writeln!(
+            out,
+            "list: type={:?} preset={}",
+            list.list_type, list.preset
+        )
+        .context("failed to write list style summary")?;
     }
     Ok(())
 }

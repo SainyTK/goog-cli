@@ -412,7 +412,7 @@ fn parse_table_of_contents_hint(text: &str) -> Option<TableOfContentsPageHint> {
     Some(TableOfContentsPageHint { heading, page })
 }
 
-fn document_content(document: &Value) -> impl Iterator<Item = &Value> {
+pub(crate) fn document_content(document: &Value) -> impl Iterator<Item = &Value> {
     document
         .get("body")
         .and_then(|body| body.get("content"))
@@ -429,7 +429,7 @@ fn document_content(document: &Value) -> impl Iterator<Item = &Value> {
         )
 }
 
-fn tab_content(tab: &Value) -> impl Iterator<Item = &Value> {
+pub(crate) fn tab_content(tab: &Value) -> impl Iterator<Item = &Value> {
     tab.get("documentTab")
         .and_then(|document_tab| document_tab.get("body"))
         .and_then(|body| body.get("content"))
