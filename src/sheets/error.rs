@@ -9,7 +9,7 @@ pub enum SheetsError {
     PermissionDenied,
 
     #[error(
-        "Google Sheets cannot read Office spreadsheets; convert to a native Google Sheets Spreadsheet and retry"
+        "Editing Excel-format files (.xlsx) via the Sheets API is not supported by Google; convert this file to a native Google Sheet (Drive UI: File > Save as Google Sheets), or edit it locally and re-upload"
     )]
     UnsupportedOfficeFile,
 

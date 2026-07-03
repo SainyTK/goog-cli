@@ -423,6 +423,52 @@ async fn download_streams_binary_response_to_explicit_output_path() {
 }
 
 #[tokio::test]
+async fn download_requests_supports_all_drives_for_shared_drive_files() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/shared-file-1"))
+        .and(query_param("alt", "media"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"shared".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("shared.bin");
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DownloadFileOptions::new("shared-file-1")
+        .with_output(output.clone())
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    download(&client, &options, |_| {}).await.unwrap();
+
+    assert_eq!(std::fs::read(output).unwrap(), b"shared");
+}
+
+#[tokio::test]
+async fn list_files_requests_items_from_all_drives() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(query_param("includeItemsFromAllDrives", "true"))
+        .and(query_param("corpora", "allDrives"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ListFilesOptions::new(50).with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    list_files(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
 async fn download_uses_drive_file_name_in_current_directory_by_default() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

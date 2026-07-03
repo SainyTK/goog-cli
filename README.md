@@ -120,6 +120,12 @@ goog sheets values update SPREADSHEET_ID 'Sheet1!A1' --values ./value-range.json
 goog sheets values append SPREADSHEET_ID 'Sheet1!A:D' --values ./rows.json
 ```
 
+#### Limitation: Excel-format (.xlsx) files in Drive
+
+Sheets commands can read an Excel-format spreadsheet stored in Drive (`goog sheets get`, `values get`, `values batch-get`) -- `goog` transparently converts a temporary copy to read it.
+
+Writing to an Excel-format spreadsheet is not supported (`values update`, `values batch-update`, `values append`, `batch-update`). This is a Google Sheets API restriction, not a `goog` gap: the Sheets API cannot write to `.xlsx` files at all. Convert the file to a native Google Sheet first (Drive UI: File > Save as Google Sheets) to edit it with `goog`.
+
 ### GoogleMail
 
 ```sh
