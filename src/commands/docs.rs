@@ -317,6 +317,7 @@ pub fn run<S: AccountStore>(
             font_size,
             foreground_color,
             heading,
+            style_json,
             dry_run,
             json,
             required_revision_id,
@@ -337,6 +338,7 @@ pub fn run<S: AccountStore>(
                     font_size,
                     foreground_color,
                     heading,
+                    style_json,
                     dry_run,
                     json,
                     required_revision_id,
@@ -537,6 +539,7 @@ pub(super) struct ApplyStylesCommand {
     pub font_size: Option<f64>,
     pub foreground_color: Option<String>,
     pub heading: Option<String>,
+    pub style_json: Option<String>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -1966,7 +1969,10 @@ fn prepare_apply_styles_change(
     command: &ApplyStylesCommand,
 ) -> Result<DocsHighLevelChange> {
     let range = resolve_range_selector(document_map, &command.selector)?;
-    let (text_style, fields) = text_style_payload(command)?;
+    let raw_payload = raw_style_payload(command.style_json.as_deref())?;
+    let (text_style, fields) = text_style_payload(command, raw_payload.text_style)?;
+    let (paragraph_style, paragraph_fields) =
+        paragraph_style_payload(command.heading.as_deref(), raw_payload.paragraph_style)?;
     let mut requests = Vec::new();
     if !fields.is_empty() {
         requests.push(serde_json::json!({
@@ -1977,12 +1983,12 @@ fn prepare_apply_styles_change(
             }
         }));
     }
-    if let Some(heading) = &command.heading {
+    if !paragraph_fields.is_empty() {
         requests.push(serde_json::json!({
             "updateParagraphStyle": {
                 "range": docs_range(&range),
-                "paragraphStyle": { "namedStyleType": heading },
-                "fields": "namedStyleType"
+                "paragraphStyle": paragraph_style,
+                "fields": paragraph_fields.join(",")
             }
         }));
     }
@@ -2316,31 +2322,105 @@ fn docs_range(range: &DocumentRange) -> serde_json::Value {
     })
 }
 
+#[derive(Debug, Default)]
+struct RawStylePayload {
+    text_style: Option<serde_json::Map<String, serde_json::Value>>,
+    paragraph_style: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+fn raw_style_payload(style_json: Option<&str>) -> Result<RawStylePayload> {
+    let Some(style_json) = style_json else {
+        return Ok(RawStylePayload::default());
+    };
+    let value: serde_json::Value = serde_json::from_str(style_json)
+        .context("failed to parse --style-json as Google Docs style JSON")?;
+    let mut object = expect_json_object(value, "--style-json")?;
+    let text_style = object
+        .remove("textStyle")
+        .map(|value| expect_json_object(value, "--style-json textStyle"))
+        .transpose()?;
+    let paragraph_style = object
+        .remove("paragraphStyle")
+        .map(|value| expect_json_object(value, "--style-json paragraphStyle"))
+        .transpose()?;
+
+    if text_style.is_some() || paragraph_style.is_some() {
+        if !object.is_empty() {
+            let unknown_fields = object.keys().cloned().collect::<Vec<_>>().join(", ");
+            bail!(
+                "--style-json with textStyle or paragraphStyle cannot include unknown top-level fields: {unknown_fields}"
+            );
+        }
+        return Ok(RawStylePayload {
+            text_style,
+            paragraph_style,
+        });
+    }
+
+    Ok(RawStylePayload {
+        text_style: Some(object),
+        paragraph_style: None,
+    })
+}
+
+fn expect_json_object(
+    value: serde_json::Value,
+    label: &str,
+) -> Result<serde_json::Map<String, serde_json::Value>> {
+    match value {
+        serde_json::Value::Object(object) => Ok(object),
+        _ => bail!("{label} must be a JSON object"),
+    }
+}
+
 fn text_style_payload(
     command: &ApplyStylesCommand,
-) -> Result<(serde_json::Value, Vec<&'static str>)> {
-    let mut style = serde_json::Map::new();
-    let mut fields = Vec::new();
+    raw_text_style: Option<serde_json::Map<String, serde_json::Value>>,
+) -> Result<(serde_json::Value, Vec<String>)> {
+    let mut style = raw_text_style.unwrap_or_default();
+    let mut fields = style.keys().cloned().collect::<Vec<_>>();
     if command.bold {
         style.insert("bold".into(), serde_json::Value::Bool(true));
-        fields.push("bold");
+        push_field(&mut fields, "bold");
     }
     if command.italic {
         style.insert("italic".into(), serde_json::Value::Bool(true));
-        fields.push("italic");
+        push_field(&mut fields, "italic");
     }
     if let Some(font_size) = command.font_size {
         style.insert(
             "fontSize".into(),
             serde_json::json!({ "magnitude": font_size, "unit": "PT" }),
         );
-        fields.push("fontSize");
+        push_field(&mut fields, "fontSize");
     }
     if let Some(color) = &command.foreground_color {
         style.insert("foregroundColor".into(), foreground_color_payload(color)?);
-        fields.push("foregroundColor");
+        push_field(&mut fields, "foregroundColor");
     }
     Ok((serde_json::Value::Object(style), fields))
+}
+
+fn paragraph_style_payload(
+    heading: Option<&str>,
+    raw_paragraph_style: Option<serde_json::Map<String, serde_json::Value>>,
+) -> Result<(serde_json::Value, Vec<String>)> {
+    let mut style = raw_paragraph_style.unwrap_or_default();
+    let mut fields = style.keys().cloned().collect::<Vec<_>>();
+    if let Some(heading) = heading {
+        style.insert(
+            "namedStyleType".into(),
+            serde_json::Value::String(heading.into()),
+        );
+        push_field(&mut fields, "namedStyleType");
+    }
+    Ok((serde_json::Value::Object(style), fields))
+}
+
+fn push_field(fields: &mut Vec<String>, field: &str) {
+    if !fields.iter().any(|existing| existing == field) {
+        fields.push(field.to_string());
+    }
 }
 
 fn foreground_color_payload(color: &str) -> Result<serde_json::Value> {

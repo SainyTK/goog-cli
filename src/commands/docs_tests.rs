@@ -1166,6 +1166,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             font_size: Some(14.0),
             foreground_color: Some("#336699".into()),
             heading: Some("HEADING_2".into()),
+            style_json: None,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -1194,7 +1195,15 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     let mut list = Vec::new();
     run_apply_list_to(
         &client,
-        dry_run_apply_list_command(RangeSelector::Entry(2), DocsListType::Checkbox),
+        ApplyListCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Entry(2),
+            list_type: Some(crate::cli::DocsListType::Checkbox),
+            preset: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
         &mut list,
         Some(&documents_url),
     )
@@ -1406,6 +1415,171 @@ async fn run_apply_list_posts_mutation_request_body() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"documentId\":\"document-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_apply_styles_to(
+        &client,
+        ApplyStylesCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::IndexRange {
+                start_index: 17,
+                end_index: 30,
+            },
+            bold: false,
+            italic: false,
+            font_size: None,
+            foreground_color: None,
+            heading: None,
+            style_json: Some(
+                serde_json::json!({
+                    "textStyle": {
+                        "underline": true,
+                        "weightedFontFamily": {
+                            "fontFamily": "Roboto",
+                            "weight": 700
+                        }
+                    },
+                    "paragraphStyle": {
+                        "alignment": "CENTER"
+                    }
+                })
+                .to_string(),
+            ),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["updateTextStyle"]["textStyle"]["underline"],
+        true
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["updateTextStyle"]["textStyle"]["weightedFontFamily"]
+            ["fontFamily"],
+        "Roboto"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["updateTextStyle"]["fields"],
+        "underline,weightedFontFamily"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["updateParagraphStyle"]["paragraphStyle"]["alignment"],
+        "CENTER"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["updateParagraphStyle"]["fields"],
+        "alignment"
+    );
+}
+
+#[tokio::test]
+async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updateTextStyle": {
+                        "range": {
+                            "startIndex": 17,
+                            "endIndex": 30
+                        },
+                        "textStyle": {
+                            "strikethrough": true,
+                            "bold": true
+                        },
+                        "fields": "strikethrough,bold"
+                    }
+                },
+                {
+                    "updateParagraphStyle": {
+                        "range": {
+                            "startIndex": 17,
+                            "endIndex": 30
+                        },
+                        "paragraphStyle": {
+                            "namedStyleType": "HEADING_1"
+                        },
+                        "fields": "namedStyleType"
+                    }
+                }
+            ],
+            "writeControl": {
+                "requiredRevisionId": "rev-search"
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}, {}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_apply_styles_to(
+        &client,
+        ApplyStylesCommand {
+            document_id: "document-123".into(),
+            selector: RangeSelector::Text {
+                text: "matching text".into(),
+                match_number: None,
+            },
+            bold: true,
+            italic: false,
+            font_size: None,
+            foreground_color: None,
+            heading: Some("HEADING_1".into()),
+            style_json: Some(r#"{"textStyle":{"strikethrough":true}}"#.into()),
+            dry_run: false,
+            json: false,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"documentId\":\"document-123\",\"replies\":[{},{}]}\n"
     );
 }
 

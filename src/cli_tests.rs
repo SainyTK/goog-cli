@@ -788,6 +788,37 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
+            DocsCommand::ApplyStyles {
+                style_json,
+                from_index,
+                to_index,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "apply-styles",
+        "document-123",
+        "--from-index",
+        "1",
+        "--to-index",
+        "9",
+        "--style-json",
+        r#"{"textStyle":{"underline":true}}"#,
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(from_index, Some(1));
+    assert_eq!(to_index, Some(9));
+    assert_eq!(
+        style_json.as_deref(),
+        Some(r#"{"textStyle":{"underline":true}}"#)
+    );
+
+    let Command::Docs {
+        command:
             DocsCommand::EditTable {
                 table_id,
                 data,

@@ -1,0 +1,59 @@
+Issue 38 E2E evidence, redacted
+Result: PARTIAL
+
+Test setup:
+- Accounts used: [active-account-redacted].
+- Fixture used: one existing Google Docs file for read-only/dry-run attempts; document ID, name, and contents redacted.
+- Skipped fixture: non-dry-run mutation skipped because this CLI has no `docs create` command and `drive upload` does not expose Google Docs conversion, so this run could not create a scratch `goog-e2e-` Google Doc. Per docs/agents/e2e-testing.md, mutating commands were not run against an existing document.
+
+Local checks:
+$ cargo test run_apply_styles -- --nocapture
+Expected: mocked Docs command tests pass for apply-styles shorthand, raw Style Payload preservation, JSON dry-run request bodies, revision guards, and mutation request construction.
+Observed: 3 apply-styles tests passed.
+Result: PASS.
+
+$ cargo test run_apply_list -- --nocapture
+Expected: adjacent apply-list tests still pass after syncing this stale issue branch with develop and resolving conflicts.
+Observed: 3 apply-list tests passed.
+Result: PASS.
+
+$ ./target/debug/goog docs apply-styles --help
+Expected: apply-styles help exposes Document Range selectors, shorthand style flags, raw Style Payload input, dry-run, JSON, and revision guard options.
+Observed redacted result: help printed for `goog docs apply-styles [OPTIONS] <DOCUMENT_ID>` with `--from-index`, `--to-index`, `--entry`, `--page`, `--line`, `--text`, `--match`, `--bold`, `--italic`, `--font-size`, `--foreground-color`, `--heading`, `--style-json`, `--dry-run`, `--json`, and `--required-revision-id`.
+Result: PASS.
+
+$ npm run typecheck
+Expected: Rust typecheck passes after the apply-styles changes.
+Observed: `cargo check` completed successfully.
+Result: PASS.
+
+$ npm run test
+Expected: full repo test suite passes, including existing raw `docs get` and `docs batch-update` behavior.
+Observed: 348 lib tests, 6 distribution artifact tests, and 0 doctests passed.
+Result: PASS.
+
+Live checks:
+$ goog --help
+Expected: the installed `goog` command is available on PATH.
+Observed: `goog` is not installed on PATH in this sandbox.
+Result: PARTIAL.
+
+$ ./target/debug/goog auth list
+Expected: confirm at least one already-connected Google account exists for live verification.
+Observed redacted result: 4 account rows printed; one row was active. Email addresses redacted.
+Result: PASS.
+
+$ ./target/debug/goog drive ls --json --all | jq -r 'select(.mimeType=="application/vnd.google-apps.document") | [.id,.name] | @tsv' | head -3
+Expected: find whether a Google Docs file exists for read-only dry-run attempts.
+Observed redacted result: 3 Google Docs rows printed after Drive listed 47 items. File names and non-scratch document IDs redacted.
+Result: PASS.
+
+$ timeout 12 ./target/debug/goog docs apply-styles [existing-doc-id-redacted] --from-index 1 --to-index 2 --bold --style-json '{"textStyle":{"underline":true}}' --dry-run --json
+Expected: fetch the document and emit a dry-run JSON body containing the resolved Document Range and native updateTextStyle request without mutating the document.
+Observed redacted result: command timed out after printing "Opening browser for additional Google consent..." and a manual OAuth URL. The OAuth URL, client ID, redirect state, and document ID are redacted.
+Result: PARTIAL.
+
+Reviewer notes:
+- Live Docs dry-run and non-dry-run mutation remain PARTIAL because unattended Docs scope acquisition could not complete and the current CLI cannot create a scratch Google Doc for safe mutation.
+- The implementation was verified locally at the command seam with mocked Google Docs APIs that assert exact native `documents.batchUpdate` request bodies for dry-run and non-dry-run apply-styles.
+- No real email addresses, document contents, document names, OAuth URLs, client IDs, redirect states, tokens, or secrets are included in this log.

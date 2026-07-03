@@ -457,6 +457,9 @@ pub enum DocsCommand {
         /// Named paragraph style such as HEADING_1
         #[arg(long)]
         heading: Option<String>,
+        /// Raw Google Docs style JSON with optional textStyle and paragraphStyle objects
+        #[arg(long)]
+        style_json: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
