@@ -627,10 +627,13 @@ pub enum MailCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Fetch a raw GoogleMail Message
+    /// Fetch a GoogleMail Message
     Read {
         /// GoogleMail Message ID to fetch
         message_id: String,
+        /// Emit the raw GoogleMail Message as JSON instead of Markdown
+        #[arg(long)]
+        json: bool,
     },
     /// Manage GoogleMail Attachments
     Attachment {
