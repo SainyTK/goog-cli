@@ -1774,6 +1774,26 @@ struct DocsChangePreview {
     after: Option<String>,
 }
 
+impl DocsChangePreview {
+    fn new(command: &str, summary: String) -> Self {
+        Self {
+            command: command.into(),
+            summary,
+            before: None,
+            after: None,
+        }
+    }
+
+    fn with_context(command: &str, summary: String, before: String, after: String) -> Self {
+        Self {
+            command: command.into(),
+            summary,
+            before: Some(before),
+            after: Some(after),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ResolvedInsertTextLocation {
     location: DocumentLocation,
@@ -1845,24 +1865,25 @@ fn prepare_insert_image_change(
         })],
         command.required_revision_id.as_deref(),
     );
+    let preview_after = insert_preview_text(
+        &resolved.preview_before,
+        resolved.preview_offset,
+        "[inline image]",
+    );
     Ok(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
         location: Some(resolved.location),
         range: None,
         request_body,
-        preview: DocsChangePreview {
-            command: "insert-image".into(),
-            summary: format!(
+        preview: DocsChangePreview::with_context(
+            "insert-image",
+            format!(
                 "Insert inline image at index {index} from {}",
                 command.image_uri
             ),
-            before: Some(resolved.preview_before.clone()),
-            after: Some(insert_preview_text(
-                &resolved.preview_before,
-                resolved.preview_offset,
-                "[inline image]",
-            )),
-        },
+            resolved.preview_before,
+            preview_after,
+        ),
     })
 }
 
@@ -1892,15 +1913,13 @@ fn prepare_insert_table_change(
         location: Some(resolved.location),
         range: None,
         request_body,
-        preview: DocsChangePreview {
-            command: "insert-table".into(),
-            summary: format!(
+        preview: DocsChangePreview::new(
+            "insert-table",
+            format!(
                 "Insert {}x{} table at index {index}",
                 command.rows, command.columns
             ),
-            before: None,
-            after: None,
-        },
+        ),
     })
 }
 
@@ -1938,15 +1957,13 @@ fn prepare_edit_table_change(
         location: Some(table.location.clone()),
         range: None,
         request_body,
-        preview: DocsChangePreview {
-            command: "edit-table".into(),
-            summary: format!(
+        preview: DocsChangePreview::new(
+            "edit-table",
+            format!(
                 "Replace {} with {}x{} table data",
                 command.table_id, rows, columns
             ),
-            before: None,
-            after: None,
-        },
+        ),
     })
 }
 
@@ -2010,15 +2027,13 @@ fn prepare_apply_styles_change(
         location: None,
         range: Some(range.clone()),
         request_body,
-        preview: DocsChangePreview {
-            command: "apply-styles".into(),
-            summary: format!(
+        preview: DocsChangePreview::new(
+            "apply-styles",
+            format!(
                 "Apply styles to range {}..{}",
                 range.start_index, range.end_index
             ),
-            before: None,
-            after: None,
-        },
+        ),
     })
 }
 
@@ -2049,15 +2064,13 @@ fn prepare_apply_list_change(
         location: None,
         range: Some(range.clone()),
         request_body,
-        preview: DocsChangePreview {
-            command: "apply-list".into(),
-            summary: format!(
+        preview: DocsChangePreview::new(
+            "apply-list",
+            format!(
                 "Apply list preset to range {}..{}",
                 range.start_index, range.end_index
             ),
-            before: None,
-            after: None,
-        },
+        ),
     })
 }
 
