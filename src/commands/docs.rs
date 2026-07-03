@@ -18,11 +18,12 @@ use crate::docs::{
 };
 
 pub fn run<S: AccountStore>(
-    cmd: DocsCommand,
+    mut cmd: DocsCommand,
     config: &Config,
     store: &S,
     account_override: Option<&str>,
 ) -> Result<()> {
+    cmd.normalize_document_id();
     match cmd {
         DocsCommand::Map { document_id, json } => {
             let runtime =
