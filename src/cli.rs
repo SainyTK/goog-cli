@@ -389,6 +389,32 @@ pub enum SheetsCommand {
         command: SheetsValuesCommand,
     },
     /// Apply a raw Google Sheets structural Batch Update request body
+    #[command(after_long_help = "Request shape:
+  --requests reads the full Google Sheets spreadsheets.batchUpdate JSON body, not only the requests array.
+  The body usually contains requests: an ordered array of structural mutation objects.
+  It may also contain includeSpreadsheetInResponse, responseRanges, and responseIncludeGridData.
+
+Common request types:
+  Sheets: addSheet, duplicateSheet, deleteSheet, updateSheetProperties
+  Formatting: repeatCell, updateCells, updateBorders, mergeCells, unmergeCells
+  Structure: updateDimensionProperties, addFilterView, setBasicFilter, addProtectedRange
+
+Full request type reference:
+  https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/request
+
+Example:
+  goog sheets batch-update SPREADSHEET_ID --requests - <<'JSON'
+  {
+    \"requests\": [
+      {
+        \"addSheet\": {
+          \"properties\": { \"title\": \"New sheet\" }
+        }
+      }
+    ],
+    \"includeSpreadsheetInResponse\": false
+  }
+  JSON")]
     BatchUpdate {
         /// Google Sheets Spreadsheet ID to update
         spreadsheet_id: String,
