@@ -1661,7 +1661,30 @@ fn resolve_table_handle<'a>(
     Ok(entry)
 }
 
-fn read_table_data(path: &str) -> Result<Vec<Vec<String>>> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TableData {
+    rows: Vec<Vec<String>>,
+}
+
+impl TableData {
+    fn new(rows: Vec<Vec<String>>) -> Self {
+        Self { rows }
+    }
+
+    fn row_count(&self) -> usize {
+        self.rows.len()
+    }
+
+    fn column_count(&self) -> usize {
+        self.rows[0].len()
+    }
+
+    fn rows(&self) -> &[Vec<String>] {
+        &self.rows
+    }
+}
+
+fn read_table_data(path: &str) -> Result<TableData> {
     let body = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read table data file: {path}"))?;
     let delimiter = if path.ends_with(".tsv") { '\t' } else { ',' };
@@ -1681,7 +1704,7 @@ fn read_table_data(path: &str) -> Result<Vec<Vec<String>>> {
     if columns == 0 || rows.iter().any(|row| row.len() != columns) {
         bail!("table data must be rectangular");
     }
-    Ok(rows)
+    Ok(TableData::new(rows))
 }
 
 fn resolve_heading<'a>(
@@ -1869,7 +1892,7 @@ fn prepare_insert_table_change(
         Some(path) => Some(read_table_data(path)?),
         None => None,
     };
-    let (rows, columns) = insert_table_dimensions(command, data.as_deref())?;
+    let (rows, columns) = insert_table_dimensions(command, data.as_ref())?;
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
     let Some(index) = resolved.location.index else {
         bail!("insert-table selector resolved without a Google Docs index");
@@ -1910,13 +1933,13 @@ fn prepare_insert_table_change(
 
 fn insert_table_dimensions(
     command: &InsertTableCommand,
-    data: Option<&[Vec<String>]>,
+    data: Option<&TableData>,
 ) -> Result<(usize, usize)> {
     if data.is_some() && (command.rows.is_some() || command.columns.is_some()) {
         bail!("insert-table accepts either --data or --rows with --columns, not both");
     }
     if let Some(data) = data {
-        return Ok((data.len(), data[0].len()));
+        return Ok((data.row_count(), data.column_count()));
     }
     let Some(rows) = command.rows else {
         bail!("insert-table requires --data or --rows with --columns");
@@ -1930,9 +1953,9 @@ fn insert_table_dimensions(
     Ok((rows, columns))
 }
 
-fn insert_table_data_requests(table_index: i64, data: &[Vec<String>]) -> Vec<serde_json::Value> {
+fn insert_table_data_requests(table_index: i64, data: &TableData) -> Vec<serde_json::Value> {
     let mut requests = Vec::new();
-    for (row_index, row) in data.iter().enumerate().rev() {
+    for (row_index, row) in data.rows().iter().enumerate().rev() {
         for (column_index, text) in row.iter().enumerate().rev() {
             if text.is_empty() {
                 continue;
@@ -1954,11 +1977,7 @@ fn insert_table_data_requests(table_index: i64, data: &[Vec<String>]) -> Vec<ser
     requests
 }
 
-fn inserted_table_cell_text_index(
-    table_index: i64,
-    row_index: usize,
-    column_index: usize,
-) -> i64 {
+fn inserted_table_cell_text_index(table_index: i64, row_index: usize, column_index: usize) -> i64 {
     table_index + 4 + (row_index as i64 * 5) + (column_index as i64 * 2)
 }
 
@@ -1970,11 +1989,13 @@ fn prepare_edit_table_change(
     let table = resolve_table_handle(document_map, &command.table_id)?;
     let rows = table.rows.unwrap_or(0);
     let columns = table.columns.unwrap_or(0);
-    if !command.resize && (data.len() != rows || data.iter().any(|row| row.len() != columns)) {
+    if !command.resize
+        && (data.row_count() != rows || data.rows().iter().any(|row| row.len() != columns))
+    {
         bail!(
             "edit-table data dimensions are {}x{} but {} is {}x{}; pass --resize when structural resizing is supported",
-            data.len(),
-            data.first().map_or(0, Vec::len),
+            data.row_count(),
+            data.column_count(),
             command.table_id,
             rows,
             columns
@@ -1988,7 +2009,7 @@ fn prepare_edit_table_change(
     }
 
     let request_body = request_body_with_revision(
-        edit_table_requests(&table.table_cells, &data),
+        edit_table_requests(&table.table_cells, data.rows()),
         command.required_revision_id.as_deref(),
     );
     Ok(DocsHighLevelChange {
@@ -2532,8 +2553,9 @@ fn compact_preview(text: &str) -> String {
     }
 }
 
-fn compact_table_data_preview(data: &[Vec<String>]) -> String {
+fn compact_table_data_preview(data: &TableData) -> String {
     let preview = data
+        .rows()
         .iter()
         .take(2)
         .map(|row| {
