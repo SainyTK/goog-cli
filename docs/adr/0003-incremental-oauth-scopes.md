@@ -1,5 +1,7 @@
 # Incremental OAuth Scope Authorization
 
+Superseded by ADR-0014: `goog auth login` now requests full scope for every supported API upfront.
+
 `goog auth login` requests only minimal scopes (profile, email). When a command first needs an API-specific scope (e.g., Drive access), it detects the missing scope and re-triggers the OAuth flow for that scope alone. Granted scopes are tracked per Account in the keychain entry.
 
 ## Considered Options
