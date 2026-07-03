@@ -1629,12 +1629,18 @@ fn range_for_entry(document_map: &DocumentMap, entry: &DocumentMapEntry) -> Resu
         .location
         .index
         .context("selected Document Map entry has no Google Docs index")?;
-    let end_index = document_map
+    let text_block_end_index = document_map
+        .text_blocks
+        .iter()
+        .find(|block| block.start_index == start_index)
+        .map(text_block_end_index);
+    let next_entry_index = document_map
         .entries
         .iter()
         .filter_map(|candidate| candidate.location.index)
         .find(|candidate_index| *candidate_index > start_index)
         .unwrap_or(start_index + 1);
+    let end_index = text_block_end_index.unwrap_or(next_entry_index);
     Ok(DocumentRange {
         start_index,
         end_index,

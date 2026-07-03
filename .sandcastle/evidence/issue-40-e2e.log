@@ -1,0 +1,31 @@
+Issue 40 E2E evidence, redacted
+Result: PARTIAL
+
+Test setup:
+- Accounts used: unavailable in this sandbox.
+- Fixture used: none.
+- Skipped fixture: live Google Docs fixture could not be used because the `goog` binary is not on PATH in this sandbox.
+
+Local checks:
+$ cargo test run_apply_list -- --nocapture
+Result: PASS.
+Observed: 3 apply-list command-layer tests passed. Coverage includes CLI list style mapping, raw preset preservation, explicit Document Range dry-run JSON, whole-block page/line targeting, ambiguous text range rejection with candidates, revision guard output, and mutation request construction.
+
+$ cargo test docs_new_high_level_editing_commands_parse -- --nocapture
+Result: PASS.
+Observed: 1 CLI parser test passed. Coverage includes apply-list `--type bullet|numbered|dash|checkbox`, `--preset`, exact ranges, and page/line selectors.
+
+Live checks:
+$ which goog
+Expected: locate the real `goog` CLI so issue-specific commands can run against an already-connected Google account.
+Observed: no `goog` executable found on PATH.
+Result: FAIL.
+
+$ goog --help
+Expected: print CLI help before running read-only and dry-run Docs commands.
+Observed: shell exited 127 with `goog: command not found`.
+Result: FAIL.
+
+Reviewer notes:
+- No live Google data, account identifiers, document IDs, or document contents were observed.
+- Reviewer should run the `## Test steps` commands from issue 40 in an environment where `goog auth list` works and a scratch `goog-e2e-` Google Doc is available.

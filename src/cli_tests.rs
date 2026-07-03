@@ -721,6 +721,71 @@ fn docs_new_high_level_editing_commands_parse() {
     assert_eq!(entry, Some(2));
     assert_eq!(list_type, Some(crate::cli::DocsListType::Checkbox));
 
+    for (value, expected) in [
+        ("bullet", crate::cli::DocsListType::Bullet),
+        ("numbered", crate::cli::DocsListType::Numbered),
+        ("dash", crate::cli::DocsListType::Dash),
+        ("checkbox", crate::cli::DocsListType::Checkbox),
+    ] {
+        let Command::Docs {
+            command:
+                DocsCommand::ApplyList {
+                    list_type,
+                    from_index,
+                    to_index,
+                    ..
+                },
+        } = parse(&[
+            "docs",
+            "apply-list",
+            "document-123",
+            "--from-index",
+            "4",
+            "--to-index",
+            "12",
+            "--type",
+            value,
+        ])
+        .unwrap()
+        .command
+        else {
+            panic!("unexpected parse result");
+        };
+        assert_eq!(from_index, Some(4));
+        assert_eq!(to_index, Some(12));
+        assert_eq!(list_type, Some(expected));
+    }
+
+    let Command::Docs {
+        command:
+            DocsCommand::ApplyList {
+                preset,
+                list_type,
+                page,
+                line,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "apply-list",
+        "document-123",
+        "--page",
+        "3",
+        "--line",
+        "4",
+        "--preset",
+        "BULLET_STAR_CIRCLE_SQUARE",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(page, Some(3));
+    assert_eq!(line, Some(4));
+    assert_eq!(list_type, None);
+    assert_eq!(preset.as_deref(), Some("BULLET_STAR_CIRCLE_SQUARE"));
+
     let Command::Docs {
         command:
             DocsCommand::EditTable {
