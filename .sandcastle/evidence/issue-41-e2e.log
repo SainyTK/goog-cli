@@ -1,0 +1,68 @@
+Issue 41 E2E evidence, redacted
+Result: PARTIAL
+
+Test setup:
+- Accounts used: none; live Google credentials are unavailable in this sandbox.
+- Fixture used: none.
+- Skipped fixture: live Google Docs fixture skipped because `goog` is not installed on PATH and `.sandcastle/secrets/` contains no exported token/config files. Per docs/agents/e2e-testing.md, this means E2E testing is unavailable and local checks continue.
+
+Local checks:
+$ command -v goog
+Expected: find an installed `goog` executable for live Google E2E.
+Observed: no executable path was returned.
+Result: PARTIAL.
+
+$ goog auth list --json
+Expected: list already-connected Google accounts for selecting an E2E account.
+Observed: `/bin/bash: line 1: goog: command not found`.
+Result: PARTIAL.
+
+$ cargo run --quiet -- docs insert-table --help
+Expected: command help includes `--data`, `--rows`, `--columns`, shared location selectors, `--dry-run`, `--json`, and `--required-revision-id`.
+Observed: help rendered successfully with those flags.
+Result: PASS.
+
+$ cargo test run_insert_table_dry_run -- --nocapture
+Expected: mocked Docs command tests prove CSV and TSV table insertion builds native requests without mutation.
+Observed: 2 tests passed; dry-run JSON included `insertTable` followed by reverse-ordered cell `insertText` requests.
+Result: PASS.
+
+$ cargo test docs_new_high_level_editing_commands_parse -- --nocapture
+Expected: CLI parser accepts `docs insert-table DOC_ID --data table.csv --page PAGE --line LINE --dry-run --json`.
+Observed: parser test passed.
+Result: PASS.
+
+$ cargo test docs_ -- --nocapture
+Expected: Docs parser, command, and client regression tests pass, including list-tables, insert-table, edit-table, dry-run JSON, and raw get/batch-update coverage.
+Observed: 62 docs-filtered tests and 1 distribution filtered test passed.
+Result: PASS.
+
+$ npm run typecheck
+Expected: Rust typechecking passes through the repo npm script.
+Observed: `cargo check` finished successfully.
+Result: PASS.
+
+$ npm run test
+Expected: Full repo test suite passes through the repo npm script.
+Observed: 339 unit tests, 6 distribution artifact tests, and 0 doc tests passed.
+Result: PASS.
+
+Live checks:
+$ goog docs list-tables "$DOC_ID" --json
+Expected: read a real Google Doc and emit structured table handles, dimensions, locations, confidence, and previews.
+Observed: skipped because no `goog` executable or exported sandbox credentials are available.
+Result: PARTIAL.
+
+$ goog docs insert-table "$DOC_ID" --data /tmp/goog-e2e-table.csv --index 1 --dry-run --json
+Expected: fetch a real scratch Google Doc, resolve the insertion location, and emit an `insertTable` request plus reverse-ordered cell `insertText` requests without mutation.
+Observed: skipped because no `goog` executable or exported sandbox credentials are available.
+Result: PARTIAL.
+
+$ goog docs edit-table "$DOC_ID" --table-id "$TABLE_ID" --data /tmp/goog-e2e-table.csv --dry-run --json
+Expected: re-resolve the table handle from the latest real Document Map and emit reverse-ordered delete/insert cell replacement requests without mutation.
+Observed: skipped because no `goog` executable or exported sandbox credentials are available.
+Result: PARTIAL.
+
+Reviewer notes:
+- No real email addresses, document contents, tokens, or secrets were available or captured.
+- Human review should run the live commands in issue 41 Test steps with a scratch `goog-e2e-` Google Doc before closing the issue.

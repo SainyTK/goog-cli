@@ -723,6 +723,40 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
+            DocsCommand::InsertTable {
+                data,
+                page,
+                line,
+                dry_run,
+                json,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "insert-table",
+        "document-123",
+        "--data",
+        "table.csv",
+        "--page",
+        "2",
+        "--line",
+        "1",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(data.as_deref(), Some("table.csv"));
+    assert_eq!(page, Some(2));
+    assert_eq!(line, Some(1));
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command:
             DocsCommand::EditTable {
                 table_id,
                 data,

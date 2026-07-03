@@ -1040,8 +1040,9 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
         &client,
         InsertTableCommand {
             document_id: "document-123".into(),
-            rows: 2,
-            columns: 3,
+            data: None,
+            rows: Some(2),
+            columns: Some(3),
             selector: InsertTextSelector::Index(44),
             dry_run: true,
             json: true,
@@ -1064,6 +1065,126 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
     assert_eq!(
         table["requestBody"]["requests"][0]["insertTable"]["columns"],
         3
+    );
+}
+
+#[tokio::test]
+async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("wide-table.csv");
+    std::fs::write(&data_path, "A1,B1,C1,D1\nA2,B2,C2,D2\n").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_table_to(
+        &client,
+        InsertTableCommand {
+            document_id: "document-123".into(),
+            data: Some(data_path.to_string_lossy().into_owned()),
+            rows: None,
+            columns: None,
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertTable"]["rows"],
+        2
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertTable"]["columns"],
+        4
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["location"]["index"],
+        59
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["text"],
+        "D2"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][8]["insertText"]["location"]["index"],
+        48
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][8]["insertText"]["text"],
+        "A1"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+    assert!(
+        output["preview"]["summary"]
+            .as_str()
+            .unwrap()
+            .contains("A1 | B1 | C1 / A2 | B2 | C2")
+    );
+}
+
+#[tokio::test]
+async fn run_insert_table_dry_run_accepts_tsv_data() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("table.tsv");
+    std::fs::write(&data_path, "Left\tRight\nBottom left\tBottom right\n").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_table_to(
+        &client,
+        InsertTableCommand {
+            document_id: "document-123".into(),
+            data: Some(data_path.to_string_lossy().into_owned()),
+            rows: None,
+            columns: None,
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertTable"]["columns"],
+        2
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][1]["insertText"]["text"],
+        "Bottom right"
     );
 }
 

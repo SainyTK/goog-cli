@@ -354,12 +354,15 @@ pub enum DocsCommand {
     InsertTable {
         /// Google Docs Document ID to update
         document_id: String,
+        /// CSV or TSV data file to populate the inserted table
+        #[arg(long)]
+        data: Option<String>,
         /// Number of table rows
         #[arg(long)]
-        rows: usize,
+        rows: Option<usize>,
         /// Number of table columns
         #[arg(long)]
-        columns: usize,
+        columns: Option<usize>,
         /// Raw Google Docs UTF-16 index
         #[arg(long)]
         index: Option<i64>,
