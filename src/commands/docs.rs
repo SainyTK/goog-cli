@@ -230,6 +230,7 @@ pub fn run<S: AccountStore>(
         }
         DocsCommand::InsertTable {
             document_id,
+            data,
             rows,
             columns,
             index,
@@ -262,6 +263,7 @@ pub fn run<S: AccountStore>(
                 account_override,
                 InsertTableCommand {
                     document_id,
+                    data,
                     rows,
                     columns,
                     selector,
@@ -511,8 +513,9 @@ pub(super) struct InsertImageCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct InsertTableCommand {
     pub document_id: String,
-    pub rows: usize,
-    pub columns: usize,
+    pub data: Option<String>,
+    pub rows: Option<usize>,
+    pub columns: Option<usize>,
     pub selector: InsertTextSelector,
     pub dry_run: bool,
     pub json: bool,
@@ -1659,7 +1662,35 @@ fn resolve_table_handle<'a>(
     Ok(entry)
 }
 
-fn read_table_data(path: &str) -> Result<Vec<Vec<String>>> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TableData {
+    rows: Vec<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TableDimensions {
+    rows: usize,
+    columns: usize,
+}
+
+impl TableData {
+    fn new(rows: Vec<Vec<String>>) -> Self {
+        Self { rows }
+    }
+
+    fn dimensions(&self) -> TableDimensions {
+        TableDimensions {
+            rows: self.rows.len(),
+            columns: self.rows[0].len(),
+        }
+    }
+
+    fn rows(&self) -> &[Vec<String>] {
+        &self.rows
+    }
+}
+
+fn read_table_data(path: &str) -> Result<TableData> {
     let body = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read table data file: {path}"))?;
     let delimiter = if path.ends_with(".tsv") { '\t' } else { ',' };
@@ -1679,7 +1710,7 @@ fn read_table_data(path: &str) -> Result<Vec<Vec<String>>> {
     if columns == 0 || rows.iter().any(|row| row.len() != columns) {
         bail!("table data must be rectangular");
     }
-    Ok(rows)
+    Ok(TableData::new(rows))
 }
 
 fn resolve_heading<'a>(
@@ -1894,36 +1925,102 @@ fn prepare_insert_table_change(
     document_map: &DocumentMap,
     command: &InsertTableCommand,
 ) -> Result<DocsHighLevelChange> {
-    if command.rows == 0 || command.columns == 0 {
-        bail!("insert-table requires --rows and --columns to be greater than zero");
-    }
+    let data = match &command.data {
+        Some(path) => Some(read_table_data(path)?),
+        None => None,
+    };
+    let dimensions = insert_table_dimensions(command, data.as_ref())?;
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
     let Some(index) = resolved.location.index else {
         bail!("insert-table selector resolved without a Google Docs index");
     };
-    let request_body = request_body_with_revision(
-        vec![serde_json::json!({
-            "insertTable": {
-                "location": { "index": index },
-                "rows": command.rows,
-                "columns": command.columns
-            }
-        })],
-        command.required_revision_id.as_deref(),
-    );
+    let mut requests = vec![serde_json::json!({
+        "insertTable": {
+            "location": { "index": index },
+            "rows": dimensions.rows,
+            "columns": dimensions.columns
+        }
+    })];
+    if let Some(data) = &data {
+        requests.extend(insert_table_data_requests(index, data));
+    }
+    let request_body =
+        request_body_with_revision(requests, command.required_revision_id.as_deref());
+    let summary = if let Some(data) = &data {
+        format!(
+            "Insert {}x{} table at index {index}: {}",
+            dimensions.rows,
+            dimensions.columns,
+            compact_table_data_preview(data)
+        )
+    } else {
+        format!(
+            "Insert {}x{} table at index {index}",
+            dimensions.rows, dimensions.columns
+        )
+    };
     Ok(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
         location: Some(resolved.location),
         range: None,
         request_body,
-        preview: DocsChangePreview::new(
-            "insert-table",
-            format!(
-                "Insert {}x{} table at index {index}",
-                command.rows, command.columns
-            ),
-        ),
+        preview: DocsChangePreview::new("insert-table", summary),
     })
+}
+
+fn insert_table_dimensions(
+    command: &InsertTableCommand,
+    data: Option<&TableData>,
+) -> Result<TableDimensions> {
+    if data.is_some() && (command.rows.is_some() || command.columns.is_some()) {
+        bail!("insert-table accepts either --data or --rows with --columns, not both");
+    }
+    if let Some(data) = data {
+        return Ok(data.dimensions());
+    }
+    let dimensions = explicit_table_dimensions(command.rows, command.columns)?;
+    Ok(dimensions)
+}
+
+fn explicit_table_dimensions(
+    rows: Option<usize>,
+    columns: Option<usize>,
+) -> Result<TableDimensions> {
+    let (Some(rows), Some(columns)) = (rows, columns) else {
+        bail!("insert-table requires --data or --rows with --columns");
+    };
+    if rows == 0 || columns == 0 {
+        bail!("insert-table requires --rows and --columns to be greater than zero");
+    }
+    Ok(TableDimensions { rows, columns })
+}
+
+fn insert_table_data_requests(table_index: i64, data: &TableData) -> Vec<serde_json::Value> {
+    let mut requests = Vec::new();
+    for (row_index, row) in data.rows().iter().enumerate().rev() {
+        for (column_index, text) in row.iter().enumerate().rev() {
+            if text.is_empty() {
+                continue;
+            }
+            requests.push(serde_json::json!({
+                "insertText": {
+                    "location": {
+                        "index": inserted_table_cell_text_index(
+                            table_index,
+                            row_index,
+                            column_index
+                        )
+                    },
+                    "text": text
+                }
+            }));
+        }
+    }
+    requests
+}
+
+fn inserted_table_cell_text_index(table_index: i64, row_index: usize, column_index: usize) -> i64 {
+    table_index + 4 + (row_index as i64 * 5) + (column_index as i64 * 2)
 }
 
 fn prepare_edit_table_change(
@@ -1931,28 +2028,36 @@ fn prepare_edit_table_change(
     command: &EditTableCommand,
 ) -> Result<DocsHighLevelChange> {
     let data = read_table_data(&command.data)?;
+    let data_dimensions = data.dimensions();
     let table = resolve_table_handle(document_map, &command.table_id)?;
-    let rows = table.rows.unwrap_or(0);
-    let columns = table.columns.unwrap_or(0);
-    if !command.resize && (data.len() != rows || data.iter().any(|row| row.len() != columns)) {
+    let table_dimensions = TableDimensions {
+        rows: table.rows.unwrap_or(0),
+        columns: table.columns.unwrap_or(0),
+    };
+    if !command.resize && data_dimensions != table_dimensions {
         bail!(
             "edit-table data dimensions are {}x{} but {} is {}x{}; pass --resize when structural resizing is supported",
-            data.len(),
-            data.first().map_or(0, Vec::len),
+            data_dimensions.rows,
+            data_dimensions.columns,
             command.table_id,
-            rows,
-            columns
+            table_dimensions.rows,
+            table_dimensions.columns
         );
     }
     if command.resize {
         bail!("edit-table --resize is not supported yet");
     }
-    if table.table_cells.len() != rows || table.table_cells.iter().any(|row| row.len() != columns) {
+    if table.table_cells.len() != table_dimensions.rows
+        || table
+            .table_cells
+            .iter()
+            .any(|row| row.len() != table_dimensions.columns)
+    {
         bail!("selected table does not expose editable cell text ranges");
     }
 
     let request_body = request_body_with_revision(
-        edit_table_requests(&table.table_cells, &data),
+        edit_table_requests(&table.table_cells, data.rows()),
         command.required_revision_id.as_deref(),
     );
     Ok(DocsHighLevelChange {
@@ -1964,7 +2069,7 @@ fn prepare_edit_table_change(
             "edit-table",
             format!(
                 "Replace {} with {}x{} table data",
-                command.table_id, rows, columns
+                command.table_id, table_dimensions.rows, table_dimensions.columns
             ),
         ),
     })
@@ -2593,6 +2698,23 @@ fn compact_preview(text: &str) -> String {
         truncated.push_str("...");
         truncated
     }
+}
+
+fn compact_table_data_preview(data: &TableData) -> String {
+    let preview = data
+        .rows()
+        .iter()
+        .take(2)
+        .map(|row| {
+            row.iter()
+                .take(3)
+                .map(|cell| compact_preview(cell))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        })
+        .collect::<Vec<_>>()
+        .join(" / ");
+    compact_preview(&preview)
 }
 
 fn preview_offset_for_index(preview: &str, block_start_index: i64, insertion_index: i64) -> usize {
