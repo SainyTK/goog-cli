@@ -1,0 +1,146 @@
+use std::fs;
+use std::path::Path;
+
+#[test]
+fn readme_covers_public_distribution_and_usage_contract() {
+    let readme = fs::read_to_string("README.md").expect("README.md should exist");
+
+    for expected in [
+        "Early Open-Source CLI",
+        "Installer Script",
+        "Homebrew Tap",
+        "Rust-Native Fallback",
+        "goog auth setup",
+        "goog auth login",
+        "goog auth list",
+        "goog auth switch",
+        "goog drive ls",
+        "goog docs map",
+        "goog sheets values get",
+        "goog mail list",
+        "Contributor Workflow",
+    ] {
+        assert!(
+            readme.contains(expected),
+            "README.md should contain {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn installer_resolves_canonical_releases_and_supported_targets() {
+    let installer = fs::read_to_string("install.sh").expect("install.sh should exist");
+
+    for expected in [
+        "https://api.github.com/repos/${REPO}/releases/latest",
+        "--version",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        ".sha256",
+        "checksum verification failed",
+        "Windows binary releases are not supported yet",
+    ] {
+        assert!(
+            installer.contains(expected),
+            "install.sh should contain {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn release_workflow_builds_assets_from_version_tags_only() {
+    let workflow =
+        fs::read_to_string(".github/workflows/release.yml").expect("release workflow should exist");
+
+    for expected in [
+        "tags:",
+        "\"v*.*.*\"",
+        "Tag must look like vX.Y.Z",
+        "git merge-base --is-ancestor",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+        "gh release create",
+        "render-homebrew-formula.rb",
+    ] {
+        assert!(
+            workflow.contains(expected),
+            "release workflow should contain {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn homebrew_formula_renderer_contains_tap_install_contract() {
+    let renderer = fs::read_to_string("scripts/render-homebrew-formula.rb")
+        .expect("formula renderer should exist");
+
+    for expected in [
+        "class Goog < Formula",
+        "SainyTK/goog-cli",
+        "on_macos",
+        "on_linux",
+        "sha256",
+        "bin.install \"goog\"",
+        "goog --help",
+    ] {
+        assert!(
+            renderer.contains(expected),
+            "formula renderer should contain {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn release_operator_docs_cover_channel_verification_and_recovery() {
+    let docs = fs::read_to_string("docs/distribution/release-operator.md")
+        .expect("release operator docs should exist");
+
+    for expected in [
+        "GitHub Releases are the only Canonical Release authority",
+        "git push origin v0.1.0",
+        "Verify Installer Script",
+        "On macOS",
+        "On Linux",
+        "brew install SainyTK/tap/goog",
+        "Verify Release Automation Changes",
+        "cargo test --test distribution_artifacts_tests",
+        "Rust-Native Fallback",
+        "Recovery",
+        "Never point users to branch-head binaries",
+    ] {
+        assert!(
+            docs.contains(expected),
+            "release docs should contain {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn documented_homebrew_tap_setup_is_available_until_tap_exists() {
+    let docs = fs::read_to_string("docs/distribution/homebrew-tap.md")
+        .expect("Homebrew tap setup docs should exist");
+
+    for expected in [
+        "gh repo create SainyTK/homebrew-tap",
+        "Formula/goog.rb",
+        "GOOG_HOMEBREW_TAP_REPO",
+        "GOOG_HOMEBREW_TAP_TOKEN",
+        "brew install SainyTK/tap/goog",
+        "goog-vX.Y.Z-aarch64-apple-darwin.tar.gz",
+        "goog --help",
+    ] {
+        assert!(
+            docs.contains(expected),
+            "Homebrew tap setup docs should contain {expected:?}"
+        );
+    }
+
+    assert!(
+        Path::new("scripts/render-homebrew-formula.rb").exists(),
+        "formula renderer should exist"
+    );
+}

@@ -1,108 +1,160 @@
 # goog
 
-A Rust CLI for managing multiple Google accounts and interacting with Google APIs from the terminal.
-It covers Drive, Docs, Sheets, and Gmail, and is designed for developers and power users who want a scriptable, terminal-native alternative to the browser.
+`goog` is an Early Open-Source CLI for Google APIs. It is built for developers and power users who want scriptable, terminal-native access to Google Drive, Google Docs, Google Sheets, and GoogleMail while the command surface continues to grow.
 
-## Features
+The CLI uses one OAuth App for all accounts, stores account tokens in the system keychain, and requests API scopes incrementally when commands need them.
 
-- Log in to multiple Google accounts and switch between them, or let `goog` fall back across accounts automatically when a resource isn't accessible from the active one.
-- Requests only the OAuth scopes a command needs, the first time it needs them, instead of asking for broad access up front.
-- Stores tokens in the operating system keychain, never in plain config files.
-- Interact with Drive (browse, list, upload, download, manage folders), Docs (read, search, and apply batch updates), Sheets (read and write values, raw batch updates), and Gmail (list, search, read messages, download attachments).
-- Machine-readable JSON output on most read commands, for scripting.
+## Current API Coverage
+
+`goog` currently includes:
+
+- Google Drive file and folder listing, upload, and download commands.
+- Google Docs document mapping, text search, content lookup, raw document reads, and raw batch updates.
+- Google Sheets spreadsheet reads, values reads and writes, appends, clears, and structural batch updates.
+- GoogleMail message listing, search, raw message reads, and attachment downloads.
+- Multi-account OAuth setup, login, account listing, and active account switching.
 
 ## Installation
 
-### One-liner (macOS and Linux)
+### Installer Script
+
+The installer script is the default install path for macOS and Linux. It installs the latest Canonical Release from GitHub Releases rather than branch-head code.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
 ```
 
-This downloads the latest release binary for your platform into `~/.local/bin/goog`.
-Make sure `~/.local/bin` is on your `PATH` (the installer prints a hint if it isn't).
-
-Supported platforms: macOS (Apple Silicon and Intel) and Linux (x86_64 and aarch64).
-
-To install a specific version instead of the latest release:
+Install a specific Canonical Release with:
 
 ```sh
-GOOG_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.1.0
 ```
 
-To install somewhere other than `~/.local/bin`:
+The installer supports macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets.
+
+### Homebrew Tap
+
+Homebrew users can install from the project tap after a Canonical Release has been published:
 
 ```sh
-GOOG_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
+brew install SainyTK/tap/goog
 ```
 
-### From source
+This is the supported tap install path. `goog` is not advertised as available through the official Homebrew core registry.
+
+### Rust-Native Fallback
+
+Users outside the binary release support matrix can install from source with Cargo:
 
 ```sh
-git clone https://github.com/SainyTK/goog-cli.git
-cd goog-cli
-cargo build --release
-./target/release/goog --help
+cargo install --git https://github.com/SainyTK/goog-cli goog
 ```
 
-Verify the install:
+This path requires a local Rust toolchain.
 
-```sh
-goog --version
-goog --help
-```
+## OAuth Setup
 
-## Getting started
-
-`goog` needs a Google OAuth App (a GCP project's OAuth 2.0 client) before it can authorize any account.
-You create this once, using your own Google Cloud project:
+Create a Google OAuth client for a desktop or web application, then configure `goog` once:
 
 ```sh
 goog auth setup
 ```
 
-`auth setup` can collect the client ID and secret interactively, or import them from a `client_secret_*.json` file downloaded from Google Cloud Console:
+You can also import a downloaded Google client secret file:
 
 ```sh
-goog auth setup --client-secret-file ./client_secret_1234.json
+goog auth setup --client-secret-file client_secret_123.apps.googleusercontent.com.json
 ```
 
-Then authorize an account through the browser-based OAuth flow:
+Authorize a Google Account:
 
 ```sh
 goog auth login
 ```
 
-Log in to additional accounts the same way, and switch the active one at any time:
+List authorized Accounts:
 
 ```sh
 goog auth list
-goog auth switch someone@example.com
+goog auth list --json
 ```
 
-## Usage
+Switch the Active Account:
 
 ```sh
-goog auth login
-goog drive list
-goog drive upload ./report.pdf --folder <folder-id>
-goog docs get <document-id>
-goog sheets values get <spreadsheet-id> "Sheet1!A1:B10"
-goog mail list
+goog auth switch alice@example.com
 ```
 
-Run `goog <command> --help` for the full set of options on any command.
-
-## Development
+Run one command against a different Account without switching:
 
 ```sh
-cargo build
+goog --account bob@example.com drive ls
+```
+
+## Examples
+
+### Drive
+
+```sh
+goog drive ls --limit 20
+goog drive folder list --parent FOLDER_ID --json
+goog drive upload ./report.pdf --folder FOLDER_ID
+goog drive download FILE_ID --output ./report.pdf
+```
+
+### Docs
+
+```sh
+goog docs map DOCUMENT_ID
+goog docs search-text DOCUMENT_ID "quarterly plan"
+goog docs get-content DOCUMENT_ID --heading "Summary"
+goog docs batch-update DOCUMENT_ID --requests ./requests.json
+```
+
+### Sheets
+
+```sh
+goog sheets get SPREADSHEET_ID --fields 'properties.title,sheets.properties'
+goog sheets values get SPREADSHEET_ID 'Sheet1!A1:D10'
+goog sheets values update SPREADSHEET_ID 'Sheet1!A1' --values ./value-range.json
+goog sheets values append SPREADSHEET_ID 'Sheet1!A:D' --values ./rows.json
+```
+
+### GoogleMail
+
+```sh
+goog mail list --limit 10
+goog mail search 'from:alerts@example.com newer_than:7d'
+goog mail read MESSAGE_ID
+goog mail attachment download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
+```
+
+Use `goog help`, `goog <command> --help`, and nested command help for the full command reference.
+
+## Contributor Workflow
+
+Install local dependencies:
+
+```sh
+cargo fetch
+npm install
+```
+
+Run checks before opening a pull request:
+
+```sh
+cargo fmt --check
 cargo test
+npm run typecheck
 ```
 
-See `CONTEXT.md` for the project's domain language and `docs/adr/` for architectural decisions.
+Issues live in GitHub Issues. Pick work labeled `ready-for-agent` and `Sandcastle`, keep changes scoped to the issue, and link the issue from the pull request.
 
-## Releases
+Pull requests should include:
 
-Releases are built and published automatically by [`.github/workflows/release.yml`](.github/workflows/release.yml) whenever a `v*.*.*` tag is pushed.
-Each release includes prebuilt binaries for macOS (aarch64, x86_64) and Linux (aarch64, x86_64), which `install.sh` downloads.
+- A concise summary of user-facing behavior.
+- Tests or verification notes covering the changed behavior.
+- Documentation updates when commands, OAuth behavior, or distribution paths change.
+- Release-document updates when Canonical Release assets, installer behavior, Homebrew tap behavior, or operator steps change.
+
+Distribution changes must keep GitHub Releases as the only Canonical Release authority.

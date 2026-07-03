@@ -550,6 +550,105 @@ fn docs_get_content_accepts_location_selectors() {
 }
 
 #[test]
+fn docs_insert_text_parses_location_and_write_options() {
+    let cli = parse(&[
+        "docs",
+        "insert-text",
+        "document-123",
+        "Hello",
+        "--page",
+        "2",
+        "--line",
+        "1",
+        "--dry-run",
+        "--json",
+        "--required-revision-id",
+        "rev-123",
+    ])
+    .unwrap();
+
+    let Command::Docs { command } = cli.command else {
+        panic!("unexpected parse result");
+    };
+    let DocsCommand::InsertText {
+        document_id,
+        text,
+        index,
+        entry,
+        page,
+        line,
+        after_heading,
+        before_heading,
+        after_text,
+        before_text,
+        dry_run,
+        json,
+        required_revision_id,
+    } = command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(document_id, "document-123");
+    assert_eq!(text, "Hello");
+    assert_eq!(index, None);
+    assert_eq!(entry, None);
+    assert_eq!(page, Some(2));
+    assert_eq!(line, Some(1));
+    assert_eq!(after_heading, None);
+    assert_eq!(before_heading, None);
+    assert_eq!(after_text, None);
+    assert_eq!(before_text, None);
+    assert!(dry_run);
+    assert!(json);
+    assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
+}
+
+#[test]
+fn docs_replace_text_parses_match_and_write_options() {
+    let cli = parse(&[
+        "docs",
+        "replace-text",
+        "document-123",
+        "old",
+        "new",
+        "--match",
+        "2",
+        "--dry-run",
+        "--json",
+        "--required-revision-id",
+        "rev-123",
+    ])
+    .unwrap();
+
+    let Command::Docs { command } = cli.command else {
+        panic!("unexpected parse result");
+    };
+    let DocsCommand::ReplaceText {
+        document_id,
+        old_text,
+        new_text,
+        match_number,
+        all,
+        dry_run,
+        json,
+        required_revision_id,
+    } = command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(document_id, "document-123");
+    assert_eq!(old_text, "old");
+    assert_eq!(new_text, "new");
+    assert_eq!(match_number, Some(2));
+    assert!(!all);
+    assert!(dry_run);
+    assert!(json);
+    assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
+}
+
+#[test]
 fn docs_batch_update_with_requests_path() {
     let cli = parse(&[
         "docs",

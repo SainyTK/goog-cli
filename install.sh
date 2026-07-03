@@ -1,110 +1,133 @@
-#!/usr/bin/env bash
-# Installs a Canonical Release of the goog CLI into ~/.local/bin (or $GOOG_INSTALL_DIR).
-#
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.1.0
-set -euo pipefail
+#!/usr/bin/env sh
+set -eu
 
 REPO="SainyTK/goog-cli"
-INSTALL_DIR="${GOOG_INSTALL_DIR:-$HOME/.local/bin}"
-REQUESTED_VERSION="${GOOG_VERSION:-}"
+BIN_NAME="goog"
+INSTALL_DIR="${GOOG_INSTALL_DIR:-/usr/local/bin}"
+VERSION=""
+
+usage() {
+  cat <<'USAGE'
+Install goog from a Canonical GitHub Release.
+
+Usage:
+  install.sh [--version vX.Y.Z] [--install-dir PATH]
+
+Options:
+  --version      Install a specific Canonical Release tag.
+  --install-dir  Install directory for the goog binary. Defaults to /usr/local/bin.
+  -h, --help     Show this help.
+
+Environment:
+  GOOG_INSTALL_DIR  Install directory used when --install-dir is not provided.
+USAGE
+}
 
 fail() {
-  echo "error: $1" >&2
+  printf 'goog installer: %s\n' "$1" >&2
   exit 1
 }
 
-while [ $# -gt 0 ]; do
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+while [ "$#" -gt 0 ]; do
   case "$1" in
     --version)
-      [ $# -ge 2 ] || fail "--version requires a value"
-      REQUESTED_VERSION="$2"
+      [ "$#" -ge 2 ] || fail "--version requires a value"
+      VERSION="$2"
       shift 2
       ;;
-    --version=*)
-      REQUESTED_VERSION="${1#--version=}"
-      shift
+    --install-dir)
+      [ "$#" -ge 2 ] || fail "--install-dir requires a value"
+      INSTALL_DIR="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
       ;;
     *)
-      fail "unknown argument: $1"
+      fail "unknown option: $1"
       ;;
   esac
 done
 
-detect_target() {
-  os="$(uname -s)"
-  arch="$(uname -m)"
+need_cmd curl
+need_cmd install
+need_cmd tar
 
-  case "$os" in
-    Darwin) platform="apple-darwin" ;;
-    Linux) platform="unknown-linux-gnu" ;;
-    *) fail "unsupported OS: $os" ;;
-  esac
+case "$(uname -s)" in
+  Darwin) os="apple-darwin" ;;
+  Linux) os="unknown-linux-gnu" ;;
+  MINGW*|MSYS*|CYGWIN*|Windows_NT)
+    fail "Windows binary releases are not supported yet. Install from source with: cargo install --git https://github.com/SainyTK/goog-cli goog"
+    ;;
+  *)
+    fail "unsupported operating system: $(uname -s)"
+    ;;
+esac
 
-  case "$arch" in
-    arm64 | aarch64) cpu="aarch64" ;;
-    x86_64 | amd64) cpu="x86_64" ;;
-    *) fail "unsupported architecture: $arch" ;;
-  esac
+case "$(uname -m)" in
+  arm64|aarch64) arch="aarch64" ;;
+  x86_64|amd64) arch="x86_64" ;;
+  *)
+    fail "unsupported CPU architecture: $(uname -m)"
+    ;;
+esac
 
-  echo "${cpu}-${platform}"
+target="${arch}-${os}"
+
+case "$target" in
+  aarch64-apple-darwin|x86_64-apple-darwin|x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu) ;;
+  *)
+    fail "unsupported platform target: ${target}"
+    ;;
+esac
+
+if [ -z "$VERSION" ]; then
+  latest_url="https://api.github.com/repos/${REPO}/releases/latest"
+  VERSION="$(curl -fsSL "$latest_url" | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  [ -n "$VERSION" ] || fail "could not resolve the latest Canonical Release"
+fi
+
+case "$VERSION" in
+  v[0-9]*.[0-9]*.[0-9]*) ;;
+  *) fail "--version must look like vX.Y.Z" ;;
+esac
+
+asset="${BIN_NAME}-${VERSION}-${target}.tar.gz"
+base_url="https://github.com/${REPO}/releases/download/${VERSION}"
+tmp_dir="$(mktemp -d)"
+cleanup() {
+  rm -rf "$tmp_dir"
 }
+trap cleanup EXIT INT TERM
 
-main() {
-  command -v curl >/dev/null 2>&1 || fail "curl is required"
-  command -v tar >/dev/null 2>&1 || fail "tar is required"
+archive_path="${tmp_dir}/${asset}"
+checksum_path="${archive_path}.sha256"
 
-  target="$(detect_target)"
+curl -fL "${base_url}/${asset}" -o "$archive_path"
+curl -fL "${base_url}/${asset}.sha256" -o "$checksum_path"
 
-  if [ -n "$REQUESTED_VERSION" ]; then
-    case "$REQUESTED_VERSION" in
-      v*) tag="$REQUESTED_VERSION" ;;
-      *) tag="v$REQUESTED_VERSION" ;;
-    esac
-  else
-    api_url="https://api.github.com/repos/$REPO/releases/latest"
-    tag="$(curl -fsSL "$api_url" | grep -m1 '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
-    [ -n "$tag" ] || fail "could not determine latest release tag"
-  fi
-  version="${tag#v}"
+expected="$(awk '{print $1}' "$checksum_path")"
+[ -n "$expected" ] || fail "checksum file is empty: ${asset}.sha256"
 
-  archive="goog-${version}-${target}.tar.gz"
-  download_url="https://github.com/$REPO/releases/download/${tag}/${archive}"
+if command -v sha256sum >/dev/null 2>&1; then
+  actual="$(sha256sum "$archive_path" | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  actual="$(shasum -a 256 "$archive_path" | awk '{print $1}')"
+else
+  fail "required command not found: sha256sum or shasum"
+fi
 
-  workdir="$(mktemp -d)"
-  trap 'rm -rf "$workdir"' EXIT
+[ "$actual" = "$expected" ] || fail "checksum verification failed for ${asset}"
 
-  echo "Downloading goog ${version} for ${target}..."
-  curl -fsSL "$download_url" -o "$workdir/$archive" \
-    || fail "failed to download $download_url (no release for your platform?)"
-  curl -fsSL "$download_url.sha256" -o "$workdir/$archive.sha256" \
-    || fail "failed to download checksum for $archive"
+tar -xzf "$archive_path" -C "$tmp_dir"
+[ -x "${tmp_dir}/${BIN_NAME}" ] || fail "release archive did not contain an executable ${BIN_NAME} binary"
 
-  echo "Verifying checksum..."
-  if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$workdir" && sha256sum -c "$archive.sha256") || fail "checksum verification failed for $archive"
-  else
-    (cd "$workdir" && shasum -a 256 -c "$archive.sha256") || fail "checksum verification failed for $archive"
-  fi
+mkdir -p "$INSTALL_DIR"
+install -m 0755 "${tmp_dir}/${BIN_NAME}" "${INSTALL_DIR}/${BIN_NAME}"
 
-  tar -xzf "$workdir/$archive" -C "$workdir"
-
-  mkdir -p "$INSTALL_DIR"
-  install -m 755 "$workdir/goog" "$INSTALL_DIR/goog"
-
-  echo "Installed goog to $INSTALL_DIR/goog"
-
-  case ":$PATH:" in
-    *":$INSTALL_DIR:"*) ;;
-    *)
-      echo ""
-      echo "Add $INSTALL_DIR to your PATH to use goog directly, e.g.:"
-      echo "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc"
-      ;;
-  esac
-
-  "$INSTALL_DIR/goog" --version
-}
-
-main "$@"
+printf 'goog %s installed to %s/%s\n' "$VERSION" "$INSTALL_DIR" "$BIN_NAME"
