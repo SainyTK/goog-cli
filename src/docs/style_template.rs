@@ -159,9 +159,9 @@ fn default_named_style_text(document: &Value, style_type: &str) -> Option<TextSt
         .get("namedStyles")
         .and_then(|named_styles| named_styles.get("styles"))
         .and_then(Value::as_array)?;
-    let entry = styles.iter().find(|entry| {
-        entry.get("namedStyleType").and_then(Value::as_str) == Some(style_type)
-    })?;
+    let entry = styles
+        .iter()
+        .find(|entry| entry.get("namedStyleType").and_then(Value::as_str) == Some(style_type))?;
     let text_style = entry.get("textStyle")?;
     Some(text_style_from_value(text_style))
 }

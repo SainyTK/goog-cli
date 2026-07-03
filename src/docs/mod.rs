@@ -6,7 +6,9 @@ pub mod style_template;
 mod style_template_tests;
 
 pub use error::DocsError;
-pub use style_template::{extract_style_template, load_style_template, save_style_template, StyleTemplate};
+pub use style_template::{
+    extract_style_template, load_style_template, save_style_template, StyleTemplate,
+};
 
 use std::future::Future;
 

@@ -11,9 +11,15 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::{DocsCommand, DocsListType};
 use crate::docs::{
-    batch_update_document, extract_style_template, get_document, map::build_document_map,
-    map::search_document_text, map::DocumentLocation, map::DocumentMap, map::DocumentMapEntry,
-    map::DocumentMapEntryKind, map::DocumentRange, map::DocumentTextBlock,
+    batch_update_document, extract_style_template, get_document,
+    map::build_document_map,
+    map::search_document_text,
+    map::DocumentLocation,
+    map::DocumentMap,
+    map::DocumentMapEntry,
+    map::DocumentMapEntryKind,
+    map::DocumentRange,
+    map::DocumentTextBlock,
     style_template::{load_style_template_in, save_style_template_in},
     BatchUpdateDocumentOptions, DocsError, GetDocumentOptions, StyleTemplate,
 };
@@ -981,7 +987,8 @@ pub(super) async fn run_insert_table_to<S: AccountStore>(
     .await?;
 
     if !dry_run && !no_auto_style {
-        apply_table_header_auto_style_to(client, &document_id, documents_url, style_cache_dir).await;
+        apply_table_header_auto_style_to(client, &document_id, documents_url, style_cache_dir)
+            .await;
     }
     Ok(())
 }
@@ -1171,7 +1178,11 @@ fn table_header_style_requests(
             table_style.header_row.text_style.bold,
             table_style.header_row.text_style.italic,
             table_style.header_row.text_style.font_size_pt,
-            table_style.header_row.text_style.foreground_color.as_deref(),
+            table_style
+                .header_row
+                .text_style
+                .foreground_color
+                .as_deref(),
         )
         .ok()?;
         if !fields.is_empty() {
@@ -1429,8 +1440,12 @@ pub(super) async fn run_get_to<S: AccountStore>(
     documents_url: Option<&str>,
     style_cache_dir: Option<&Path>,
 ) -> Result<()> {
-    let options =
-        get_document_options(document_id.clone(), fields, include_tabs_content, documents_url);
+    let options = get_document_options(
+        document_id.clone(),
+        fields,
+        include_tabs_content,
+        documents_url,
+    );
 
     let document = get_document(client, &options)
         .await
@@ -2368,10 +2383,10 @@ fn prepare_apply_styles_change(
     let raw_payload = raw_style_payload(command.style_json.as_deref())?;
 
     let has_heading = command.heading.is_some();
-    let cached_named_style = command.heading.as_ref().and_then(|heading| {
-        style_template
-            .and_then(|template| template.named_styles.get(heading))
-    });
+    let cached_named_style = command
+        .heading
+        .as_ref()
+        .and_then(|heading| style_template.and_then(|template| template.named_styles.get(heading)));
     let cached_text_style = cached_named_style.map(|named| &named.text_style);
     let cached_paragraph_style = cached_named_style.and_then(|named| named.paragraph_style.clone());
 
@@ -2845,7 +2860,8 @@ fn paragraph_style_payload(
     let base_paragraph_style = cached_paragraph_style
         .map(|value| expect_json_object(value, "cached paragraph style"))
         .transpose()?;
-    let mut payload = StylePayloadParts::from_base_and_raw(base_paragraph_style, raw_paragraph_style);
+    let mut payload =
+        StylePayloadParts::from_base_and_raw(base_paragraph_style, raw_paragraph_style);
     if let Some(heading) = heading {
         payload.set_field_first("namedStyleType", serde_json::Value::String(heading.into()));
     }
@@ -3180,7 +3196,8 @@ async fn apply_docs_change_requests<S: AccountStore>(
 
     for mut request_body in request_bodies.into_iter() {
         set_request_body_required_revision_id(&mut request_body, required_revision_id.as_deref());
-        let options = batch_update_document_options(document_id.clone(), request_body, documents_url);
+        let options =
+            batch_update_document_options(document_id.clone(), request_body, documents_url);
         let response = batch_update_document(client, &options)
             .await
             .with_context(|| format!("failed to apply Google Docs {command_name}"))?;
@@ -3235,7 +3252,10 @@ fn split_docs_request_bodies(
         return vec![request_body.clone()];
     }
 
-    let Some(requests) = request_body.get("requests").and_then(serde_json::Value::as_array) else {
+    let Some(requests) = request_body
+        .get("requests")
+        .and_then(serde_json::Value::as_array)
+    else {
         return vec![request_body.clone()];
     };
     if requests.len() <= 1 {
@@ -3330,7 +3350,9 @@ fn load_cached_style_template(
     document_id: &str,
     style_cache_dir: Option<&Path>,
 ) -> Option<StyleTemplate> {
-    load_style_template_in(style_cache_dir, document_id).ok().flatten()
+    load_style_template_in(style_cache_dir, document_id)
+        .ok()
+        .flatten()
 }
 
 pub(super) fn run_show_style_template(

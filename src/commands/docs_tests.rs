@@ -2093,7 +2093,8 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
         true
     );
     assert_eq!(
-        output["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["fontSize"]["magnitude"],
+        output["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["fontSize"]
+            ["magnitude"],
         14.0
     );
     assert_eq!(
@@ -2101,11 +2102,13 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
         "bold,italic,fontSize,foregroundColor"
     );
     assert_eq!(
-        output["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["namedStyleType"],
+        output["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["namedStyleType"],
         "HEADING_2"
     );
     assert_eq!(
-        output["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["spacingMode"],
+        output["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["spacingMode"],
         "NEVER_COLLAPSE"
     );
     assert_eq!(
@@ -2205,14 +2208,20 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
     .unwrap();
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(output["writeControl"]["requiredRevisionId"], "rev-after-paragraph");
+    assert_eq!(
+        output["writeControl"]["requiredRevisionId"],
+        "rev-after-paragraph"
+    );
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 3);
     let first_post: serde_json::Value = serde_json::from_slice(&requests[1].body).unwrap();
     let second_post: serde_json::Value = serde_json::from_slice(&requests[2].body).unwrap();
 
-    assert_eq!(first_post["writeControl"]["requiredRevisionId"], "rev-initial");
+    assert_eq!(
+        first_post["writeControl"]["requiredRevisionId"],
+        "rev-initial"
+    );
     assert!(first_post["requests"][0]["updateParagraphStyle"].is_object());
     assert!(first_post["requests"][0]["updateTextStyle"].is_null());
 
@@ -2310,13 +2319,7 @@ fn run_show_style_template_supports_json_and_missing_cache_message() {
     save_style_template_in(Some(cache_dir.path()), &template).unwrap();
 
     let mut json_out = Vec::new();
-    run_show_style_template(
-        "document-123",
-        true,
-        &mut json_out,
-        Some(cache_dir.path()),
-    )
-    .unwrap();
+    run_show_style_template("document-123", true, &mut json_out, Some(cache_dir.path())).unwrap();
     let json: serde_json::Value = serde_json::from_slice(&json_out).unwrap();
     assert_eq!(json["document_id"], "document-123");
     assert_eq!(json["source_revision_id"], "rev-style");
