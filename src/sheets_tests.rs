@@ -48,7 +48,7 @@ fn sheets_token() -> Token {
         access_token: "sheets-access".into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![SHEETS_READONLY_SCOPE.into()],
+        scopes: vec![SHEETS_SCOPE.into()],
     }
 }
 
@@ -57,13 +57,13 @@ fn sheets_write_token() -> Token {
         access_token: "sheets-write-access".into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![SHEETS_READONLY_SCOPE.into(), SHEETS_SCOPE.into()],
+        scopes: vec![SHEETS_SCOPE.into()],
     }
 }
 
 fn sheets_and_drive_token() -> Token {
     Token {
-        scopes: vec![SHEETS_READONLY_SCOPE.into(), DRIVE_SCOPE.into()],
+        scopes: vec![SHEETS_SCOPE.into(), DRIVE_SCOPE.into()],
         ..sheets_token()
     }
 }
@@ -284,7 +284,7 @@ async fn get_spreadsheet_excludes_grid_data_by_default() {
 }
 
 #[tokio::test]
-async fn get_spreadsheet_requests_only_readonly_sheets_scope_when_missing() {
+async fn get_spreadsheet_requests_full_sheets_scope_when_missing() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/token"))
@@ -292,7 +292,7 @@ async fn get_spreadsheet_requests_only_readonly_sheets_scope_when_missing() {
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "access_token": "sheets-access",
             "expires_in": 3600,
-            "scope": SHEETS_READONLY_SCOPE,
+            "scope": SHEETS_SCOPE,
             "token_type": "Bearer"
         })))
         .expect(1)
@@ -326,12 +326,12 @@ async fn get_spreadsheet_requests_only_readonly_sheets_scope_when_missing() {
 
     assert_eq!(
         scopes_seen.lock().unwrap().clone(),
-        vec![SHEETS_READONLY_SCOPE.to_string()]
+        vec![SHEETS_SCOPE.to_string()]
     );
     let saved = store.load_token("alice@example.com").unwrap().unwrap();
     assert_eq!(
         saved.scopes,
-        vec!["openid".to_string(), SHEETS_READONLY_SCOPE.to_string()]
+        vec!["openid".to_string(), SHEETS_SCOPE.to_string()]
     );
 }
 
@@ -556,7 +556,7 @@ async fn get_values_converts_office_file_then_reads_temporary_spreadsheet() {
 }
 
 #[tokio::test]
-async fn batch_get_values_uses_repeated_ranges_and_readonly_scope() {
+async fn batch_get_values_uses_repeated_ranges_and_full_scope() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(header("authorization", "Bearer sheets-access"))
@@ -597,7 +597,9 @@ async fn batch_get_values_uses_repeated_ranges_and_readonly_scope() {
 async fn batch_get_values_converts_office_file_then_reads_temporary_spreadsheet() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .and(path("/sheets/v4/spreadsheets/office-file-123/values/:batchGet"))
+        .and(path(
+            "/sheets/v4/spreadsheets/office-file-123/values/:batchGet",
+        ))
         .respond_with(office_file_precondition_response())
         .expect(1)
         .mount(&server)
@@ -641,7 +643,10 @@ async fn batch_get_values_converts_office_file_then_reads_temporary_spreadsheet(
     let response = batch_get_values(&client, &options).await.unwrap();
 
     assert_eq!(response["valueRanges"][0]["range"], "Sheet1!A1:B2");
-    assert_eq!(response["valueRanges"][1]["values"][1][0], "=SUM(Sheet1!B:B)");
+    assert_eq!(
+        response["valueRanges"][1]["values"][1][0],
+        "=SUM(Sheet1!B:B)"
+    );
 }
 
 #[tokio::test]
@@ -866,7 +871,9 @@ async fn batch_update_spreadsheet_reports_office_file_precondition_clearly() {
     )
     .with_spreadsheets_url(spreadsheets_url(&server));
 
-    let err = batch_update_spreadsheet(&client, &options).await.unwrap_err();
+    let err = batch_update_spreadsheet(&client, &options)
+        .await
+        .unwrap_err();
 
     assert!(matches!(err, SheetsError::UnsupportedOfficeFile));
 }

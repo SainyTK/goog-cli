@@ -9,7 +9,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::docs::{DOCS_READONLY_SCOPE, DOCS_SCOPE};
+use crate::docs::DOCS_SCOPE;
 
 use super::docs::*;
 
@@ -37,7 +37,7 @@ fn scoped_docs_token(access_token: &str) -> Token {
         access_token: access_token.into(),
         refresh_token: "refresh-123".into(),
         expiry: Utc::now() + Duration::hours(1),
-        scopes: vec![DOCS_READONLY_SCOPE.into(), DOCS_SCOPE.into()],
+        scopes: vec![DOCS_SCOPE.into()],
     }
 }
 
