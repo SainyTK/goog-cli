@@ -15,7 +15,7 @@ use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 
 pub const GMAIL_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
-const GMAIL_SCOPES: &[&str] = &[GMAIL_SCOPE];
+pub const GMAIL_SCOPES: &[&str] = &[GMAIL_SCOPE];
 const GMAIL_MESSAGES_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
