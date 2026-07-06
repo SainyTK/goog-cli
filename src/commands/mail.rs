@@ -12,8 +12,9 @@ use crate::auth::state::{
 };
 use crate::cli::{MailAttachmentCommand, MailCommand};
 use crate::mail::{
-    decode_base64url, download_attachment, get_message, list_messages, DownloadAttachmentOptions,
-    GetMessageOptions, ListMessagesOptions, MailError, MessageSummary,
+    decode_base64url, download_attachment, get_message, list_messages, parse_message_reference,
+    resolve_message_reference, DownloadAttachmentOptions, GetMessageOptions, ListMessagesOptions,
+    MailError, MessageReference, MessageSummary,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 10;
@@ -152,6 +153,10 @@ pub(super) async fn run_read_to<S: AccountStore>(
     out: &mut impl Write,
     messages_url: Option<&str>,
 ) -> Result<()> {
+    let reference = parse_message_reference(&message_id);
+    let message_id = resolve_message_reference(client, &reference, messages_url)
+        .await
+        .context("failed to resolve GoogleMail Message reference")?;
     let options = get_message_options(message_id, messages_url);
 
     let message = get_message(client, &options)
@@ -171,15 +176,18 @@ pub(super) async fn run_read_unified_to<S: AccountStore>(
     messages_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<()> {
-    let options = get_message_options(message_id.clone(), messages_url);
-    let message_resource_key = mail_message_resource_key(&message_id);
+    let reference = parse_message_reference(&message_id);
+    let message_resource_key = mail_message_resource_key(&message_reference_key(&reference));
 
     let result = run_with_mail_unified_access(
         config,
         store,
         account_override,
         &message_resource_key,
-        MailAccessAttempt::Read(&options),
+        MailAccessAttempt::Read {
+            reference,
+            messages_url,
+        },
         state_path,
     )
     .await
@@ -200,6 +208,10 @@ pub(super) async fn run_attachment_download_to<S: AccountStore>(
     quiet: bool,
     messages_url: Option<&str>,
 ) -> Result<()> {
+    let reference = parse_message_reference(&message_id);
+    let message_id = resolve_message_reference(client, &reference, messages_url)
+        .await
+        .context("failed to resolve GoogleMail Message reference")?;
     let options = attachment_download_options(message_id, attachment_id, output, messages_url);
     let downloaded = download_attachment(client, &options)
         .await
@@ -222,15 +234,19 @@ pub(super) async fn run_attachment_download_unified_to<S: AccountStore>(
     messages_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<()> {
-    let options =
-        attachment_download_options(message_id.clone(), attachment_id, output, messages_url);
-    let message_resource_key = mail_message_resource_key(&message_id);
+    let reference = parse_message_reference(&message_id);
+    let message_resource_key = mail_message_resource_key(&message_reference_key(&reference));
     let result = run_with_mail_unified_access(
         config,
         store,
         account_override,
         &message_resource_key,
-        MailAccessAttempt::DownloadAttachment(&options),
+        MailAccessAttempt::DownloadAttachment {
+            reference,
+            attachment_id,
+            output,
+            messages_url,
+        },
         state_path,
     )
     .await
@@ -248,6 +264,19 @@ fn mail_message_resource_key(message_id: &str) -> String {
     resource_key("mail", message_id)
 }
 
+fn message_reference_key(reference: &MessageReference) -> String {
+    match reference {
+        MessageReference::MessageId(message_id) => message_id.clone(),
+        MessageReference::Thread {
+            thread_id,
+            preferred_label,
+        } => format!(
+            "thread:{thread_id}:{}",
+            preferred_label.as_deref().unwrap_or_default()
+        ),
+    }
+}
+
 fn write_download_notice(downloaded: &crate::mail::DownloadedAttachment, quiet: bool) {
     if quiet {
         return;
@@ -261,8 +290,16 @@ fn write_download_notice(downloaded: &crate::mail::DownloadedAttachment, quiet: 
 }
 
 enum MailAccessAttempt<'a> {
-    Read(&'a GetMessageOptions),
-    DownloadAttachment(&'a DownloadAttachmentOptions),
+    Read {
+        reference: MessageReference,
+        messages_url: Option<&'a str>,
+    },
+    DownloadAttachment {
+        reference: MessageReference,
+        attachment_id: String,
+        output: Option<PathBuf>,
+        messages_url: Option<&'a str>,
+    },
 }
 
 enum MailAccessResult {
@@ -346,12 +383,33 @@ async fn attempt_mail_access<S: AccountStore>(
     attempt: &MailAccessAttempt<'_>,
 ) -> Result<MailAccessResult, MailError> {
     match attempt {
-        MailAccessAttempt::Read(options) => get_message(client, options)
-            .await
-            .map(MailAccessResult::Message),
-        MailAccessAttempt::DownloadAttachment(options) => download_attachment(client, options)
-            .await
-            .map(MailAccessResult::Downloaded),
+        MailAccessAttempt::Read {
+            reference,
+            messages_url,
+        } => {
+            let message_id = resolve_message_reference(client, reference, *messages_url).await?;
+            let options = get_message_options(message_id, *messages_url);
+            get_message(client, &options)
+                .await
+                .map(MailAccessResult::Message)
+        }
+        MailAccessAttempt::DownloadAttachment {
+            reference,
+            attachment_id,
+            output,
+            messages_url,
+        } => {
+            let message_id = resolve_message_reference(client, reference, *messages_url).await?;
+            let options = attachment_download_options(
+                message_id,
+                attachment_id.clone(),
+                output.clone(),
+                *messages_url,
+            );
+            download_attachment(client, &options)
+                .await
+                .map(MailAccessResult::Downloaded)
+        }
     }
 }
 

@@ -482,6 +482,56 @@ async fn run_read_prints_message_json_to_stdout() {
 }
 
 #[tokio::test]
+async fn run_read_resolves_gmail_sent_url_before_fetching_message() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/gmail/v1/users/me/threads/thread-a:r-3377742391388691132",
+        ))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("fields", "messages(id,labelIds)"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [
+                { "id": "received-message", "labelIds": ["INBOX"] },
+                { "id": "sent-message", "labelIds": ["SENT"] }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/sent-message"))
+        .and(header("authorization", "Bearer mail-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "sent-message",
+            "snippet": "Hello from sent mail"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
+
+    run_read_to(
+        &client,
+        "https://mail.google.com/mail/u/0/#sent/QgrcJHrtrSpwscndncKKjbRWDtfFSrMtdrq".into(),
+        true,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"sent-message\",\"snippet\":\"Hello from sent mail\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_read_prints_message_markdown_to_stdout_by_default() {
     let server = MockServer::start().await;
     let body_data =
