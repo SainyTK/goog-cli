@@ -26,18 +26,14 @@ A command argument that identifies an Account for account-management commands. I
 _Avoid_: Account query, account search, email prefix
 
 **Token**:
-The pair of (access token, refresh token) issued by Google for a specific Account and set of Scopes. Stored in the system keychain, never in config files.
+The pair of (access token, refresh token) issued by Google for a specific Account and set of Scopes.
+Stored in the Token Store, never in setup config.
 _Avoid_: Credentials (overloaded), auth token, OAuth token
 
-**Keychain Access Prompt**:
-An operating-system prompt that appears when `goog` reads or writes a Token from the system keychain.
-It is distinct from Google consent and does not grant new Scopes.
-_Avoid_: Google password prompt, OAuth prompt, browser login
-
-**Trusted CLI**:
-The local `goog` executable that the OS user has approved to read and write Tokens without a Keychain Access Prompt on every command invocation.
-Trust is local to the machine and OS user account.
-_Avoid_: Trusted app, trusted account, trusted Google session
+**Token Store**:
+The local secret-bearing auth state file that holds authorized Accounts, the Active Account, Tokens, and Resource Account Mappings.
+The default Token Store is `~/.goog/auth.json`, a user-owned file with restricted permissions so terminal and agent workflows can read Tokens without operating-system password prompts.
+_Avoid_: Keychain, credentials file, setup config
 
 **Scope**:
 A Google OAuth permission string (e.g., `https://www.googleapis.com/auth/drive`) that grants access to a specific API. `goog auth login` requests every Scope the CLI supports upfront; a command still checks the Token has the Scope it needs before calling the API, as a safety net for Tokens issued before this was true.
