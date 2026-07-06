@@ -1,7 +1,7 @@
 use base64::Engine;
 use chrono::{Duration, Utc};
 use serde_json::Value;
-use wiremock::matchers::{body_json, header, method, path, query_param};
+use wiremock::matchers::{body_json, body_string_contains, header, method, path, query_param};
 use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
@@ -485,6 +485,74 @@ aGVsbG8gYXR0YWNobWVudA==\r\n\
                 filename: "invoice.pdf".into(),
                 content_type: "application/pdf".into(),
                 data: b"hello attachment".to_vec(),
+            }],
+        },
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
+draft-123\tmessage-123\tthread-123\n"
+    );
+}
+
+#[tokio::test]
+async fn run_draft_edit_puts_replacement_message_with_attachment() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/gmail/v1/users/me/drafts/draft-123"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(body_string_contains("\"id\":\"draft-123\""))
+        .and(DraftRawMessageMatcher {
+            expected: "To: alice@example.com\r\n\
+Subject: Updated draft\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"goog-cli-draft-boundary\"\r\n\
+\r\n\
+--goog-cli-draft-boundary\r\n\
+Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+Updated body.\r\n\
+--goog-cli-draft-boundary\r\n\
+Content-Type: text/plain; name=\"notes.txt\"\r\n\
+Content-Disposition: attachment; filename=\"notes.txt\"\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+dXBkYXRlZCBhdHRhY2htZW50\r\n\
+--goog-cli-draft-boundary--\r\n",
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123", "threadId": "thread-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_edit_to(
+        &client,
+        "draft-123".into(),
+        CreateDraftInput {
+            to: vec!["alice@example.com".into()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Updated draft".into(),
+            body: "Updated body.".into(),
+            attachments: vec![DraftAttachmentInput {
+                filename: "notes.txt".into(),
+                content_type: "text/plain".into(),
+                data: b"updated attachment".to_vec(),
             }],
         },
         false,

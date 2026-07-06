@@ -312,6 +312,23 @@ pub struct CreateDraftOptions {
     drafts_url: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct UpdateDraftOptions {
+    pub draft_id: String,
+    pub message: DraftMessage,
+    drafts_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DraftMessage {
+    pub to: Vec<String>,
+    pub cc: Vec<String>,
+    pub bcc: Vec<String>,
+    pub subject: String,
+    pub body: String,
+    pub attachments: Vec<DraftAttachment>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DraftAttachment {
     pub filename: String,
@@ -353,8 +370,44 @@ impl CreateDraftOptions {
     }
 
     fn request_body(&self) -> Result<Value, MailError> {
-        let raw = build_draft_raw_message(self)?;
+        let raw = build_draft_raw_message(&DraftMessage {
+            to: self.to.clone(),
+            cc: self.cc.clone(),
+            bcc: self.bcc.clone(),
+            subject: self.subject.clone(),
+            body: self.body.clone(),
+            attachments: self.attachments.clone(),
+        })?;
         Ok(serde_json::json!({
+            "message": {
+                "raw": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+            }
+        }))
+    }
+}
+
+impl UpdateDraftOptions {
+    pub fn new(draft_id: impl Into<String>, message: DraftMessage) -> Self {
+        Self {
+            draft_id: draft_id.into(),
+            message,
+            drafts_url: GMAIL_DRAFTS_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_drafts_url(mut self, drafts_url: impl Into<String>) -> Self {
+        self.drafts_url = drafts_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, MailError> {
+        draft_url(&self.drafts_url, &self.draft_id)
+    }
+
+    fn request_body(&self) -> Result<Value, MailError> {
+        let raw = build_draft_raw_message(&self.message)?;
+        Ok(serde_json::json!({
+            "id": self.draft_id,
             "message": {
                 "raw": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
             }
@@ -441,6 +494,14 @@ fn message_url(messages_url: &str, message_id: &str) -> Result<Url, MailError> {
     url.path_segments_mut()
         .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
         .push(message_id);
+    Ok(url)
+}
+
+fn draft_url(drafts_url: &str, draft_id: &str) -> Result<Url, MailError> {
+    let mut url = Url::parse(drafts_url)?;
+    url.path_segments_mut()
+        .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
+        .push(draft_id);
     Ok(url)
 }
 
@@ -552,6 +613,23 @@ pub async fn create_draft<S: AccountStore>(
     parse_json_response(response).await
 }
 
+pub async fn update_draft<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateDraftOptions,
+) -> Result<Draft, MailError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .put(options.request_url()?)
+                .json(&options.request_body()?),
+            GMAIL_SCOPES,
+        )
+        .await
+        .map_err(MailError::Auth)?;
+
+    parse_json_response(response).await
+}
+
 pub async fn download_attachment<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DownloadAttachmentOptions,
@@ -584,41 +662,41 @@ pub async fn download_attachment<S: AccountStore>(
     })
 }
 
-fn build_draft_raw_message(options: &CreateDraftOptions) -> Result<String, MailError> {
-    if options.to.is_empty() {
+fn build_draft_raw_message(message: &DraftMessage) -> Result<String, MailError> {
+    if message.to.is_empty() {
         return Err(MailError::InvalidInput(
             "at least one To recipient is required".into(),
         ));
     }
 
-    let mut message = draft_headers(options)?;
-    message.push_str("MIME-Version: 1.0\r\n");
+    let mut raw = draft_headers(message)?;
+    raw.push_str("MIME-Version: 1.0\r\n");
 
-    if options.attachments.is_empty() {
-        message.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
-        message.push_str("Content-Transfer-Encoding: 8bit\r\n");
-        message.push_str("\r\n");
-        message.push_str(&normalize_body_newlines(&options.body));
-        return Ok(message);
+    if message.attachments.is_empty() {
+        raw.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
+        raw.push_str("Content-Transfer-Encoding: 8bit\r\n");
+        raw.push_str("\r\n");
+        raw.push_str(&normalize_body_newlines(&message.body));
+        return Ok(raw);
     }
 
-    message.push_str(&format!(
+    raw.push_str(&format!(
         "Content-Type: multipart/mixed; boundary=\"{DRAFT_BOUNDARY}\"\r\n"
     ));
-    message.push_str("\r\n");
-    message.push_str(&format!("--{DRAFT_BOUNDARY}\r\n"));
-    message.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
-    message.push_str("Content-Transfer-Encoding: 8bit\r\n");
-    message.push_str("\r\n");
-    message.push_str(&normalize_body_newlines(&options.body));
-    for attachment in &options.attachments {
-        message.push_str(&draft_attachment_part(attachment)?);
+    raw.push_str("\r\n");
+    raw.push_str(&format!("--{DRAFT_BOUNDARY}\r\n"));
+    raw.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
+    raw.push_str("Content-Transfer-Encoding: 8bit\r\n");
+    raw.push_str("\r\n");
+    raw.push_str(&normalize_body_newlines(&message.body));
+    for attachment in &message.attachments {
+        raw.push_str(&draft_attachment_part(attachment)?);
     }
-    message.push_str(&format!("--{DRAFT_BOUNDARY}--\r\n"));
-    Ok(message)
+    raw.push_str(&format!("--{DRAFT_BOUNDARY}--\r\n"));
+    Ok(raw)
 }
 
-fn draft_headers(options: &CreateDraftOptions) -> Result<String, MailError> {
+fn draft_headers(options: &DraftMessage) -> Result<String, MailError> {
     let mut message = String::new();
     push_address_header(&mut message, "To", &options.to)?;
     push_address_header(&mut message, "Cc", &options.cc)?;
