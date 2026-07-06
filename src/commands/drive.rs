@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -696,7 +698,8 @@ async fn download_as_account<S: AccountStore>(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn collect_list_items_with_drive_unified_access<S: AccountStore>(
+#[allow(clippy::await_holding_refcell_ref)]
+async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
@@ -706,20 +709,22 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore>(
     all: bool,
     parent: Option<String>,
     quiet: bool,
-    err: &mut impl Write,
+    err: &mut W,
     files_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> DriveResult<Vec<DriveFile>> {
-    let (files, progress_output) = UnifiedAccess::run(
+    let err = Rc::new(RefCell::new(err));
+    UnifiedAccess::run(
         config,
         account_override,
         target_resource_key,
         state_path,
-        |account| -> AccessFuture<'_, (Vec<DriveFile>, Vec<u8>), DriveError> {
+        |account| -> AccessFuture<'_, Vec<DriveFile>, DriveError> {
             let parent = parent.clone();
+            let err = Rc::clone(&err);
             Box::pin(async move {
-                let mut progress_output = Vec::new();
-                let files = collect_list_items_as_account(
+                let mut err = err.borrow_mut();
+                collect_list_items_as_account(
                     config,
                     store,
                     kind,
@@ -727,20 +732,16 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore>(
                     all,
                     parent,
                     quiet,
-                    &mut progress_output,
+                    &mut **err,
                     files_url,
                     account,
                 )
-                .await?;
-                Ok((files, progress_output))
+                .await
             })
         },
         is_target_access_failure,
     )
-    .await?;
-
-    err.write_all(&progress_output).map_err(DriveError::Io)?;
-    Ok(files)
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
