@@ -18,13 +18,13 @@ use crate::docs::{
     map::resolve_range_selector,
     map::resolve_replace_text_ranges,
     map::search_document_text,
+    map::text_block_contains_range,
     map::ContentSelector,
     map::DocumentLocation,
     map::DocumentMap,
     map::DocumentMapEntry,
     map::DocumentMapEntryKind,
     map::DocumentRange,
-    map::DocumentTextBlock,
     map::InsertTextSelector,
     map::RangeSelector,
     style_template::{load_style_template_in, save_style_template_in},
@@ -2613,11 +2613,6 @@ fn replace_text_preview_after(
     let mut after = block.text.clone();
     after.replace_range(start_offset..end_offset, new_text);
     compact_preview(&after)
-}
-
-fn text_block_contains_range(block: &DocumentTextBlock, range: &DocumentRange) -> bool {
-    let block_end_index = block.start_index + block.text.encode_utf16().count() as i64;
-    block.start_index <= range.start_index && range.end_index <= block_end_index
 }
 
 fn utf16_byte_offset(text: &str, utf16_offset: i64) -> usize {

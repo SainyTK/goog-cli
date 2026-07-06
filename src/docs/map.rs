@@ -439,7 +439,7 @@ fn text_anchor_preview_offset(
     preview_offset_for_index(&range.preview, block_start_index, insertion_index)
 }
 
-fn text_block_contains_range(block: &DocumentTextBlock, range: &DocumentRange) -> bool {
+pub(crate) fn text_block_contains_range(block: &DocumentTextBlock, range: &DocumentRange) -> bool {
     block.start_index <= range.start_index && range.end_index <= text_block_end_index(block)
 }
 
