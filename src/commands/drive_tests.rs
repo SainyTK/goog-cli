@@ -1336,3 +1336,96 @@ async fn run_upload_unified_uses_target_folder_for_account_mapping() {
         Some("bob@example.com")
     );
 }
+
+#[derive(Clone, Default)]
+struct SharedErrBuffer(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl SharedErrBuffer {
+    fn snapshot(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+impl std::io::Write for SharedErrBuffer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_done() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param("pageSize", "2"))
+        .and(query_param("q", "'root' in parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param("pageSize", "1"))
+        .and(query_param("pageToken", "token-2"))
+        .and(query_param("q", "'root' in parents"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(BROWSE_SECOND_PAGE_RESPONSE)
+                .set_delay(std::time::Duration::from_millis(200)),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = test_config();
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let mut err = SharedErrBuffer::default();
+    let err_probe = err.clone();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    let run_future = run_list_unified_to(
+        &config,
+        &store,
+        None,
+        DriveListKind::Browse,
+        Some(2),
+        true,
+        Some("root".into()),
+        false,
+        false,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+        Some(&state_path),
+    );
+    tokio::pin!(run_future);
+
+    tokio::select! {
+        _ = &mut run_future => panic!("expected the second page to still be in flight"),
+        _ = tokio::time::sleep(std::time::Duration::from_millis(80)) => {}
+    }
+
+    assert_eq!(
+        err_probe.snapshot(),
+        "Fetched 1 items...\n",
+        "progress for the first page must reach the real writer before the second page finishes"
+    );
+
+    run_future.await.unwrap();
+
+    assert_eq!(
+        err_probe.snapshot(),
+        "Fetched 1 items...\nFetched 2 items...\n"
+    );
+}
