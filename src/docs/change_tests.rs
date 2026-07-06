@@ -6,11 +6,11 @@ use super::change::{
     prepare_replace_text_change, request_body_required_revision_id,
     set_request_body_required_revision_id, split_docs_request_bodies, write_docs_change_preview,
     ApplyListCommand, ApplyStylesCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
-    InsertTextCommand, InsertTextSelector, RangeSelector, ReplaceTextCommand,
+    InsertTextCommand, ReplaceTextCommand,
 };
 use super::map::{
     build_document_map, DocumentLocation, DocumentMap, DocumentMapEntry, DocumentMapEntryKind,
-    DocumentRange, LocationConfidence,
+    DocumentRange, InsertTextSelector, LocationConfidence, RangeSelector,
 };
 use crate::cli::DocsListType;
 
@@ -258,6 +258,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
         }],
         document_locations: Vec::new(),
         text_blocks: Vec::new(),
+        insertion_locations: Vec::new(),
     };
     let temp_dir = tempfile::tempdir().unwrap();
     let table_data = temp_dir.path().join("table.csv");

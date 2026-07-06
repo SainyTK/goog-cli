@@ -1,3 +1,4 @@
+use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -11,6 +12,8 @@ pub struct DocumentMap {
     pub document_locations: Vec<DocumentLocation>,
     #[serde(skip)]
     pub text_blocks: Vec<DocumentTextBlock>,
+    #[serde(skip)]
+    pub insertion_locations: Vec<DocumentLocation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -81,6 +84,49 @@ pub enum DocumentMapEntryKind {
     PositionedImage,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContentSelector {
+    Index(i64),
+    Entry(usize),
+    PageLine { page: usize, line: usize },
+    Heading(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InsertTextSelector {
+    Index(i64),
+    Entry(usize),
+    PageLine { page: usize, line: usize },
+    AfterHeading(String),
+    BeforeHeading(String),
+    AfterText(String),
+    BeforeText(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RangeSelector {
+    IndexRange {
+        start_index: i64,
+        end_index: i64,
+    },
+    Entry(usize),
+    PageLine {
+        page: usize,
+        line: usize,
+    },
+    Text {
+        text: String,
+        match_number: Option<usize>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedInsertLocation {
+    pub location: DocumentLocation,
+    pub preview_before: String,
+    pub preview_offset: usize,
+}
+
 pub fn build_document_map(document: &Value) -> DocumentMap {
     let mut builder = DocumentMapBuilder::new(
         collect_table_of_contents_page_hints(document),
@@ -99,6 +145,7 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         document_locations: entries.iter().map(|entry| entry.location.clone()).collect(),
         entries,
         text_blocks: builder.text_blocks,
+        insertion_locations: builder.insertion_locations,
     }
 }
 
@@ -114,9 +161,400 @@ pub fn search_document_text(document_map: &DocumentMap, needle: &str) -> Vec<Doc
         .collect()
 }
 
+pub fn resolve_content_entry<'a>(
+    document_map: &'a DocumentMap,
+    selector: &ContentSelector,
+) -> Result<&'a DocumentMapEntry> {
+    match selector {
+        ContentSelector::Index(index) => document_map
+            .entries
+            .iter()
+            .filter(|entry| {
+                entry
+                    .location
+                    .index
+                    .is_some_and(|entry_index| entry_index <= *index)
+            })
+            .max_by_key(|entry| entry.location.index)
+            .with_context(|| format!("no content found at Google Docs index {index}")),
+        ContentSelector::Entry(entry_number) => document_map
+            .entries
+            .iter()
+            .find(|entry| entry.entry == *entry_number)
+            .with_context(|| format!("Document Map entry {entry_number} was not found")),
+        ContentSelector::PageLine { page, line } => document_map
+            .entries
+            .iter()
+            .find(|entry| {
+                entry.location.page == Some(*page) && entry.location.content_line == *line
+            })
+            .with_context(|| format!("no content found at page {page}, line {line}")),
+        ContentSelector::Heading(heading) => resolve_heading(document_map, heading),
+    }
+}
+
+pub fn resolve_range_selector(
+    document_map: &DocumentMap,
+    selector: &RangeSelector,
+) -> Result<DocumentRange> {
+    match selector {
+        RangeSelector::IndexRange {
+            start_index,
+            end_index,
+        } => Ok(DocumentRange {
+            start_index: *start_index,
+            end_index: *end_index,
+            location: DocumentLocation {
+                index: Some(*start_index),
+                page: None,
+                content_line: 0,
+                confidence: LocationConfidence::Unknown,
+            },
+            preview: format!("range {start_index}..{end_index}"),
+        }),
+        RangeSelector::Entry(entry_number) => {
+            let entry =
+                resolve_content_entry(document_map, &ContentSelector::Entry(*entry_number))?;
+            range_for_entry(document_map, entry)
+        }
+        RangeSelector::PageLine { page, line } => {
+            let entry = resolve_content_entry(
+                document_map,
+                &ContentSelector::PageLine {
+                    page: *page,
+                    line: *line,
+                },
+            )?;
+            range_for_entry(document_map, entry)
+        }
+        RangeSelector::Text { text, match_number } => {
+            let ranges = resolve_text_ranges(document_map, text, *match_number, false)?;
+            ranges
+                .into_iter()
+                .next()
+                .context("text range selector did not resolve a match")
+        }
+    }
+}
+
+pub fn resolve_insert_text_location(
+    document_map: &DocumentMap,
+    selector: &InsertTextSelector,
+) -> Result<ResolvedInsertLocation> {
+    match selector {
+        InsertTextSelector::Index(index) => resolved_for_index(document_map, *index),
+        InsertTextSelector::Entry(entry_number) => {
+            let entry =
+                resolve_content_entry(document_map, &ContentSelector::Entry(*entry_number))?;
+            resolved_for_entry_start(entry)
+        }
+        InsertTextSelector::PageLine { page, line } => {
+            let entry = resolve_content_entry(
+                document_map,
+                &ContentSelector::PageLine {
+                    page: *page,
+                    line: *line,
+                },
+            )?;
+            resolved_for_entry_start(entry)
+        }
+        InsertTextSelector::BeforeHeading(heading) => {
+            let entry = resolve_heading(document_map, heading)?;
+            resolved_for_entry_start(entry)
+        }
+        InsertTextSelector::AfterHeading(heading) => {
+            let entry = resolve_heading(document_map, heading)?;
+            resolved_for_entry_end(document_map, entry)
+        }
+        InsertTextSelector::BeforeText(text) => {
+            let range = resolve_text_anchor(document_map, text)?;
+            let preview_offset =
+                text_anchor_preview_offset(document_map, &range, range.start_index);
+            Ok(ResolvedInsertLocation {
+                location: DocumentLocation {
+                    index: Some(range.start_index),
+                    ..range.location.clone()
+                },
+                preview_before: range.preview.clone(),
+                preview_offset,
+            })
+        }
+        InsertTextSelector::AfterText(text) => {
+            let range = resolve_text_anchor(document_map, text)?;
+            let preview_offset = text_anchor_preview_offset(document_map, &range, range.end_index);
+            Ok(ResolvedInsertLocation {
+                location: DocumentLocation {
+                    index: Some(range.end_index),
+                    ..range.location.clone()
+                },
+                preview_before: range.preview.clone(),
+                preview_offset,
+            })
+        }
+    }
+}
+
+pub fn resolve_replace_text_ranges(
+    document_map: &DocumentMap,
+    old_text: &str,
+    match_number: Option<usize>,
+    all: bool,
+) -> Result<Vec<DocumentRange>> {
+    resolve_text_ranges(document_map, old_text, match_number, all)
+}
+
+fn range_for_entry(document_map: &DocumentMap, entry: &DocumentMapEntry) -> Result<DocumentRange> {
+    let start_index = entry
+        .location
+        .index
+        .context("selected Document Map entry has no Google Docs index")?;
+    let end_index = text_block_starting_at(document_map, start_index)
+        .map(text_block_end_index)
+        .or_else(|| next_entry_index_after(document_map, start_index))
+        .unwrap_or(start_index + 1);
+    Ok(DocumentRange {
+        start_index,
+        end_index,
+        location: entry.location.clone(),
+        preview: entry.preview.clone(),
+    })
+}
+
+fn resolve_heading<'a>(
+    document_map: &'a DocumentMap,
+    heading: &str,
+) -> Result<&'a DocumentMapEntry> {
+    let matches = document_map
+        .entries
+        .iter()
+        .filter(|entry| entry.kind == DocumentMapEntryKind::Heading && entry.preview == heading)
+        .collect::<Vec<_>>();
+
+    match matches.as_slice() {
+        [entry] => Ok(entry),
+        [] => bail!("heading selector {heading:?} did not match any Document Map entries"),
+        candidates => {
+            let candidate_list = candidates
+                .iter()
+                .map(|entry| {
+                    format!(
+                        "entry {} index {} page {} line {} preview {}",
+                        entry.entry,
+                        display_optional(entry.location.index),
+                        display_optional(entry.location.page),
+                        entry.location.content_line,
+                        entry.preview
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            bail!("ambiguous heading selector {heading:?}; candidates: {candidate_list}")
+        }
+    }
+}
+
+fn resolved_for_index(document_map: &DocumentMap, index: i64) -> Result<ResolvedInsertLocation> {
+    if let Ok(entry) = resolve_content_entry(document_map, &ContentSelector::Index(index)) {
+        let preview_offset = entry
+            .location
+            .index
+            .map(|start| preview_offset_for_index(&entry.preview, start, index))
+            .unwrap_or(0);
+        return Ok(ResolvedInsertLocation {
+            location: DocumentLocation {
+                index: Some(index),
+                ..entry.location.clone()
+            },
+            preview_before: entry.preview.clone(),
+            preview_offset,
+        });
+    }
+
+    let location = document_map
+        .insertion_locations
+        .iter()
+        .find(|location| location.index == Some(index))
+        .cloned()
+        .with_context(|| format!("no content found at Google Docs index {index}"))?;
+
+    Ok(ResolvedInsertLocation {
+        location,
+        preview_before: String::new(),
+        preview_offset: 0,
+    })
+}
+
+fn resolved_for_entry_start(entry: &DocumentMapEntry) -> Result<ResolvedInsertLocation> {
+    let Some(index) = entry.location.index else {
+        bail!(
+            "Document Map entry {} does not have a Google Docs index",
+            entry.entry
+        );
+    };
+    Ok(ResolvedInsertLocation {
+        location: DocumentLocation {
+            index: Some(index),
+            ..entry.location.clone()
+        },
+        preview_before: entry.preview.clone(),
+        preview_offset: 0,
+    })
+}
+
+fn resolved_for_entry_end(
+    document_map: &DocumentMap,
+    entry: &DocumentMapEntry,
+) -> Result<ResolvedInsertLocation> {
+    let Some(start_index) = entry.location.index else {
+        bail!(
+            "Document Map entry {} does not have a Google Docs index",
+            entry.entry
+        );
+    };
+    let end_index = text_block_starting_at(document_map, start_index)
+        .map(text_block_end_index)
+        .unwrap_or(start_index);
+    Ok(ResolvedInsertLocation {
+        location: DocumentLocation {
+            index: Some(end_index),
+            ..entry.location.clone()
+        },
+        preview_before: entry.preview.clone(),
+        preview_offset: entry.preview.chars().count(),
+    })
+}
+
+fn text_anchor_preview_offset(
+    document_map: &DocumentMap,
+    range: &DocumentRange,
+    insertion_index: i64,
+) -> usize {
+    let block_start_index = document_map
+        .text_blocks
+        .iter()
+        .find(|block| text_block_contains_range(block, range))
+        .map(|block| block.start_index)
+        .unwrap_or(range.start_index);
+
+    preview_offset_for_index(&range.preview, block_start_index, insertion_index)
+}
+
+pub(crate) fn text_block_contains_range(block: &DocumentTextBlock, range: &DocumentRange) -> bool {
+    block.start_index <= range.start_index && range.end_index <= text_block_end_index(block)
+}
+
+fn text_block_starting_at(
+    document_map: &DocumentMap,
+    start_index: i64,
+) -> Option<&DocumentTextBlock> {
+    document_map
+        .text_blocks
+        .iter()
+        .find(|block| block.start_index == start_index)
+}
+
+fn next_entry_index_after(document_map: &DocumentMap, start_index: i64) -> Option<i64> {
+    document_map
+        .entries
+        .iter()
+        .filter_map(|candidate| candidate.location.index)
+        .find(|candidate_index| *candidate_index > start_index)
+}
+
+fn text_block_end_index(block: &DocumentTextBlock) -> i64 {
+    block.start_index + block.text.encode_utf16().count() as i64
+}
+
+fn resolve_text_anchor(document_map: &DocumentMap, text: &str) -> Result<DocumentRange> {
+    let matches = search_document_text(document_map, text);
+    match matches.as_slice() {
+        [range] => Ok(range.clone()),
+        [] => bail!("text selector {text:?} did not match any Document Map entries"),
+        candidates => {
+            let candidate_list = format_range_candidates(candidates);
+            bail!("ambiguous text selector {text:?}; candidates: {candidate_list}")
+        }
+    }
+}
+
+fn resolve_text_ranges(
+    document_map: &DocumentMap,
+    text: &str,
+    match_number: Option<usize>,
+    all: bool,
+) -> Result<Vec<DocumentRange>> {
+    if text.is_empty() {
+        bail!("replace-text old text must not be empty");
+    }
+    if all && match_number.is_some() {
+        bail!("provide only one replace-text disambiguator: --match or --all");
+    }
+    if match_number == Some(0) {
+        bail!("--match must be 1 or greater");
+    }
+
+    let matches = search_document_text(document_map, text);
+    if matches.is_empty() {
+        bail!("replace-text did not match {text:?}");
+    }
+    if all {
+        return Ok(matches);
+    }
+    if let Some(match_number) = match_number {
+        return matches
+            .get(match_number - 1)
+            .cloned()
+            .map(|range| vec![range])
+            .with_context(|| {
+                format!(
+                    "replace-text match {match_number} was not found; {} matches available",
+                    matches.len()
+                )
+            });
+    }
+
+    match matches.as_slice() {
+        [range] => Ok(vec![range.clone()]),
+        candidates => {
+            let candidate_list = format_range_candidates(candidates);
+            bail!("ambiguous replace-text match {text:?}; candidates: {candidate_list}")
+        }
+    }
+}
+
+fn format_range_candidates(candidates: &[DocumentRange]) -> String {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(index, range)| {
+            format!(
+                "match {} index {} page {} line {} preview {}",
+                index + 1,
+                range.start_index,
+                display_optional(range.location.page),
+                range.location.content_line,
+                range.preview
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn preview_offset_for_index(preview: &str, block_start_index: i64, insertion_index: i64) -> usize {
+    let offset = insertion_index.saturating_sub(block_start_index) as usize;
+    preview.chars().take(offset).count()
+}
+
+fn display_optional<T: ToString>(value: Option<T>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "-".into())
+}
+
 struct DocumentMapBuilder<'a> {
     entries: Vec<DocumentMapEntry>,
     text_blocks: Vec<DocumentTextBlock>,
+    insertion_locations: Vec<DocumentLocation>,
     current_page: Option<usize>,
     current_confidence: LocationConfidence,
     content_line: usize,
@@ -145,6 +583,7 @@ impl<'a> DocumentMapBuilder<'a> {
         Self {
             entries: Vec::new(),
             text_blocks: Vec::new(),
+            insertion_locations: Vec::new(),
             current_page: None,
             current_confidence: LocationConfidence::Unknown,
             content_line: 0,
@@ -159,6 +598,8 @@ impl<'a> DocumentMapBuilder<'a> {
         if contains_page_break(element) {
             self.advance_explicit_page();
         }
+
+        self.push_insertion_location(element);
 
         if let Some(paragraph) = element.get("paragraph") {
             self.push_paragraph(element, paragraph);
@@ -264,6 +705,13 @@ impl<'a> DocumentMapBuilder<'a> {
 
     fn push_content_line(&mut self) {
         self.content_line += 1;
+    }
+
+    fn push_insertion_location(&mut self, element: &Value) {
+        let location = self.current_location(element);
+        if location.index.is_some() {
+            self.insertion_locations.push(location);
+        }
     }
 
     fn next_image_handle(&mut self) -> String {

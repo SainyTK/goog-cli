@@ -11,9 +11,10 @@ use crate::auth::state::{
 use crate::auth::testing::MemoryStore;
 use crate::cli::DocsListType;
 use crate::docs::change::{
-    ApplyListCommand, ApplyStylesCommand, ContentSelector, EditTableCommand, InsertImageCommand,
-    InsertTableCommand, InsertTextCommand, InsertTextSelector, RangeSelector, ReplaceTextCommand,
+    ApplyListCommand, ApplyStylesCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
+    InsertTextCommand, ReplaceTextCommand,
 };
+use crate::docs::map::{ContentSelector, InsertTextSelector, RangeSelector};
 use crate::docs::style_template::{
     load_style_template_in, save_style_template_in, ListStyleTemplate, NamedStyleTemplate,
     StyleTemplate, TextStyleTemplate,
