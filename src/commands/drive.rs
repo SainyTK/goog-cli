@@ -7,9 +7,9 @@ use serde::Serialize;
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::auth::config::{resolve_account, Config};
+use crate::auth::config::Config;
 use crate::auth::state::resource_key;
-use crate::auth::unified_access::UnifiedAccess;
+use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{DriveCommand, DriveFolderCommand};
 use crate::drive::{
     download, list_files, upload, DownloadFileOptions, DownloadedFile, DriveError, DriveFile,
@@ -624,33 +624,22 @@ async fn upload_with_drive_unified_access<S: AccountStore>(
     progress: &Option<ProgressBar>,
     state_path: Option<&Path>,
 ) -> DriveResult<UploadedFile> {
-    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
-
-    if account_override.is_some() {
-        let account = resolve_account_override(config, account_override)?;
-        return upload_as_account(config, store, &mut access, options, progress, account).await;
-    }
-
-    let candidates = access.candidates(config);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match upload_as_account(config, store, &mut access, options, progress, account).await {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, UploadedFile, DriveError> {
+            Box::pin(upload_as_account(config, store, options, progress, account))
+        },
+        is_target_access_failure,
+    )
+    .await
 }
 
 async fn upload_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    access: &mut UnifiedAccess,
     options: &UploadFileOptions,
     progress: &Option<ProgressBar>,
     account: String,
@@ -662,7 +651,6 @@ async fn upload_as_account<S: AccountStore>(
         }
     })
     .await?;
-    access.record_success(account)?;
     Ok(uploaded)
 }
 
@@ -675,33 +663,24 @@ async fn download_with_drive_unified_access<S: AccountStore>(
     progress: &Option<ProgressBar>,
     state_path: Option<&Path>,
 ) -> DriveResult<DownloadedFile> {
-    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
-
-    if account_override.is_some() {
-        let account = resolve_account_override(config, account_override)?;
-        return download_as_account(config, store, &mut access, options, progress, account).await;
-    }
-
-    let candidates = access.candidates(config);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match download_as_account(config, store, &mut access, options, progress, account).await {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DownloadedFile, DriveError> {
+            Box::pin(download_as_account(
+                config, store, options, progress, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
 }
 
 async fn download_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    access: &mut UnifiedAccess,
     options: &DownloadFileOptions,
     progress: &Option<ProgressBar>,
     account: String,
@@ -713,7 +692,6 @@ async fn download_as_account<S: AccountStore>(
         }
     })
     .await?;
-    access.record_success(account)?;
     Ok(downloaded)
 }
 
@@ -732,61 +710,43 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore>(
     files_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> DriveResult<Vec<DriveFile>> {
-    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
+    let (files, progress_output) = UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, (Vec<DriveFile>, Vec<u8>), DriveError> {
+            let parent = parent.clone();
+            Box::pin(async move {
+                let mut progress_output = Vec::new();
+                let files = collect_list_items_as_account(
+                    config,
+                    store,
+                    kind,
+                    limit,
+                    all,
+                    parent,
+                    quiet,
+                    &mut progress_output,
+                    files_url,
+                    account,
+                )
+                .await?;
+                Ok((files, progress_output))
+            })
+        },
+        is_target_access_failure,
+    )
+    .await?;
 
-    if account_override.is_some() {
-        let account = resolve_account_override(config, account_override)?;
-        return collect_list_items_as_account(
-            config,
-            store,
-            &mut access,
-            kind,
-            limit,
-            all,
-            parent,
-            quiet,
-            err,
-            files_url,
-            account,
-        )
-        .await;
-    }
-
-    let candidates = access.candidates(config);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match collect_list_items_as_account(
-            config,
-            store,
-            &mut access,
-            kind,
-            limit,
-            all,
-            parent.clone(),
-            quiet,
-            err,
-            files_url,
-            account,
-        )
-        .await
-        {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
+    err.write_all(&progress_output).map_err(DriveError::Io)?;
+    Ok(files)
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn collect_list_items_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    access: &mut UnifiedAccess,
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
@@ -800,7 +760,6 @@ async fn collect_list_items_as_account<S: AccountStore>(
     let files =
         collect_list_items_drive_error(&client, kind, limit, all, parent, quiet, err, files_url)
             .await?;
-    access.record_success(account)?;
     Ok(files)
 }
 
@@ -919,18 +878,6 @@ async fn collect_list_items_drive_error<S: AccountStore>(
 
 fn is_target_access_failure(err: &DriveError) -> bool {
     matches!(err, DriveError::NotFound | DriveError::PermissionDenied)
-}
-
-fn resolve_account_override(
-    config: &Config,
-    account_override: Option<&str>,
-) -> DriveResult<String> {
-    Ok(resolve_account(config, account_override)?
-        .expect("explicit account resolution returns an account"))
-}
-
-fn no_access_candidate_error() -> DriveError {
-    DriveError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
 }
 
 pub(super) fn requested_result_count(limit: Option<u32>, all: bool) -> Option<u32> {
