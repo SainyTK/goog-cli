@@ -11,7 +11,7 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::{DocsCommand, DocsListType};
 use crate::docs::{
-    batch_update_document, extract_style_template, get_document,
+    batch_update_document, create_document, extract_style_template, get_document,
     map::build_document_map,
     map::search_document_text,
     map::DocumentLocation,
@@ -21,7 +21,8 @@ use crate::docs::{
     map::DocumentRange,
     map::DocumentTextBlock,
     style_template::{load_style_template_in, save_style_template_in},
-    BatchUpdateDocumentOptions, DocsError, GetDocumentOptions, StyleTemplate,
+    BatchUpdateDocumentOptions, CreateDocumentOptions, DocsError, GetDocumentOptions,
+    StyleTemplate,
 };
 
 pub fn run<S: AccountStore>(
@@ -32,6 +33,12 @@ pub fn run<S: AccountStore>(
 ) -> Result<()> {
     cmd.normalize_document_id();
     match cmd {
+        DocsCommand::Create { title } => {
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_to(&client, title, &mut std::io::stdout(), None))
+        }
         DocsCommand::Map { document_id, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -1428,6 +1435,34 @@ pub(super) async fn run_apply_list_unified_to<S: AccountStore>(
         "apply-list",
     )
     .await
+}
+
+pub(super) async fn run_create_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    title: String,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let mut options = CreateDocumentOptions::new(title);
+    if let Some(documents_url) = documents_url {
+        options = options.with_documents_url(documents_url);
+    }
+
+    let document = create_document(client, &options)
+        .await
+        .context("failed to create Google Docs Document")?;
+    let document_id = document
+        .get("documentId")
+        .and_then(serde_json::Value::as_str)
+        .context("Google Docs create response did not include a documentId")?;
+
+    writeln!(
+        out,
+        "{}\thttps://docs.google.com/document/d/{}/edit",
+        document_id, document_id
+    )
+    .context("failed to write output")?;
+    Ok(())
 }
 
 #[cfg(test)]

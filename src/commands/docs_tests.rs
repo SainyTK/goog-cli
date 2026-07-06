@@ -2339,6 +2339,43 @@ fn run_show_style_template_supports_json_and_missing_cache_message() {
 }
 
 #[tokio::test]
+async fn run_create_prints_document_id_and_edit_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(
+            serde_json::json!({ "title": "goog-e2e-scratch" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-456",
+            "title": "goog-e2e-scratch"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_create_to(
+        &client,
+        "goog-e2e-scratch".into(),
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "document-456\thttps://docs.google.com/document/d/document-456/edit\n"
+    );
+}
+
+#[tokio::test]
 async fn run_batch_update_reads_requests_from_file_and_prints_response_json() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

@@ -196,6 +196,7 @@ impl DocsCommand {
     /// extracting it first if a Google Docs/Drive URL was passed instead.
     pub fn normalize_document_id(&mut self) {
         let document_id = match self {
+            DocsCommand::Create { .. } => return,
             DocsCommand::Map { document_id, .. }
             | DocsCommand::SearchText { document_id, .. }
             | DocsCommand::GetContent { document_id, .. }
@@ -218,6 +219,18 @@ impl DocsCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsCommand {
+    /// Create a new, blank Google Docs Document
+    #[command(after_long_help = "Output shape:
+  Prints the created Document ID and its Google Docs edit URL, tab-separated.
+
+Notes:
+  The Document is always created at the root of My Drive; there is no --folder option today.
+  Move it afterward with the Google Drive web UI, or via a future `goog drive` move command.
+  Follow up with `goog docs batch-update` or the other `goog docs` editing commands to add content.")]
+    Create {
+        /// Title for the new Google Docs Document
+        title: String,
+    },
     /// Print a high-level map of editable Google Docs content
     Map {
         /// Google Docs Document ID or URL to map
