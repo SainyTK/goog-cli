@@ -1429,3 +1429,83 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
         "Fetched 1 items...\nFetched 2 items...\n"
     );
 }
+
+#[tokio::test]
+async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fallback() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer alice-access"))
+        .and(query_param("pageSize", "2"))
+        .and(query_param("q", "'root' in parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer alice-access"))
+        .and(query_param("pageSize", "1"))
+        .and(query_param("pageToken", "token-2"))
+        .and(query_param("q", "'root' in parents"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("missing for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("pageSize", "2"))
+        .and(query_param("q", "'root' in parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("pageSize", "1"))
+        .and(query_param("pageToken", "token-2"))
+        .and(query_param("q", "'root' in parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_SECOND_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_list_unified_to(
+        &config,
+        &store,
+        None,
+        DriveListKind::Browse,
+        Some(2),
+        true,
+        Some("root".into()),
+        false,
+        false,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(err).unwrap(),
+        "Fetched 1 items...\nFetched 2 items...\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "root")),
+        Some("bob@example.com")
+    );
+}

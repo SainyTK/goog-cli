@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -698,7 +698,6 @@ async fn download_as_account<S: AccountStore>(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::await_holding_refcell_ref)]
 async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>(
     config: &Config,
     store: &S,
@@ -713,7 +712,7 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>
     files_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> DriveResult<Vec<DriveFile>> {
-    let err = Rc::new(RefCell::new(err));
+    let progress = UnifiedDriveListProgress::new(err);
     UnifiedAccess::run(
         config,
         account_override,
@@ -721,22 +720,55 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>
         state_path,
         |account| -> AccessFuture<'_, Vec<DriveFile>, DriveError> {
             let parent = parent.clone();
-            let err = Rc::clone(&err);
-            Box::pin(async move {
-                let mut err = err.borrow_mut();
-                collect_list_items_as_account(
-                    config, store, kind, limit, all, parent, quiet, &mut **err, files_url, account,
-                )
-                .await
-            })
+            let progress = progress.clone();
+            Box::pin(collect_list_items_as_account(
+                config, store, kind, limit, all, parent, quiet, progress, files_url, account,
+            ))
         },
         is_target_access_failure,
     )
     .await
 }
 
+struct UnifiedDriveListProgress<'a, W> {
+    err: Rc<RefCell<&'a mut W>>,
+    highest_reported_total: Rc<Cell<u32>>,
+}
+
+impl<W> Clone for UnifiedDriveListProgress<'_, W> {
+    fn clone(&self) -> Self {
+        Self {
+            err: Rc::clone(&self.err),
+            highest_reported_total: Rc::clone(&self.highest_reported_total),
+        }
+    }
+}
+
+impl<'a, W: Write> UnifiedDriveListProgress<'a, W> {
+    fn new(err: &'a mut W) -> Self {
+        Self {
+            err: Rc::new(RefCell::new(err)),
+            highest_reported_total: Rc::new(Cell::new(0)),
+        }
+    }
+
+    fn write_progress(&self, total: u32, kind: DriveListKind) -> std::io::Result<()> {
+        if total <= self.highest_reported_total.get() {
+            return Ok(());
+        }
+
+        writeln!(
+            self.err.borrow_mut(),
+            "Fetched {total} {}...",
+            kind.item_name()
+        )?;
+        self.highest_reported_total.set(total);
+        Ok(())
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-async fn collect_list_items_as_account<S: AccountStore>(
+async fn collect_list_items_as_account<S: AccountStore, W: Write>(
     config: &Config,
     store: &S,
     kind: DriveListKind,
@@ -744,14 +776,15 @@ async fn collect_list_items_as_account<S: AccountStore>(
     all: bool,
     parent: Option<String>,
     quiet: bool,
-    err: &mut impl Write,
+    progress: UnifiedDriveListProgress<'_, W>,
     files_url: Option<&str>,
     account: String,
 ) -> DriveResult<Vec<DriveFile>> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
-    let files =
-        collect_list_items_drive_error(&client, kind, limit, all, parent, quiet, err, files_url)
-            .await?;
+    let files = collect_list_items_drive_error(
+        &client, kind, limit, all, parent, quiet, progress, files_url,
+    )
+    .await?;
     Ok(files)
 }
 
@@ -816,14 +849,14 @@ async fn collect_list_items<S: AccountStore>(
     Ok(files)
 }
 
-async fn collect_list_items_drive_error<S: AccountStore>(
+async fn collect_list_items_drive_error<S: AccountStore, W: Write>(
     client: &AuthClient<'_, S>,
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
     parent: Option<String>,
     quiet: bool,
-    err: &mut impl Write,
+    progress: UnifiedDriveListProgress<'_, W>,
     files_url: Option<&str>,
 ) -> DriveResult<Vec<DriveFile>> {
     let mut remaining = requested_result_count(limit, all);
@@ -852,7 +885,9 @@ async fn collect_list_items_drive_error<S: AccountStore>(
         }
 
         if all && !quiet {
-            writeln!(err, "Fetched {total} {}...", kind.item_name()).map_err(DriveError::Io)?;
+            progress
+                .write_progress(total, kind)
+                .map_err(DriveError::Io)?;
         }
 
         files.extend(page.files);
