@@ -34,7 +34,7 @@ impl UnifiedAccess {
         })
     }
 
-    pub fn candidates(&self, config: &Config) -> Vec<String> {
+    pub fn candidates(&self, config: &super::config::Config) -> Vec<String> {
         unified_access_candidates(config, &self.state, &self.target_resource_key)
     }
 
@@ -93,32 +93,52 @@ impl UnifiedAccess {
 }
 
 pub fn unified_access_candidates(
-    config: &Config,
+    config: &super::config::Config,
     state: &RuntimeState,
     target_resource_key: &str,
 ) -> Vec<String> {
     let mut candidates = Vec::new();
 
     if let Some(mapped) = state.account_for_resource(target_resource_key) {
-        push_if_configured(config, &mut candidates, mapped);
+        push_if_configured(config, state, &mut candidates, mapped);
     }
 
-    if let Some(active) = config.active_account() {
-        push_if_configured(config, &mut candidates, active);
+    if let Some(active) = state
+        .active_account
+        .as_deref()
+        .or_else(|| config.active_account())
+    {
+        push_if_configured(config, state, &mut candidates, active);
     }
 
-    for account in &config.accounts {
-        push_candidate(&mut candidates, account);
+    if state.accounts.is_empty() {
+        for account in &config.accounts {
+            push_candidate(&mut candidates, account);
+        }
+    } else {
+        for account in &state.accounts {
+            push_candidate(&mut candidates, &account.email);
+        }
     }
 
     candidates
 }
 
-fn push_if_configured(config: &Config, candidates: &mut Vec<String>, account: &str) {
-    if config
-        .accounts
-        .iter()
-        .any(|configured| configured == account)
+fn push_if_configured(
+    config: &super::config::Config,
+    state: &RuntimeState,
+    candidates: &mut Vec<String>,
+    account: &str,
+) {
+    if (state.accounts.is_empty()
+        && config
+            .accounts
+            .iter()
+            .any(|configured| configured == account))
+        || state
+            .accounts
+            .iter()
+            .any(|configured| configured.email == account)
     {
         push_candidate(candidates, account);
     }

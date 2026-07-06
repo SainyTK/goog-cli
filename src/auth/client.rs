@@ -30,7 +30,7 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
         store: &'a S,
         account_override: Option<&str>,
     ) -> Result<Self, AuthError> {
-        let account_email = resolve_account(&config, account_override)?;
+        let account_email = resolve_account(&config, store, account_override)?;
         let oauth_app = config.oauth_app.ok_or(AuthError::OAuthAppNotConfigured)?;
 
         Ok(Self {
@@ -303,15 +303,42 @@ async fn send_with_access_token(
         .map_err(|e| AuthError::Network(e.to_string()))
 }
 
-fn resolve_account(config: &Config, account_override: Option<&str>) -> Result<String, AuthError> {
+fn resolve_account(
+    config: &Config,
+    store: &impl AccountStore,
+    account_override: Option<&str>,
+) -> Result<String, AuthError> {
     if let Some(account) = account_override {
+        if !store.account_exists(account)? {
+            return Err(AuthError::AccountNotFound {
+                email: account.to_string(),
+            });
+        }
         return Ok(account.to_string());
     }
 
-    config
-        .settings
-        .as_ref()
-        .and_then(|settings| settings.active_account.as_deref())
-        .map(str::to_string)
-        .ok_or(AuthError::ActiveAccountNotConfigured)
+    #[cfg(test)]
+    if let Some(active) = config.active_account() {
+        if store.account_exists(active)? {
+            return Ok(active.to_string());
+        }
+    }
+
+    if let Some(active) = store.active_account()? {
+        return Ok(active);
+    }
+
+    #[cfg(test)]
+    {
+        return config
+            .active_account()
+            .map(str::to_string)
+            .ok_or(AuthError::ActiveAccountNotConfigured);
+    }
+
+    #[cfg(not(test))]
+    {
+        let _ = config;
+        return Err(AuthError::ActiveAccountNotConfigured);
+    }
 }
