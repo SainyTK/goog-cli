@@ -10,6 +10,7 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::DocsListType;
+use crate::docs::map::{ContentSelector, InsertTextSelector, RangeSelector};
 use crate::docs::style_template::{
     load_style_template_in, save_style_template_in, ListStyleTemplate, NamedStyleTemplate,
     StyleTemplate, TextStyleTemplate,

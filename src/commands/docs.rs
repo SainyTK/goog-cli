@@ -13,13 +13,20 @@ use crate::cli::{DocsCommand, DocsListType};
 use crate::docs::{
     batch_update_document, extract_style_template, get_document,
     map::build_document_map,
+    map::resolve_content_entry,
+    map::resolve_insert_text_location,
+    map::resolve_range_selector,
+    map::resolve_replace_text_ranges,
     map::search_document_text,
+    map::ContentSelector,
     map::DocumentLocation,
     map::DocumentMap,
     map::DocumentMapEntry,
     map::DocumentMapEntryKind,
     map::DocumentRange,
     map::DocumentTextBlock,
+    map::InsertTextSelector,
+    map::RangeSelector,
     style_template::{load_style_template_in, save_style_template_in},
     BatchUpdateDocumentOptions, DocsError, GetDocumentOptions, StyleTemplate,
 };
@@ -481,25 +488,6 @@ pub(super) async fn run_map_unified_to<S: AccountStore>(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum ContentSelector {
-    Index(i64),
-    Entry(usize),
-    PageLine { page: usize, line: usize },
-    Heading(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum InsertTextSelector {
-    Index(i64),
-    Entry(usize),
-    PageLine { page: usize, line: usize },
-    AfterHeading(String),
-    BeforeHeading(String),
-    AfterText(String),
-    BeforeText(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct InsertTextCommand {
     pub document_id: String,
     pub text: String,
@@ -581,23 +569,6 @@ pub(super) struct ApplyListCommand {
     pub json: bool,
     pub required_revision_id: Option<String>,
     pub no_auto_style: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum RangeSelector {
-    IndexRange {
-        start_index: i64,
-        end_index: i64,
-    },
-    Entry(usize),
-    PageLine {
-        page: usize,
-        line: usize,
-    },
-    Text {
-        text: String,
-        match_number: Option<usize>,
-    },
 }
 
 #[cfg(test)]
@@ -1815,110 +1786,8 @@ fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry)
         entries: vec![entry.clone()],
         document_locations: vec![entry.location.clone()],
         text_blocks: Vec::new(),
+        insertion_locations: Vec::new(),
     }
-}
-
-fn resolve_content_entry<'a>(
-    document_map: &'a DocumentMap,
-    selector: &ContentSelector,
-) -> Result<&'a DocumentMapEntry> {
-    match selector {
-        ContentSelector::Index(index) => document_map
-            .entries
-            .iter()
-            .filter(|entry| {
-                entry
-                    .location
-                    .index
-                    .is_some_and(|entry_index| entry_index <= *index)
-            })
-            .max_by_key(|entry| entry.location.index)
-            .with_context(|| format!("no content found at Google Docs index {index}")),
-        ContentSelector::Entry(entry_number) => document_map
-            .entries
-            .iter()
-            .find(|entry| entry.entry == *entry_number)
-            .with_context(|| format!("Document Map entry {entry_number} was not found")),
-        ContentSelector::PageLine { page, line } => document_map
-            .entries
-            .iter()
-            .find(|entry| {
-                entry.location.page == Some(*page) && entry.location.content_line == *line
-            })
-            .with_context(|| format!("no content found at page {page}, line {line}")),
-        ContentSelector::Heading(heading) => resolve_heading(document_map, heading),
-    }
-}
-
-fn resolve_range_selector(
-    document_map: &DocumentMap,
-    selector: &RangeSelector,
-) -> Result<DocumentRange> {
-    match selector {
-        RangeSelector::IndexRange {
-            start_index,
-            end_index,
-        } => Ok(DocumentRange {
-            start_index: *start_index,
-            end_index: *end_index,
-            location: DocumentLocation {
-                index: Some(*start_index),
-                page: None,
-                content_line: 0,
-                confidence: crate::docs::map::LocationConfidence::Unknown,
-            },
-            preview: format!("range {start_index}..{end_index}"),
-        }),
-        RangeSelector::Entry(entry_number) => {
-            let entry =
-                resolve_content_entry(document_map, &ContentSelector::Entry(*entry_number))?;
-            range_for_entry(document_map, entry)
-        }
-        RangeSelector::PageLine { page, line } => {
-            let entry = resolve_content_entry(
-                document_map,
-                &ContentSelector::PageLine {
-                    page: *page,
-                    line: *line,
-                },
-            )?;
-            range_for_entry(document_map, entry)
-        }
-        RangeSelector::Text { text, match_number } => {
-            let command = ReplaceTextCommand {
-                document_id: String::new(),
-                old_text: text.clone(),
-                new_text: String::new(),
-                match_number: *match_number,
-                all: false,
-                dry_run: true,
-                json: true,
-                required_revision_id: None,
-            };
-            let ranges = resolve_replace_text_ranges(document_map, &command)?;
-            ranges
-                .into_iter()
-                .next()
-                .context("text range selector did not resolve a match")
-        }
-    }
-}
-
-fn range_for_entry(document_map: &DocumentMap, entry: &DocumentMapEntry) -> Result<DocumentRange> {
-    let start_index = entry
-        .location
-        .index
-        .context("selected Document Map entry has no Google Docs index")?;
-    let end_index = text_block_starting_at(document_map, start_index)
-        .map(text_block_end_index)
-        .or_else(|| next_entry_index_after(document_map, start_index))
-        .unwrap_or(start_index + 1);
-    Ok(DocumentRange {
-        start_index,
-        end_index,
-        location: entry.location.clone(),
-        preview: entry.preview.clone(),
-    })
 }
 
 fn resolve_table_handle<'a>(
@@ -1985,39 +1854,6 @@ fn read_table_data(path: &str) -> Result<TableData> {
         bail!("table data must be rectangular");
     }
     Ok(TableData::new(rows))
-}
-
-fn resolve_heading<'a>(
-    document_map: &'a DocumentMap,
-    heading: &str,
-) -> Result<&'a DocumentMapEntry> {
-    let matches = document_map
-        .entries
-        .iter()
-        .filter(|entry| entry.kind == DocumentMapEntryKind::Heading && entry.preview == heading)
-        .collect::<Vec<_>>();
-
-    match matches.as_slice() {
-        [entry] => Ok(entry),
-        [] => bail!("heading selector {heading:?} did not match any Document Map entries"),
-        candidates => {
-            let candidate_list = candidates
-                .iter()
-                .map(|entry| {
-                    format!(
-                        "entry {} index {} page {} line {} preview {}",
-                        entry.entry,
-                        display_optional(entry.location.index),
-                        display_optional(entry.location.page),
-                        entry.location.content_line,
-                        entry.preview
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("; ");
-            bail!("ambiguous heading selector {heading:?}; candidates: {candidate_list}")
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -2102,13 +1938,6 @@ impl DocsChangePreview {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ResolvedInsertTextLocation {
-    location: DocumentLocation,
-    preview_before: String,
-    preview_offset: usize,
-}
-
 fn prepare_insert_text_change(
     document_map: &DocumentMap,
     command: &InsertTextCommand,
@@ -2140,7 +1969,12 @@ fn prepare_replace_text_change(
     document_map: &DocumentMap,
     command: &ReplaceTextCommand,
 ) -> Result<ReplaceTextDryRun> {
-    let ranges = resolve_replace_text_ranges(document_map, command)?;
+    let ranges = resolve_replace_text_ranges(
+        document_map,
+        &command.old_text,
+        command.match_number,
+        command.all,
+    )?;
     let request_body = replace_text_request_body(
         &ranges,
         &command.new_text,
@@ -2485,243 +2319,6 @@ fn prepare_apply_list_change(
     })
 }
 
-fn resolve_insert_text_location(
-    document_map: &DocumentMap,
-    selector: &InsertTextSelector,
-) -> Result<ResolvedInsertTextLocation> {
-    match selector {
-        InsertTextSelector::Index(index) => resolved_for_index(document_map, *index),
-        InsertTextSelector::Entry(entry_number) => {
-            let entry =
-                resolve_content_entry(document_map, &ContentSelector::Entry(*entry_number))?;
-            resolved_for_entry_start(entry)
-        }
-        InsertTextSelector::PageLine { page, line } => {
-            let entry = resolve_content_entry(
-                document_map,
-                &ContentSelector::PageLine {
-                    page: *page,
-                    line: *line,
-                },
-            )?;
-            resolved_for_entry_start(entry)
-        }
-        InsertTextSelector::BeforeHeading(heading) => {
-            let entry = resolve_heading(document_map, heading)?;
-            resolved_for_entry_start(entry)
-        }
-        InsertTextSelector::AfterHeading(heading) => {
-            let entry = resolve_heading(document_map, heading)?;
-            resolved_for_entry_end(document_map, entry)
-        }
-        InsertTextSelector::BeforeText(text) => {
-            let range = resolve_text_anchor(document_map, text)?;
-            let preview_offset =
-                text_anchor_preview_offset(document_map, &range, range.start_index);
-            Ok(ResolvedInsertTextLocation {
-                location: DocumentLocation {
-                    index: Some(range.start_index),
-                    ..range.location.clone()
-                },
-                preview_before: range.preview.clone(),
-                preview_offset,
-            })
-        }
-        InsertTextSelector::AfterText(text) => {
-            let range = resolve_text_anchor(document_map, text)?;
-            let preview_offset = text_anchor_preview_offset(document_map, &range, range.end_index);
-            Ok(ResolvedInsertTextLocation {
-                location: DocumentLocation {
-                    index: Some(range.end_index),
-                    ..range.location.clone()
-                },
-                preview_before: range.preview.clone(),
-                preview_offset,
-            })
-        }
-    }
-}
-
-fn resolved_for_index(
-    document_map: &DocumentMap,
-    index: i64,
-) -> Result<ResolvedInsertTextLocation> {
-    let entry = resolve_content_entry(document_map, &ContentSelector::Index(index))?;
-    let preview_offset = entry
-        .location
-        .index
-        .map(|start| preview_offset_for_index(&entry.preview, start, index))
-        .unwrap_or(0);
-    Ok(ResolvedInsertTextLocation {
-        location: DocumentLocation {
-            index: Some(index),
-            ..entry.location.clone()
-        },
-        preview_before: entry.preview.clone(),
-        preview_offset,
-    })
-}
-
-fn resolved_for_entry_start(entry: &DocumentMapEntry) -> Result<ResolvedInsertTextLocation> {
-    let Some(index) = entry.location.index else {
-        bail!(
-            "Document Map entry {} does not have a Google Docs index",
-            entry.entry
-        );
-    };
-    Ok(ResolvedInsertTextLocation {
-        location: DocumentLocation {
-            index: Some(index),
-            ..entry.location.clone()
-        },
-        preview_before: entry.preview.clone(),
-        preview_offset: 0,
-    })
-}
-
-fn resolved_for_entry_end(
-    document_map: &DocumentMap,
-    entry: &DocumentMapEntry,
-) -> Result<ResolvedInsertTextLocation> {
-    let Some(start_index) = entry.location.index else {
-        bail!(
-            "Document Map entry {} does not have a Google Docs index",
-            entry.entry
-        );
-    };
-    let end_index = text_block_starting_at(document_map, start_index)
-        .map(text_block_end_index)
-        .unwrap_or(start_index);
-    Ok(ResolvedInsertTextLocation {
-        location: DocumentLocation {
-            index: Some(end_index),
-            ..entry.location.clone()
-        },
-        preview_before: entry.preview.clone(),
-        preview_offset: entry.preview.chars().count(),
-    })
-}
-
-fn text_anchor_preview_offset(
-    document_map: &DocumentMap,
-    range: &DocumentRange,
-    insertion_index: i64,
-) -> usize {
-    let block_start_index = document_map
-        .text_blocks
-        .iter()
-        .find(|block| text_block_contains_range(block, range))
-        .map(|block| block.start_index)
-        .unwrap_or(range.start_index);
-
-    preview_offset_for_index(&range.preview, block_start_index, insertion_index)
-}
-
-fn text_block_contains_range(block: &DocumentTextBlock, range: &DocumentRange) -> bool {
-    block.start_index <= range.start_index && range.end_index <= text_block_end_index(block)
-}
-
-fn text_block_starting_at(
-    document_map: &DocumentMap,
-    start_index: i64,
-) -> Option<&DocumentTextBlock> {
-    document_map
-        .text_blocks
-        .iter()
-        .find(|block| block.start_index == start_index)
-}
-
-fn next_entry_index_after(document_map: &DocumentMap, start_index: i64) -> Option<i64> {
-    document_map
-        .entries
-        .iter()
-        .filter_map(|candidate| candidate.location.index)
-        .find(|candidate_index| *candidate_index > start_index)
-}
-
-fn text_block_end_index(block: &DocumentTextBlock) -> i64 {
-    block.start_index + block.text.encode_utf16().count() as i64
-}
-
-fn resolve_text_anchor(document_map: &DocumentMap, text: &str) -> Result<DocumentRange> {
-    let matches = search_document_text(document_map, text);
-    match matches.as_slice() {
-        [range] => Ok(range.clone()),
-        [] => bail!("text selector {text:?} did not match any Document Map entries"),
-        candidates => {
-            let candidate_list = format_range_candidates(candidates);
-            bail!("ambiguous text selector {text:?}; candidates: {candidate_list}")
-        }
-    }
-}
-
-fn resolve_replace_text_ranges(
-    document_map: &DocumentMap,
-    command: &ReplaceTextCommand,
-) -> Result<Vec<DocumentRange>> {
-    if command.old_text.is_empty() {
-        bail!("replace-text old text must not be empty");
-    }
-    if command.all && command.match_number.is_some() {
-        bail!("provide only one replace-text disambiguator: --match or --all");
-    }
-    if command.match_number == Some(0) {
-        bail!("--match must be 1 or greater");
-    }
-
-    let matches = search_document_text(document_map, &command.old_text);
-    if matches.is_empty() {
-        bail!(
-            "replace-text did not match {old_text:?}",
-            old_text = command.old_text.as_str()
-        );
-    }
-    if command.all {
-        return Ok(matches);
-    }
-    if let Some(match_number) = command.match_number {
-        return matches
-            .get(match_number - 1)
-            .cloned()
-            .map(|range| vec![range])
-            .with_context(|| {
-                format!(
-                    "replace-text match {match_number} was not found; {} matches available",
-                    matches.len()
-                )
-            });
-    }
-
-    match matches.as_slice() {
-        [range] => Ok(vec![range.clone()]),
-        candidates => {
-            let candidate_list = format_range_candidates(candidates);
-            bail!(
-                "ambiguous replace-text match {old_text:?}; candidates: {candidate_list}",
-                old_text = command.old_text.as_str()
-            )
-        }
-    }
-}
-
-fn format_range_candidates(candidates: &[DocumentRange]) -> String {
-    candidates
-        .iter()
-        .enumerate()
-        .map(|(index, range)| {
-            format!(
-                "match {} index {} page {} line {} preview {}",
-                index + 1,
-                range.start_index,
-                display_optional(range.location.page),
-                range.location.content_line,
-                range.preview
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
-}
-
 fn insert_text_request_body(
     index: Option<i64>,
     text: &str,
@@ -3018,6 +2615,11 @@ fn replace_text_preview_after(
     compact_preview(&after)
 }
 
+fn text_block_contains_range(block: &DocumentTextBlock, range: &DocumentRange) -> bool {
+    let block_end_index = block.start_index + block.text.encode_utf16().count() as i64;
+    block.start_index <= range.start_index && range.end_index <= block_end_index
+}
+
 fn utf16_byte_offset(text: &str, utf16_offset: i64) -> usize {
     if utf16_offset <= 0 {
         return 0;
@@ -3063,11 +2665,6 @@ fn compact_table_data_preview(data: &TableData) -> String {
         .collect::<Vec<_>>()
         .join(" / ");
     compact_preview(&preview)
-}
-
-fn preview_offset_for_index(preview: &str, block_start_index: i64, insertion_index: i64) -> usize {
-    let requested_offset = insertion_index.saturating_sub(block_start_index) as usize;
-    requested_offset.min(preview.chars().count())
 }
 
 fn write_insert_text_dry_run(
