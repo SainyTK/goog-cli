@@ -1827,6 +1827,126 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
 }
 
 #[tokio::test]
+async fn run_create_named_range_dry_run_emits_native_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_create_named_range_to(
+        &client,
+        CreateNamedRangeCommand {
+            document_id: "document-123".into(),
+            name: "my-range".into(),
+            selector: RangeSelector::Entry(2),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createNamedRange"]["name"],
+        "my-range"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createNamedRange"]["range"]["startIndex"],
+        14
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+}
+
+#[tokio::test]
+async fn run_delete_named_range_dry_run_emits_native_request_by_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_delete_named_range_to(
+        &client,
+        DeleteNamedRangeCommand {
+            document_id: "document-123".into(),
+            named_range_id: Some("named-range-1".into()),
+            name: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["deleteNamedRange"]["namedRangeId"],
+        "named-range-1"
+    );
+}
+
+#[tokio::test]
+async fn run_delete_named_range_rejects_conflicting_selectors() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    let error = run_delete_named_range_to(
+        &client,
+        DeleteNamedRangeCommand {
+            document_id: "document-123".into(),
+            named_range_id: Some("named-range-1".into()),
+            name: Some("my-range".into()),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("exactly one of --named-range-id or --name"));
+}
+
+#[tokio::test]
 async fn run_apply_list_dry_run_maps_cli_types_and_preserves_raw_preset() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

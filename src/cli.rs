@@ -214,6 +214,8 @@ impl DocsCommand {
             | DocsCommand::EditTable { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
             | DocsCommand::ApplyList { document_id, .. }
+            | DocsCommand::CreateNamedRange { document_id, .. }
+            | DocsCommand::DeleteNamedRange { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. }
             | DocsCommand::ShowStyleTemplate { document_id, .. } => document_id,
@@ -726,6 +728,74 @@ Notes:
         /// Ignore the cached style template for this document
         #[arg(long)]
         no_auto_style: bool,
+    },
+    /// Create a named range over a high-level Document Range, returning its namedRangeId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new namedRangeId under replies[0].createNamedRange.namedRangeId.
+
+Notes:
+  Named ranges do not track edits after creation; a later insert/delete before the range can leave it pointing at the wrong text.
+  Re-create the named range after content in or before it changes.")]
+    CreateNamedRange {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Name for the new named range (need not be unique)
+        name: String,
+        /// Raw Google Docs UTF-16 range start
+        #[arg(long)]
+        from_index: Option<i64>,
+        /// Raw Google Docs UTF-16 range end
+        #[arg(long)]
+        to_index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Matched text span to cover
+        #[arg(long)]
+        text: Option<String>,
+        /// Cover the Nth text match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Delete a named range by ID or name
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON (an empty replies array on success).
+
+Notes:
+  Provide exactly one of --named-range-id or --name; --name deletes every named range sharing that name.")]
+    DeleteNamedRange {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Exact namedRangeId returned by create-named-range
+        #[arg(long)]
+        named_range_id: Option<String>,
+        /// Name shared by the named range(s) to delete
+        #[arg(long)]
+        name: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
     },
     /// Fetch a raw Google Docs Document
     #[command(after_long_help = "Output shape:

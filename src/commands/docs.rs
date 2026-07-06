@@ -582,6 +582,68 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DocsCommand::CreateNamedRange {
+            document_id,
+            name,
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            text,
+            match_number,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector =
+                range_selector(from_index, to_index, entry, page, line, text, match_number)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_named_range_unified_to(
+                config,
+                store,
+                account_override,
+                CreateNamedRangeCommand {
+                    document_id,
+                    name,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::DeleteNamedRange {
+            document_id,
+            named_range_id,
+            name,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_delete_named_range_unified_to(
+                config,
+                store,
+                account_override,
+                DeleteNamedRangeCommand {
+                    document_id,
+                    named_range_id,
+                    name,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
         DocsCommand::Get {
             document_id,
             fields,
@@ -806,6 +868,26 @@ pub(super) struct ApplyListCommand {
     pub json: bool,
     pub required_revision_id: Option<String>,
     pub no_auto_style: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CreateNamedRangeCommand {
+    pub document_id: String,
+    pub name: String,
+    pub selector: RangeSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DeleteNamedRangeCommand {
+    pub document_id: String,
+    pub named_range_id: Option<String>,
+    pub name: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1936,6 +2018,120 @@ pub(super) async fn run_apply_list_unified_to<S: AccountStore>(
         documents_url,
         state_path,
         "apply-list",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_create_named_range_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: CreateNamedRangeCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_create_named_range_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "create-named-range",
+    )
+    .await
+}
+
+pub(super) async fn run_create_named_range_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CreateNamedRangeCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_create_named_range_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "create-named-range",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_delete_named_range_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: DeleteNamedRangeCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_delete_named_range_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "delete-named-range",
+    )
+    .await
+}
+
+pub(super) async fn run_delete_named_range_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: DeleteNamedRangeCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_delete_named_range_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "delete-named-range",
     )
     .await
 }
@@ -3175,6 +3371,64 @@ fn prepare_apply_list_change(
                 range.start_index, range.end_index
             ),
         ),
+    })
+}
+
+fn prepare_create_named_range_change(
+    document_map: &DocumentMap,
+    command: &CreateNamedRangeCommand,
+) -> Result<DocsHighLevelChange> {
+    let range = resolve_range_selector(document_map, &command.selector)?;
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "createNamedRange": {
+                "name": command.name,
+                "range": docs_range(&range)
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: Some(range.clone()),
+        request_body,
+        preview: DocsChangePreview::new(
+            "create-named-range",
+            format!(
+                "Create named range '{}' over {}..{}",
+                command.name, range.start_index, range.end_index
+            ),
+        ),
+    })
+}
+
+fn prepare_delete_named_range_change(
+    document_map: &DocumentMap,
+    command: &DeleteNamedRangeCommand,
+) -> Result<DocsHighLevelChange> {
+    let target = match (&command.named_range_id, &command.name) {
+        (Some(named_range_id), None) => {
+            serde_json::json!({ "namedRangeId": named_range_id })
+        }
+        (None, Some(name)) => serde_json::json!({ "name": name }),
+        _ => bail!("delete-named-range requires exactly one of --named-range-id or --name"),
+    };
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({ "deleteNamedRange": target })],
+        command.required_revision_id.as_deref(),
+    );
+    let summary = match (&command.named_range_id, &command.name) {
+        (Some(named_range_id), None) => format!("Delete named range {named_range_id}"),
+        (None, Some(name)) => format!("Delete named range(s) named '{name}'"),
+        _ => unreachable!("validated above"),
+    };
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new("delete-named-range", summary),
     })
 }
 
