@@ -3,11 +3,12 @@ use std::{io::Write, path::Path};
 use anyhow::{Context, Result};
 use dialoguer::{Input, Password};
 
-use crate::auth::account::{AccountStore, FileAccountStore, KeyringStore, TokenSaveOutcome};
-use crate::auth::config::{
-    config_path, load_config, resolve_account_selector, save_config, switch_active_account, Config,
-    OAuthAppConfig, OAuthAppType, SettingsConfig,
+use crate::auth::account::{
+    resolve_account_store, AccountStore, FileAccountStore, TokenSaveOutcome,
 };
+use crate::auth::config::{config_path, load_config, save_config, OAuthAppConfig, OAuthAppType};
+#[cfg(test)]
+use crate::auth::config::{Config, SettingsConfig};
 use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};
 use crate::auth::login::{
@@ -19,7 +20,7 @@ use crate::auth::login::{
 use crate::auth::setup::{parse_client_secret_file, OAuthAppSecrets};
 use crate::auth::state::{
     load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
-    save_runtime_state_to_path, RuntimeState,
+    save_runtime_state_to_path, AuthState, RuntimeState,
 };
 use crate::cli::{AuthCommand, AuthMappingsCommand};
 
@@ -55,14 +56,14 @@ Setting up your OAuth App. Follow these steps in the Google Cloud Console:
 Enter those values below.
 ";
 
-pub fn run(cmd: AuthCommand, resolved_account: Option<String>) -> Result<()> {
+pub fn run(cmd: AuthCommand) -> Result<()> {
     match cmd {
         AuthCommand::Setup {
             client_secret_file,
             app_type,
         } => run_setup(client_secret_file, app_type),
         AuthCommand::Login { no_browser } => run_login(no_browser),
-        AuthCommand::List { json } => run_list(json, resolved_account),
+        AuthCommand::List { json } => run_list(json),
         AuthCommand::Switch { email } => run_switch(email),
         AuthCommand::Export { email, out } => run_export(email.as_deref(), &out),
         AuthCommand::Mappings { command } => run_mappings(command),
@@ -144,17 +145,14 @@ pub(super) fn build_oauth_app_secrets(
 }
 
 fn run_login(no_browser: bool) -> Result<()> {
-    let mut config = load_config().context("failed to load config")?;
+    let config = load_config().context("failed to load config")?;
     let oauth_app = config
         .oauth_app
         .clone()
         .ok_or(AuthError::OAuthAppNotConfigured)?;
 
-    let store = KeyringStore;
+    let store = resolve_account_store().context("failed to resolve auth state store")?;
     let login = perform_login(&oauth_app, &store, no_browser)?;
-
-    add_account_to_config(&mut config, &login.email);
-    save_config(&config).context("failed to save config")?;
 
     write_login_completion_to(
         &login.email,
@@ -224,7 +222,7 @@ fn perform_loopback_login(
 
     let token_save = store
         .save_token_for_login(&email, &token)
-        .context("failed to save token to keychain")?;
+        .context("failed to save token to auth state")?;
     Ok(LoginOutcome { email, token_save })
 }
 
@@ -263,7 +261,7 @@ pub(super) fn perform_device_login(
 
     let token_save = store
         .save_token_for_login(&email, &token)
-        .context("failed to save token to keychain")?;
+        .context("failed to save token to auth state")?;
     Ok(LoginOutcome { email, token_save })
 }
 
@@ -273,16 +271,8 @@ pub(super) fn write_login_completion_to(
     out: &mut impl std::io::Write,
     err: &mut impl std::io::Write,
 ) -> Result<()> {
-    if !token_save.prompt_free_access_is_guaranteed() {
-        writeln!(
-            err,
-            "Warning: saved Token, but goog could not guarantee prompt-free Keychain access. \
-You may still see Keychain Access Prompts from macOS when goog reads this Token; these are \
-separate from Google browser consent prompts for new Scopes. To repair local Keychain access, \
-rerun `goog auth login` for this Account."
-        )
-        .context("failed to write keychain warning")?;
-    }
+    let _ = token_save;
+    let _ = err;
 
     writeln!(out, "Authorized as {email}").context("failed to write output")?;
     Ok(())
@@ -299,6 +289,7 @@ fn require_device_oauth_app(oauth_app: &OAuthAppConfig) -> Result<()> {
     .into())
 }
 
+#[cfg(test)]
 pub(super) fn add_account_to_config(config: &mut Config, email: &str) {
     if !config.accounts.iter().any(|e| e == email) {
         config.accounts.push(email.to_string());
@@ -310,18 +301,17 @@ pub(super) fn add_account_to_config(config: &mut Config, email: &str) {
     }
 }
 
-fn run_list(json: bool, active_account: Option<String>) -> Result<()> {
-    run_list_to(json, active_account.as_deref(), &mut std::io::stdout())
+fn run_list(json: bool) -> Result<()> {
+    run_list_to(json, &mut std::io::stdout())
 }
 
-fn run_list_to(
-    json: bool,
-    active_account: Option<&str>,
-    out: &mut impl std::io::Write,
-) -> Result<()> {
-    let config = load_config().context("failed to load config")?;
-    let active = active_account.or_else(|| config.active_account());
-    let rows = rows_from_config(&config.accounts, active);
+fn run_list_to(json: bool, out: &mut impl std::io::Write) -> Result<()> {
+    let store = resolve_account_store().context("failed to resolve auth state store")?;
+    let accounts = store.account_emails().context("failed to load accounts")?;
+    let active = store
+        .active_account()
+        .context("failed to load active account")?;
+    let rows = rows_from_config(&accounts, active.as_deref());
 
     let rendered = if json {
         render_ndjson(&rows)
@@ -338,9 +328,10 @@ fn run_switch(email: String) -> Result<()> {
 }
 
 fn run_switch_to(email: &str, out: &mut impl std::io::Write) -> Result<()> {
-    let mut config = load_config().context("failed to load config")?;
-    let active_account = switch_active_account(&mut config, email)?;
-    save_config(&config).context("failed to save config")?;
+    let store = resolve_account_store().context("failed to resolve auth state store")?;
+    let active_account = store
+        .switch_active_account(email)
+        .context("failed to switch active account")?;
     writeln!(out, "Active Account switched to {active_account}")
         .context("failed to write output")?;
     Ok(())
@@ -351,39 +342,29 @@ fn run_export(email: Option<&str>, out: &str) -> Result<()> {
 }
 
 fn run_export_to(email: Option<&str>, out_path: &str, out: &mut impl std::io::Write) -> Result<()> {
-    let config = load_config().context("failed to load config")?;
+    let state = load_runtime_state().context("failed to load auth state")?;
 
-    let emails = match email {
-        Some(selector) => vec![resolve_account_selector(&config, selector)?],
-        None => config.accounts.clone(),
+    let selected = match email {
+        Some(selector) => vec![state.resolve_account_selector(selector)?],
+        None => state.account_emails(),
     };
 
-    if emails.is_empty() {
+    if selected.is_empty() {
         anyhow::bail!("no authorized accounts to export -- run `goog auth login` first");
     }
 
-    let keychain = KeyringStore;
-    let mut tokens = std::collections::HashMap::new();
-    for account_email in &emails {
-        let token = keychain
-            .load_token(account_email)
-            .context("failed to read token from keychain")?
-            .ok_or_else(|| AuthError::TokenNotFound {
-                email: account_email.clone(),
-            })?;
-        tokens.insert(account_email.clone(), token);
-    }
+    let export_state = build_export_state(&state, &selected)?;
 
     let file_store = FileAccountStore::new(std::path::PathBuf::from(out_path));
     file_store
-        .replace_all(&tokens)
-        .with_context(|| format!("failed to write token file to {out_path}"))?;
+        .replace_all(&export_state)
+        .with_context(|| format!("failed to write auth state file to {out_path}"))?;
 
     writeln!(
         out,
         "Exported {} account(s) to {out_path}: {}",
-        emails.len(),
-        emails.join(", ")
+        selected.len(),
+        selected.join(", ")
     )
     .context("failed to write output")?;
     writeln!(
@@ -393,6 +374,36 @@ fn run_export_to(email: Option<&str>, out_path: &str, out: &mut impl std::io::Wr
     )
     .context("failed to write output")?;
     Ok(())
+}
+
+pub(super) fn build_export_state(
+    state: &AuthState,
+    selected: &[String],
+) -> Result<AuthState, AuthError> {
+    let mut export_state = AuthState {
+        version: state.version,
+        active_account: state
+            .active_account
+            .clone()
+            .filter(|active| selected.iter().any(|email| email == active)),
+        accounts: Vec::new(),
+        resource_account_mappings: state
+            .resource_account_mappings
+            .iter()
+            .filter(|(_, account)| selected.iter().any(|email| email == *account))
+            .map(|(key, account)| (key.clone(), account.clone()))
+            .collect(),
+    };
+    for account_email in selected {
+        let token = state
+            .token_for_account(account_email)
+            .cloned()
+            .ok_or_else(|| AuthError::TokenNotFound {
+                email: account_email.clone(),
+            })?;
+        export_state.save_token_for_account(account_email, token);
+    }
+    Ok(export_state)
 }
 
 fn run_mappings(command: AuthMappingsCommand) -> Result<()> {

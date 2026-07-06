@@ -34,19 +34,17 @@ const hostCodexHome = path.join(os.homedir(), ".codex");
 const sandboxCodexMount = "/mnt/host-codex";
 const sandboxCodexHome = "/home/agent/.codex";
 
-// E2E testing needs real Google accounts inside the sandbox, but the
-// sandbox has no access to the host OS keychain that `goog` normally reads
-// from. Run `goog auth export --out .sandcastle/secrets/token.json` once on
-// the host to export every authorized account, and drop a copy of
-// ~/.config/goog/config.toml at .sandcastle/secrets/config.toml (see
-// docs/agents/e2e-testing.md), to make E2E testing available to the
-// implementer/reviewer sandbox. Both files are optional -- if absent, the
-// copy step below is a no-op and `goog` commands in the sandbox fail with
-// "not logged in" instead of silently working.
+// E2E testing needs real Google accounts inside the sandbox. Run
+// `goog auth export --out .sandcastle/secrets/auth.json` once on the host to
+// export the full auth state, and drop a copy of ~/.goog/config.toml at
+// .sandcastle/secrets/config.toml (see docs/agents/e2e-testing.md), to make
+// E2E testing available to the implementer/reviewer sandbox. Both files are
+// optional -- if absent, the copy step below is a no-op and `goog` commands in
+// the sandbox fail with "not logged in" instead of silently working.
 const hostE2eSecretsDir = path.join(process.cwd(), ".sandcastle", "secrets");
 const sandboxE2eSecretsMount = "/mnt/e2e-secrets";
-const sandboxGoogConfigHome = "/home/agent/.config/goog";
-const sandboxGoogTokenFile = "/home/agent/.config/goog/e2e-token.json";
+const sandboxGoogConfigHome = "/home/agent/.goog";
+const sandboxGoogAuthFile = "/home/agent/.goog/auth.json";
 
 // The planner emits its plan as JSON inside <plan> tags; Output.object extracts
 // and validates it against this schema. We use Zod here, but any Standard
@@ -81,7 +79,7 @@ const hooks = {
           // See docs/agents/e2e-testing.md for how to create these two files.
           `mkdir -p "${sandboxGoogConfigHome}"`,
           `if [ -f "${sandboxE2eSecretsMount}/config.toml" ]; then cp "${sandboxE2eSecretsMount}/config.toml" "${sandboxGoogConfigHome}/config.toml"; fi`,
-          `if [ -f "${sandboxE2eSecretsMount}/token.json" ]; then cp "${sandboxE2eSecretsMount}/token.json" "${sandboxGoogTokenFile}"; fi`,
+          `if [ -f "${sandboxE2eSecretsMount}/auth.json" ]; then cp "${sandboxE2eSecretsMount}/auth.json" "${sandboxGoogAuthFile}"; fi`,
         ].join(" && "),
       },
       { command: "npm install" },
@@ -166,10 +164,9 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
           env: {
             CODEX_HOME: sandboxCodexHome,
             GH_TOKEN: process.env.GH_TOKEN ?? "",
-            // Harmless if no secrets are set up: goog reports "not logged
-            // in" instead of finding a keychain that doesn't exist in this
-            // sandbox. See docs/agents/e2e-testing.md.
-            GOOG_TOKEN_FILE: sandboxGoogTokenFile,
+            // Harmless if no secrets are set up: goog reports "not logged in".
+            // See docs/agents/e2e-testing.md.
+            GOOG_TOKEN_FILE: sandboxGoogAuthFile,
           },
           mounts: [
             {

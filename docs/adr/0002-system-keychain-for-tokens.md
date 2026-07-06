@@ -1,5 +1,8 @@
 # System Keychain for OAuth Tokens
 
+Status: Superseded by the File Token Store model that stores auth state in `~/.goog/auth.json`.
+This ADR is retained as historical context for the earlier Keychain design.
+
 OAuth Tokens (access + refresh) are stored in the OS system keychain via the `keyring` crate, not in config files. Non-sensitive config (active account name, OAuth client ID) lives in `~/.config/goog/config.toml`.
 Interactive `goog` commands should not trigger a Keychain Access Prompt on every invocation after the user has approved the local CLI once.
 The intended trust boundary is the local `goog` executable running under the current OS user account.

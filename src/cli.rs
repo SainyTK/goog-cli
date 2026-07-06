@@ -78,16 +78,16 @@ pub enum AuthCommand {
         /// Email address or partial email of the account to activate
         email: String,
     },
-    /// Export account tokens to a file, for use with GOOG_TOKEN_FILE in
-    /// headless environments that have no access to the OS keychain (e.g. a
-    /// Sandcastle sandbox). The output file grants full access to every
-    /// account it contains, within their authorized scopes -- never commit
-    /// it, and delete it once the headless environment no longer needs it.
+    /// Export full auth state to a file for use with GOOG_TOKEN_FILE in
+    /// headless environments such as Sandcastle. The output file grants
+    /// access to every account it contains, within their authorized scopes --
+    /// never commit it, and delete it once the headless environment no longer
+    /// needs it.
     Export {
         /// Email address or partial email of one account to export. Omit to
         /// export every authorized account.
         email: Option<String>,
-        /// Path to write the token JSON to. Overwrites any existing file.
+        /// Path to write the auth state JSON to. Overwrites any existing file.
         #[arg(long)]
         out: String,
     },

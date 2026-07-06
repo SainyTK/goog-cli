@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::auth::config::{resolve_account, Config};
+use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::{DocsCommand, DocsListType};
@@ -1557,9 +1557,8 @@ async fn run_with_docs_unified_access<S: AccountStore>(
 ) -> Result<serde_json::Value, DocsError> {
     let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
 
-    if account_override.is_some() {
-        let account = resolve_account(config, account_override)?
-            .expect("explicit account resolution returns an account");
+    if let Some(account_override) = account_override {
+        let account = account_override.to_string();
         return run_docs_access_as_account(config, store, &mut access, &attempt, account).await;
     }
 

@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::auth::config::{resolve_account, Config};
+use crate::auth::config::Config;
 use crate::auth::state::{
     load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
     save_runtime_state_to_path, RuntimeState,
@@ -580,9 +580,7 @@ async fn run_with_sheets_unified_access<S: AccountStore>(
     let mut state = load_sheets_runtime_state(state_path)?;
 
     if let Some(account_override) = account_override {
-        let account = resolve_account(config, Some(account_override))
-            .map_err(SheetsError::Auth)?
-            .expect("explicit account resolution returns an account");
+        let account = account_override.to_string();
         return run_sheets_access_as_account(
             config,
             store,
@@ -688,25 +686,45 @@ fn unified_access_candidates(
     let mut candidates = Vec::new();
 
     if let Some(mapped) = state.account_for_resource(target_resource_key) {
-        push_if_configured(config, &mut candidates, mapped);
+        push_if_configured(config, state, &mut candidates, mapped);
     }
 
-    if let Some(active) = config.active_account() {
-        push_if_configured(config, &mut candidates, active);
+    if let Some(active) = state
+        .active_account
+        .as_deref()
+        .or_else(|| config.active_account())
+    {
+        push_if_configured(config, state, &mut candidates, active);
     }
 
-    for account in &config.accounts {
-        push_candidate(&mut candidates, account);
+    if state.accounts.is_empty() {
+        for account in &config.accounts {
+            push_candidate(&mut candidates, account);
+        }
+    } else {
+        for account in &state.accounts {
+            push_candidate(&mut candidates, &account.email);
+        }
     }
 
     candidates
 }
 
-fn push_if_configured(config: &Config, candidates: &mut Vec<String>, account: &str) {
-    if config
-        .accounts
-        .iter()
-        .any(|configured| configured == account)
+fn push_if_configured(
+    config: &Config,
+    state: &RuntimeState,
+    candidates: &mut Vec<String>,
+    account: &str,
+) {
+    if (state.accounts.is_empty()
+        && config
+            .accounts
+            .iter()
+            .any(|configured| configured == account))
+        || state
+            .accounts
+            .iter()
+            .any(|configured| configured.email == account)
     {
         push_candidate(candidates, account);
     }

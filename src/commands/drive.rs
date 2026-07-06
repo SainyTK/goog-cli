@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::auth::config::{resolve_account, Config};
+use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::UnifiedAccess;
 use crate::cli::{DriveCommand, DriveFolderCommand};
@@ -922,11 +922,12 @@ fn is_target_access_failure(err: &DriveError) -> bool {
 }
 
 fn resolve_account_override(
-    config: &Config,
+    _config: &Config,
     account_override: Option<&str>,
 ) -> DriveResult<String> {
-    Ok(resolve_account(config, account_override)?
-        .expect("explicit account resolution returns an account"))
+    Ok(account_override
+        .expect("explicit account resolution receives an account override")
+        .to_string())
 }
 
 fn no_access_candidate_error() -> DriveError {

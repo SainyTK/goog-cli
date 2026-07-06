@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 
 use super::config::{
-    load_config_from_path, resolve_account, save_config_to_path, switch_active_account, Config,
-    OAuthAppConfig, OAuthAppType, SettingsConfig,
+    load_config_from_path, load_config_from_paths, resolve_account, save_config_to_path,
+    switch_active_account, Config, OAuthAppConfig, OAuthAppType, SettingsConfig,
 };
 use super::error::AuthError;
 
@@ -86,6 +86,29 @@ fn returns_default_config_when_file_missing() {
     let config = load_config_from_path(&path).unwrap();
     assert!(config.oauth_app.is_none());
     assert!(config.settings.is_none());
+}
+
+#[test]
+fn copies_oauth_setup_forward_from_old_config_path_without_account_state() {
+    let dir = TempDir::new().unwrap();
+    let old_path = dir.path().join("old").join("config.toml");
+    let new_path = dir.path().join("new").join("config.toml");
+    let old_config = config_with_accounts(Some("alice@example.com"), &["alice@example.com"]);
+    let mut old_config = old_config;
+    old_config.oauth_app = Some(OAuthAppConfig {
+        client_id: "client-id".into(),
+        client_secret: "client-secret".into(),
+        app_type: OAuthAppType::Desktop,
+    });
+    save_config_to_path(&old_config, &old_path).unwrap();
+
+    let loaded = load_config_from_paths(&new_path, &old_path).unwrap();
+    let copied = load_config_from_path(&new_path).unwrap();
+
+    assert_eq!(loaded.oauth_app, old_config.oauth_app);
+    assert_eq!(copied.oauth_app, old_config.oauth_app);
+    assert!(copied.accounts.is_empty());
+    assert!(copied.active_account().is_none());
 }
 
 #[test]
@@ -262,7 +285,7 @@ fn account_resolution_falls_back_to_active_account() {
 }
 
 #[test]
-fn save_config_creates_parent_dirs_and_round_trips_accounts() {
+fn save_config_creates_parent_dirs_and_strips_account_state() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("nested").join("config.toml");
     let config = config_with_accounts(
@@ -273,5 +296,7 @@ fn save_config_creates_parent_dirs_and_round_trips_accounts() {
     save_config_to_path(&config, &path).unwrap();
     let loaded = load_config_from_path(&path).unwrap();
 
-    assert_eq!(loaded, config);
+    assert_eq!(loaded.oauth_app, config.oauth_app);
+    assert!(loaded.accounts.is_empty());
+    assert!(loaded.active_account().is_none());
 }

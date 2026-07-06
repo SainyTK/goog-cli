@@ -2,7 +2,7 @@ use clap::Parser;
 
 use goog::{
     auth::account::resolve_account_store,
-    auth::config::{load_config, resolve_account},
+    auth::config::load_config,
     cli::{Cli, Command},
     commands,
 };
@@ -16,17 +16,16 @@ fn main() {
 
 fn run(cli: Cli) -> anyhow::Result<()> {
     let config = load_config()?;
-    let resolved_account = resolve_account(&config, cli.account.as_deref())?;
 
     match cli.command {
-        Command::Auth { command } => commands::auth::run(command, resolved_account),
+        Command::Auth { command } => commands::auth::run(command),
         Command::Drive { command } => {
             let output_json_by_default = config
                 .settings
                 .as_ref()
                 .and_then(|settings| settings.output.as_deref())
                 == Some("json");
-            let store = resolve_account_store();
+            let store = resolve_account_store()?;
             commands::drive::run(
                 command,
                 &config,
@@ -37,15 +36,15 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             )
         }
         Command::Docs { command } => {
-            let store = resolve_account_store();
+            let store = resolve_account_store()?;
             commands::docs::run(command, &config, &store, cli.account.as_deref())
         }
         Command::Mail { command } => {
-            let store = resolve_account_store();
+            let store = resolve_account_store()?;
             commands::mail::run(command, &config, &store, cli.account.as_deref(), cli.quiet)
         }
         Command::Sheets { command } => {
-            let store = resolve_account_store();
+            let store = resolve_account_store()?;
             commands::sheets::run(command, &config, &store, cli.account.as_deref())
         }
     }

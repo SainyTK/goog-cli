@@ -11,12 +11,16 @@ An agent picks whichever account best fits the issue at hand, or the account the
 
 ## Credentials inside the Sandcastle sandbox
 
-The Sandcastle implementer/reviewer run inside an ephemeral Docker container that has no access to this machine's OS keychain, which is where `goog` normally reads tokens from. To make every already-authorized account usable inside that sandbox, a human does this once, on the host, outside of any agent run:
+The Sandcastle implementer/reviewer run inside an ephemeral Docker container.
+To make every already-authorized account usable inside that sandbox, a human does this once, on the host, outside of any agent run:
 
-1. `goog auth export --out .sandcastle/secrets/token.json` -- pulls every authorized account's token out of the keychain into one file, keyed by email. Re-run this any time the set of logged-in accounts changes; it overwrites the file with the current keychain state.
-2. Copy your host `config.toml` to `.sandcastle/secrets/config.toml` as-is -- it already lists every authorized account and the OAuth App config, which is exactly what the sandbox needs to resolve `--account` the same way it does on the host. The host path depends on OS (`dirs::config_dir()`): `~/Library/Application Support/goog/config.toml` on macOS, `~/.config/goog/config.toml` on Linux. The sandbox is always Linux, so the copy always lands at `~/.config/goog/config.toml` inside the container regardless of the host's own path.
+1. `goog auth export --out .sandcastle/secrets/auth.json` writes a full auth state file with Accounts, the Active Account, Tokens, and Resource Account Mappings.
+   Re-run this any time the set of logged-in accounts or mappings changes.
+2. Copy your host `$HOME/.goog/config.toml` to `.sandcastle/secrets/config.toml` so the sandbox has the OAuth App setup.
 
-`.sandcastle/secrets/` is gitignored -- never remove that from `.sandcastle/.gitignore`, and never commit either file. `main.mts` mounts this directory read-only into the implementer/reviewer sandbox and points `GOOG_TOKEN_FILE` at the copied token file, so `goog` inside the sandbox reads from that file instead of the (nonexistent, in-container) keychain. Delete the files from `.sandcastle/secrets/` when E2E testing is no longer needed -- they grant whoever can read them full access to every account they contain, within its authorized scopes.
+`.sandcastle/secrets/` is gitignored -- never remove that from `.sandcastle/.gitignore`, and never commit either file.
+`main.mts` mounts this directory read-only into the implementer/reviewer sandbox and points `GOOG_TOKEN_FILE` at the copied auth state file.
+Delete the files from `.sandcastle/secrets/` when E2E testing is no longer needed -- they grant whoever can read them access to every account they contain, within its authorized scopes.
 
 If neither file has been set up, `goog` commands inside the sandbox fail with "account is not logged in" -- the implementer should treat that as "E2E testing isn't available yet" and fall back to unit tests only, noting this in its issue comment rather than blocking on it.
 
