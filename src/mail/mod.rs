@@ -23,6 +23,7 @@ const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
 
 pub type Message = Value;
 pub type Draft = Value;
+const DRAFT_BOUNDARY: &str = "goog-cli-draft-boundary";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MessageSummary {
@@ -151,7 +152,15 @@ pub struct CreateDraftOptions {
     pub bcc: Vec<String>,
     pub subject: String,
     pub body: String,
+    pub attachments: Vec<DraftAttachment>,
     drafts_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DraftAttachment {
+    pub filename: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
 }
 
 impl CreateDraftOptions {
@@ -168,8 +177,14 @@ impl CreateDraftOptions {
             bcc,
             subject: subject.into(),
             body: body.into(),
+            attachments: Vec::new(),
             drafts_url: GMAIL_DRAFTS_URL.to_string(),
         }
+    }
+
+    pub fn with_attachments(mut self, attachments: Vec<DraftAttachment>) -> Self {
+        self.attachments = attachments;
+        self
     }
 
     pub(super) fn with_drafts_url(mut self, drafts_url: impl Into<String>) -> Self {
@@ -360,17 +375,79 @@ fn build_draft_raw_message(options: &CreateDraftOptions) -> Result<String, MailE
         ));
     }
 
+    let mut message = draft_headers(options)?;
+    message.push_str("MIME-Version: 1.0\r\n");
+
+    if options.attachments.is_empty() {
+        message.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
+        message.push_str("Content-Transfer-Encoding: 8bit\r\n");
+        message.push_str("\r\n");
+        message.push_str(&normalize_body_newlines(&options.body));
+        return Ok(message);
+    }
+
+    message.push_str(&format!(
+        "Content-Type: multipart/mixed; boundary=\"{DRAFT_BOUNDARY}\"\r\n"
+    ));
+    message.push_str("\r\n");
+    message.push_str(&format!("--{DRAFT_BOUNDARY}\r\n"));
+    message.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
+    message.push_str("Content-Transfer-Encoding: 8bit\r\n");
+    message.push_str("\r\n");
+    message.push_str(&normalize_body_newlines(&options.body));
+    for attachment in &options.attachments {
+        message.push_str(&draft_attachment_part(attachment)?);
+    }
+    message.push_str(&format!("--{DRAFT_BOUNDARY}--\r\n"));
+    Ok(message)
+}
+
+fn draft_headers(options: &CreateDraftOptions) -> Result<String, MailError> {
     let mut message = String::new();
     push_address_header(&mut message, "To", &options.to)?;
     push_address_header(&mut message, "Cc", &options.cc)?;
     push_address_header(&mut message, "Bcc", &options.bcc)?;
     push_single_header(&mut message, "Subject", &options.subject)?;
-    message.push_str("MIME-Version: 1.0\r\n");
-    message.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
-    message.push_str("Content-Transfer-Encoding: 8bit\r\n");
-    message.push_str("\r\n");
-    message.push_str(&normalize_body_newlines(&options.body));
     Ok(message)
+}
+
+fn draft_attachment_part(attachment: &DraftAttachment) -> Result<String, MailError> {
+    reject_header_newlines("Attachment filename", &attachment.filename)?;
+    reject_header_newlines("Attachment content type", &attachment.content_type)?;
+    let filename = quote_header_parameter(&attachment.filename);
+    let mut part = String::new();
+    part.push_str(&format!("--{DRAFT_BOUNDARY}\r\n"));
+    part.push_str(&format!(
+        "Content-Type: {}; name=\"{}\"\r\n",
+        attachment.content_type, filename
+    ));
+    part.push_str(&format!(
+        "Content-Disposition: attachment; filename=\"{}\"\r\n",
+        filename
+    ));
+    part.push_str("Content-Transfer-Encoding: base64\r\n");
+    part.push_str("\r\n");
+    part.push_str(&wrap_base64(
+        &base64::engine::general_purpose::STANDARD.encode(&attachment.data),
+    ));
+    Ok(part)
+}
+
+fn quote_header_parameter(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn wrap_base64(data: &str) -> String {
+    if data.is_empty() {
+        return "\r\n".to_string();
+    }
+
+    let mut wrapped = String::new();
+    for chunk in data.as_bytes().chunks(76) {
+        wrapped.push_str(std::str::from_utf8(chunk).expect("base64 is utf-8"));
+        wrapped.push_str("\r\n");
+    }
+    wrapped
 }
 
 fn push_address_header(

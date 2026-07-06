@@ -419,6 +419,7 @@ Draft body.\r\n",
             bcc: vec!["Dave <dave@example.com>".into()],
             subject: "Status update".into(),
             body: "Hello Bob,\n\nDraft body.".into(),
+            attachments: vec![],
         },
         false,
         &mut out,
@@ -432,6 +433,87 @@ Draft body.\r\n",
         "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
 draft-123\tmessage-123\tthread-123\n"
     );
+}
+
+#[tokio::test]
+async fn run_draft_create_posts_multipart_message_with_attachment() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(DraftRawMessageMatcher {
+            expected: "To: alice@example.com\r\n\
+Subject: Attached draft\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"goog-cli-draft-boundary\"\r\n\
+\r\n\
+--goog-cli-draft-boundary\r\n\
+Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+See attached.\r\n\
+--goog-cli-draft-boundary\r\n\
+Content-Type: application/pdf; name=\"invoice.pdf\"\r\n\
+Content-Disposition: attachment; filename=\"invoice.pdf\"\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+aGVsbG8gYXR0YWNobWVudA==\r\n\
+--goog-cli-draft-boundary--\r\n",
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123", "threadId": "thread-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_create_to(
+        &client,
+        CreateDraftInput {
+            to: vec!["alice@example.com".into()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Attached draft".into(),
+            body: "See attached.".into(),
+            attachments: vec![DraftAttachmentInput {
+                filename: "invoice.pdf".into(),
+                content_type: "application/pdf".into(),
+                data: b"hello attachment".to_vec(),
+            }],
+        },
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
+draft-123\tmessage-123\tthread-123\n"
+    );
+}
+
+#[test]
+fn resolve_draft_attachments_reads_file_and_infers_content_type() {
+    let temp = tempfile::tempdir().unwrap();
+    let attachment = temp.path().join("evidence.txt");
+    std::fs::write(&attachment, b"hello attachment").unwrap();
+
+    let attachments =
+        resolve_draft_attachments(vec![attachment.to_string_lossy().into_owned()]).unwrap();
+
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].filename, "evidence.txt");
+    assert_eq!(attachments[0].content_type, "text/plain");
+    assert_eq!(attachments[0].data, b"hello attachment");
 }
 
 #[tokio::test]
@@ -465,6 +547,7 @@ async fn run_draft_create_emits_json_response() {
             bcc: vec![],
             subject: "Hello alice".into(),
             body: "Body".into(),
+            attachments: vec![],
         },
         true,
         &mut out,

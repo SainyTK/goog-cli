@@ -705,6 +705,9 @@ pub enum MailDraftCommand {
         /// Path to a plain text draft body file
         #[arg(long, conflicts_with = "body")]
         body_file: Option<String>,
+        /// Local file to attach to the Draft. Repeat for multiple Attachments.
+        #[arg(long)]
+        attachment: Vec<String>,
         /// Emit the raw GoogleMail Draft as JSON
         #[arg(long)]
         json: bool,

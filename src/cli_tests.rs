@@ -1255,6 +1255,7 @@ fn mail_draft_create_with_body_flags() {
                             subject,
                             body,
                             body_file,
+                            attachment,
                             json,
                         },
                 },
@@ -1265,7 +1266,43 @@ fn mail_draft_create_with_body_flags() {
             assert_eq!(subject, "Draft subject");
             assert_eq!(body.as_deref(), Some("Hello from goog"));
             assert!(body_file.is_none());
+            assert!(attachment.is_empty());
             assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_draft_create_with_attachment_paths() {
+    let cli = parse(&[
+        "mail",
+        "draft",
+        "create",
+        "--to",
+        "alice@example.com",
+        "--subject",
+        "Draft subject",
+        "--body",
+        "Hello from goog",
+        "--attachment",
+        "./invoice.pdf",
+        "--attachment",
+        "./terms.txt",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Mail {
+            command:
+                MailCommand::Draft {
+                    command:
+                        MailDraftCommand::Create {
+                            attachment, json, ..
+                        },
+                },
+        } => {
+            assert_eq!(attachment, ["./invoice.pdf", "./terms.txt"]);
+            assert!(!json);
         }
         _ => panic!("unexpected parse result"),
     }
