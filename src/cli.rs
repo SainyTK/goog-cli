@@ -662,6 +662,11 @@ pub enum MailCommand {
         #[command(subcommand)]
         command: MailAttachmentCommand,
     },
+    /// Manage GoogleMail Drafts
+    Draft {
+        #[command(subcommand)]
+        command: MailDraftCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -675,6 +680,37 @@ pub enum MailAttachmentCommand {
         /// Destination path (defaults to Attachment filename)
         #[arg(long, short)]
         output: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MailDraftCommand {
+    /// Create a GoogleMail Draft Message
+    Create {
+        /// Recipient email address. Repeat for multiple To recipients.
+        #[arg(long, required = true)]
+        to: Vec<String>,
+        /// Cc recipient email address. Repeat for multiple Cc recipients.
+        #[arg(long)]
+        cc: Vec<String>,
+        /// Bcc recipient email address. Repeat for multiple Bcc recipients.
+        #[arg(long)]
+        bcc: Vec<String>,
+        /// Draft subject
+        #[arg(long)]
+        subject: String,
+        /// Plain text draft body
+        #[arg(long, conflicts_with = "body_file")]
+        body: Option<String>,
+        /// Path to a plain text draft body file
+        #[arg(long, conflicts_with = "body")]
+        body_file: Option<String>,
+        /// Local file to attach to the Draft. Repeat for multiple Attachments.
+        #[arg(long)]
+        attachment: Vec<String>,
+        /// Emit the raw GoogleMail Draft as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 

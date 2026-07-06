@@ -3,8 +3,8 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
-    DriveFolderCommand, MailAttachmentCommand, MailCommand, SheetsCommand, SheetsInsertDataOption,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
+    SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -1220,6 +1220,108 @@ fn mail_attachment_download_output_is_optional() {
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn mail_draft_create_with_body_flags() {
+    let cli = parse(&[
+        "mail",
+        "draft",
+        "create",
+        "--to",
+        "alice@example.com",
+        "--to",
+        "bob@example.com",
+        "--cc",
+        "carol@example.com",
+        "--bcc",
+        "dave@example.com",
+        "--subject",
+        "Draft subject",
+        "--body",
+        "Hello from goog",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Mail {
+            command:
+                MailCommand::Draft {
+                    command:
+                        MailDraftCommand::Create {
+                            to,
+                            cc,
+                            bcc,
+                            subject,
+                            body,
+                            body_file,
+                            attachment,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(to, ["alice@example.com", "bob@example.com"]);
+            assert_eq!(cc, ["carol@example.com"]);
+            assert_eq!(bcc, ["dave@example.com"]);
+            assert_eq!(subject, "Draft subject");
+            assert_eq!(body.as_deref(), Some("Hello from goog"));
+            assert!(body_file.is_none());
+            assert!(attachment.is_empty());
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_draft_create_with_attachment_paths() {
+    let cli = parse(&[
+        "mail",
+        "draft",
+        "create",
+        "--to",
+        "alice@example.com",
+        "--subject",
+        "Draft subject",
+        "--body",
+        "Hello from goog",
+        "--attachment",
+        "./invoice.pdf",
+        "--attachment",
+        "./terms.txt",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Mail {
+            command:
+                MailCommand::Draft {
+                    command:
+                        MailDraftCommand::Create {
+                            attachment, json, ..
+                        },
+                },
+        } => {
+            assert_eq!(attachment, ["./invoice.pdf", "./terms.txt"]);
+            assert!(!json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_draft_create_requires_to_recipient() {
+    let err = parse(&[
+        "mail",
+        "draft",
+        "create",
+        "--subject",
+        "Draft subject",
+        "--body",
+        "Hello from goog",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("--to <TO>"));
 }
 
 #[test]

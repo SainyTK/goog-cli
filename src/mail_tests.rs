@@ -56,6 +56,10 @@ fn messages_url(server: &MockServer) -> String {
     format!("{}/gmail/v1/users/me/messages", server.uri())
 }
 
+fn drafts_url(server: &MockServer) -> String {
+    format!("{}/gmail/v1/users/me/drafts", server.uri())
+}
+
 fn attachment_path(message_id: &str, attachment_id: &str) -> String {
     format!("/gmail/v1/users/me/messages/{message_id}/attachments/{attachment_id}")
 }
@@ -148,6 +152,56 @@ impl AuthorizationCodeFlow for StaticAuthorizationCodeFlow {
             code: "mail-code".into(),
         })
     }
+}
+
+#[tokio::test]
+async fn create_draft_posts_to_gmail_drafts_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(body_string_contains("\"raw\""))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = CreateDraftOptions::new(
+        vec!["alice@example.com".into()],
+        vec![],
+        vec![],
+        "Hello alice",
+        "Body",
+    )
+    .with_drafts_url(drafts_url(&server));
+
+    let draft = create_draft(&client, &options).await.unwrap();
+
+    assert_eq!(draft["id"], "draft-123");
+}
+
+#[tokio::test]
+async fn create_draft_rejects_newlines_in_headers() {
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = CreateDraftOptions::new(
+        vec!["alice@example.com".into()],
+        vec![],
+        vec![],
+        "Hello\r\nBcc: mallory@example.com",
+        "Body",
+    );
+
+    let err = create_draft(&client, &options).await.unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Subject header cannot contain newlines"));
 }
 
 #[tokio::test]
