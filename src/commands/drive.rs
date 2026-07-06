@@ -725,16 +725,7 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>
             Box::pin(async move {
                 let mut err = err.borrow_mut();
                 collect_list_items_as_account(
-                    config,
-                    store,
-                    kind,
-                    limit,
-                    all,
-                    parent,
-                    quiet,
-                    &mut **err,
-                    files_url,
-                    account,
+                    config, store, kind, limit, all, parent, quiet, &mut **err, files_url, account,
                 )
                 .await
             })
