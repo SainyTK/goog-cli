@@ -10,15 +10,18 @@ use crate::auth::state::{
     load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
     save_runtime_state_to_path, RuntimeState,
 };
-use crate::cli::{MailAttachmentCommand, MailCommand};
+use crate::cli::{MailAttachmentCommand, MailCommand, MailDraftCommand};
 use crate::mail::{
-    decode_base64url, download_attachment, get_message, list_messages, DownloadAttachmentOptions,
-    GetMessageOptions, ListMessagesOptions, MailError, MessageSummary,
+    create_draft, decode_base64url, download_attachment, get_message, list_messages,
+    parse_message_reference, resolve_message_reference, CreateDraftOptions,
+    DownloadAttachmentOptions, DraftAttachment, GetMessageOptions, ListMessagesOptions, MailError,
+    MessageReference, MessageSummary,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 10;
 const SUMMARY_TABLE_HEADER: &str = "DATE\tFROM\tSUBJECT\tMESSAGE ID";
 const SEARCH_EMPTY_TABLE_MESSAGE: &str = "No matching messages found.";
+const DRAFT_TABLE_HEADER: &str = "DRAFT ID\tMESSAGE ID\tTHREAD ID";
 
 pub fn run<S: AccountStore>(
     cmd: MailCommand,
@@ -88,7 +91,56 @@ pub fn run<S: AccountStore>(
                 ))
             }
         },
+        MailCommand::Draft { command } => match command {
+            MailDraftCommand::Create {
+                to,
+                cc,
+                bcc,
+                subject,
+                body,
+                body_file,
+                attachment,
+                json,
+            } => {
+                let runtime =
+                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+                let client = AuthClient::from_config(config.clone(), store, account_override)?;
+                let body = resolve_draft_body(body, body_file)?;
+                let attachments = resolve_draft_attachments(attachment)?;
+                runtime.block_on(run_draft_create_to(
+                    &client,
+                    CreateDraftInput {
+                        to,
+                        cc,
+                        bcc,
+                        subject,
+                        body,
+                        attachments,
+                    },
+                    json,
+                    &mut std::io::stdout(),
+                    None,
+                ))
+            }
+        },
     }
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct CreateDraftInput {
+    pub to: Vec<String>,
+    pub cc: Vec<String>,
+    pub bcc: Vec<String>,
+    pub subject: String,
+    pub body: String,
+    pub attachments: Vec<DraftAttachmentInput>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct DraftAttachmentInput {
+    pub filename: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
 }
 
 pub(super) async fn run_list_to<S: AccountStore>(
@@ -130,6 +182,20 @@ pub(super) async fn run_search_to<S: AccountStore>(
     .await
 }
 
+pub(super) async fn run_draft_create_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    input: CreateDraftInput,
+    json: bool,
+    out: &mut impl Write,
+    drafts_url: Option<&str>,
+) -> Result<()> {
+    let options = create_draft_options(input, drafts_url);
+    let draft = create_draft(client, &options)
+        .await
+        .context("failed to create GoogleMail Draft")?;
+    write_draft(&draft, json, out)
+}
+
 async fn run_summary_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ListMessagesOptions,
@@ -152,6 +218,10 @@ pub(super) async fn run_read_to<S: AccountStore>(
     out: &mut impl Write,
     messages_url: Option<&str>,
 ) -> Result<()> {
+    let reference = parse_message_reference(&message_id);
+    let message_id = resolve_message_reference(client, &reference, messages_url)
+        .await
+        .context("failed to resolve GoogleMail Message reference")?;
     let options = get_message_options(message_id, messages_url);
 
     let message = get_message(client, &options)
@@ -171,15 +241,18 @@ pub(super) async fn run_read_unified_to<S: AccountStore>(
     messages_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<()> {
-    let options = get_message_options(message_id.clone(), messages_url);
-    let message_resource_key = mail_message_resource_key(&message_id);
+    let reference = parse_message_reference(&message_id);
+    let message_resource_key = mail_message_resource_key(&message_reference_key(&reference));
 
     let result = run_with_mail_unified_access(
         config,
         store,
         account_override,
         &message_resource_key,
-        MailAccessAttempt::Read(&options),
+        MailAccessAttempt::Read {
+            reference,
+            messages_url,
+        },
         state_path,
     )
     .await
@@ -200,6 +273,10 @@ pub(super) async fn run_attachment_download_to<S: AccountStore>(
     quiet: bool,
     messages_url: Option<&str>,
 ) -> Result<()> {
+    let reference = parse_message_reference(&message_id);
+    let message_id = resolve_message_reference(client, &reference, messages_url)
+        .await
+        .context("failed to resolve GoogleMail Message reference")?;
     let options = attachment_download_options(message_id, attachment_id, output, messages_url);
     let downloaded = download_attachment(client, &options)
         .await
@@ -222,15 +299,19 @@ pub(super) async fn run_attachment_download_unified_to<S: AccountStore>(
     messages_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<()> {
-    let options =
-        attachment_download_options(message_id.clone(), attachment_id, output, messages_url);
-    let message_resource_key = mail_message_resource_key(&message_id);
+    let reference = parse_message_reference(&message_id);
+    let message_resource_key = mail_message_resource_key(&message_reference_key(&reference));
     let result = run_with_mail_unified_access(
         config,
         store,
         account_override,
         &message_resource_key,
-        MailAccessAttempt::DownloadAttachment(&options),
+        MailAccessAttempt::DownloadAttachment {
+            reference,
+            attachment_id,
+            output,
+            messages_url,
+        },
         state_path,
     )
     .await
@@ -248,6 +329,19 @@ fn mail_message_resource_key(message_id: &str) -> String {
     resource_key("mail", message_id)
 }
 
+fn message_reference_key(reference: &MessageReference) -> String {
+    match reference {
+        MessageReference::MessageId(message_id) => message_id.clone(),
+        MessageReference::Thread {
+            thread_id,
+            preferred_label,
+        } => format!(
+            "thread:{thread_id}:{}",
+            preferred_label.as_deref().unwrap_or_default()
+        ),
+    }
+}
+
 fn write_download_notice(downloaded: &crate::mail::DownloadedAttachment, quiet: bool) {
     if quiet {
         return;
@@ -261,8 +355,16 @@ fn write_download_notice(downloaded: &crate::mail::DownloadedAttachment, quiet: 
 }
 
 enum MailAccessAttempt<'a> {
-    Read(&'a GetMessageOptions),
-    DownloadAttachment(&'a DownloadAttachmentOptions),
+    Read {
+        reference: MessageReference,
+        messages_url: Option<&'a str>,
+    },
+    DownloadAttachment {
+        reference: MessageReference,
+        attachment_id: String,
+        output: Option<PathBuf>,
+        messages_url: Option<&'a str>,
+    },
 }
 
 enum MailAccessResult {
@@ -346,12 +448,33 @@ async fn attempt_mail_access<S: AccountStore>(
     attempt: &MailAccessAttempt<'_>,
 ) -> Result<MailAccessResult, MailError> {
     match attempt {
-        MailAccessAttempt::Read(options) => get_message(client, options)
-            .await
-            .map(MailAccessResult::Message),
-        MailAccessAttempt::DownloadAttachment(options) => download_attachment(client, options)
-            .await
-            .map(MailAccessResult::Downloaded),
+        MailAccessAttempt::Read {
+            reference,
+            messages_url,
+        } => {
+            let message_id = resolve_message_reference(client, reference, *messages_url).await?;
+            let options = get_message_options(message_id, *messages_url);
+            get_message(client, &options)
+                .await
+                .map(MailAccessResult::Message)
+        }
+        MailAccessAttempt::DownloadAttachment {
+            reference,
+            attachment_id,
+            output,
+            messages_url,
+        } => {
+            let message_id = resolve_message_reference(client, reference, *messages_url).await?;
+            let options = attachment_download_options(
+                message_id,
+                attachment_id.clone(),
+                output.clone(),
+                *messages_url,
+            );
+            download_attachment(client, &options)
+                .await
+                .map(MailAccessResult::Downloaded)
+        }
     }
 }
 
@@ -452,12 +575,88 @@ fn attachment_download_options(
     options
 }
 
+fn create_draft_options(input: CreateDraftInput, drafts_url: Option<&str>) -> CreateDraftOptions {
+    let mut options =
+        CreateDraftOptions::new(input.to, input.cc, input.bcc, input.subject, input.body)
+            .with_attachments(
+                input
+                    .attachments
+                    .into_iter()
+                    .map(|attachment| DraftAttachment {
+                        filename: attachment.filename,
+                        content_type: attachment.content_type,
+                        data: attachment.data,
+                    })
+                    .collect(),
+            );
+    if let Some(drafts_url) = drafts_url {
+        options = options.with_drafts_url(drafts_url);
+    }
+    options
+}
+
 fn get_message_options(message_id: String, messages_url: Option<&str>) -> GetMessageOptions {
     let mut options = GetMessageOptions::new(message_id);
     if let Some(messages_url) = messages_url {
         options = options.with_messages_url(messages_url);
     }
     options
+}
+
+fn resolve_draft_body(body: Option<String>, body_file: Option<String>) -> Result<String> {
+    match (body, body_file) {
+        (Some(body), None) => Ok(body),
+        (None, Some(path)) => std::fs::read_to_string(&path)
+            .with_context(|| format!("failed to read GoogleMail Draft body file: {path}")),
+        (None, None) => Ok(String::new()),
+        (Some(_), Some(_)) => unreachable!("clap prevents --body and --body-file together"),
+    }
+}
+
+pub(super) fn resolve_draft_attachments(paths: Vec<String>) -> Result<Vec<DraftAttachmentInput>> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let data = std::fs::read(&path)
+                .with_context(|| format!("failed to read GoogleMail Draft Attachment: {path}"))?;
+            let path = PathBuf::from(path);
+            let filename = path
+                .file_name()
+                .and_then(std::ffi::OsStr::to_str)
+                .filter(|filename| !filename.is_empty())
+                .context("GoogleMail Draft Attachment path has no filename")?
+                .to_string();
+            Ok(DraftAttachmentInput {
+                content_type: content_type_for_path(&path),
+                filename,
+                data,
+            })
+        })
+        .collect()
+}
+
+fn content_type_for_path(path: &Path) -> String {
+    match path
+        .extension()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("csv") => "text/csv",
+        Some("gif") => "image/gif",
+        Some("htm") | Some("html") => "text/html",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("json") => "application/json",
+        Some("md") => "text/markdown",
+        Some("pdf") => "application/pdf",
+        Some("png") => "image/png",
+        Some("txt") => "text/plain",
+        Some("webp") => "image/webp",
+        Some("xml") => "application/xml",
+        Some("zip") => "application/zip",
+        _ => "application/octet-stream",
+    }
+    .to_string()
 }
 
 fn write_summaries(
@@ -477,6 +676,33 @@ fn write_summaries(
         (true, Some(message)) => writeln!(out, "{message}").context("failed to write output"),
         _ => write_summary_table(summaries, out),
     }
+}
+
+fn write_draft(draft: &serde_json::Value, json: bool, out: &mut impl Write) -> Result<()> {
+    if json {
+        return write_json_line(out, draft, "failed to serialize GoogleMail Draft");
+    }
+
+    writeln!(out, "{DRAFT_TABLE_HEADER}").context("failed to write output")?;
+    writeln!(
+        out,
+        "{}\t{}\t{}",
+        draft
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(""),
+        draft
+            .get("message")
+            .and_then(|message| message.get("id"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(""),
+        draft
+            .get("message")
+            .and_then(|message| message.get("threadId"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+    )
+    .context("failed to write output")
 }
 
 fn write_summary_ndjson(summaries: &[MessageSummary], out: &mut impl Write) -> Result<()> {

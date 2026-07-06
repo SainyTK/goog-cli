@@ -56,6 +56,10 @@ fn messages_url(server: &MockServer) -> String {
     format!("{}/gmail/v1/users/me/messages", server.uri())
 }
 
+fn drafts_url(server: &MockServer) -> String {
+    format!("{}/gmail/v1/users/me/drafts", server.uri())
+}
+
 fn attachment_path(message_id: &str, attachment_id: &str) -> String {
     format!("/gmail/v1/users/me/messages/{message_id}/attachments/{attachment_id}")
 }
@@ -67,6 +71,64 @@ fn download_attachment_options(
 ) -> DownloadAttachmentOptions {
     DownloadAttachmentOptions::new(message_id, attachment_id)
         .with_messages_url(messages_url(server))
+}
+
+#[test]
+fn parse_message_reference_passes_through_bare_message_id() {
+    assert_eq!(
+        parse_message_reference("placeholder-message-id"),
+        MessageReference::MessageId("placeholder-message-id".into())
+    );
+}
+
+#[test]
+fn parse_message_reference_extracts_id_from_standard_gmail_url() {
+    assert_eq!(
+        parse_message_reference("https://mail.google.com/mail/u/0/#sent/19f365e215a8229c"),
+        MessageReference::MessageId("19f365e215a8229c".into())
+    );
+}
+
+#[test]
+fn parse_message_reference_decodes_gmail_thread_token_from_sent_url() {
+    assert_eq!(
+        parse_message_reference(
+            "https://mail.google.com/mail/u/0/#sent/QgrcJHrtrSpwscndncKKjbRWDtfFSrMtdrq"
+        ),
+        MessageReference::Thread {
+            thread_id: "thread-a:r-3377742391388691132".into(),
+            preferred_label: Some("SENT".into()),
+        }
+    );
+}
+
+#[test]
+fn parse_message_reference_decodes_gmail_thread_token_from_inbox_url() {
+    assert_eq!(
+        parse_message_reference(
+            "https://mail.google.com/mail/u/0/#inbox/QgrcJHrtrSpwscndncKKjbRWDtfFSrMtdrq"
+        ),
+        MessageReference::Thread {
+            thread_id: "thread-a:r-3377742391388691132".into(),
+            preferred_label: Some("INBOX".into()),
+        }
+    );
+}
+
+#[test]
+fn parse_message_reference_extracts_id_from_gmail_thread_query_param() {
+    assert_eq!(
+        parse_message_reference("https://mail.google.com/mail/u/0/?th=placeholder-message-id"),
+        MessageReference::MessageId("placeholder-message-id".into())
+    );
+}
+
+#[test]
+fn parse_message_reference_trims_surrounding_whitespace() {
+    assert_eq!(
+        parse_message_reference("  placeholder-message-id  "),
+        MessageReference::MessageId("placeholder-message-id".into())
+    );
 }
 
 struct StaticAuthorizationCodeFlow {
@@ -90,6 +152,56 @@ impl AuthorizationCodeFlow for StaticAuthorizationCodeFlow {
             code: "mail-code".into(),
         })
     }
+}
+
+#[tokio::test]
+async fn create_draft_posts_to_gmail_drafts_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(body_string_contains("\"raw\""))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = CreateDraftOptions::new(
+        vec!["alice@example.com".into()],
+        vec![],
+        vec![],
+        "Hello alice",
+        "Body",
+    )
+    .with_drafts_url(drafts_url(&server));
+
+    let draft = create_draft(&client, &options).await.unwrap();
+
+    assert_eq!(draft["id"], "draft-123");
+}
+
+#[tokio::test]
+async fn create_draft_rejects_newlines_in_headers() {
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = CreateDraftOptions::new(
+        vec!["alice@example.com".into()],
+        vec![],
+        vec![],
+        "Hello\r\nBcc: mallory@example.com",
+        "Body",
+    );
+
+    let err = create_draft(&client, &options).await.unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Subject header cannot contain newlines"));
 }
 
 #[tokio::test]
@@ -732,6 +844,38 @@ async fn get_message_fetches_raw_googlemail_message() {
     assert_eq!(message["id"], "message-123");
     assert_eq!(message["threadId"], "thread-456");
     assert_eq!(message["payload"]["headers"][0]["value"], "Roadmap");
+}
+
+#[tokio::test]
+async fn resolve_message_reference_uses_thread_token_and_prefers_matching_label() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/gmail/v1/users/me/threads/thread-a:r-3377742391388691132",
+        ))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(query_param("fields", "messages(id,labelIds)"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "messages": [
+                { "id": "received-message", "labelIds": ["INBOX"] },
+                { "id": "sent-message", "labelIds": ["SENT"] }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let reference = parse_message_reference(
+        "https://mail.google.com/mail/u/0/#sent/QgrcJHrtrSpwscndncKKjbRWDtfFSrMtdrq",
+    );
+
+    let message_id = resolve_message_reference(&client, &reference, Some(&messages_url(&server)))
+        .await
+        .unwrap();
+
+    assert_eq!(message_id, "sent-message");
 }
 
 #[tokio::test]
