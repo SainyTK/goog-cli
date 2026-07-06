@@ -17,10 +17,13 @@ use crate::auth::client::AuthClient;
 pub const GMAIL_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
 pub const GMAIL_SCOPES: &[&str] = &[GMAIL_SCOPE];
 const GMAIL_MESSAGES_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
+const GMAIL_DRAFTS_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
 
 pub type Message = Value;
+pub type Draft = Value;
+const DRAFT_BOUNDARY: &str = "goog-cli-draft-boundary";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MessageSummary {
@@ -143,6 +146,67 @@ impl DownloadAttachmentOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct CreateDraftOptions {
+    pub to: Vec<String>,
+    pub cc: Vec<String>,
+    pub bcc: Vec<String>,
+    pub subject: String,
+    pub body: String,
+    pub attachments: Vec<DraftAttachment>,
+    drafts_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DraftAttachment {
+    pub filename: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
+}
+
+impl CreateDraftOptions {
+    pub fn new(
+        to: Vec<String>,
+        cc: Vec<String>,
+        bcc: Vec<String>,
+        subject: impl Into<String>,
+        body: impl Into<String>,
+    ) -> Self {
+        Self {
+            to,
+            cc,
+            bcc,
+            subject: subject.into(),
+            body: body.into(),
+            attachments: Vec::new(),
+            drafts_url: GMAIL_DRAFTS_URL.to_string(),
+        }
+    }
+
+    pub fn with_attachments(mut self, attachments: Vec<DraftAttachment>) -> Self {
+        self.attachments = attachments;
+        self
+    }
+
+    pub(super) fn with_drafts_url(mut self, drafts_url: impl Into<String>) -> Self {
+        self.drafts_url = drafts_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, MailError> {
+        Ok(Url::parse(&self.drafts_url)?)
+    }
+
+    fn request_body(&self) -> Result<Value, MailError> {
+        let raw = build_draft_raw_message(self)?;
+        Ok(serde_json::json!({
+            "message": {
+                "raw": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+            }
+        }))
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ListMessagesOptions {
     pub page_size: u32,
     pub query: Option<String>,
@@ -255,6 +319,23 @@ pub async fn list_messages<S: AccountStore>(
     Ok(summaries)
 }
 
+pub async fn create_draft<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CreateDraftOptions,
+) -> Result<Draft, MailError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .post(options.request_url()?)
+                .json(&options.request_body()?),
+            GMAIL_SCOPES,
+        )
+        .await
+        .map_err(MailError::Auth)?;
+
+    parse_json_response(response).await
+}
+
 pub async fn download_attachment<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DownloadAttachmentOptions,
@@ -285,6 +366,126 @@ pub async fn download_attachment<S: AccountStore>(
         path,
         bytes: bytes.len() as u64,
     })
+}
+
+fn build_draft_raw_message(options: &CreateDraftOptions) -> Result<String, MailError> {
+    if options.to.is_empty() {
+        return Err(MailError::InvalidInput(
+            "at least one To recipient is required".into(),
+        ));
+    }
+
+    let mut message = draft_headers(options)?;
+    message.push_str("MIME-Version: 1.0\r\n");
+
+    if options.attachments.is_empty() {
+        message.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
+        message.push_str("Content-Transfer-Encoding: 8bit\r\n");
+        message.push_str("\r\n");
+        message.push_str(&normalize_body_newlines(&options.body));
+        return Ok(message);
+    }
+
+    message.push_str(&format!(
+        "Content-Type: multipart/mixed; boundary=\"{DRAFT_BOUNDARY}\"\r\n"
+    ));
+    message.push_str("\r\n");
+    message.push_str(&format!("--{DRAFT_BOUNDARY}\r\n"));
+    message.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
+    message.push_str("Content-Transfer-Encoding: 8bit\r\n");
+    message.push_str("\r\n");
+    message.push_str(&normalize_body_newlines(&options.body));
+    for attachment in &options.attachments {
+        message.push_str(&draft_attachment_part(attachment)?);
+    }
+    message.push_str(&format!("--{DRAFT_BOUNDARY}--\r\n"));
+    Ok(message)
+}
+
+fn draft_headers(options: &CreateDraftOptions) -> Result<String, MailError> {
+    let mut message = String::new();
+    push_address_header(&mut message, "To", &options.to)?;
+    push_address_header(&mut message, "Cc", &options.cc)?;
+    push_address_header(&mut message, "Bcc", &options.bcc)?;
+    push_single_header(&mut message, "Subject", &options.subject)?;
+    Ok(message)
+}
+
+fn draft_attachment_part(attachment: &DraftAttachment) -> Result<String, MailError> {
+    reject_header_newlines("Attachment filename", &attachment.filename)?;
+    reject_header_newlines("Attachment content type", &attachment.content_type)?;
+    let filename = quote_header_parameter(&attachment.filename);
+    let mut part = String::new();
+    part.push_str(&format!("--{DRAFT_BOUNDARY}\r\n"));
+    part.push_str(&format!(
+        "Content-Type: {}; name=\"{}\"\r\n",
+        attachment.content_type, filename
+    ));
+    part.push_str(&format!(
+        "Content-Disposition: attachment; filename=\"{}\"\r\n",
+        filename
+    ));
+    part.push_str("Content-Transfer-Encoding: base64\r\n");
+    part.push_str("\r\n");
+    part.push_str(&wrap_base64(
+        &base64::engine::general_purpose::STANDARD.encode(&attachment.data),
+    ));
+    Ok(part)
+}
+
+fn quote_header_parameter(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn wrap_base64(data: &str) -> String {
+    if data.is_empty() {
+        return "\r\n".to_string();
+    }
+
+    let mut wrapped = String::new();
+    for chunk in data.as_bytes().chunks(76) {
+        wrapped.push_str(std::str::from_utf8(chunk).expect("base64 is utf-8"));
+        wrapped.push_str("\r\n");
+    }
+    wrapped
+}
+
+fn push_address_header(
+    message: &mut String,
+    name: &str,
+    values: &[String],
+) -> Result<(), MailError> {
+    if values.is_empty() {
+        return Ok(());
+    }
+    push_single_header(message, name, &values.join(", "))
+}
+
+fn push_single_header(message: &mut String, name: &str, value: &str) -> Result<(), MailError> {
+    reject_header_newlines(name, value)?;
+    message.push_str(name);
+    message.push_str(": ");
+    message.push_str(value);
+    message.push_str("\r\n");
+    Ok(())
+}
+
+fn reject_header_newlines(name: &str, value: &str) -> Result<(), MailError> {
+    if value.contains('\n') || value.contains('\r') {
+        return Err(MailError::InvalidInput(format!(
+            "{name} header cannot contain newlines"
+        )));
+    }
+    Ok(())
+}
+
+fn normalize_body_newlines(body: &str) -> String {
+    let mut normalized = body.replace("\r\n", "\n").replace('\r', "\n");
+    normalized = normalized.replace('\n', "\r\n");
+    if !normalized.ends_with("\r\n") {
+        normalized.push_str("\r\n");
+    }
+    normalized
 }
 
 async fn ensure_destination_available(path: &Path) -> Result<(), MailError> {

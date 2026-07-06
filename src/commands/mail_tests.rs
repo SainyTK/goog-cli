@@ -1,6 +1,7 @@
 use base64::Engine;
 use chrono::{Duration, Utc};
-use wiremock::matchers::{header, method, path, query_param};
+use serde_json::Value;
+use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
@@ -86,6 +87,31 @@ struct AbsentQueryParam(&'static str);
 impl Match for AbsentQueryParam {
     fn matches(&self, request: &Request) -> bool {
         !request.url.query_pairs().any(|(name, _)| name == self.0)
+    }
+}
+
+struct DraftRawMessageMatcher {
+    expected: &'static str,
+}
+
+impl Match for DraftRawMessageMatcher {
+    fn matches(&self, request: &Request) -> bool {
+        let Ok(body) = serde_json::from_slice::<Value>(&request.body) else {
+            return false;
+        };
+        let Some(raw) = body
+            .get("message")
+            .and_then(|message| message.get("raw"))
+            .and_then(Value::as_str)
+        else {
+            return false;
+        };
+        let Ok(decoded) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(raw) else {
+            return false;
+        };
+        String::from_utf8(decoded)
+            .map(|message| message == self.expected)
+            .unwrap_or(false)
     }
 }
 
@@ -351,6 +377,189 @@ async fn run_search_prints_empty_json_array_for_empty_json_results() {
     .unwrap();
 
     assert_eq!(String::from_utf8(out).unwrap(), "[]\n");
+}
+
+#[tokio::test]
+async fn run_draft_create_posts_rfc_2822_message_and_renders_summary() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(DraftRawMessageMatcher {
+            expected: "To: Alice <alice@example.com>, bob@example.com\r\n\
+Cc: Carol <carol@example.com>\r\n\
+Bcc: Dave <dave@example.com>\r\n\
+Subject: Status update\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+Hello Bob,\r\n\
+\r\n\
+Draft body.\r\n",
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123", "threadId": "thread-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_create_to(
+        &client,
+        CreateDraftInput {
+            to: vec!["Alice <alice@example.com>".into(), "bob@example.com".into()],
+            cc: vec!["Carol <carol@example.com>".into()],
+            bcc: vec!["Dave <dave@example.com>".into()],
+            subject: "Status update".into(),
+            body: "Hello Bob,\n\nDraft body.".into(),
+            attachments: vec![],
+        },
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
+draft-123\tmessage-123\tthread-123\n"
+    );
+}
+
+#[tokio::test]
+async fn run_draft_create_posts_multipart_message_with_attachment() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(DraftRawMessageMatcher {
+            expected: "To: alice@example.com\r\n\
+Subject: Attached draft\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"goog-cli-draft-boundary\"\r\n\
+\r\n\
+--goog-cli-draft-boundary\r\n\
+Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+See attached.\r\n\
+--goog-cli-draft-boundary\r\n\
+Content-Type: application/pdf; name=\"invoice.pdf\"\r\n\
+Content-Disposition: attachment; filename=\"invoice.pdf\"\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+aGVsbG8gYXR0YWNobWVudA==\r\n\
+--goog-cli-draft-boundary--\r\n",
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123", "threadId": "thread-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_create_to(
+        &client,
+        CreateDraftInput {
+            to: vec!["alice@example.com".into()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Attached draft".into(),
+            body: "See attached.".into(),
+            attachments: vec![DraftAttachmentInput {
+                filename: "invoice.pdf".into(),
+                content_type: "application/pdf".into(),
+                data: b"hello attachment".to_vec(),
+            }],
+        },
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
+draft-123\tmessage-123\tthread-123\n"
+    );
+}
+
+#[test]
+fn resolve_draft_attachments_reads_file_and_infers_content_type() {
+    let temp = tempfile::tempdir().unwrap();
+    let attachment = temp.path().join("evidence.txt");
+    std::fs::write(&attachment, b"hello attachment").unwrap();
+
+    let attachments =
+        resolve_draft_attachments(vec![attachment.to_string_lossy().into_owned()]).unwrap();
+
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].filename, "evidence.txt");
+    assert_eq!(attachments[0].content_type, "text/plain");
+    assert_eq!(attachments[0].data, b"hello attachment");
+}
+
+#[tokio::test]
+async fn run_draft_create_emits_json_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(body_json(serde_json::json!({
+            "message": {
+                "raw": "VG86IGFsaWNlQGV4YW1wbGUuY29tDQpTdWJqZWN0OiBIZWxsbyBhbGljZQ0KTUlNRS1WZXJzaW9uOiAxLjANCkNvbnRlbnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD1VVEYtOA0KQ29udGVudC1UcmFuc2Zlci1FbmNvZGluZzogOGJpdA0KDQpCb2R5DQo"
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_create_to(
+        &client,
+        CreateDraftInput {
+            to: vec!["alice@example.com".into()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Hello alice".into(),
+            body: "Body".into(),
+            attachments: vec![],
+        },
+        true,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"draft-123\",\"message\":{\"id\":\"message-123\"}}\n"
+    );
 }
 
 #[tokio::test]

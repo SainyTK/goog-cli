@@ -17,6 +17,9 @@ pub enum MailError {
     #[error("invalid GoogleMail API response: {0}")]
     InvalidResponse(String),
 
+    #[error("invalid GoogleMail input: {0}")]
+    InvalidInput(String),
+
     #[error("GoogleMail Attachment filename was not found; pass --output")]
     MissingAttachmentFilename,
 
