@@ -9,7 +9,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::{resolve_account, Config};
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::UnifiedAccess;
-use crate::cli::{DocsCommand, DocsListType};
+use crate::cli::{DocsCommand, DocsListType, DocsSectionBreakType};
 use crate::docs::{
     batch_update_document, create_document, extract_style_template, get_document,
     map::build_document_map,
@@ -275,6 +275,50 @@ pub fn run<S: AccountStore>(
                 account_override,
                 InsertPageBreakCommand {
                     document_id,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::InsertSectionBreak {
+            document_id,
+            section_type,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_insert_section_break_unified_to(
+                config,
+                store,
+                account_override,
+                InsertSectionBreakCommand {
+                    document_id,
+                    section_type,
                     selector,
                     dry_run,
                     json,
@@ -583,6 +627,16 @@ pub(super) struct InsertImageCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct InsertPageBreakCommand {
     pub document_id: String,
+    pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct InsertSectionBreakCommand {
+    pub document_id: String,
+    pub section_type: DocsSectionBreakType,
     pub selector: InsertTextSelector,
     pub dry_run: bool,
     pub json: bool,
@@ -1072,6 +1126,63 @@ pub(super) async fn run_insert_page_break_unified_to<S: AccountStore>(
         documents_url,
         state_path,
         "insert-page-break",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_insert_section_break_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: InsertSectionBreakCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_insert_section_break_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "insert-section-break",
+    )
+    .await
+}
+
+pub(super) async fn run_insert_section_break_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: InsertSectionBreakCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_insert_section_break_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "insert-section-break",
     )
     .await
 }
@@ -2367,6 +2478,43 @@ fn prepare_insert_page_break_change(
         preview: DocsChangePreview::with_context(
             "insert-page-break",
             format!("Insert page break at index {index}"),
+            resolved.preview_before,
+            preview_after,
+        ),
+    })
+}
+
+fn prepare_insert_section_break_change(
+    document_map: &DocumentMap,
+    command: &InsertSectionBreakCommand,
+) -> Result<DocsHighLevelChange> {
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let Some(index) = resolved.location.index else {
+        bail!("insert-section-break selector resolved without a Google Docs index");
+    };
+    let section_type = command.section_type.api_value();
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "insertSectionBreak": {
+                "location": { "index": index },
+                "sectionType": section_type
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    let preview_after = insert_preview_text(
+        &resolved.preview_before,
+        resolved.preview_offset,
+        "[section break]",
+    );
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(resolved.location),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::with_context(
+            "insert-section-break",
+            format!("Insert {section_type} section break at index {index}"),
             resolved.preview_before,
             preview_after,
         ),

@@ -9,7 +9,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::cli::DocsListType;
+use crate::cli::{DocsListType, DocsSectionBreakType};
 use crate::docs::style_template::{
     load_style_template_in, save_style_template_in, ListStyleTemplate, NamedStyleTemplate,
     StyleTemplate, TextStyleTemplate,
@@ -1288,6 +1288,53 @@ async fn run_insert_page_break_dry_run_emits_native_request() {
     assert_eq!(
         output["requestBody"]["requests"][0]["insertPageBreak"]["location"]["index"],
         44
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+}
+
+#[tokio::test]
+async fn run_insert_section_break_dry_run_emits_native_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_section_break_to(
+        &client,
+        InsertSectionBreakCommand {
+            document_id: "document-123".into(),
+            section_type: DocsSectionBreakType::Continuous,
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["location"]["index"], 44);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertSectionBreak"]["location"]["index"],
+        44
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertSectionBreak"]["sectionType"],
+        "CONTINUOUS"
     );
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
