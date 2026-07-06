@@ -712,6 +712,35 @@ pub enum MailDraftCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Edit a GoogleMail Draft Message
+    Edit {
+        /// GoogleMail Draft ID to update
+        draft_id: String,
+        /// Recipient email address. Repeat for multiple To recipients.
+        #[arg(long, required = true)]
+        to: Vec<String>,
+        /// Cc recipient email address. Repeat for multiple Cc recipients.
+        #[arg(long)]
+        cc: Vec<String>,
+        /// Bcc recipient email address. Repeat for multiple Bcc recipients.
+        #[arg(long)]
+        bcc: Vec<String>,
+        /// Draft subject
+        #[arg(long)]
+        subject: String,
+        /// Plain text draft body
+        #[arg(long, conflicts_with = "body_file")]
+        body: Option<String>,
+        /// Path to a plain text draft body file
+        #[arg(long, conflicts_with = "body")]
+        body_file: Option<String>,
+        /// Local file to attach to the Draft. Repeat for multiple Attachments.
+        #[arg(long)]
+        attachment: Vec<String>,
+        /// Emit the raw GoogleMail Draft as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
