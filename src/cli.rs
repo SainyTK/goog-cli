@@ -205,6 +205,7 @@ impl DocsCommand {
             | DocsCommand::ListImages { document_id, .. }
             | DocsCommand::ListTables { document_id, .. }
             | DocsCommand::InsertImage { document_id, .. }
+            | DocsCommand::InsertPageBreak { document_id, .. }
             | DocsCommand::InsertTable { document_id, .. }
             | DocsCommand::EditTable { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
@@ -358,6 +359,44 @@ Notes:
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
         image_uri: String,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Insert a page break through a high-level Document Map location selector
+    InsertPageBreak {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
         /// Raw Google Docs UTF-16 index
         #[arg(long)]
         index: Option<i64>,

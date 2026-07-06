@@ -243,6 +243,48 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DocsCommand::InsertPageBreak {
+            document_id,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_insert_page_break_unified_to(
+                config,
+                store,
+                account_override,
+                InsertPageBreakCommand {
+                    document_id,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
         DocsCommand::InsertTable {
             document_id,
             data,
@@ -532,6 +574,15 @@ pub(super) struct ReplaceTextCommand {
 pub(super) struct InsertImageCommand {
     pub document_id: String,
     pub image_uri: String,
+    pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct InsertPageBreakCommand {
+    pub document_id: String,
     pub selector: InsertTextSelector,
     pub dry_run: bool,
     pub json: bool,
@@ -964,6 +1015,63 @@ pub(super) async fn run_insert_image_unified_to<S: AccountStore>(
         documents_url,
         state_path,
         "insert-image",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_insert_page_break_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: InsertPageBreakCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_insert_page_break_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "insert-page-break",
+    )
+    .await
+}
+
+pub(super) async fn run_insert_page_break_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: InsertPageBreakCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_insert_page_break_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "insert-page-break",
     )
     .await
 }
@@ -2224,6 +2332,41 @@ fn prepare_insert_image_change(
                 "Insert inline image at index {index} from {}",
                 command.image_uri
             ),
+            resolved.preview_before,
+            preview_after,
+        ),
+    })
+}
+
+fn prepare_insert_page_break_change(
+    document_map: &DocumentMap,
+    command: &InsertPageBreakCommand,
+) -> Result<DocsHighLevelChange> {
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let Some(index) = resolved.location.index else {
+        bail!("insert-page-break selector resolved without a Google Docs index");
+    };
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "insertPageBreak": {
+                "location": { "index": index }
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    let preview_after = insert_preview_text(
+        &resolved.preview_before,
+        resolved.preview_offset,
+        "[page break]",
+    );
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(resolved.location),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::with_context(
+            "insert-page-break",
+            format!("Insert page break at index {index}"),
             resolved.preview_before,
             preview_after,
         ),
