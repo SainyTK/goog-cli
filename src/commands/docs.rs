@@ -329,6 +329,52 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DocsCommand::CreateHeader {
+            document_id,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_header_unified_to(
+                config,
+                store,
+                account_override,
+                CreateHeaderCommand {
+                    document_id,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::CreateFooter {
+            document_id,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_footer_unified_to(
+                config,
+                store,
+                account_override,
+                CreateFooterCommand {
+                    document_id,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
         DocsCommand::InsertTable {
             document_id,
             data,
@@ -638,6 +684,22 @@ pub(super) struct InsertSectionBreakCommand {
     pub document_id: String,
     pub section_type: DocsSectionBreakType,
     pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CreateHeaderCommand {
+    pub document_id: String,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CreateFooterCommand {
+    pub document_id: String,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -1183,6 +1245,120 @@ pub(super) async fn run_insert_section_break_unified_to<S: AccountStore>(
         documents_url,
         state_path,
         "insert-section-break",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_create_header_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: CreateHeaderCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_create_header_change(&document_map, &command);
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "create-header",
+    )
+    .await
+}
+
+pub(super) async fn run_create_header_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CreateHeaderCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_create_header_change(&document_map, &command);
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "create-header",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_create_footer_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: CreateFooterCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_create_footer_change(&document_map, &command);
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "create-footer",
+    )
+    .await
+}
+
+pub(super) async fn run_create_footer_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CreateFooterCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_create_footer_change(&document_map, &command);
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "create-footer",
     )
     .await
 }
@@ -2519,6 +2695,54 @@ fn prepare_insert_section_break_change(
             preview_after,
         ),
     })
+}
+
+fn prepare_create_header_change(
+    document_map: &DocumentMap,
+    command: &CreateHeaderCommand,
+) -> DocsHighLevelChange {
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "createHeader": {
+                "type": "DEFAULT"
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "create-header",
+            "Create the document's DEFAULT header".to_string(),
+        ),
+    }
+}
+
+fn prepare_create_footer_change(
+    document_map: &DocumentMap,
+    command: &CreateFooterCommand,
+) -> DocsHighLevelChange {
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "createFooter": {
+                "type": "DEFAULT"
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "create-footer",
+            "Create the document's DEFAULT footer".to_string(),
+        ),
+    }
 }
 
 fn prepare_insert_table_change(

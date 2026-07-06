@@ -207,6 +207,8 @@ impl DocsCommand {
             | DocsCommand::InsertImage { document_id, .. }
             | DocsCommand::InsertPageBreak { document_id, .. }
             | DocsCommand::InsertSectionBreak { document_id, .. }
+            | DocsCommand::CreateHeader { document_id, .. }
+            | DocsCommand::CreateFooter { document_id, .. }
             | DocsCommand::InsertTable { document_id, .. }
             | DocsCommand::EditTable { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
@@ -463,6 +465,46 @@ Notes:
         /// Insert before the matching text span
         #[arg(long)]
         before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Create the document's default header, returning its headerId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new headerId under replies[0].createHeader.headerId.
+
+Notes:
+  Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
+  Edit the header's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
+    CreateHeader {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Create the document's default footer, returning its footerId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new footerId under replies[0].createFooter.footerId.
+
+Notes:
+  Always creates the DEFAULT footer for the document's first section; there is no per-section footer support today.
+  Edit the footer's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footerId segment.")]
+    CreateFooter {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
