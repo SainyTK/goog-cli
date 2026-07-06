@@ -18,12 +18,155 @@ pub const GMAIL_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
 pub const GMAIL_SCOPES: &[&str] = &[GMAIL_SCOPE];
 const GMAIL_MESSAGES_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
 const GMAIL_DRAFTS_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
+const GMAIL_RESTRICTED_ALPHABET: &str = "BCDFGHJKLMNPQRSTVWXZbcdfghjklmnpqrstvwxz";
+const BASE64_ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
 
 pub type Message = Value;
 pub type Draft = Value;
 const DRAFT_BOUNDARY: &str = "goog-cli-draft-boundary";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageReference {
+    MessageId(String),
+    Thread {
+        thread_id: String,
+        preferred_label: Option<String>,
+    },
+}
+
+/// Accepts either a bare GoogleMail Message ID or a Gmail browser URL.
+/// Browser URLs may identify a thread token instead of a REST Message ID.
+pub fn parse_message_reference(input: &str) -> MessageReference {
+    let trimmed = input.trim();
+    match Url::parse(trimmed)
+        .ok()
+        .and_then(|url| parse_message_reference_from_url(&url))
+    {
+        Some(reference) => reference,
+        None => MessageReference::MessageId(trimmed.to_string()),
+    }
+}
+
+fn parse_message_reference_from_url(url: &Url) -> Option<MessageReference> {
+    let host = url.host_str()?;
+    if host != "mail.google.com" {
+        return None;
+    }
+
+    if let Some(id) = url.query_pairs().find_map(|(key, value)| {
+        if key == "th" && !value.is_empty() {
+            Some(value.into_owned())
+        } else {
+            None
+        }
+    }) {
+        return Some(MessageReference::MessageId(id));
+    }
+
+    let fragment = url.fragment()?;
+    let mut segments = fragment.split('/').filter(|segment| !segment.is_empty());
+    let preferred_label = segments.next().map(gmail_label_id);
+    let token = fragment.split('/').next_back()?.trim();
+    if token.is_empty() {
+        return None;
+    }
+
+    match decode_gmail_restricted_thread_token(token) {
+        Some(thread_id) => Some(MessageReference::Thread {
+            thread_id,
+            preferred_label,
+        }),
+        None => Some(MessageReference::MessageId(token.to_string())),
+    }
+}
+
+fn gmail_label_id(label: &str) -> String {
+    label
+        .trim_matches(|ch: char| ch == '^' || ch.is_whitespace())
+        .to_ascii_uppercase()
+}
+
+fn decode_gmail_restricted_thread_token(token: &str) -> Option<String> {
+    if token.is_empty()
+        || token
+            .chars()
+            .any(|ch| !GMAIL_RESTRICTED_ALPHABET.contains(ch))
+    {
+        return None;
+    }
+
+    let encoded = transliterate(token, GMAIL_RESTRICTED_ALPHABET, BASE64_ALPHABET)?;
+    let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
+        .decode(encoded)
+        .ok()?;
+    let decoded = String::from_utf8(decoded).ok()?;
+    if decoded.starts_with("thread-") {
+        Some(decoded)
+    } else {
+        Some(format!("thread-{decoded}"))
+    }
+}
+
+fn transliterate(subject: &str, input_alphabet: &str, output_alphabet: &str) -> Option<String> {
+    let input_chars: Vec<char> = input_alphabet.chars().collect();
+    let output_chars: Vec<char> = output_alphabet.chars().collect();
+    if subject.chars().all(|ch| ch == input_chars[0]) {
+        return Some(output_chars[0].to_string());
+    }
+
+    let input_indices: Option<Vec<usize>> = subject
+        .chars()
+        .rev()
+        .map(|ch| input_chars.iter().position(|candidate| *candidate == ch))
+        .collect();
+    let input_indices = input_indices?;
+    let input_base = input_chars.len();
+    let output_base = output_chars.len();
+    let mut output_indices = Vec::<usize>::new();
+
+    for input_index in input_indices.iter().rev() {
+        let mut offset = 0usize;
+        for output_index in &mut output_indices {
+            let mut index = *output_index * input_base + offset;
+            if index >= output_base {
+                offset = index / output_base;
+                index %= output_base;
+            } else {
+                offset = 0;
+            }
+            *output_index = index;
+        }
+        while offset > 0 {
+            output_indices.push(offset % output_base);
+            offset /= output_base;
+        }
+
+        offset = *input_index;
+        let mut output_position = 0usize;
+        while offset > 0 {
+            if output_position >= output_indices.len() {
+                output_indices.push(0);
+            }
+            let mut index = output_indices[output_position] + offset;
+            if index >= output_base {
+                offset = index / output_base;
+                index %= output_base;
+            } else {
+                offset = 0;
+            }
+            output_indices[output_position] = index;
+            output_position += 1;
+        }
+    }
+
+    output_indices
+        .iter()
+        .rev()
+        .map(|index| output_chars.get(*index).copied())
+        .collect()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MessageSummary {
@@ -59,6 +202,19 @@ struct MetadataMessage {
     id: String,
     #[serde(default)]
     payload: MessagePayload,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ThreadMessagePage {
+    #[serde(default, deserialize_with = "deserialize_null_vec_as_empty")]
+    messages: Vec<ThreadMessage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ThreadMessage {
+    id: String,
+    #[serde(default, rename = "labelIds")]
+    label_ids: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -286,6 +442,66 @@ fn message_url(messages_url: &str, message_id: &str) -> Result<Url, MailError> {
         .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
         .push(message_id);
     Ok(url)
+}
+
+fn thread_url(messages_url: &str, thread_id: &str) -> Result<Url, MailError> {
+    let mut url = Url::parse(messages_url)?;
+    {
+        let mut segments = url.path_segments_mut().map_err(|_| {
+            MailError::InvalidResponse("GoogleMail API URL cannot be a base".into())
+        })?;
+        segments.pop();
+        segments.push("threads").push(thread_id);
+    }
+    url.query_pairs_mut()
+        .append_pair("fields", "messages(id,labelIds)");
+    Ok(url)
+}
+
+pub async fn resolve_message_reference<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    reference: &MessageReference,
+    messages_url: Option<&str>,
+) -> Result<String, MailError> {
+    match reference {
+        MessageReference::MessageId(message_id) => Ok(message_id.clone()),
+        MessageReference::Thread {
+            thread_id,
+            preferred_label,
+        } => {
+            let messages_url = messages_url.unwrap_or(GMAIL_MESSAGES_URL);
+            let response = client
+                .send_with_scopes(
+                    client.get(thread_url(messages_url, thread_id)?),
+                    GMAIL_SCOPES,
+                )
+                .await
+                .map_err(MailError::Auth)?;
+            let thread: ThreadMessagePage = parse_json_response(response).await?;
+            select_thread_message_id(&thread.messages, preferred_label.as_deref())
+                .ok_or(MailError::NotFound)
+        }
+    }
+}
+
+fn select_thread_message_id(
+    messages: &[ThreadMessage],
+    preferred_label: Option<&str>,
+) -> Option<String> {
+    if let Some(preferred_label) = preferred_label {
+        if preferred_label != "ALL" {
+            if let Some(message) = messages.iter().rev().find(|message| {
+                message
+                    .label_ids
+                    .iter()
+                    .any(|label| label == preferred_label)
+            }) {
+                return Some(message.id.clone());
+            }
+        }
+    }
+
+    messages.last().map(|message| message.id.clone())
 }
 
 pub async fn get_message<S: AccountStore>(
