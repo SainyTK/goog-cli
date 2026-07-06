@@ -209,6 +209,7 @@ impl DocsCommand {
             | DocsCommand::InsertSectionBreak { document_id, .. }
             | DocsCommand::CreateHeader { document_id, .. }
             | DocsCommand::CreateFooter { document_id, .. }
+            | DocsCommand::CreateFootnote { document_id, .. }
             | DocsCommand::InsertTable { document_id, .. }
             | DocsCommand::EditTable { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
@@ -505,6 +506,50 @@ Notes:
     CreateFooter {
         /// Google Docs Document ID or URL to update
         document_id: String,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Create a footnote at a high-level Document Map location, returning its footnoteId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new footnoteId under replies[0].createFootnote.footnoteId.
+
+Notes:
+  The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
+  Edit the footnote's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
+    CreateFootnote {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,

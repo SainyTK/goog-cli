@@ -375,6 +375,48 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DocsCommand::CreateFootnote {
+            document_id,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_footnote_unified_to(
+                config,
+                store,
+                account_override,
+                CreateFootnoteCommand {
+                    document_id,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
         DocsCommand::InsertTable {
             document_id,
             data,
@@ -700,6 +742,15 @@ pub(super) struct CreateHeaderCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct CreateFooterCommand {
     pub document_id: String,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CreateFootnoteCommand {
+    pub document_id: String,
+    pub selector: InsertTextSelector,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -1359,6 +1410,63 @@ pub(super) async fn run_create_footer_unified_to<S: AccountStore>(
         documents_url,
         state_path,
         "create-footer",
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_create_footnote_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: CreateFootnoteCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_create_footnote_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        "create-footnote",
+    )
+    .await
+}
+
+pub(super) async fn run_create_footnote_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CreateFootnoteCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_create_footnote_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+        "create-footnote",
     )
     .await
 }
@@ -2743,6 +2851,41 @@ fn prepare_create_footer_change(
             "Create the document's DEFAULT footer".to_string(),
         ),
     }
+}
+
+fn prepare_create_footnote_change(
+    document_map: &DocumentMap,
+    command: &CreateFootnoteCommand,
+) -> Result<DocsHighLevelChange> {
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let Some(index) = resolved.location.index else {
+        bail!("create-footnote selector resolved without a Google Docs index");
+    };
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "createFootnote": {
+                "location": { "index": index }
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    let preview_after = insert_preview_text(
+        &resolved.preview_before,
+        resolved.preview_offset,
+        "[footnote reference]",
+    );
+    Ok(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(resolved.location),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::with_context(
+            "create-footnote",
+            format!("Create footnote reference at index {index}"),
+            resolved.preview_before,
+            preview_after,
+        ),
+    })
 }
 
 fn prepare_insert_table_change(

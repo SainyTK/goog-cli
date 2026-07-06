@@ -1423,6 +1423,48 @@ async fn run_create_footer_dry_run_emits_native_request() {
 }
 
 #[tokio::test]
+async fn run_create_footnote_dry_run_emits_native_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_create_footnote_to(
+        &client,
+        CreateFootnoteCommand {
+            document_id: "document-123".into(),
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["location"]["index"], 44);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createFootnote"]["location"]["index"],
+        44
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+}
+
+#[tokio::test]
 async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
