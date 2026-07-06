@@ -17,10 +17,12 @@ use crate::auth::client::AuthClient;
 pub const GMAIL_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
 pub const GMAIL_SCOPES: &[&str] = &[GMAIL_SCOPE];
 const GMAIL_MESSAGES_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/messages";
+const GMAIL_DRAFTS_URL: &str = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
 
 pub type Message = Value;
+pub type Draft = Value;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MessageSummary {
@@ -143,6 +145,53 @@ impl DownloadAttachmentOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct CreateDraftOptions {
+    pub to: Vec<String>,
+    pub cc: Vec<String>,
+    pub bcc: Vec<String>,
+    pub subject: String,
+    pub body: String,
+    drafts_url: String,
+}
+
+impl CreateDraftOptions {
+    pub fn new(
+        to: Vec<String>,
+        cc: Vec<String>,
+        bcc: Vec<String>,
+        subject: impl Into<String>,
+        body: impl Into<String>,
+    ) -> Self {
+        Self {
+            to,
+            cc,
+            bcc,
+            subject: subject.into(),
+            body: body.into(),
+            drafts_url: GMAIL_DRAFTS_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_drafts_url(mut self, drafts_url: impl Into<String>) -> Self {
+        self.drafts_url = drafts_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, MailError> {
+        Ok(Url::parse(&self.drafts_url)?)
+    }
+
+    fn request_body(&self) -> Result<Value, MailError> {
+        let raw = build_draft_raw_message(self)?;
+        Ok(serde_json::json!({
+            "message": {
+                "raw": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+            }
+        }))
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ListMessagesOptions {
     pub page_size: u32,
     pub query: Option<String>,
@@ -255,6 +304,23 @@ pub async fn list_messages<S: AccountStore>(
     Ok(summaries)
 }
 
+pub async fn create_draft<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CreateDraftOptions,
+) -> Result<Draft, MailError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .post(options.request_url()?)
+                .json(&options.request_body()?),
+            GMAIL_SCOPES,
+        )
+        .await
+        .map_err(MailError::Auth)?;
+
+    parse_json_response(response).await
+}
+
 pub async fn download_attachment<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DownloadAttachmentOptions,
@@ -285,6 +351,64 @@ pub async fn download_attachment<S: AccountStore>(
         path,
         bytes: bytes.len() as u64,
     })
+}
+
+fn build_draft_raw_message(options: &CreateDraftOptions) -> Result<String, MailError> {
+    if options.to.is_empty() {
+        return Err(MailError::InvalidInput(
+            "at least one To recipient is required".into(),
+        ));
+    }
+
+    let mut message = String::new();
+    push_address_header(&mut message, "To", &options.to)?;
+    push_address_header(&mut message, "Cc", &options.cc)?;
+    push_address_header(&mut message, "Bcc", &options.bcc)?;
+    push_single_header(&mut message, "Subject", &options.subject)?;
+    message.push_str("MIME-Version: 1.0\r\n");
+    message.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
+    message.push_str("Content-Transfer-Encoding: 8bit\r\n");
+    message.push_str("\r\n");
+    message.push_str(&normalize_body_newlines(&options.body));
+    Ok(message)
+}
+
+fn push_address_header(
+    message: &mut String,
+    name: &str,
+    values: &[String],
+) -> Result<(), MailError> {
+    if values.is_empty() {
+        return Ok(());
+    }
+    push_single_header(message, name, &values.join(", "))
+}
+
+fn push_single_header(message: &mut String, name: &str, value: &str) -> Result<(), MailError> {
+    reject_header_newlines(name, value)?;
+    message.push_str(name);
+    message.push_str(": ");
+    message.push_str(value);
+    message.push_str("\r\n");
+    Ok(())
+}
+
+fn reject_header_newlines(name: &str, value: &str) -> Result<(), MailError> {
+    if value.contains('\n') || value.contains('\r') {
+        return Err(MailError::InvalidInput(format!(
+            "{name} header cannot contain newlines"
+        )));
+    }
+    Ok(())
+}
+
+fn normalize_body_newlines(body: &str) -> String {
+    let mut normalized = body.replace("\r\n", "\n").replace('\r', "\n");
+    normalized = normalized.replace('\n', "\r\n");
+    if !normalized.ends_with("\r\n") {
+        normalized.push_str("\r\n");
+    }
+    normalized
 }
 
 async fn ensure_destination_available(path: &Path) -> Result<(), MailError> {

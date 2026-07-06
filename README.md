@@ -17,7 +17,7 @@ The CLI uses one OAuth App for all accounts, stores account tokens in the system
 - Google Drive file and folder listing, upload, and download commands.
 - Google Docs document mapping, text search, content lookup, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet reads, values reads and writes, appends, clears, and structural batch updates.
-- GoogleMail message listing, search, raw message reads, and attachment downloads.
+- GoogleMail message listing, search, raw message reads, draft creation, and attachment downloads.
 - Multi-account OAuth setup, login, account listing, and active account switching.
 
 ## Installation
@@ -225,6 +225,7 @@ goog sheets values append SPREADSHEET_ID 'Sheet1!A:D' --values ./rows.json
 goog mail list --limit 10
 goog mail search 'from:alerts@example.com newer_than:7d'
 goog mail read MESSAGE_ID
+goog mail draft create --to teammate@example.com --subject 'Status update' --body-file ./message.txt
 goog mail attachment download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
 ```
 
