@@ -4,11 +4,11 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
     DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsBorderEdge,
-    SheetsBorderStyle, SheetsCommand, SheetsDimension, SheetsHorizontalAlignment,
-    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
-    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTextDirection,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
-    SheetsWrapStrategy,
+    SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension,
+    SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType,
+    SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
+    SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -4837,6 +4837,98 @@ fn sheets_sheet_data_validation_checkbox_rejects_options_with_clear() {
         "--checked-value",
         "Done",
         "--clear",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_conditional_format_color_accepts_rule_options() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "conditional-format-color",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--condition",
+        "number-greater",
+        "--value",
+        "100",
+        "--background-color",
+        "#ffcccc",
+        "--text-color",
+        "990000",
+        "--index",
+        "2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::ConditionalFormatColor {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            condition,
+                            value,
+                            background_color,
+                            text_color,
+                            index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 1);
+            assert_eq!(end_row, 20);
+            assert_eq!(start_column, 3);
+            assert_eq!(end_column, 4);
+            assert_eq!(condition, SheetsConditionalFormatCondition::NumberGreater);
+            assert_eq!(value, "100");
+            assert_eq!(background_color.as_deref(), Some("#ffcccc"));
+            assert_eq!(text_color.as_deref(), Some("990000"));
+            assert_eq!(index, 2);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_conditional_format_color_rejects_negative_index() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "conditional-format-color",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--condition",
+        "text-contains",
+        "--value",
+        "Blocked",
+        "--background-color",
+        "#ffeeee",
+        "--index",
+        "-1",
     ])
     .is_err());
 }

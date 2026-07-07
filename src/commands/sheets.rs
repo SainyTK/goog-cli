@@ -10,11 +10,11 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsDimension, SheetsHorizontalAlignment,
-    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
-    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTextDirection,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
-    SheetsWrapStrategy,
+    SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition,
+    SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
+    SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
+    SheetsSortOrder, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -1133,6 +1133,43 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Checkbox validation response",
+            )
+        }
+        SheetsSheetCommand::ConditionalFormatColor {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            condition,
+            value,
+            background_color,
+            text_color,
+            index,
+        } => {
+            let request_body = conditional_format_color_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                condition,
+                &value,
+                background_color.as_deref(),
+                text_color.as_deref(),
+                index,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to add Google Sheets conditional format rule")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Conditional format response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -2548,6 +2585,51 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Checkbox validation response",
+            )
+        }
+        SheetsSheetCommand::ConditionalFormatColor {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            condition,
+            value,
+            background_color,
+            text_color,
+            index,
+        } => {
+            let request_body = conditional_format_color_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                condition,
+                &value,
+                background_color.as_deref(),
+                text_color.as_deref(),
+                index,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to add Google Sheets conditional format rule")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Conditional format response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -4070,6 +4152,73 @@ fn text_color_sheet_request_body(
     }))
 }
 
+fn conditional_format_color_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+    condition: SheetsConditionalFormatCondition,
+    value: &str,
+    background_color: Option<&str>,
+    text_color: Option<&str>,
+    index: i64,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+    if value.trim().is_empty() {
+        bail!("--value must not be empty");
+    }
+    if background_color.is_none() && text_color.is_none() {
+        bail!("at least one of --background-color or --text-color is required");
+    }
+
+    let mut format = serde_json::json!({});
+    if let Some(background_color) = background_color {
+        let (red, green, blue) = parse_hex_color(background_color)?;
+        format["backgroundColor"] = serde_json::json!({
+            "red": red,
+            "green": green,
+            "blue": blue
+        });
+    }
+    if let Some(text_color) = text_color {
+        let (red, green, blue) = parse_hex_color(text_color)?;
+        format["textFormat"] = serde_json::json!({
+            "foregroundColor": {
+                "red": red,
+                "green": green,
+                "blue": blue
+            }
+        });
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [
+                            grid_range(sheet_id, start_row, end_row, start_column, end_column)
+                        ],
+                        "booleanRule": {
+                            "condition": {
+                                "type": conditional_format_condition_name(condition),
+                                "values": [
+                                    {
+                                        "userEnteredValue": value
+                                    }
+                                ]
+                            },
+                            "format": format
+                        }
+                    },
+                    "index": index
+                }
+            }
+        ]
+    }))
+}
+
 fn font_size_sheet_request_body(
     sheet_id: i64,
     start_row: i64,
@@ -4793,6 +4942,18 @@ fn border_style_name(style: SheetsBorderStyle) -> &'static str {
         SheetsBorderStyle::Dashed => "DASHED",
         SheetsBorderStyle::Dotted => "DOTTED",
         SheetsBorderStyle::Double => "DOUBLE",
+    }
+}
+
+fn conditional_format_condition_name(condition: SheetsConditionalFormatCondition) -> &'static str {
+    match condition {
+        SheetsConditionalFormatCondition::NumberGreater => "NUMBER_GREATER",
+        SheetsConditionalFormatCondition::NumberLess => "NUMBER_LESS",
+        SheetsConditionalFormatCondition::Equal => "NUMBER_EQ",
+        SheetsConditionalFormatCondition::NotEqual => "NUMBER_NOT_EQ",
+        SheetsConditionalFormatCondition::TextContains => "TEXT_CONTAINS",
+        SheetsConditionalFormatCondition::TextEq => "TEXT_EQ",
+        SheetsConditionalFormatCondition::CustomFormula => "CUSTOM_FORMULA",
     }
 }
 

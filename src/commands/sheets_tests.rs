@@ -11,11 +11,11 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::{
-    SheetsBorderEdge, SheetsBorderStyle, SheetsDimension, SheetsHorizontalAlignment,
-    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
-    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTextDirection,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
-    SheetsWrapStrategy,
+    SheetsBorderEdge, SheetsBorderStyle, SheetsConditionalFormatCondition, SheetsDimension,
+    SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType,
+    SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
+    SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 use crate::sheets::SHEETS_SCOPE;
 
@@ -5655,6 +5655,159 @@ async fn run_sheet_data_validation_checkbox_rejects_empty_checked_value() {
     assert!(err
         .to_string()
         .contains("--checked-value must not be empty"));
+}
+
+#[tokio::test]
+async fn run_sheet_conditional_format_color_builds_add_rule_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [
+                            {
+                                "sheetId": 42,
+                                "startRowIndex": 1,
+                                "endRowIndex": 20,
+                                "startColumnIndex": 3,
+                                "endColumnIndex": 4
+                            }
+                        ],
+                        "booleanRule": {
+                            "condition": {
+                                "type": "NUMBER_GREATER",
+                                "values": [
+                                    {
+                                        "userEnteredValue": "100"
+                                    }
+                                ]
+                            },
+                            "format": {
+                                "backgroundColor": {
+                                    "red": 1.0,
+                                    "green": 0.8,
+                                    "blue": 0.8
+                                },
+                                "textFormat": {
+                                    "foregroundColor": {
+                                        "red": 0.6,
+                                        "green": 0.0,
+                                        "blue": 0.0
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "index": 2
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::ConditionalFormatColor {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 20,
+            start_column: 3,
+            end_column: 4,
+            condition: SheetsConditionalFormatCondition::NumberGreater,
+            value: "100".into(),
+            background_color: Some("#ffcccc".into()),
+            text_color: Some("990000".into()),
+            index: 2,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_conditional_format_color_rejects_missing_colors() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::ConditionalFormatColor {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 20,
+            start_column: 3,
+            end_column: 4,
+            condition: SheetsConditionalFormatCondition::TextContains,
+            value: "Blocked".into(),
+            background_color: None,
+            text_color: None,
+            index: 0,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("at least one of --background-color or --text-color is required"));
+}
+
+#[tokio::test]
+async fn run_sheet_conditional_format_color_rejects_empty_value() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::ConditionalFormatColor {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 20,
+            start_column: 3,
+            end_column: 4,
+            condition: SheetsConditionalFormatCondition::CustomFormula,
+            value: " ".into(),
+            background_color: Some("#ffcccc".into()),
+            text_color: None,
+            index: 0,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains("--value must not be empty"));
 }
 
 #[tokio::test]

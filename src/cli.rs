@@ -1181,6 +1181,24 @@ pub enum SheetsBorderStyle {
     Double,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsConditionalFormatCondition {
+    /// Cell number is greater than the provided value
+    NumberGreater,
+    /// Cell number is less than the provided value
+    NumberLess,
+    /// Cell value is equal to the provided value
+    Equal,
+    /// Cell value is not equal to the provided value
+    NotEqual,
+    /// Cell text contains the provided value
+    TextContains,
+    /// Cell text is exactly the provided value
+    TextEq,
+    /// Use the provided value as a custom formula
+    CustomFormula,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -2038,6 +2056,40 @@ pub enum SheetsSheetCommand {
         /// Clear data validation from the selected cells instead of setting checkboxes
         #[arg(long)]
         clear: bool,
+    },
+    /// Add a single-color conditional format rule without writing a Batch Update JSON body
+    ConditionalFormatColor {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Boolean condition for the rule
+        #[arg(long, value_enum)]
+        condition: SheetsConditionalFormatCondition,
+        /// User-entered comparison value or custom formula
+        #[arg(long)]
+        value: String,
+        /// Optional hex background color to apply, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        background_color: Option<String>,
+        /// Optional hex text color to apply, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        text_color: Option<String>,
+        /// Conditional formatting rule insertion index
+        #[arg(long, default_value = "0", value_parser = clap::value_parser!(i64).range(0..))]
+        index: i64,
     },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
