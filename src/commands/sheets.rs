@@ -10,7 +10,7 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SheetsCommand, SheetsDimension, SheetsInsertDataOption, SheetsSheetCommand,
+    SheetsCommand, SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand,
     SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 use crate::sheets::{
@@ -297,6 +297,57 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Clear basic filter response",
+            )
+        }
+        SheetsSheetCommand::Merge {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            merge_type,
+        } => {
+            let request_body = merge_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                merge_type,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to merge Google Sheets cells")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Merge cells response",
+            )
+        }
+        SheetsSheetCommand::Unmerge {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+        } => {
+            let request_body =
+                unmerge_sheet_request_body(sheet_id, start_row, end_row, start_column, end_column)?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to unmerge Google Sheets cells")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Unmerge cells response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -655,6 +706,73 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Clear basic filter response",
+            )
+        }
+        SheetsSheetCommand::Merge {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            merge_type,
+        } => {
+            let request_body = merge_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                merge_type,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to merge Google Sheets cells")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Merge cells response",
+            )
+        }
+        SheetsSheetCommand::Unmerge {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+        } => {
+            let request_body =
+                unmerge_sheet_request_body(sheet_id, start_row, end_row, start_column, end_column)?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to unmerge Google Sheets cells")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Unmerge cells response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -1703,6 +1821,86 @@ fn clear_basic_filter_sheet_request_body(sheet_id: i64) -> serde_json::Value {
                 }
             }
         ]
+    })
+}
+
+fn merge_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+    merge_type: SheetsMergeType,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+
+    let merge_type = match merge_type {
+        SheetsMergeType::All => "MERGE_ALL",
+        SheetsMergeType::Rows => "MERGE_ROWS",
+        SheetsMergeType::Columns => "MERGE_COLUMNS",
+    };
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "mergeCells": {
+                    "range": grid_range(sheet_id, start_row, end_row, start_column, end_column),
+                    "mergeType": merge_type
+                }
+            }
+        ]
+    }))
+}
+
+fn unmerge_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "unmergeCells": {
+                    "range": grid_range(sheet_id, start_row, end_row, start_column, end_column)
+                }
+            }
+        ]
+    }))
+}
+
+fn validate_grid_range(
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+) -> Result<()> {
+    if end_row <= start_row {
+        bail!("--end-row must be greater than --start-row");
+    }
+    if end_column <= start_column {
+        bail!("--end-column must be greater than --start-column");
+    }
+
+    Ok(())
+}
+
+fn grid_range(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+) -> serde_json::Value {
+    serde_json::json!({
+        "sheetId": sheet_id,
+        "startRowIndex": start_row,
+        "endRowIndex": end_row,
+        "startColumnIndex": start_column,
+        "endColumnIndex": end_column
     })
 }
 

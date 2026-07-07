@@ -1043,6 +1043,16 @@ pub enum SheetsDimension {
     Columns,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsMergeType {
+    /// Merge the full range into one cell
+    All,
+    /// Merge each row across the selected columns
+    Rows,
+    /// Merge each column across the selected rows
+    Columns,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -1216,6 +1226,47 @@ pub enum SheetsSheetCommand {
     },
     /// Set a basic filter over a grid range without writing a Batch Update JSON body
     BasicFilter {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+    },
+    /// Merge cells over a grid range without writing a Batch Update JSON body
+    Merge {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Merge behavior for the selected range
+        #[arg(long, value_enum, default_value = "all")]
+        merge_type: SheetsMergeType,
+    },
+    /// Unmerge cells over a grid range without writing a Batch Update JSON body
+    Unmerge {
         /// Google Sheets Spreadsheet ID to update
         spreadsheet_id: String,
         /// Google Sheets numeric sheetId for the tab to update

@@ -4,8 +4,8 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
     DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
-    SheetsDimension, SheetsInsertDataOption, SheetsSheetCommand, SheetsValueInputOption,
-    SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -2304,6 +2304,118 @@ fn sheets_sheet_clear_basic_filter_accepts_sheet_id() {
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
             assert_eq!(sheet_id, 42);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_merge_accepts_grid_range_and_merge_type() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "merge",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "2",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--merge-type",
+        "rows",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Merge {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            merge_type,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 2);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
+            assert_eq!(merge_type, SheetsMergeType::Rows);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_merge_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "merge",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "-1",
+        "--end-row",
+        "2",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_unmerge_accepts_grid_range() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "unmerge",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "2",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Unmerge {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 2);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
         }
         _ => panic!("unexpected parse result"),
     }
