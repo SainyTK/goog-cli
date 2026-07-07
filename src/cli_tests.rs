@@ -5543,6 +5543,69 @@ fn sheets_sheet_protect_range_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_update_protected_range_accepts_description_and_mode() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "update-protected-range",
+        "spreadsheet-123",
+        "7",
+        "--description",
+        "Editable warning",
+        "--warning-only",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::UpdateProtectedRange {
+                            spreadsheet_id,
+                            protected_range_id,
+                            description,
+                            warning_only,
+                            enforce,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(protected_range_id, 7);
+            assert_eq!(description.as_deref(), Some("Editable warning"));
+            assert!(warning_only);
+            assert!(!enforce);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_update_protected_range_requires_one_update() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "update-protected-range",
+        "spreadsheet-123",
+        "7",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_update_protected_range_rejects_conflicting_modes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "update-protected-range",
+        "spreadsheet-123",
+        "7",
+        "--warning-only",
+        "--enforce",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_unprotect_range_accepts_protected_range_id() {
     let cli = parse(&["sheets", "sheet", "unprotect-range", "spreadsheet-123", "7"]).unwrap();
     match cli.command {

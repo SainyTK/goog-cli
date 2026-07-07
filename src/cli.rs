@@ -2269,6 +2269,23 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         warning_only: bool,
     },
+    /// Update a protected range without writing a Batch Update JSON body
+    UpdateProtectedRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets protectedRangeId to update
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        protected_range_id: i64,
+        /// New protected range description
+        #[arg(long, required_unless_present_any = ["warning_only", "enforce"])]
+        description: Option<String>,
+        /// Warn users before edits instead of blocking edits
+        #[arg(long, conflicts_with = "enforce")]
+        warning_only: bool,
+        /// Block edits instead of showing warnings only
+        #[arg(long, conflicts_with = "warning_only")]
+        enforce: bool,
+    },
     /// Remove a protected range without writing a Batch Update JSON body
     UnprotectRange {
         /// Google Sheets Spreadsheet ID to update
