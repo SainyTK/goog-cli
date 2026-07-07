@@ -1036,6 +1036,14 @@ pub enum SheetsInsertDataOption {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsTableOutputFormat {
+    /// Print tab-separated rows
+    Tsv,
+    /// Print comma-separated rows with CSV quoting
+    Csv,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SheetsDimension {
     /// Sheet rows
     Rows,
@@ -2491,7 +2499,7 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "formatted-value")]
         value_render_option: SheetsValueRenderOption,
     },
-    /// Fetch a Google Sheets range as tab-separated rows
+    /// Fetch a Google Sheets range as TSV or CSV rows
     GetTable {
         /// Google Sheets Spreadsheet ID to fetch
         spreadsheet_id: String,
@@ -2500,6 +2508,9 @@ pub enum SheetsValuesCommand {
         /// How values should be represented in the response
         #[arg(long, value_enum, default_value = "formatted-value")]
         value_render_option: SheetsValueRenderOption,
+        /// Table output format
+        #[arg(long, value_enum, default_value = "tsv")]
+        format: SheetsTableOutputFormat,
     },
     /// Fetch raw Google Sheets values from multiple ranges
     BatchGet {

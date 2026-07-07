@@ -7,8 +7,8 @@ use crate::cli::{
     SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension,
     SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType,
     SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
-    SheetsVerticalAlignment, SheetsWrapStrategy,
+    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -1776,12 +1776,39 @@ fn sheets_values_get_table_accepts_range_and_render_option() {
                             spreadsheet_id,
                             range,
                             value_render_option,
+                            format,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
             assert_eq!(range, "Sheet1!A1:C10");
             assert_eq!(value_render_option, SheetsValueRenderOption::Formula);
+            assert_eq!(format, SheetsTableOutputFormat::Tsv);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_get_table_accepts_csv_format() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "get-table",
+        "spreadsheet-123",
+        "Sheet1!A1:C10",
+        "--format",
+        "csv",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command: SheetsValuesCommand::GetTable { format, .. },
+                },
+        } => {
+            assert_eq!(format, SheetsTableOutputFormat::Csv);
         }
         _ => panic!("unexpected parse result"),
     }

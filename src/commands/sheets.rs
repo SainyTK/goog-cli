@@ -13,8 +13,8 @@ use crate::cli::{
     SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition,
     SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
     SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
-    SheetsSortOrder, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
+    SheetsSortOrder, SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -3958,6 +3958,7 @@ pub(super) async fn run_values_to<S: AccountStore>(
             spreadsheet_id,
             range,
             value_render_option,
+            format,
         } => {
             let options = get_values_options(
                 spreadsheet_id,
@@ -3969,7 +3970,7 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 .execute(client)
                 .await
                 .context("failed to fetch Google Sheets table")?;
-            write_table_lines(out, &response)
+            write_table_lines(out, &response, format)
         }
         SheetsValuesCommand::BatchGet {
             spreadsheet_id,
@@ -4372,6 +4373,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
             spreadsheet_id,
             range,
             value_render_option,
+            format,
         } => {
             let options = get_values_options(
                 spreadsheet_id.clone(),
@@ -4388,7 +4390,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
             )
             .await
             .context("failed to fetch Google Sheets table")?;
-            write_table_lines(out, &response)
+            write_table_lines(out, &response, format)
         }
         SheetsValuesCommand::BatchGet {
             spreadsheet_id,
@@ -7143,7 +7145,11 @@ fn write_first_column_lines(out: &mut impl Write, value_range: &serde_json::Valu
     Ok(())
 }
 
-fn write_table_lines(out: &mut impl Write, value_range: &serde_json::Value) -> Result<()> {
+fn write_table_lines(
+    out: &mut impl Write,
+    value_range: &serde_json::Value,
+    format: SheetsTableOutputFormat,
+) -> Result<()> {
     let Some(rows) = value_range
         .get("values")
         .and_then(|values| values.as_array())
@@ -7165,14 +7171,38 @@ fn write_table_lines(out: &mut impl Write, value_range: &serde_json::Value) -> R
 
         for (index, value) in cells.iter().enumerate() {
             if index > 0 {
-                write!(out, "\t").context("failed to write output")?;
+                write!(out, "{}", table_separator(format)).context("failed to write output")?;
             }
-            write!(out, "{}", scalar_value_text(value)?).context("failed to write output")?;
+            write!(out, "{}", format_table_cell(value, format)?)
+                .context("failed to write output")?;
         }
         writeln!(out).context("failed to write output")?;
     }
 
     Ok(())
+}
+
+fn table_separator(format: SheetsTableOutputFormat) -> &'static str {
+    match format {
+        SheetsTableOutputFormat::Tsv => "\t",
+        SheetsTableOutputFormat::Csv => ",",
+    }
+}
+
+fn format_table_cell(value: &serde_json::Value, format: SheetsTableOutputFormat) -> Result<String> {
+    let text = scalar_value_text(value)?;
+    match format {
+        SheetsTableOutputFormat::Tsv => Ok(text),
+        SheetsTableOutputFormat::Csv => Ok(csv_escape(&text)),
+    }
+}
+
+fn csv_escape(text: &str) -> String {
+    if !text.contains(',') && !text.contains('"') && !text.contains('\n') && !text.contains('\r') {
+        return text.to_string();
+    }
+
+    format!("\"{}\"", text.replace('"', "\"\""))
 }
 
 fn scalar_value_text(value: &serde_json::Value) -> Result<String> {

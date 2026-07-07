@@ -14,8 +14,8 @@ use crate::cli::{
     SheetsBorderEdge, SheetsBorderStyle, SheetsConditionalFormatCondition, SheetsDimension,
     SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType,
     SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
-    SheetsVerticalAlignment, SheetsWrapStrategy,
+    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 use crate::sheets::SHEETS_SCOPE;
 
@@ -743,6 +743,7 @@ async fn run_values_get_table_prints_tab_separated_rows() {
             spreadsheet_id: "spreadsheet-123".into(),
             range: "Sheet1!A1:C3".into(),
             value_render_option: SheetsValueRenderOption::Formula,
+            format: SheetsTableOutputFormat::Tsv,
         },
         &mut input,
         &mut out,
@@ -763,6 +764,50 @@ async fn run_values_get_table_prints_tab_separated_rows() {
     assert_eq!(
         query_value(&url, "valueRenderOption").as_deref(),
         Some("FORMULA")
+    );
+}
+
+#[tokio::test]
+async fn run_values_get_table_prints_csv_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(header("authorization", "Bearer sheets-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "range": "Sheet1!A1:C3",
+            "values": [
+                ["Name", "Note", "Score"],
+                ["Ada", "comma, quote \" and newline\ninside", 42],
+                ["Grace", "plain", true]
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::GetTable {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:C3".into(),
+            value_render_option: SheetsValueRenderOption::FormattedValue,
+            format: SheetsTableOutputFormat::Csv,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Name,Note,Score\nAda,\"comma, quote \"\" and newline\ninside\",42\nGrace,plain,true\n"
     );
 }
 
@@ -790,6 +835,7 @@ async fn run_values_get_table_prints_blank_line_for_empty_table() {
             spreadsheet_id: "spreadsheet-123".into(),
             range: "Sheet1!A1:C3".into(),
             value_render_option: SheetsValueRenderOption::FormattedValue,
+            format: SheetsTableOutputFormat::Tsv,
         },
         &mut input,
         &mut out,
