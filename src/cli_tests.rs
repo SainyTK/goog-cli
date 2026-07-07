@@ -2117,6 +2117,62 @@ fn sheets_values_append_row_requires_value() {
 }
 
 #[test]
+fn sheets_values_append_column_accepts_repeated_values() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "append-column",
+        "spreadsheet-123",
+        "Sheet1!A:D",
+        "--value",
+        "Open",
+        "--value",
+        "Closed",
+        "--value",
+        "Blocked",
+        "--value-input-option",
+        "raw",
+        "--insert-data-option",
+        "overwrite",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::AppendColumn {
+                            spreadsheet_id,
+                            range,
+                            values,
+                            value_input_option,
+                            insert_data_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!A:D");
+            assert_eq!(values, ["Open", "Closed", "Blocked"]);
+            assert_eq!(value_input_option, SheetsValueInputOption::Raw);
+            assert_eq!(insert_data_option, SheetsInsertDataOption::Overwrite);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_append_column_requires_value() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "append-column",
+        "spreadsheet-123",
+        "Sheet1!A:D",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_values_append_table_accepts_data_file() {
     let cli = parse(&[
         "sheets",

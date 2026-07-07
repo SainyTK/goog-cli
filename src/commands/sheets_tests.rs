@@ -1760,6 +1760,61 @@ async fn run_values_append_row_builds_value_range_from_flags() {
 }
 
 #[tokio::test]
+async fn run_values_append_column_builds_value_range_from_flags() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "majorDimension": "COLUMNS",
+        "values": [["Open", "Closed", "Blocked"]]
+    });
+    Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A:D:append",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "updates": {
+                "updatedColumns": 1,
+                "updatedRange": "Sheet1!E1:E3"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::AppendColumn {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A:D".into(),
+            values: vec!["Open".into(), "Closed".into(), "Blocked".into()],
+            value_input_option: SheetsValueInputOption::Raw,
+            insert_data_option: SheetsInsertDataOption::Overwrite,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"updates\":{\"updatedColumns\":1,\"updatedRange\":\"Sheet1!E1:E3\"}}\n"
+    );
+
+    let url = received_url(&server).await;
+    assert_query_value(&url, "valueInputOption", "RAW");
+    assert_query_value(&url, "insertDataOption", "OVERWRITE");
+}
+
+#[tokio::test]
 async fn run_values_append_table_builds_value_range_from_csv_file() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
