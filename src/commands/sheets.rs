@@ -1519,6 +1519,30 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 "failed to serialize Sheets Update values response",
             )
         }
+        SheetsValuesCommand::UpdateTable {
+            spreadsheet_id,
+            range,
+            data,
+            value_input_option,
+        } => {
+            let request_body = table_value_range(&data)?;
+            let options = update_values_options(
+                spreadsheet_id,
+                range,
+                request_body,
+                value_input_option.into(),
+                spreadsheets_url,
+            );
+            let response = SheetsOperation::UpdateValues(&options)
+                .execute(client)
+                .await
+                .context("failed to update Google Sheets table")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Update table response",
+            )
+        }
         SheetsValuesCommand::BatchUpdate {
             spreadsheet_id,
             values,
@@ -1736,6 +1760,35 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Update values response",
+            )
+        }
+        SheetsValuesCommand::UpdateTable {
+            spreadsheet_id,
+            range,
+            data,
+            value_input_option,
+        } => {
+            let request_body = table_value_range(&data)?;
+            let options = update_values_options(
+                spreadsheet_id.clone(),
+                range,
+                request_body,
+                value_input_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::UpdateValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to update Google Sheets table")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Update table response",
             )
         }
         SheetsValuesCommand::BatchUpdate {

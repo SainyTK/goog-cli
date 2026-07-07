@@ -1567,6 +1567,19 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "user-entered")]
         value_input_option: SheetsValueInputOption,
     },
+    /// Update a Google Sheets Range from CSV or TSV without writing a ValueRange JSON body
+    UpdateTable {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to update
+        range: String,
+        /// CSV or TSV data file to write
+        #[arg(long)]
+        data: String,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+    },
     /// Batch update Google Sheets values
     BatchUpdate {
         /// Google Sheets Spreadsheet ID to update

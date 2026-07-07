@@ -1607,6 +1607,54 @@ fn sheets_values_update_requires_values() {
 }
 
 #[test]
+fn sheets_values_update_table_accepts_data_file() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "update-table",
+        "spreadsheet-123",
+        "Sheet1!A1:C3",
+        "--data",
+        "./rows.tsv",
+        "--value-input-option",
+        "raw",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::UpdateTable {
+                            spreadsheet_id,
+                            range,
+                            data,
+                            value_input_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!A1:C3");
+            assert_eq!(data, "./rows.tsv");
+            assert_eq!(value_input_option, SheetsValueInputOption::Raw);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_update_table_requires_data_file() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "update-table",
+        "spreadsheet-123",
+        "Sheet1!A1:C3",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_values_batch_update_with_values_path() {
     let cli = parse(&[
         "sheets",
