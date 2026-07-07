@@ -2050,6 +2050,61 @@ fn sheets_sheet_duplicate_accepts_source_sheet_id_title_and_optional_properties(
 }
 
 #[test]
+fn sheets_sheet_freeze_accepts_rows_and_columns() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "freeze",
+        "spreadsheet-123",
+        "42",
+        "--rows",
+        "1",
+        "--columns",
+        "2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Freeze {
+                            spreadsheet_id,
+                            sheet_id,
+                            rows,
+                            columns,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(rows, Some(1));
+            assert_eq!(columns, Some(2));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_freeze_requires_rows_or_columns() {
+    assert!(parse(&["sheets", "sheet", "freeze", "spreadsheet-123", "42"]).is_err());
+}
+
+#[test]
+fn sheets_sheet_freeze_rejects_negative_counts() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "freeze",
+        "spreadsheet-123",
+        "42",
+        "--rows",
+        "-1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_hide_accepts_sheet_id() {
     let cli = parse(&["sheets", "sheet", "hide", "spreadsheet-123", "42"]).unwrap();
     match cli.command {

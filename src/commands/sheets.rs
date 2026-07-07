@@ -196,6 +196,25 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Duplicate sheet response",
             )
         }
+        SheetsSheetCommand::Freeze {
+            spreadsheet_id,
+            sheet_id,
+            rows,
+            columns,
+        } => {
+            let request_body = freeze_sheet_request_body(sheet_id, rows, columns);
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to freeze Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Freeze sheet response",
+            )
+        }
         SheetsSheetCommand::Hide {
             spreadsheet_id,
             sheet_id,
@@ -374,6 +393,33 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Duplicate sheet response",
+            )
+        }
+        SheetsSheetCommand::Freeze {
+            spreadsheet_id,
+            sheet_id,
+            rows,
+            columns,
+        } => {
+            let request_body = freeze_sheet_request_body(sheet_id, rows, columns);
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to freeze Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Freeze sheet response",
             )
         }
         SheetsSheetCommand::Hide {
@@ -1229,6 +1275,38 @@ fn duplicate_sheet_request_body(
         "requests": [
             {
                 "duplicateSheet": duplicate_sheet
+            }
+        ]
+    })
+}
+
+fn freeze_sheet_request_body(
+    sheet_id: i64,
+    rows: Option<i64>,
+    columns: Option<i64>,
+) -> serde_json::Value {
+    let mut grid_properties = serde_json::Map::new();
+    let mut fields = Vec::new();
+
+    if let Some(rows) = rows {
+        grid_properties.insert("frozenRowCount".to_string(), serde_json::json!(rows));
+        fields.push("gridProperties.frozenRowCount");
+    }
+    if let Some(columns) = columns {
+        grid_properties.insert("frozenColumnCount".to_string(), serde_json::json!(columns));
+        fields.push("gridProperties.frozenColumnCount");
+    }
+
+    serde_json::json!({
+        "requests": [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": sheet_id,
+                        "gridProperties": grid_properties
+                    },
+                    "fields": fields.join(",")
+                }
             }
         ]
     })

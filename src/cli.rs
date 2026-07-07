@@ -1164,6 +1164,19 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         index: Option<i64>,
     },
+    /// Freeze rows or columns without writing a Batch Update JSON body
+    Freeze {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Number of frozen rows, or 0 to unfreeze rows
+        #[arg(long, required_unless_present = "columns", value_parser = clap::value_parser!(i64).range(0..))]
+        rows: Option<i64>,
+        /// Number of frozen columns, or 0 to unfreeze columns
+        #[arg(long, required_unless_present = "rows", value_parser = clap::value_parser!(i64).range(0..))]
+        columns: Option<i64>,
+    },
     /// Hide a sheet tab without writing a Batch Update JSON body
     Hide {
         /// Google Sheets Spreadsheet ID to update
