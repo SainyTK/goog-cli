@@ -2218,6 +2218,98 @@ fn sheets_sheet_auto_resize_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_basic_filter_accepts_grid_range() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "basic-filter",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "100",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::BasicFilter {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 100);
+            assert_eq!(start_column, 0);
+            assert_eq!(end_column, 5);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_basic_filter_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "basic-filter",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "-1",
+        "--end-row",
+        "100",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_clear_basic_filter_accepts_sheet_id() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "clear-basic-filter",
+        "spreadsheet-123",
+        "42",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::ClearBasicFilter {
+                            spreadsheet_id,
+                            sheet_id,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",

@@ -1931,6 +1931,166 @@ async fn run_sheet_auto_resize_rejects_empty_range() {
 }
 
 #[tokio::test]
+async fn run_sheet_basic_filter_builds_set_basic_filter_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "setBasicFilter": {
+                    "filter": {
+                        "range": {
+                            "sheetId": 42,
+                            "startRowIndex": 0,
+                            "endRowIndex": 100,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 5
+                        }
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::BasicFilter {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 0,
+            end_row: 100,
+            start_column: 0,
+            end_column: 5,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_basic_filter_rejects_empty_row_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::BasicFilter {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 5,
+            end_row: 5,
+            start_column: 0,
+            end_column: 5,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-row must be greater than --start-row"));
+}
+
+#[tokio::test]
+async fn run_sheet_basic_filter_rejects_empty_column_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::BasicFilter {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 0,
+            end_row: 100,
+            start_column: 5,
+            end_column: 5,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-column must be greater than --start-column"));
+}
+
+#[tokio::test]
+async fn run_sheet_clear_basic_filter_builds_clear_basic_filter_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "clearBasicFilter": {
+                    "sheetId": 42
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::ClearBasicFilter {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_sheet_tab_color_builds_update_sheet_properties_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
