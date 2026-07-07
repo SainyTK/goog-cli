@@ -10,8 +10,8 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand,
+    SheetsCommand, SheetsInsertDataOption, SheetsSheetCommand, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -61,6 +61,15 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        SheetsCommand::Sheet { command } => run_with_runtime(run_sheet_unified_to(
+            config,
+            store,
+            account_override,
+            command,
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SheetsCommand::BatchUpdate {
             spreadsheet_id,
             requests,
@@ -84,6 +93,76 @@ pub fn run<S: AccountStore>(
 fn run_with_runtime(future: impl Future<Output = Result<()>>) -> Result<()> {
     let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
     runtime.block_on(future)
+}
+
+#[cfg(test)]
+pub(super) async fn run_sheet_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    cmd: SheetsSheetCommand,
+    out: &mut impl Write,
+    spreadsheets_url: Option<&str>,
+) -> Result<()> {
+    match cmd {
+        SheetsSheetCommand::Add {
+            spreadsheet_id,
+            title,
+            sheet_id,
+            index,
+        } => {
+            let request_body = add_sheet_request_body(title, sheet_id, index);
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to add Google Sheets sheet")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Add sheet response",
+            )
+        }
+    }
+}
+
+pub(super) async fn run_sheet_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    cmd: SheetsSheetCommand,
+    out: &mut impl Write,
+    spreadsheets_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    match cmd {
+        SheetsSheetCommand::Add {
+            spreadsheet_id,
+            title,
+            sheet_id,
+            index,
+        } => {
+            let request_body = add_sheet_request_body(title, sheet_id, index);
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to add Google Sheets sheet")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Add sheet response",
+            )
+        }
+    }
 }
 
 pub(super) async fn run_create_to<S: AccountStore>(
@@ -792,6 +871,31 @@ fn table_value_range(path: &str) -> Result<serde_json::Value> {
         "majorDimension": "ROWS",
         "values": rows,
     }))
+}
+
+fn add_sheet_request_body(
+    title: String,
+    sheet_id: Option<i64>,
+    index: Option<i64>,
+) -> serde_json::Value {
+    let mut properties = serde_json::Map::new();
+    properties.insert("title".to_string(), serde_json::Value::String(title));
+    if let Some(sheet_id) = sheet_id {
+        properties.insert("sheetId".to_string(), serde_json::json!(sheet_id));
+    }
+    if let Some(index) = index {
+        properties.insert("index".to_string(), serde_json::json!(index));
+    }
+
+    serde_json::json!({
+        "requests": [
+            {
+                "addSheet": {
+                    "properties": properties
+                }
+            }
+        ]
+    })
 }
 
 fn get_spreadsheet_options(

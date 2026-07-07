@@ -11,7 +11,8 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::{
-    SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsInsertDataOption, SheetsSheetCommand, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand,
 };
 use crate::sheets::SHEETS_SCOPE;
 
@@ -1451,6 +1452,71 @@ async fn run_batch_update_reads_requests_from_file_and_passes_full_body_through(
         concat!(
             "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\",",
             "\"updatedSpreadsheet\":{\"spreadsheetId\":\"spreadsheet-123\"}}\n"
+        )
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_add_builds_add_sheet_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "addSheet": {
+                    "properties": {
+                        "title": "Planning",
+                        "sheetId": 42,
+                        "index": 1
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [
+                {
+                    "addSheet": {
+                        "properties": {
+                            "sheetId": 42,
+                            "title": "Planning"
+                        }
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::Add {
+            spreadsheet_id: "spreadsheet-123".into(),
+            title: "Planning".into(),
+            sheet_id: Some(42),
+            index: Some(1),
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        concat!(
+            "{\"replies\":[{\"addSheet\":{\"properties\":{\"sheetId\":42,",
+            "\"title\":\"Planning\"}}}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
         )
     );
 }

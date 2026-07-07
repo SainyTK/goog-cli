@@ -1068,6 +1068,11 @@ Notes:
         #[command(subcommand)]
         command: SheetsValuesCommand,
     },
+    /// Manage individual sheets inside a Spreadsheet
+    Sheet {
+        #[command(subcommand)]
+        command: SheetsSheetCommand,
+    },
     /// Apply a raw Google Sheets structural Batch Update request body
     #[command(after_long_help = "Request shape:
   --requests reads the full Google Sheets spreadsheets.batchUpdate JSON body, not only the requests array.
@@ -1101,6 +1106,23 @@ Example:
         /// Path to a full spreadsheets.batchUpdate JSON request body, or - for stdin
         #[arg(long)]
         requests: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SheetsSheetCommand {
+    /// Add a new sheet tab without writing a Batch Update JSON body
+    Add {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Title for the new sheet tab
+        title: String,
+        /// Optional Google Sheets numeric sheetId for the new tab
+        #[arg(long)]
+        sheet_id: Option<i64>,
+        /// Zero-based index where Google Sheets should place the new tab
+        #[arg(long)]
+        index: Option<i64>,
     },
 }
 

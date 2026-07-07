@@ -4,7 +4,8 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
     DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
-    SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsInsertDataOption, SheetsSheetCommand, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -1896,6 +1897,42 @@ fn sheets_values_batch_clear_accepts_repeated_ranges() {
 #[test]
 fn sheets_values_batch_clear_requires_range() {
     assert!(parse(&["sheets", "values", "batch-clear", "spreadsheet-123"]).is_err());
+}
+
+#[test]
+fn sheets_sheet_add_accepts_title_and_optional_properties() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "add",
+        "spreadsheet-123",
+        "Planning",
+        "--sheet-id",
+        "42",
+        "--index",
+        "1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Add {
+                            spreadsheet_id,
+                            title,
+                            sheet_id,
+                            index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(title, "Planning");
+            assert_eq!(sheet_id, Some(42));
+            assert_eq!(index, Some(1));
+        }
+        _ => panic!("unexpected parse result"),
+    }
 }
 
 #[test]
