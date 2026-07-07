@@ -1657,6 +1657,53 @@ fn sheets_values_update_table_requires_data_file() {
 }
 
 #[test]
+fn sheets_values_update_cell_accepts_value_argument() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "update-cell",
+        "spreadsheet-123",
+        "Sheet1!D2",
+        "=SUM(B2:B4)",
+        "--value-input-option",
+        "raw",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::UpdateCell {
+                            spreadsheet_id,
+                            range,
+                            value,
+                            value_input_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!D2");
+            assert_eq!(value, "=SUM(B2:B4)");
+            assert_eq!(value_input_option, SheetsValueInputOption::Raw);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_update_cell_requires_value() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "update-cell",
+        "spreadsheet-123",
+        "Sheet1!D2",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_values_update_row_accepts_repeated_values() {
     let cli = parse(&[
         "sheets",
