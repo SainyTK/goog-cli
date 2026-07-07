@@ -1034,6 +1034,33 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Text direction response",
             )
         }
+        SheetsSheetCommand::Note {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            note,
+            clear,
+        } => {
+            let request_body = note_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                note.as_deref(),
+                clear,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to update Google Sheets cell notes")?;
+            write_json_line(out, &response, "failed to serialize Sheets Note response")
+        }
         SheetsSheetCommand::TabColor {
             spreadsheet_id,
             sheet_id,
@@ -2323,6 +2350,41 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 &response,
                 "failed to serialize Sheets Text direction response",
             )
+        }
+        SheetsSheetCommand::Note {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            note,
+            clear,
+        } => {
+            let request_body = note_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                note.as_deref(),
+                clear,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to update Google Sheets cell notes")?;
+            write_json_line(out, &response, "failed to serialize Sheets Note response")
         }
         SheetsSheetCommand::TabColor {
             spreadsheet_id,
@@ -4279,6 +4341,51 @@ fn text_direction_sheet_request_body(
                         }
                     },
                     "fields": "userEnteredFormat.textDirection"
+                }
+            }
+        ]
+    }))
+}
+
+fn note_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+    note: Option<&str>,
+    clear: bool,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+    if clear {
+        return Ok(serde_json::json!({
+            "requests": [
+                {
+                    "repeatCell": {
+                        "range": grid_range(sheet_id, start_row, end_row, start_column, end_column),
+                        "cell": {},
+                        "fields": "note"
+                    }
+                }
+            ]
+        }));
+    }
+
+    let Some(note) = note else {
+        bail!("note text is required unless --clear is passed");
+    };
+    if note.trim().is_empty() {
+        bail!("note text must not be empty");
+    }
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "repeatCell": {
+                    "range": grid_range(sheet_id, start_row, end_row, start_column, end_column),
+                    "cell": {
+                        "note": note
+                    },
+                    "fields": "note"
                 }
             }
         ]

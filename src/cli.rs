@@ -1942,6 +1942,31 @@ pub enum SheetsSheetCommand {
         #[arg(long, value_enum)]
         direction: SheetsTextDirection,
     },
+    /// Set a cell note over a range without writing a Batch Update JSON body
+    Note {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Note text to set on each selected cell
+        #[arg(required_unless_present = "clear", conflicts_with = "clear")]
+        note: Option<String>,
+        /// Clear notes from the selected cells instead of setting note text
+        #[arg(long)]
+        clear: bool,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update

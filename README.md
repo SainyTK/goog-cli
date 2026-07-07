@@ -257,6 +257,8 @@ goog sheets sheet vertical-align SPREADSHEET_ID 123456789 --start-row 0 --end-ro
 goog sheets sheet text-wrap SPREADSHEET_ID 123456789 --start-row 0 --end-row 10 --start-column 0 --end-column 5 --strategy wrap
 goog sheets sheet text-rotation SPREADSHEET_ID 123456789 --start-row 0 --end-row 1 --start-column 0 --end-column 5 --angle 45
 goog sheets sheet text-direction SPREADSHEET_ID 123456789 --start-row 0 --end-row 10 --start-column 0 --end-column 5 --direction right-to-left
+goog sheets sheet note SPREADSHEET_ID 123456789 --start-row 1 --end-row 2 --start-column 3 --end-column 4 "Check source data"
+goog sheets sheet note SPREADSHEET_ID 123456789 --start-row 1 --end-row 2 --start-column 3 --end-column 4 --clear
 goog sheets sheet tab-color SPREADSHEET_ID 123456789 "#3366cc"
 goog sheets sheet clear-tab-color SPREADSHEET_ID 123456789
 goog sheets sheet hide SPREADSHEET_ID 123456789

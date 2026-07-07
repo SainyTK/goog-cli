@@ -4409,6 +4409,146 @@ fn sheets_sheet_text_direction_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_note_accepts_grid_range_and_note() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "note",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "Review this input",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Note {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            note,
+                            clear,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 10);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
+            assert_eq!(note.as_deref(), Some("Review this input"));
+            assert!(!clear);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_note_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "note",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "-1",
+        "--end-column",
+        "4",
+        "Review this input",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_note_clear_accepts_grid_range() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "note",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--clear",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Note {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            note,
+                            clear,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 10);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
+            assert_eq!(note, None);
+            assert!(clear);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_note_clear_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "note",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "-1",
+        "--end-column",
+        "4",
+        "--clear",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",
