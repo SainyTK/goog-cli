@@ -3459,6 +3459,102 @@ fn sheets_sheet_underline_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_strikethrough_accepts_grid_range() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "strikethrough",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Strikethrough {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            off,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 10);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
+            assert!(!off);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_strikethrough_accepts_off_flag() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "strikethrough",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--off",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command: SheetsSheetCommand::Strikethrough { off, .. },
+                },
+        } => assert!(off),
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_strikethrough_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "strikethrough",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "-1",
+        "--end-column",
+        "4",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",

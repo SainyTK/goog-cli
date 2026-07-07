@@ -1600,6 +1600,28 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         off: bool,
     },
+    /// Set strikethrough text style over a cell range without writing a Batch Update JSON body
+    Strikethrough {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Clear strikethrough style instead of applying it
+        #[arg(long)]
+        off: bool,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update
