@@ -1325,6 +1325,73 @@ fn mail_draft_create_requires_to_recipient() {
 }
 
 #[test]
+fn mail_draft_edit_with_body_and_attachment_paths() {
+    let cli = parse(&[
+        "mail",
+        "draft",
+        "edit",
+        "draft-123",
+        "--to",
+        "alice@example.com",
+        "--subject",
+        "Updated draft",
+        "--body",
+        "Updated body",
+        "--attachment",
+        "./updated.pdf",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Mail {
+            command:
+                MailCommand::Draft {
+                    command:
+                        MailDraftCommand::Edit {
+                            draft_id,
+                            to,
+                            cc,
+                            bcc,
+                            subject,
+                            body,
+                            body_file,
+                            attachment,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(draft_id, "draft-123");
+            assert_eq!(to, ["alice@example.com"]);
+            assert!(cc.is_empty());
+            assert!(bcc.is_empty());
+            assert_eq!(subject, "Updated draft");
+            assert_eq!(body.as_deref(), Some("Updated body"));
+            assert!(body_file.is_none());
+            assert_eq!(attachment, ["./updated.pdf"]);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_draft_edit_requires_to_recipient() {
+    let err = parse(&[
+        "mail",
+        "draft",
+        "edit",
+        "draft-123",
+        "--subject",
+        "Updated draft",
+        "--body",
+        "Updated body",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("--to <TO>"));
+}
+
+#[test]
 fn sheets_get_with_spreadsheet_id() {
     let cli = parse(&["sheets", "get", "spreadsheet-123"]).unwrap();
     match cli.command {

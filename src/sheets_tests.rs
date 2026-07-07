@@ -182,6 +182,115 @@ fn query_values(url: &Url, name: &str) -> Vec<String> {
         .collect()
 }
 
+#[test]
+fn sheets_operation_owns_target_spreadsheet_id_for_each_variant() {
+    let body = serde_json::json!({ "values": [["Ada"]] });
+    let get_spreadsheet = GetSpreadsheetOptions::new("metadata-sheet");
+    let get_values = GetValuesOptions::new("values-sheet", "Sheet1!A1");
+    let batch_get_values = BatchGetValuesOptions::new("batch-get-sheet", vec!["Sheet1!A1".into()]);
+    let update_values = UpdateValuesOptions::new("update-sheet", "Sheet1!A1", body.clone());
+    let batch_update_values =
+        BatchUpdateValuesOptions::new("batch-update-values-sheet", body.clone());
+    let append_values = AppendValuesOptions::new("append-sheet", "Sheet1!A:A", body.clone());
+    let clear_values = ClearValuesOptions::new("clear-sheet", "Sheet1!A1");
+    let batch_clear_values =
+        BatchClearValuesOptions::new("batch-clear-sheet", vec!["Sheet1!A1".into()]);
+    let batch_update_spreadsheet = BatchUpdateSpreadsheetOptions::new(
+        "structural-sheet",
+        serde_json::json!({ "requests": [] }),
+    );
+
+    let operations = [
+        (
+            SheetsOperation::GetSpreadsheet(&get_spreadsheet),
+            "metadata-sheet",
+        ),
+        (SheetsOperation::GetValues(&get_values), "values-sheet"),
+        (
+            SheetsOperation::BatchGetValues(&batch_get_values),
+            "batch-get-sheet",
+        ),
+        (
+            SheetsOperation::UpdateValues(&update_values),
+            "update-sheet",
+        ),
+        (
+            SheetsOperation::BatchUpdateValues(&batch_update_values),
+            "batch-update-values-sheet",
+        ),
+        (
+            SheetsOperation::AppendValues(&append_values),
+            "append-sheet",
+        ),
+        (SheetsOperation::ClearValues(&clear_values), "clear-sheet"),
+        (
+            SheetsOperation::BatchClearValues(&batch_clear_values),
+            "batch-clear-sheet",
+        ),
+        (
+            SheetsOperation::BatchUpdateSpreadsheet(&batch_update_spreadsheet),
+            "structural-sheet",
+        ),
+    ];
+
+    for (operation, spreadsheet_id) in operations {
+        assert_eq!(operation.spreadsheet_id(), spreadsheet_id);
+    }
+}
+
+#[tokio::test]
+async fn sheets_operation_executes_value_range_and_structural_batch_update_distinctly() {
+    let server = MockServer::start().await;
+    let value_body = serde_json::json!({
+        "valueInputOption": "RAW",
+        "data": [{ "range": "Sheet1!A1", "values": [["Ada"]] }]
+    });
+    let structural_body = serde_json::json!({
+        "requests": [{ "addSheet": { "properties": { "title": "Raw" } } }]
+    });
+    Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&value_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "totalUpdatedCells": 1
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&structural_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let batch_values = BatchUpdateValuesOptions::new("spreadsheet-123", value_body)
+        .with_spreadsheets_url(spreadsheets_url(&server));
+    let structural = BatchUpdateSpreadsheetOptions::new("spreadsheet-123", structural_body)
+        .with_spreadsheets_url(spreadsheets_url(&server));
+
+    let value_response = SheetsOperation::BatchUpdateValues(&batch_values)
+        .execute(&client)
+        .await
+        .unwrap();
+    let structural_response = SheetsOperation::BatchUpdateSpreadsheet(&structural)
+        .execute(&client)
+        .await
+        .unwrap();
+
+    assert_eq!(value_response["totalUpdatedCells"], 1);
+    assert!(structural_response["replies"].is_array());
+}
+
 struct StaticAuthorizationCodeFlow {
     scopes_seen: Arc<Mutex<Vec<String>>>,
 }

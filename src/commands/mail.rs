@@ -11,9 +11,9 @@ use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{MailAttachmentCommand, MailCommand, MailDraftCommand};
 use crate::mail::{
     create_draft, decode_base64url, download_attachment, get_message, list_messages,
-    parse_message_reference, resolve_message_reference, CreateDraftOptions,
-    DownloadAttachmentOptions, DraftAttachment, GetMessageOptions, ListMessagesOptions, MailError,
-    MessageReference, MessageSummary,
+    parse_message_reference, resolve_message_reference, update_draft, CreateDraftOptions,
+    DownloadAttachmentOptions, DraftAttachment, DraftMessage, GetMessageOptions,
+    ListMessagesOptions, MailError, MessageReference, MessageSummary, UpdateDraftOptions,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 10;
@@ -120,6 +120,38 @@ pub fn run<S: AccountStore>(
                     None,
                 ))
             }
+            MailDraftCommand::Edit {
+                draft_id,
+                to,
+                cc,
+                bcc,
+                subject,
+                body,
+                body_file,
+                attachment,
+                json,
+            } => {
+                let runtime =
+                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+                let client = AuthClient::from_config(config.clone(), store, account_override)?;
+                let body = resolve_draft_body(body, body_file)?;
+                let attachments = resolve_draft_attachments(attachment)?;
+                runtime.block_on(run_draft_edit_to(
+                    &client,
+                    draft_id,
+                    CreateDraftInput {
+                        to,
+                        cc,
+                        bcc,
+                        subject,
+                        body,
+                        attachments,
+                    },
+                    json,
+                    &mut std::io::stdout(),
+                    None,
+                ))
+            }
         },
     }
 }
@@ -191,6 +223,21 @@ pub(super) async fn run_draft_create_to<S: AccountStore>(
     let draft = create_draft(client, &options)
         .await
         .context("failed to create GoogleMail Draft")?;
+    write_draft(&draft, json, out)
+}
+
+pub(super) async fn run_draft_edit_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    draft_id: String,
+    input: CreateDraftInput,
+    json: bool,
+    out: &mut impl Write,
+    drafts_url: Option<&str>,
+) -> Result<()> {
+    let options = update_draft_options(draft_id, input, drafts_url);
+    let draft = update_draft(client, &options)
+        .await
+        .context("failed to edit GoogleMail Draft")?;
     write_draft(&draft, json, out)
 }
 
@@ -492,6 +539,36 @@ fn create_draft_options(input: CreateDraftInput, drafts_url: Option<&str>) -> Cr
                     })
                     .collect(),
             );
+    if let Some(drafts_url) = drafts_url {
+        options = options.with_drafts_url(drafts_url);
+    }
+    options
+}
+
+fn update_draft_options(
+    draft_id: String,
+    input: CreateDraftInput,
+    drafts_url: Option<&str>,
+) -> UpdateDraftOptions {
+    let mut options = UpdateDraftOptions::new(
+        draft_id,
+        DraftMessage {
+            to: input.to,
+            cc: input.cc,
+            bcc: input.bcc,
+            subject: input.subject,
+            body: input.body,
+            attachments: input
+                .attachments
+                .into_iter()
+                .map(|attachment| DraftAttachment {
+                    filename: attachment.filename,
+                    content_type: attachment.content_type,
+                    data: attachment.data,
+                })
+                .collect(),
+        },
+    );
     if let Some(drafts_url) = drafts_url {
         options = options.with_drafts_url(drafts_url);
     }
