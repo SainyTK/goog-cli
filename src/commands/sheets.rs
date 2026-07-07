@@ -1424,6 +1424,37 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Protect range response",
             )
         }
+        SheetsSheetCommand::AddNamedRange {
+            spreadsheet_id,
+            sheet_id,
+            name,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            named_range_id,
+        } => {
+            let request_body = add_named_range_sheet_request_body(
+                sheet_id,
+                &name,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                named_range_id.as_deref(),
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to add Google Sheets named range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Add named range response",
+            )
+        }
         SheetsSheetCommand::UnprotectRange {
             spreadsheet_id,
             protected_range_id,
@@ -3256,6 +3287,45 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Protect range response",
+            )
+        }
+        SheetsSheetCommand::AddNamedRange {
+            spreadsheet_id,
+            sheet_id,
+            name,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            named_range_id,
+        } => {
+            let request_body = add_named_range_sheet_request_body(
+                sheet_id,
+                &name,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                named_range_id.as_deref(),
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to add Google Sheets named range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Add named range response",
             )
         }
         SheetsSheetCommand::UnprotectRange {
@@ -5130,6 +5200,42 @@ fn protect_range_sheet_request_body(
             {
                 "addProtectedRange": {
                     "protectedRange": protected_range
+                }
+            }
+        ]
+    }))
+}
+
+fn add_named_range_sheet_request_body(
+    sheet_id: i64,
+    name: &str,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+    named_range_id: Option<&str>,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+    if name.trim().is_empty() {
+        bail!("name must not be empty");
+    }
+    if named_range_id.is_some_and(|named_range_id| named_range_id.trim().is_empty()) {
+        bail!("--named-range-id must not be empty");
+    }
+
+    let mut named_range = serde_json::json!({
+        "name": name,
+        "range": grid_range(sheet_id, start_row, end_row, start_column, end_column)
+    });
+    if let Some(named_range_id) = named_range_id {
+        named_range["namedRangeId"] = serde_json::json!(named_range_id);
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "addNamedRange": {
+                    "namedRange": named_range
                 }
             }
         ]

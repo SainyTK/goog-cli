@@ -2269,6 +2269,30 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         warning_only: bool,
     },
+    /// Add a named range without writing a Batch Update JSON body
+    AddNamedRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the named range
+        sheet_id: i64,
+        /// Named range name to create
+        name: String,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Optional Google Sheets namedRangeId for the new named range
+        #[arg(long)]
+        named_range_id: Option<String>,
+    },
     /// Update a protected range without writing a Batch Update JSON body
     UpdateProtectedRange {
         /// Google Sheets Spreadsheet ID to update

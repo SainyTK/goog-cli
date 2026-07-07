@@ -5543,6 +5543,78 @@ fn sheets_sheet_protect_range_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_add_named_range_accepts_grid_range_and_optional_id() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "add-named-range",
+        "spreadsheet-123",
+        "42",
+        "HeaderCells",
+        "--start-row",
+        "0",
+        "--end-row",
+        "1",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+        "--named-range-id",
+        "header_cells",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::AddNamedRange {
+                            spreadsheet_id,
+                            sheet_id,
+                            name,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            named_range_id,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(name, "HeaderCells");
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 1);
+            assert_eq!(start_column, 0);
+            assert_eq!(end_column, 5);
+            assert_eq!(named_range_id.as_deref(), Some("header_cells"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_add_named_range_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "add-named-range",
+        "spreadsheet-123",
+        "42",
+        "HeaderCells",
+        "--start-row",
+        "-1",
+        "--end-row",
+        "1",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_update_protected_range_accepts_description_and_mode() {
     let cli = parse(&[
         "sheets",
