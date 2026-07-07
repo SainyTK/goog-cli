@@ -1044,6 +1044,16 @@ pub enum SheetsTableOutputFormat {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsTableInputFormat {
+    /// Infer CSV or TSV from the data file extension
+    Auto,
+    /// Read tab-separated rows
+    Tsv,
+    /// Read comma-separated rows
+    Csv,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SheetsDimension {
     /// Sheet rows
     Rows,
@@ -2542,9 +2552,12 @@ pub enum SheetsValuesCommand {
         spreadsheet_id: String,
         /// Google Sheets A1 Range to update
         range: String,
-        /// CSV or TSV data file to write
+        /// CSV or TSV data file to write, or - for stdin
         #[arg(long)]
         data: String,
+        /// Table input format
+        #[arg(long, value_enum, default_value = "auto")]
+        format: SheetsTableInputFormat,
         /// How input values should be interpreted
         #[arg(long, value_enum, default_value = "user-entered")]
         value_input_option: SheetsValueInputOption,
@@ -2649,9 +2662,12 @@ pub enum SheetsValuesCommand {
         spreadsheet_id: String,
         /// Google Sheets A1 Range to append into
         range: String,
-        /// CSV or TSV data file to append
+        /// CSV or TSV data file to append, or - for stdin
         #[arg(long)]
         data: String,
+        /// Table input format
+        #[arg(long, value_enum, default_value = "auto")]
+        format: SheetsTableInputFormat,
         /// How input values should be interpreted
         #[arg(long, value_enum, default_value = "user-entered")]
         value_input_option: SheetsValueInputOption,

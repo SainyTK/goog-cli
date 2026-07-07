@@ -14,8 +14,8 @@ use crate::cli::{
     SheetsBorderEdge, SheetsBorderStyle, SheetsConditionalFormatCondition, SheetsDimension,
     SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType,
     SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
+    SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 use crate::sheets::SHEETS_SCOPE;
 
@@ -1316,6 +1316,7 @@ async fn run_values_update_table_builds_value_range_from_tsv_file() {
             spreadsheet_id: "spreadsheet-123".into(),
             range: "Sheet1!A1:B3".into(),
             data: data_path.to_string_lossy().into_owned(),
+            format: SheetsTableInputFormat::Auto,
             value_input_option: SheetsValueInputOption::Raw,
         },
         &mut input,
@@ -1338,6 +1339,82 @@ async fn run_values_update_table_builds_value_range_from_tsv_file() {
 }
 
 #[tokio::test]
+async fn run_values_update_table_reads_csv_from_stdin() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "majorDimension": "ROWS",
+        "values": [
+            ["Name", "Score"],
+            ["Grace", "99"]
+        ]
+    });
+    Mock::given(method("PUT"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A1:B2",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "updatedRows": 2
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new("Name,Score\nGrace,99\n");
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::UpdateTable {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:B2".into(),
+            data: "-".into(),
+            format: SheetsTableInputFormat::Csv,
+            value_input_option: SheetsValueInputOption::Raw,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "{\"updatedRows\":2}\n");
+}
+
+#[tokio::test]
+async fn run_values_update_table_requires_format_for_stdin() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new("Name,Score\nGrace,99\n");
+    let mut out = Vec::new();
+
+    let err = run_values_to(
+        &client,
+        SheetsValuesCommand::UpdateTable {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A1:B2".into(),
+            data: "-".into(),
+            format: SheetsTableInputFormat::Auto,
+            value_input_option: SheetsValueInputOption::Raw,
+        },
+        &mut input,
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--format csv or --format tsv is required"));
+}
+
+#[tokio::test]
 async fn run_values_update_table_rejects_ragged_data() {
     let temp_dir = tempfile::tempdir().unwrap();
     let data_path = temp_dir.path().join("rows.csv");
@@ -1354,6 +1431,7 @@ async fn run_values_update_table_rejects_ragged_data() {
             spreadsheet_id: "spreadsheet-123".into(),
             range: "Sheet1!A1:B3".into(),
             data: data_path.to_string_lossy().into_owned(),
+            format: SheetsTableInputFormat::Auto,
             value_input_option: SheetsValueInputOption::Raw,
         },
         &mut input,
@@ -1903,6 +1981,7 @@ async fn run_values_append_table_builds_value_range_from_csv_file() {
             spreadsheet_id: "spreadsheet-123".into(),
             range: "Sheet1!A:B".into(),
             data: data_path.to_string_lossy().into_owned(),
+            format: SheetsTableInputFormat::Auto,
             value_input_option: SheetsValueInputOption::Raw,
             insert_data_option: SheetsInsertDataOption::Overwrite,
         },
@@ -1924,6 +2003,60 @@ async fn run_values_append_table_builds_value_range_from_csv_file() {
 }
 
 #[tokio::test]
+async fn run_values_append_table_reads_tsv_from_stdin() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "majorDimension": "ROWS",
+        "values": [
+            ["Name", "Score"],
+            ["Grace", "99"]
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A:B:append",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "updates": {
+                "updatedRows": 2
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::Cursor::new("Name\tScore\nGrace\t99\n");
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::AppendTable {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A:B".into(),
+            data: "-".into(),
+            format: SheetsTableInputFormat::Tsv,
+            value_input_option: SheetsValueInputOption::Raw,
+            insert_data_option: SheetsInsertDataOption::Overwrite,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"updates\":{\"updatedRows\":2}}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_values_append_table_rejects_ragged_data() {
     let temp_dir = tempfile::tempdir().unwrap();
     let data_path = temp_dir.path().join("rows.csv");
@@ -1940,6 +2073,7 @@ async fn run_values_append_table_rejects_ragged_data() {
             spreadsheet_id: "spreadsheet-123".into(),
             range: "Sheet1!A:B".into(),
             data: data_path.to_string_lossy().into_owned(),
+            format: SheetsTableInputFormat::Auto,
             value_input_option: SheetsValueInputOption::Raw,
             insert_data_option: SheetsInsertDataOption::Overwrite,
         },

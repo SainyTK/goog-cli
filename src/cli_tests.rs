@@ -7,8 +7,8 @@ use crate::cli::{
     SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension,
     SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType,
     SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
+    SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -1631,6 +1631,7 @@ fn sheets_values_update_table_accepts_data_file() {
                             spreadsheet_id,
                             range,
                             data,
+                            format,
                             value_input_option,
                         },
                 },
@@ -1638,7 +1639,36 @@ fn sheets_values_update_table_accepts_data_file() {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
             assert_eq!(range, "Sheet1!A1:C3");
             assert_eq!(data, "./rows.tsv");
+            assert_eq!(format, SheetsTableInputFormat::Auto);
             assert_eq!(value_input_option, SheetsValueInputOption::Raw);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_update_table_accepts_stdin_and_format() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "update-table",
+        "spreadsheet-123",
+        "Sheet1!A1:C3",
+        "--data",
+        "-",
+        "--format",
+        "csv",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command: SheetsValuesCommand::UpdateTable { data, format, .. },
+                },
+        } => {
+            assert_eq!(data, "-");
+            assert_eq!(format, SheetsTableInputFormat::Csv);
         }
         _ => panic!("unexpected parse result"),
     }
@@ -2224,6 +2254,7 @@ fn sheets_values_append_table_accepts_data_file() {
                             spreadsheet_id,
                             range,
                             data,
+                            format,
                             value_input_option,
                             insert_data_option,
                         },
@@ -2232,8 +2263,37 @@ fn sheets_values_append_table_accepts_data_file() {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
             assert_eq!(range, "Sheet1!A:C");
             assert_eq!(data, "./rows.tsv");
+            assert_eq!(format, SheetsTableInputFormat::Auto);
             assert_eq!(value_input_option, SheetsValueInputOption::Raw);
             assert_eq!(insert_data_option, SheetsInsertDataOption::Overwrite);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_append_table_accepts_stdin_and_format() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "append-table",
+        "spreadsheet-123",
+        "Sheet1!A:C",
+        "--data",
+        "-",
+        "--format",
+        "tsv",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command: SheetsValuesCommand::AppendTable { data, format, .. },
+                },
+        } => {
+            assert_eq!(data, "-");
+            assert_eq!(format, SheetsTableInputFormat::Tsv);
         }
         _ => panic!("unexpected parse result"),
     }

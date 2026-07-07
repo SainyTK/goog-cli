@@ -301,10 +301,12 @@ goog sheets values update-cell SPREADSHEET_ID 'Sheet1!D2' '=SUM(C2:C10)'
 goog sheets values update-row SPREADSHEET_ID 'Sheet1!A2:C2' --value Ada --value Lovelace --value '=SUM(C2:C10)'
 goog sheets values update-column SPREADSHEET_ID 'Sheet1!D2:D4' --value Open --value Closed --value Blocked
 goog sheets values update-table SPREADSHEET_ID 'Sheet1!A1:D10' --data ./rows.csv
+cat rows.csv | goog sheets values update-table SPREADSHEET_ID 'Sheet1!A1:D10' --data - --format csv
 goog sheets values append SPREADSHEET_ID 'Sheet1!A:D' --values ./rows.json
 goog sheets values append-row SPREADSHEET_ID 'Sheet1!A:D' --value Ada --value Lovelace --value '=SUM(C2:C10)'
 goog sheets values append-column SPREADSHEET_ID 'Sheet1!A:D' --value Open --value Closed --value Blocked
 goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --data ./rows.csv
+cat rows.tsv | goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --data - --format tsv
 ```
 
 ### GoogleMail

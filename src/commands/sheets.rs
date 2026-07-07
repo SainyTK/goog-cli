@@ -13,8 +13,9 @@ use crate::cli::{
     SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition,
     SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
     SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
-    SheetsSortOrder, SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption,
-    SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
+    SheetsSortOrder, SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
+    SheetsWrapStrategy,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -4022,9 +4023,10 @@ pub(super) async fn run_values_to<S: AccountStore>(
             spreadsheet_id,
             range,
             data,
+            format,
             value_input_option,
         } => {
-            let request_body = table_value_range(&data)?;
+            let request_body = table_value_range(&data, format, input)?;
             let options = update_values_options(
                 spreadsheet_id,
                 range,
@@ -4215,10 +4217,11 @@ pub(super) async fn run_values_to<S: AccountStore>(
             spreadsheet_id,
             range,
             data,
+            format,
             value_input_option,
             insert_data_option,
         } => {
-            let request_body = table_value_range(&data)?;
+            let request_body = table_value_range(&data, format, input)?;
             let options = append_values_options(
                 spreadsheet_id,
                 range,
@@ -4452,9 +4455,10 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
             spreadsheet_id,
             range,
             data,
+            format,
             value_input_option,
         } => {
-            let request_body = table_value_range(&data)?;
+            let request_body = table_value_range(&data, format, input)?;
             let options = update_values_options(
                 spreadsheet_id.clone(),
                 range,
@@ -4685,10 +4689,11 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
             spreadsheet_id,
             range,
             data,
+            format,
             value_input_option,
             insert_data_option,
         } => {
-            let request_body = table_value_range(&data)?;
+            let request_body = table_value_range(&data, format, input)?;
             let options = append_values_options(
                 spreadsheet_id.clone(),
                 range,
@@ -4905,10 +4910,22 @@ fn column_value_range(values: Vec<String>) -> serde_json::Value {
     })
 }
 
-fn table_value_range(path: &str) -> Result<serde_json::Value> {
-    let delimiter = if path.ends_with(".tsv") { '\t' } else { ',' };
-    let body = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read Google Sheets table data file: {path}"))?;
+fn table_value_range(
+    path: &str,
+    format: SheetsTableInputFormat,
+    input: &mut impl Read,
+) -> Result<serde_json::Value> {
+    let delimiter = table_input_delimiter(path, format)?;
+    let body = if path == "-" {
+        let mut body = String::new();
+        input
+            .read_to_string(&mut body)
+            .context("failed to read Google Sheets table data from stdin")?;
+        body
+    } else {
+        std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read Google Sheets table data file: {path}"))?
+    };
     let rows: Vec<Vec<String>> = body
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -4932,6 +4949,18 @@ fn table_value_range(path: &str) -> Result<serde_json::Value> {
         "majorDimension": "ROWS",
         "values": rows,
     }))
+}
+
+fn table_input_delimiter(path: &str, format: SheetsTableInputFormat) -> Result<char> {
+    match format {
+        SheetsTableInputFormat::Tsv => Ok('\t'),
+        SheetsTableInputFormat::Csv => Ok(','),
+        SheetsTableInputFormat::Auto if path == "-" => {
+            bail!("--format csv or --format tsv is required when reading Google Sheets table data from stdin")
+        }
+        SheetsTableInputFormat::Auto if path.ends_with(".tsv") => Ok('\t'),
+        SheetsTableInputFormat::Auto => Ok(','),
+    }
 }
 
 fn add_sheet_request_body(
