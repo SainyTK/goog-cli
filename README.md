@@ -241,6 +241,7 @@ goog sheets sheet sort-range SPREADSHEET_ID 123456789 --start-row 1 --end-row 10
 goog sheets sheet find-replace SPREADSHEET_ID "draft" "final" --sheet-id 123456789 --match-case
 goog sheets sheet copy-paste SPREADSHEET_ID 123456789 --source-start-row 1 --source-end-row 4 --source-start-column 0 --source-end-column 3 --destination-sheet-id 987654321 --destination-start-row 10 --destination-end-row 13 --destination-start-column 0 --destination-end-column 3 --paste-type values
 goog sheets sheet cut-paste SPREADSHEET_ID 123456789 --source-start-row 1 --source-end-row 4 --source-start-column 0 --source-end-column 3 --destination-sheet-id 987654321 --destination-row 10 --destination-column 0 --paste-type values
+goog sheets sheet background-color SPREADSHEET_ID 123456789 --start-row 0 --end-row 1 --start-column 0 --end-column 5 "#ffcc00"
 goog sheets sheet tab-color SPREADSHEET_ID 123456789 "#3366cc"
 goog sheets sheet clear-tab-color SPREADSHEET_ID 123456789
 goog sheets sheet hide SPREADSHEET_ID 123456789
