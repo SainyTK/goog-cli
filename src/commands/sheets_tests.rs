@@ -1931,6 +1931,117 @@ async fn run_sheet_auto_resize_rejects_empty_range() {
 }
 
 #[tokio::test]
+async fn run_sheet_insert_dimension_builds_insert_dimension_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "insertDimension": {
+                    "range": {
+                        "sheetId": 42,
+                        "dimension": "ROWS",
+                        "startIndex": 2,
+                        "endIndex": 4
+                    },
+                    "inheritFromBefore": true
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::InsertDimension {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            dimension: SheetsDimension::Rows,
+            start_index: 2,
+            end_index: 4,
+            inherit_from_before: true,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_insert_dimension_rejects_empty_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::InsertDimension {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            dimension: SheetsDimension::Columns,
+            start_index: 5,
+            end_index: 5,
+            inherit_from_before: false,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-index must be greater than --start-index"));
+}
+
+#[tokio::test]
+async fn run_sheet_insert_dimension_rejects_inherit_from_before_at_zero() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::InsertDimension {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            dimension: SheetsDimension::Rows,
+            start_index: 0,
+            end_index: 1,
+            inherit_from_before: true,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--inherit-from-before requires --start-index greater than 0"));
+}
+
+#[tokio::test]
 async fn run_sheet_basic_filter_builds_set_basic_filter_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

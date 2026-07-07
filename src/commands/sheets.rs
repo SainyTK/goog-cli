@@ -255,6 +255,33 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Auto-resize sheet response",
             )
         }
+        SheetsSheetCommand::InsertDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+            inherit_from_before,
+        } => {
+            let request_body = insert_dimension_sheet_request_body(
+                sheet_id,
+                dimension,
+                start_index,
+                end_index,
+                inherit_from_before,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to insert Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Insert dimension response",
+            )
+        }
         SheetsSheetCommand::BasicFilter {
             spreadsheet_id,
             sheet_id,
@@ -677,6 +704,41 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Auto-resize sheet response",
+            )
+        }
+        SheetsSheetCommand::InsertDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+            inherit_from_before,
+        } => {
+            let request_body = insert_dimension_sheet_request_body(
+                sheet_id,
+                dimension,
+                start_index,
+                end_index,
+                inherit_from_before,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to insert Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Insert dimension response",
             )
         }
         SheetsSheetCommand::BasicFilter {
@@ -1824,14 +1886,8 @@ fn auto_resize_sheet_request_body(
     start_index: i64,
     end_index: i64,
 ) -> Result<serde_json::Value> {
-    if end_index <= start_index {
-        bail!("--end-index must be greater than --start-index");
-    }
-
-    let dimension = match dimension {
-        SheetsDimension::Rows => "ROWS",
-        SheetsDimension::Columns => "COLUMNS",
-    };
+    validate_dimension_range(start_index, end_index)?;
+    let dimension = dimension_name(dimension);
 
     Ok(serde_json::json!({
         "requests": [
@@ -1843,6 +1899,35 @@ fn auto_resize_sheet_request_body(
                         "startIndex": start_index,
                         "endIndex": end_index
                     }
+                }
+            }
+        ]
+    }))
+}
+
+fn insert_dimension_sheet_request_body(
+    sheet_id: i64,
+    dimension: SheetsDimension,
+    start_index: i64,
+    end_index: i64,
+    inherit_from_before: bool,
+) -> Result<serde_json::Value> {
+    validate_dimension_range(start_index, end_index)?;
+    if inherit_from_before && start_index == 0 {
+        bail!("--inherit-from-before requires --start-index greater than 0");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "insertDimension": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": dimension_name(dimension),
+                        "startIndex": start_index,
+                        "endIndex": end_index
+                    },
+                    "inheritFromBefore": inherit_from_before
                 }
             }
         ]
@@ -1992,6 +2077,21 @@ fn validate_grid_range(
     }
 
     Ok(())
+}
+
+fn validate_dimension_range(start_index: i64, end_index: i64) -> Result<()> {
+    if end_index <= start_index {
+        bail!("--end-index must be greater than --start-index");
+    }
+
+    Ok(())
+}
+
+fn dimension_name(dimension: SheetsDimension) -> &'static str {
+    match dimension {
+        SheetsDimension::Rows => "ROWS",
+        SheetsDimension::Columns => "COLUMNS",
+    }
 }
 
 fn grid_range(
