@@ -6,11 +6,9 @@ use anyhow::{Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::auth::config::{resolve_account, Config};
-use crate::auth::state::{
-    load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
-    save_runtime_state_to_path, RuntimeState,
-};
+use crate::auth::config::Config;
+use crate::auth::state::resource_key;
+use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
     SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand,
@@ -562,124 +560,31 @@ async fn run_with_sheets_unified_access<S: AccountStore>(
     operation: &SheetsOperation<'_>,
     state_path: Option<&Path>,
 ) -> Result<serde_json::Value, SheetsError> {
-    let mut state = load_sheets_runtime_state(state_path)?;
-
-    if let Some(account_override) = account_override {
-        let account = resolve_account(config, Some(account_override))
-            .map_err(SheetsError::Auth)?
-            .expect("explicit account resolution returns an account");
-        return run_sheets_access_as_account(
-            config,
-            store,
-            &mut state,
-            state_path,
-            target_resource_key,
-            operation,
-            account,
-        )
-        .await;
-    }
-
-    let candidates = unified_access_candidates(config, &state, target_resource_key);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match run_sheets_access_as_account(
-            config,
-            store,
-            &mut state,
-            state_path,
-            target_resource_key,
-            operation,
-            account,
-        )
-        .await
-        {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    Err(last_target_access_failure.unwrap_or({
-        SheetsError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
-    }))
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, serde_json::Value, SheetsError> {
+            Box::pin(run_sheets_access_as_account(
+                config, store, operation, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
 }
 
 async fn run_sheets_access_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    state: &mut RuntimeState,
-    state_path: Option<&Path>,
-    target_resource_key: &str,
     operation: &SheetsOperation<'_>,
     account: String,
 ) -> Result<serde_json::Value, SheetsError> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))
         .map_err(SheetsError::Auth)?;
     let result = operation.execute(&client).await?;
-    state.set_resource_account(target_resource_key, account);
-    save_sheets_runtime_state(state, state_path)?;
     Ok(result)
-}
-
-fn load_sheets_runtime_state(state_path: Option<&Path>) -> Result<RuntimeState, SheetsError> {
-    match state_path {
-        Some(path) => load_runtime_state_from_path(path),
-        None => load_runtime_state(),
-    }
-    .map_err(SheetsError::Auth)
-}
-
-fn save_sheets_runtime_state(
-    state: &RuntimeState,
-    state_path: Option<&Path>,
-) -> Result<(), SheetsError> {
-    match state_path {
-        Some(path) => save_runtime_state_to_path(state, path),
-        None => save_runtime_state(state),
-    }
-    .map_err(SheetsError::Auth)
-}
-
-fn unified_access_candidates(
-    config: &Config,
-    state: &RuntimeState,
-    target_resource_key: &str,
-) -> Vec<String> {
-    let mut candidates = Vec::new();
-
-    if let Some(mapped) = state.account_for_resource(target_resource_key) {
-        push_if_configured(config, &mut candidates, mapped);
-    }
-
-    if let Some(active) = config.active_account() {
-        push_if_configured(config, &mut candidates, active);
-    }
-
-    for account in &config.accounts {
-        push_candidate(&mut candidates, account);
-    }
-
-    candidates
-}
-
-fn push_if_configured(config: &Config, candidates: &mut Vec<String>, account: &str) {
-    if config
-        .accounts
-        .iter()
-        .any(|configured| configured == account)
-    {
-        push_candidate(candidates, account);
-    }
-}
-
-fn push_candidate(candidates: &mut Vec<String>, account: &str) {
-    if !candidates.iter().any(|candidate| candidate == account) {
-        candidates.push(account.to_string());
-    }
 }
 
 fn is_target_access_failure(err: &SheetsError) -> bool {

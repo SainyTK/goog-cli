@@ -3,9 +3,9 @@ use std::path::Path;
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::auth::config::{resolve_account, Config};
+use crate::auth::config::Config;
 use crate::auth::state::resource_key;
-use crate::auth::unified_access::UnifiedAccess;
+use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::DocsCommand;
 use crate::docs::{
     batch_update_document,
@@ -1301,42 +1301,27 @@ async fn run_with_docs_unified_access<S: AccountStore>(
     attempt: DocsAccessAttempt<'_>,
     state_path: Option<&Path>,
 ) -> Result<serde_json::Value, DocsError> {
-    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
-
-    if account_override.is_some() {
-        let account = resolve_account(config, account_override)?
-            .expect("explicit account resolution returns an account");
-        return run_docs_access_as_account(config, store, &mut access, &attempt, account).await;
-    }
-
-    let candidates = access.candidates(config);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match run_docs_access_as_account(config, store, &mut access, &attempt, account).await {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    Err(last_target_access_failure.unwrap_or(DocsError::Auth(
-        crate::auth::error::AuthError::ActiveAccountNotConfigured,
-    )))
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, serde_json::Value, DocsError> {
+            Box::pin(run_docs_access_as_account(config, store, &attempt, account))
+        },
+        is_target_access_failure,
+    )
+    .await
 }
 
 async fn run_docs_access_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    access: &mut UnifiedAccess,
     attempt: &DocsAccessAttempt<'_>,
     account: String,
 ) -> Result<serde_json::Value, DocsError> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     let result = attempt_docs_access(&client, attempt).await?;
-    access.record_success(account)?;
     Ok(result)
 }
 
