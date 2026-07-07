@@ -1564,6 +1564,28 @@ pub enum SheetsSheetCommand {
         /// Hex text color for the selected cells, as RRGGBB or #RRGGBB
         color: String,
     },
+    /// Set font size over a cell range without writing a Batch Update JSON body
+    FontSize {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Font size in points
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        size: i64,
+    },
     /// Set bold text style over a cell range without writing a Batch Update JSON body
     Bold {
         /// Google Sheets Spreadsheet ID to update

@@ -3172,6 +3172,98 @@ fn sheets_sheet_text_color_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_font_size_accepts_grid_range_and_size() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "font-size",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--size",
+        "14",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::FontSize {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            size,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 10);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
+            assert_eq!(size, 14);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_font_size_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "font-size",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "-1",
+        "--end-column",
+        "4",
+        "--size",
+        "14",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_font_size_rejects_zero_size() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "font-size",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--size",
+        "0",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_bold_accepts_grid_range() {
     let cli = parse(&[
         "sheets",
