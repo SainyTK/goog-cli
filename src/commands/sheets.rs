@@ -157,6 +157,27 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Rename sheet response",
             )
         }
+        SheetsSheetCommand::Duplicate {
+            spreadsheet_id,
+            source_sheet_id,
+            title,
+            sheet_id,
+            index,
+        } => {
+            let request_body =
+                duplicate_sheet_request_body(source_sheet_id, title, sheet_id, index);
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to duplicate Google Sheets sheet")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Duplicate sheet response",
+            )
+        }
     }
 }
 
@@ -246,6 +267,35 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Rename sheet response",
+            )
+        }
+        SheetsSheetCommand::Duplicate {
+            spreadsheet_id,
+            source_sheet_id,
+            title,
+            sheet_id,
+            index,
+        } => {
+            let request_body =
+                duplicate_sheet_request_body(source_sheet_id, title, sheet_id, index);
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to duplicate Google Sheets sheet")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Duplicate sheet response",
             )
         }
     }
@@ -1007,6 +1057,34 @@ fn rename_sheet_request_body(sheet_id: i64, title: String) -> serde_json::Value 
                     },
                     "fields": "title"
                 }
+            }
+        ]
+    })
+}
+
+fn duplicate_sheet_request_body(
+    source_sheet_id: i64,
+    title: String,
+    sheet_id: Option<i64>,
+    index: Option<i64>,
+) -> serde_json::Value {
+    let mut duplicate_sheet = serde_json::Map::new();
+    duplicate_sheet.insert(
+        "sourceSheetId".to_string(),
+        serde_json::json!(source_sheet_id),
+    );
+    duplicate_sheet.insert("newSheetName".to_string(), serde_json::Value::String(title));
+    if let Some(sheet_id) = sheet_id {
+        duplicate_sheet.insert("newSheetId".to_string(), serde_json::json!(sheet_id));
+    }
+    if let Some(index) = index {
+        duplicate_sheet.insert("insertSheetIndex".to_string(), serde_json::json!(index));
+    }
+
+    serde_json::json!({
+        "requests": [
+            {
+                "duplicateSheet": duplicate_sheet
             }
         ]
     })

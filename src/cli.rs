@@ -1140,6 +1140,21 @@ pub enum SheetsSheetCommand {
         /// New title for the sheet tab
         title: String,
     },
+    /// Duplicate a sheet tab without writing a Batch Update JSON body
+    Duplicate {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to duplicate
+        source_sheet_id: i64,
+        /// Title for the duplicated sheet tab
+        title: String,
+        /// Optional Google Sheets numeric sheetId for the duplicated tab
+        #[arg(long)]
+        sheet_id: Option<i64>,
+        /// Zero-based index where Google Sheets should place the duplicated tab
+        #[arg(long)]
+        index: Option<i64>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

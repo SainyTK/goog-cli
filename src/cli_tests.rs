@@ -1988,6 +1988,45 @@ fn sheets_sheet_rename_accepts_sheet_id_and_title() {
 }
 
 #[test]
+fn sheets_sheet_duplicate_accepts_source_sheet_id_title_and_optional_properties() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "duplicate",
+        "spreadsheet-123",
+        "42",
+        "Planning Copy",
+        "--sheet-id",
+        "43",
+        "--index",
+        "2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Duplicate {
+                            spreadsheet_id,
+                            source_sheet_id,
+                            title,
+                            sheet_id,
+                            index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(source_sheet_id, 42);
+            assert_eq!(title, "Planning Copy");
+            assert_eq!(sheet_id, Some(43));
+            assert_eq!(index, Some(2));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_values_rejects_unknown_enum_values() {
     assert!(parse(&[
         "sheets",

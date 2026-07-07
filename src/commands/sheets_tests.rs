@@ -1621,6 +1621,71 @@ async fn run_sheet_rename_builds_update_sheet_properties_batch_update() {
 }
 
 #[tokio::test]
+async fn run_sheet_duplicate_builds_duplicate_sheet_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "duplicateSheet": {
+                    "sourceSheetId": 42,
+                    "newSheetName": "Planning Copy",
+                    "newSheetId": 43,
+                    "insertSheetIndex": 2
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [
+                {
+                    "duplicateSheet": {
+                        "properties": {
+                            "sheetId": 43,
+                            "title": "Planning Copy"
+                        }
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::Duplicate {
+            spreadsheet_id: "spreadsheet-123".into(),
+            source_sheet_id: 42,
+            title: "Planning Copy".into(),
+            sheet_id: Some(43),
+            index: Some(2),
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        concat!(
+            "{\"replies\":[{\"duplicateSheet\":{\"properties\":{\"sheetId\":43,",
+            "\"title\":\"Planning Copy\"}}}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+        )
+    );
+}
+
+#[tokio::test]
 async fn run_batch_update_unified_uses_fallback_and_mapping_for_structural_writes() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
