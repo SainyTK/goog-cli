@@ -1714,6 +1714,62 @@ fn sheets_values_append_accepts_raw_and_overwrite_options() {
 }
 
 #[test]
+fn sheets_values_append_row_accepts_repeated_values() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "append-row",
+        "spreadsheet-123",
+        "Sheet1!A:C",
+        "--value",
+        "Grace",
+        "--value",
+        "99",
+        "--value",
+        "=SUM(B2:B4)",
+        "--value-input-option",
+        "raw",
+        "--insert-data-option",
+        "overwrite",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::AppendRow {
+                            spreadsheet_id,
+                            range,
+                            values,
+                            value_input_option,
+                            insert_data_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!A:C");
+            assert_eq!(values, ["Grace", "99", "=SUM(B2:B4)"]);
+            assert_eq!(value_input_option, SheetsValueInputOption::Raw);
+            assert_eq!(insert_data_option, SheetsInsertDataOption::Overwrite);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_append_row_requires_value() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "append-row",
+        "spreadsheet-123",
+        "Sheet1!A:C",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_values_clear_with_range() {
     let cli = parse(&[
         "sheets",

@@ -1076,6 +1076,61 @@ async fn run_values_append_reads_values_from_stdin() {
 }
 
 #[tokio::test]
+async fn run_values_append_row_builds_value_range_from_flags() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "majorDimension": "ROWS",
+        "values": [["Grace", "99", "=SUM(B2:B4)"]]
+    });
+    Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A:C:append",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "updates": {
+                "updatedRange": "Sheet1!A5:C5",
+                "updatedRows": 1
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::AppendRow {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A:C".into(),
+            values: vec!["Grace".into(), "99".into(), "=SUM(B2:B4)".into()],
+            value_input_option: SheetsValueInputOption::UserEntered,
+            insert_data_option: SheetsInsertDataOption::InsertRows,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"updates\":{\"updatedRange\":\"Sheet1!A5:C5\",\"updatedRows\":1}}\n"
+    );
+
+    let url = received_url(&server).await;
+    assert_query_value(&url, "valueInputOption", "USER_ENTERED");
+    assert_query_value(&url, "insertDataOption", "INSERT_ROWS");
+}
+
+#[tokio::test]
 async fn run_values_batch_clear_prints_response_json() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

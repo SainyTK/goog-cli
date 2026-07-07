@@ -256,6 +256,32 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 "failed to serialize Sheets Append values response",
             )
         }
+        SheetsValuesCommand::AppendRow {
+            spreadsheet_id,
+            range,
+            values,
+            value_input_option,
+            insert_data_option,
+        } => {
+            let request_body = row_value_range(values);
+            let options = append_values_options(
+                spreadsheet_id,
+                range,
+                request_body,
+                value_input_option.into(),
+                insert_data_option.into(),
+                spreadsheets_url,
+            );
+            let response = SheetsOperation::AppendValues(&options)
+                .execute(client)
+                .await
+                .context("failed to append Google Sheets row")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Append row response",
+            )
+        }
         SheetsValuesCommand::Clear {
             spreadsheet_id,
             range,
@@ -431,6 +457,37 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Append values response",
+            )
+        }
+        SheetsValuesCommand::AppendRow {
+            spreadsheet_id,
+            range,
+            values,
+            value_input_option,
+            insert_data_option,
+        } => {
+            let request_body = row_value_range(values);
+            let options = append_values_options(
+                spreadsheet_id.clone(),
+                range,
+                request_body,
+                value_input_option.into(),
+                insert_data_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::AppendValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to append Google Sheets row")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Append row response",
             )
         }
         SheetsValuesCommand::Clear {
@@ -610,6 +667,13 @@ fn read_request_body(
 
     serde_json::from_str(&body)
         .with_context(|| format!("failed to parse {request_name} from {request_source}"))
+}
+
+fn row_value_range(values: Vec<String>) -> serde_json::Value {
+    serde_json::json!({
+        "majorDimension": "ROWS",
+        "values": [values],
+    })
 }
 
 fn get_spreadsheet_options(
