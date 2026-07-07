@@ -6,7 +6,7 @@ use crate::cli::{
     DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
     SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
     SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -3642,6 +3642,98 @@ fn sheets_sheet_horizontal_align_rejects_negative_indexes() {
         "4",
         "--alignment",
         "left",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_vertical_align_accepts_grid_range_and_alignment() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "vertical-align",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--alignment",
+        "middle",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::VerticalAlign {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            alignment,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 10);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
+            assert_eq!(alignment, SheetsVerticalAlignment::Middle);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_vertical_align_rejects_unknown_alignment() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "vertical-align",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--alignment",
+        "center",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_vertical_align_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "vertical-align",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "-1",
+        "--end-column",
+        "4",
+        "--alignment",
+        "top",
     ])
     .is_err());
 }

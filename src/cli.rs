@@ -1097,6 +1097,16 @@ pub enum SheetsHorizontalAlignment {
     Right,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsVerticalAlignment {
+    /// Align cell content to the top
+    Top,
+    /// Align cell content in the middle
+    Middle,
+    /// Align cell content to the bottom
+    Bottom,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -1653,6 +1663,28 @@ pub enum SheetsSheetCommand {
         /// Horizontal alignment to apply
         #[arg(long, value_enum)]
         alignment: SheetsHorizontalAlignment,
+    },
+    /// Set vertical alignment over a cell range without writing a Batch Update JSON body
+    VerticalAlign {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Vertical alignment to apply
+        #[arg(long, value_enum)]
+        alignment: SheetsVerticalAlignment,
     },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {

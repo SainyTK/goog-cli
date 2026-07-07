@@ -248,6 +248,7 @@ goog sheets sheet italic SPREADSHEET_ID 123456789 --start-row 0 --end-row 1 --st
 goog sheets sheet underline SPREADSHEET_ID 123456789 --start-row 0 --end-row 1 --start-column 0 --end-column 5
 goog sheets sheet strikethrough SPREADSHEET_ID 123456789 --start-row 0 --end-row 1 --start-column 0 --end-column 5
 goog sheets sheet horizontal-align SPREADSHEET_ID 123456789 --start-row 0 --end-row 1 --start-column 0 --end-column 5 --alignment center
+goog sheets sheet vertical-align SPREADSHEET_ID 123456789 --start-row 0 --end-row 1 --start-column 0 --end-column 5 --alignment middle
 goog sheets sheet tab-color SPREADSHEET_ID 123456789 "#3366cc"
 goog sheets sheet clear-tab-color SPREADSHEET_ID 123456789
 goog sheets sheet hide SPREADSHEET_ID 123456789
