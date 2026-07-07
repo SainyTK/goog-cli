@@ -255,6 +255,33 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Auto-resize sheet response",
             )
         }
+        SheetsSheetCommand::SetDimensionSize {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+            pixel_size,
+        } => {
+            let request_body = set_dimension_size_sheet_request_body(
+                sheet_id,
+                dimension,
+                start_index,
+                end_index,
+                pixel_size,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to set Google Sheets row height or column width")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Set dimension size response",
+            )
+        }
         SheetsSheetCommand::InsertDimension {
             spreadsheet_id,
             sheet_id,
@@ -725,6 +752,41 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Auto-resize sheet response",
+            )
+        }
+        SheetsSheetCommand::SetDimensionSize {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+            pixel_size,
+        } => {
+            let request_body = set_dimension_size_sheet_request_body(
+                sheet_id,
+                dimension,
+                start_index,
+                end_index,
+                pixel_size,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to set Google Sheets row height or column width")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Set dimension size response",
             )
         }
         SheetsSheetCommand::InsertDimension {
@@ -1949,6 +2011,35 @@ fn auto_resize_sheet_request_body(
                         "startIndex": start_index,
                         "endIndex": end_index
                     }
+                }
+            }
+        ]
+    }))
+}
+
+fn set_dimension_size_sheet_request_body(
+    sheet_id: i64,
+    dimension: SheetsDimension,
+    start_index: i64,
+    end_index: i64,
+    pixel_size: i64,
+) -> Result<serde_json::Value> {
+    validate_dimension_range(start_index, end_index)?;
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": dimension_name(dimension),
+                        "startIndex": start_index,
+                        "endIndex": end_index
+                    },
+                    "properties": {
+                        "pixelSize": pixel_size
+                    },
+                    "fields": "pixelSize"
                 }
             }
         ]

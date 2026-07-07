@@ -2218,6 +2218,90 @@ fn sheets_sheet_auto_resize_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_set_dimension_size_accepts_dimension_indexes_and_pixel_size() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "set-dimension-size",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "rows",
+        "--start-index",
+        "1",
+        "--end-index",
+        "3",
+        "--pixel-size",
+        "28",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::SetDimensionSize {
+                            spreadsheet_id,
+                            sheet_id,
+                            dimension,
+                            start_index,
+                            end_index,
+                            pixel_size,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(dimension, SheetsDimension::Rows);
+            assert_eq!(start_index, 1);
+            assert_eq!(end_index, 3);
+            assert_eq!(pixel_size, 28);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_set_dimension_size_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "set-dimension-size",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "columns",
+        "--start-index",
+        "-1",
+        "--end-index",
+        "5",
+        "--pixel-size",
+        "80",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_set_dimension_size_rejects_zero_pixel_size() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "set-dimension-size",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "columns",
+        "--start-index",
+        "0",
+        "--end-index",
+        "5",
+        "--pixel-size",
+        "0",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_insert_dimension_accepts_dimension_indexes_and_inheritance() {
     let cli = parse(&[
         "sheets",
