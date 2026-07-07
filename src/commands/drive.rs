@@ -1,5 +1,7 @@
+use std::cell::{Cell, RefCell};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -9,7 +11,7 @@ use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
-use crate::auth::unified_access::UnifiedAccess;
+use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{DriveCommand, DriveFolderCommand};
 use crate::drive::{
     download, list_files, upload, DownloadFileOptions, DownloadedFile, DriveError, DriveFile,
@@ -624,33 +626,22 @@ async fn upload_with_drive_unified_access<S: AccountStore>(
     progress: &Option<ProgressBar>,
     state_path: Option<&Path>,
 ) -> DriveResult<UploadedFile> {
-    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
-
-    if account_override.is_some() {
-        let account = resolve_account_override(config, account_override)?;
-        return upload_as_account(config, store, &mut access, options, progress, account).await;
-    }
-
-    let candidates = access.candidates(config);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match upload_as_account(config, store, &mut access, options, progress, account).await {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, UploadedFile, DriveError> {
+            Box::pin(upload_as_account(config, store, options, progress, account))
+        },
+        is_target_access_failure,
+    )
+    .await
 }
 
 async fn upload_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    access: &mut UnifiedAccess,
     options: &UploadFileOptions,
     progress: &Option<ProgressBar>,
     account: String,
@@ -662,7 +653,6 @@ async fn upload_as_account<S: AccountStore>(
         }
     })
     .await?;
-    access.record_success(account)?;
     Ok(uploaded)
 }
 
@@ -675,33 +665,24 @@ async fn download_with_drive_unified_access<S: AccountStore>(
     progress: &Option<ProgressBar>,
     state_path: Option<&Path>,
 ) -> DriveResult<DownloadedFile> {
-    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
-
-    if account_override.is_some() {
-        let account = resolve_account_override(config, account_override)?;
-        return download_as_account(config, store, &mut access, options, progress, account).await;
-    }
-
-    let candidates = access.candidates(config);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match download_as_account(config, store, &mut access, options, progress, account).await {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DownloadedFile, DriveError> {
+            Box::pin(download_as_account(
+                config, store, options, progress, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
 }
 
 async fn download_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    access: &mut UnifiedAccess,
     options: &DownloadFileOptions,
     progress: &Option<ProgressBar>,
     account: String,
@@ -713,12 +694,11 @@ async fn download_as_account<S: AccountStore>(
         }
     })
     .await?;
-    access.record_success(account)?;
     Ok(downloaded)
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn collect_list_items_with_drive_unified_access<S: AccountStore>(
+async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
@@ -728,79 +708,83 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore>(
     all: bool,
     parent: Option<String>,
     quiet: bool,
-    err: &mut impl Write,
+    err: &mut W,
     files_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> DriveResult<Vec<DriveFile>> {
-    let mut access = UnifiedAccess::load(target_resource_key, state_path)?;
+    let progress = UnifiedDriveListProgress::new(err);
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, Vec<DriveFile>, DriveError> {
+            let parent = parent.clone();
+            let progress = progress.clone();
+            Box::pin(collect_list_items_as_account(
+                config, store, kind, limit, all, parent, quiet, progress, files_url, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
 
-    if account_override.is_some() {
-        let account = resolve_account_override(config, account_override)?;
-        return collect_list_items_as_account(
-            config,
-            store,
-            &mut access,
-            kind,
-            limit,
-            all,
-            parent,
-            quiet,
-            err,
-            files_url,
-            account,
-        )
-        .await;
+struct UnifiedDriveListProgress<'a, W> {
+    err: Rc<RefCell<&'a mut W>>,
+    highest_reported_total: Rc<Cell<u32>>,
+}
+
+impl<W> Clone for UnifiedDriveListProgress<'_, W> {
+    fn clone(&self) -> Self {
+        Self {
+            err: Rc::clone(&self.err),
+            highest_reported_total: Rc::clone(&self.highest_reported_total),
+        }
     }
+}
 
-    let candidates = access.candidates(config);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match collect_list_items_as_account(
-            config,
-            store,
-            &mut access,
-            kind,
-            limit,
-            all,
-            parent.clone(),
-            quiet,
-            err,
-            files_url,
-            account,
-        )
-        .await
-        {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
+impl<'a, W: Write> UnifiedDriveListProgress<'a, W> {
+    fn new(err: &'a mut W) -> Self {
+        Self {
+            err: Rc::new(RefCell::new(err)),
+            highest_reported_total: Rc::new(Cell::new(0)),
         }
     }
 
-    Err(last_target_access_failure.unwrap_or_else(no_access_candidate_error))
+    fn write_progress(&self, total: u32, kind: DriveListKind) -> std::io::Result<()> {
+        if total <= self.highest_reported_total.get() {
+            return Ok(());
+        }
+
+        writeln!(
+            self.err.borrow_mut(),
+            "Fetched {total} {}...",
+            kind.item_name()
+        )?;
+        self.highest_reported_total.set(total);
+        Ok(())
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn collect_list_items_as_account<S: AccountStore>(
+async fn collect_list_items_as_account<S: AccountStore, W: Write>(
     config: &Config,
     store: &S,
-    access: &mut UnifiedAccess,
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
     parent: Option<String>,
     quiet: bool,
-    err: &mut impl Write,
+    progress: UnifiedDriveListProgress<'_, W>,
     files_url: Option<&str>,
     account: String,
 ) -> DriveResult<Vec<DriveFile>> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
-    let files =
-        collect_list_items_drive_error(&client, kind, limit, all, parent, quiet, err, files_url)
-            .await?;
-    access.record_success(account)?;
+    let files = collect_list_items_drive_error(
+        &client, kind, limit, all, parent, quiet, progress, files_url,
+    )
+    .await?;
     Ok(files)
 }
 
@@ -865,14 +849,14 @@ async fn collect_list_items<S: AccountStore>(
     Ok(files)
 }
 
-async fn collect_list_items_drive_error<S: AccountStore>(
+async fn collect_list_items_drive_error<S: AccountStore, W: Write>(
     client: &AuthClient<'_, S>,
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
     parent: Option<String>,
     quiet: bool,
-    err: &mut impl Write,
+    progress: UnifiedDriveListProgress<'_, W>,
     files_url: Option<&str>,
 ) -> DriveResult<Vec<DriveFile>> {
     let mut remaining = requested_result_count(limit, all);
@@ -901,7 +885,9 @@ async fn collect_list_items_drive_error<S: AccountStore>(
         }
 
         if all && !quiet {
-            writeln!(err, "Fetched {total} {}...", kind.item_name()).map_err(DriveError::Io)?;
+            progress
+                .write_progress(total, kind)
+                .map_err(DriveError::Io)?;
         }
 
         files.extend(page.files);
@@ -919,19 +905,6 @@ async fn collect_list_items_drive_error<S: AccountStore>(
 
 fn is_target_access_failure(err: &DriveError) -> bool {
     matches!(err, DriveError::NotFound | DriveError::PermissionDenied)
-}
-
-fn resolve_account_override(
-    _config: &Config,
-    account_override: Option<&str>,
-) -> DriveResult<String> {
-    Ok(account_override
-        .expect("explicit account resolution receives an account override")
-        .to_string())
-}
-
-fn no_access_candidate_error() -> DriveError {
-    DriveError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
 }
 
 pub(super) fn requested_result_count(limit: Option<u32>, all: bool) -> Option<u32> {
