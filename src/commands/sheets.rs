@@ -2,7 +2,7 @@ use std::future::Future;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
@@ -10,8 +10,8 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SheetsCommand, SheetsInsertDataOption, SheetsSheetCommand, SheetsValueInputOption,
-    SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsCommand, SheetsDimension, SheetsInsertDataOption, SheetsSheetCommand,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -213,6 +213,27 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Freeze sheet response",
+            )
+        }
+        SheetsSheetCommand::AutoResize {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body =
+                auto_resize_sheet_request_body(sheet_id, dimension, start_index, end_index)?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to auto-resize Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Auto-resize sheet response",
             )
         }
         SheetsSheetCommand::Hide {
@@ -420,6 +441,35 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Freeze sheet response",
+            )
+        }
+        SheetsSheetCommand::AutoResize {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body =
+                auto_resize_sheet_request_body(sheet_id, dimension, start_index, end_index)?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to auto-resize Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Auto-resize sheet response",
             )
         }
         SheetsSheetCommand::Hide {
@@ -1310,6 +1360,37 @@ fn freeze_sheet_request_body(
             }
         ]
     })
+}
+
+fn auto_resize_sheet_request_body(
+    sheet_id: i64,
+    dimension: SheetsDimension,
+    start_index: i64,
+    end_index: i64,
+) -> Result<serde_json::Value> {
+    if end_index <= start_index {
+        bail!("--end-index must be greater than --start-index");
+    }
+
+    let dimension = match dimension {
+        SheetsDimension::Rows => "ROWS",
+        SheetsDimension::Columns => "COLUMNS",
+    };
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "autoResizeDimensions": {
+                    "dimensions": {
+                        "sheetId": sheet_id,
+                        "dimension": dimension,
+                        "startIndex": start_index,
+                        "endIndex": end_index
+                    }
+                }
+            }
+        ]
+    }))
 }
 
 fn set_sheet_hidden_request_body(sheet_id: i64, hidden: bool) -> serde_json::Value {

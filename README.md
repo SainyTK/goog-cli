@@ -228,6 +228,7 @@ goog sheets sheet rename SPREADSHEET_ID 123456789 "Archive"
 goog sheets sheet move SPREADSHEET_ID 123456789 0
 goog sheets sheet duplicate SPREADSHEET_ID 123456789 "Archive Copy"
 goog sheets sheet freeze SPREADSHEET_ID 123456789 --rows 1 --columns 2
+goog sheets sheet auto-resize SPREADSHEET_ID 123456789 --dimension columns --start-index 0 --end-index 5
 goog sheets sheet hide SPREADSHEET_ID 123456789
 goog sheets sheet unhide SPREADSHEET_ID 123456789
 goog sheets sheet delete SPREADSHEET_ID 123456789

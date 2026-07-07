@@ -1035,6 +1035,14 @@ pub enum SheetsInsertDataOption {
     Overwrite,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsDimension {
+    /// Sheet rows
+    Rows,
+    /// Sheet columns
+    Columns,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -1176,6 +1184,22 @@ pub enum SheetsSheetCommand {
         /// Number of frozen columns, or 0 to unfreeze columns
         #[arg(long, required_unless_present = "rows", value_parser = clap::value_parser!(i64).range(0..))]
         columns: Option<i64>,
+    },
+    /// Auto-resize rows or columns without writing a Batch Update JSON body
+    AutoResize {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to auto-resize
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
     },
     /// Hide a sheet tab without writing a Batch Update JSON body
     Hide {

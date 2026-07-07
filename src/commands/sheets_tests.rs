@@ -11,8 +11,8 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::{
-    SheetsInsertDataOption, SheetsSheetCommand, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand,
+    SheetsDimension, SheetsInsertDataOption, SheetsSheetCommand, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand,
 };
 use crate::sheets::SHEETS_SCOPE;
 
@@ -1791,6 +1791,87 @@ async fn run_sheet_freeze_builds_update_sheet_properties_batch_update() {
         String::from_utf8(out).unwrap(),
         "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
     );
+}
+
+#[tokio::test]
+async fn run_sheet_auto_resize_builds_auto_resize_dimensions_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "autoResizeDimensions": {
+                    "dimensions": {
+                        "sheetId": 42,
+                        "dimension": "COLUMNS",
+                        "startIndex": 0,
+                        "endIndex": 5
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::AutoResize {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            dimension: SheetsDimension::Columns,
+            start_index: 0,
+            end_index: 5,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_auto_resize_rejects_empty_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::AutoResize {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            dimension: SheetsDimension::Rows,
+            start_index: 5,
+            end_index: 5,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-index must be greater than --start-index"));
 }
 
 #[tokio::test]

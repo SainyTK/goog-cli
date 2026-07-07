@@ -4,8 +4,8 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
     DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
-    SheetsInsertDataOption, SheetsSheetCommand, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand,
+    SheetsDimension, SheetsInsertDataOption, SheetsSheetCommand, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -2100,6 +2100,64 @@ fn sheets_sheet_freeze_rejects_negative_counts() {
         "42",
         "--rows",
         "-1",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_auto_resize_accepts_dimension_and_indexes() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "auto-resize",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "columns",
+        "--start-index",
+        "0",
+        "--end-index",
+        "5",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::AutoResize {
+                            spreadsheet_id,
+                            sheet_id,
+                            dimension,
+                            start_index,
+                            end_index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(dimension, SheetsDimension::Columns);
+            assert_eq!(start_index, 0);
+            assert_eq!(end_index, 5);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_auto_resize_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "auto-resize",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "rows",
+        "--start-index",
+        "-1",
+        "--end-index",
+        "5",
     ])
     .is_err());
 }
