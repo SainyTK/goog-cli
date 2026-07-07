@@ -10,15 +10,20 @@ use crate::cli::DocsCommand;
 use crate::docs::{
     batch_update_document,
     change::{
-        prepare_apply_list_change, prepare_apply_styles_change, prepare_edit_table_change,
-        prepare_insert_image_change, prepare_insert_table_change, prepare_insert_text_change,
-        prepare_replace_text_change, request_body_required_revision_id, request_body_with_revision,
-        set_request_body_required_revision_id, split_docs_request_bodies,
-        table_header_style_requests, write_docs_change_preview, ApplyListCommand,
-        ApplyStylesCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
+        prepare_apply_list_change, prepare_apply_styles_change, prepare_create_footer_change,
+        prepare_create_footnote_change, prepare_create_header_change,
+        prepare_create_named_range_change, prepare_delete_named_range_change,
+        prepare_edit_table_change, prepare_insert_image_change, prepare_insert_page_break_change,
+        prepare_insert_section_break_change, prepare_insert_table_change,
+        prepare_insert_text_change, prepare_replace_text_change, request_body_required_revision_id,
+        request_body_with_revision, set_request_body_required_revision_id,
+        split_docs_request_bodies, table_header_style_requests, write_docs_change_preview,
+        ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
+        CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
+        InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
         InsertTextCommand, PreparedDocsChange, ReplaceTextCommand,
     },
-    extract_style_template, get_document,
+    create_document, extract_style_template, get_document,
     map::build_document_map,
     map::resolve_content_entry,
     map::search_document_text,
@@ -30,7 +35,8 @@ use crate::docs::{
     map::InsertTextSelector,
     map::RangeSelector,
     style_template::{load_style_template_in, save_style_template_in},
-    BatchUpdateDocumentOptions, DocsError, GetDocumentOptions, StyleTemplate,
+    BatchUpdateDocumentOptions, CreateDocumentOptions, DocsError, GetDocumentOptions,
+    StyleTemplate,
 };
 use anyhow::{bail, Context, Result};
 
@@ -42,6 +48,12 @@ pub fn run<S: AccountStore>(
 ) -> Result<()> {
     cmd.normalize_document_id();
     match cmd {
+        DocsCommand::Create { title } => {
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_to(&client, title, &mut std::io::stdout(), None))
+        }
         DocsCommand::Map { document_id, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -246,6 +258,180 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DocsCommand::InsertPageBreak {
+            document_id,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_insert_page_break_unified_to(
+                config,
+                store,
+                account_override,
+                InsertPageBreakCommand {
+                    document_id,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::InsertSectionBreak {
+            document_id,
+            section_type,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_insert_section_break_unified_to(
+                config,
+                store,
+                account_override,
+                InsertSectionBreakCommand {
+                    document_id,
+                    section_type,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::CreateHeader {
+            document_id,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_header_unified_to(
+                config,
+                store,
+                account_override,
+                CreateHeaderCommand {
+                    document_id,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::CreateFooter {
+            document_id,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_footer_unified_to(
+                config,
+                store,
+                account_override,
+                CreateFooterCommand {
+                    document_id,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::CreateFootnote {
+            document_id,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_footnote_unified_to(
+                config,
+                store,
+                account_override,
+                CreateFootnoteCommand {
+                    document_id,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
         DocsCommand::InsertTable {
             document_id,
             data,
@@ -407,6 +593,68 @@ pub fn run<S: AccountStore>(
                 },
                 &mut std::io::stdout(),
                 None,
+                None,
+                None,
+            ))
+        }
+        DocsCommand::CreateNamedRange {
+            document_id,
+            name,
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            text,
+            match_number,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector =
+                range_selector(from_index, to_index, entry, page, line, text, match_number)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_named_range_unified_to(
+                config,
+                store,
+                account_override,
+                CreateNamedRangeCommand {
+                    document_id,
+                    name,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::DeleteNamedRange {
+            document_id,
+            named_range_id,
+            name,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_delete_named_range_unified_to(
+                config,
+                store,
+                account_override,
+                DeleteNamedRangeCommand {
+                    document_id,
+                    named_range_id,
+                    name,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
                 None,
                 None,
             ))
@@ -816,6 +1064,281 @@ pub(super) async fn run_insert_image_unified_to<S: AccountStore>(
 }
 
 #[cfg(test)]
+pub(super) async fn run_insert_page_break_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: InsertPageBreakCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_insert_page_break_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+    )
+    .await
+}
+
+pub(super) async fn run_insert_page_break_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: InsertPageBreakCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_insert_page_break_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_insert_section_break_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: InsertSectionBreakCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_insert_section_break_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+    )
+    .await
+}
+
+pub(super) async fn run_insert_section_break_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: InsertSectionBreakCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_insert_section_break_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_create_header_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: CreateHeaderCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_create_header_change(&document_map, &command);
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+    )
+    .await
+}
+
+pub(super) async fn run_create_header_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CreateHeaderCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_create_header_change(&document_map, &command);
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_create_footer_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: CreateFooterCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_create_footer_change(&document_map, &command);
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+    )
+    .await
+}
+
+pub(super) async fn run_create_footer_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CreateFooterCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_create_footer_change(&document_map, &command);
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_create_footnote_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: CreateFootnoteCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_create_footnote_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+    )
+    .await
+}
+
+pub(super) async fn run_create_footnote_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CreateFootnoteCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_create_footnote_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+#[cfg(test)]
 pub(super) async fn run_insert_table_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     command: InsertTableCommand,
@@ -1174,6 +1697,144 @@ pub(super) async fn run_apply_list_unified_to<S: AccountStore>(
         state_path,
     )
     .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_create_named_range_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: CreateNamedRangeCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_create_named_range_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+    )
+    .await
+}
+
+pub(super) async fn run_create_named_range_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CreateNamedRangeCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_create_named_range_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_delete_named_range_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: DeleteNamedRangeCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_delete_named_range_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+    )
+    .await
+}
+
+pub(super) async fn run_delete_named_range_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: DeleteNamedRangeCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_delete_named_range_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+pub(super) async fn run_create_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    title: String,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let mut options = CreateDocumentOptions::new(title);
+    if let Some(documents_url) = documents_url {
+        options = options.with_documents_url(documents_url);
+    }
+
+    let document = create_document(client, &options)
+        .await
+        .context("failed to create Google Docs Document")?;
+    let document_id = document
+        .get("documentId")
+        .and_then(serde_json::Value::as_str)
+        .context("Google Docs create response did not include a documentId")?;
+
+    writeln!(
+        out,
+        "{}\thttps://docs.google.com/document/d/{}/edit",
+        document_id, document_id
+    )
+    .context("failed to write output")?;
+    Ok(())
 }
 
 #[cfg(test)]

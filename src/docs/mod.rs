@@ -149,6 +149,30 @@ impl BatchUpdateDocumentOptions {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CreateDocumentOptions {
+    pub title: String,
+    documents_url: String,
+}
+
+impl CreateDocumentOptions {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            documents_url: DOCS_DOCUMENTS_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_documents_url(mut self, documents_url: impl Into<String>) -> Self {
+        self.documents_url = documents_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DocsError> {
+        Ok(Url::parse(&self.documents_url)?)
+    }
+}
+
 fn document_url(documents_url: &str, document_path: &str) -> Result<Url, DocsError> {
     let mut url = Url::parse(documents_url)?;
     url.path_segments_mut()
@@ -171,6 +195,24 @@ pub async fn get_document<S: AccountStore>(
         client.get(options.request_url()?),
         DOCS_SCOPES,
         || get_document_via_temporary_conversion(client, options),
+    )
+    .await
+}
+
+/// Creates a new, blank Google Docs Document via the Docs API and returns
+/// the created Document. The Document is always created at the root of the
+/// active account's My Drive; move it into a folder afterward with Drive if
+/// needed.
+pub async fn create_document<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CreateDocumentOptions,
+) -> Result<Document, DocsError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&serde_json::json!({ "title": options.title })),
+        DOCS_SCOPES,
     )
     .await
 }

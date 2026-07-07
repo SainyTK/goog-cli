@@ -193,6 +193,36 @@ async fn get_document_omits_include_tabs_content_by_default() {
 }
 
 #[tokio::test]
+async fn create_document_posts_title_and_returns_created_document() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(
+            serde_json::json!({ "title": "goog-e2e-scratch" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-456",
+            "title": "goog-e2e-scratch"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_write_token())
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let options = CreateDocumentOptions::new("goog-e2e-scratch")
+        .with_documents_url(format!("{}/docs/v1/documents", server.uri()));
+
+    let response = create_document(&client, &options).await.unwrap();
+
+    assert_eq!(response["documentId"], "document-456");
+}
+
+#[tokio::test]
 async fn batch_update_posts_full_google_request_body() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

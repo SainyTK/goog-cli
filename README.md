@@ -15,7 +15,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 `goog` currently includes:
 
 - Google Drive file and folder listing, upload, and download commands.
-- Google Docs document mapping, text search, content lookup, raw document reads, and raw batch updates.
+- Google Docs document creation, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet reads, values reads and writes, appends, clears, and structural batch updates.
 - GoogleMail message listing, search, raw message reads, draft creation, and attachment downloads.
 - Multi-account OAuth setup, login, account listing, and active account switching.
@@ -204,9 +204,17 @@ goog drive download FILE_ID --output ./report.pdf
 ### Docs
 
 ```sh
+goog docs create "Q3 Report"
 goog docs map DOCUMENT_ID
 goog docs search-text DOCUMENT_ID "quarterly plan"
 goog docs get-content DOCUMENT_ID --heading "Summary"
+goog docs insert-page-break DOCUMENT_ID --after-heading "Summary"
+goog docs insert-section-break DOCUMENT_ID --section-type next-page --after-heading "Appendix"
+goog docs create-header DOCUMENT_ID
+goog docs create-footer DOCUMENT_ID
+goog docs create-footnote DOCUMENT_ID --after-text "quarterly plan"
+goog docs create-named-range DOCUMENT_ID "highlights" --text "quarterly plan"
+goog docs delete-named-range DOCUMENT_ID --name "highlights"
 goog docs batch-update DOCUMENT_ID --requests ./requests.json
 ```
 

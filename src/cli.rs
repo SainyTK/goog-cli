@@ -196,6 +196,7 @@ impl DocsCommand {
     /// extracting it first if a Google Docs/Drive URL was passed instead.
     pub fn normalize_document_id(&mut self) {
         let document_id = match self {
+            DocsCommand::Create { .. } => return,
             DocsCommand::Map { document_id, .. }
             | DocsCommand::SearchText { document_id, .. }
             | DocsCommand::GetContent { document_id, .. }
@@ -204,10 +205,17 @@ impl DocsCommand {
             | DocsCommand::ListImages { document_id, .. }
             | DocsCommand::ListTables { document_id, .. }
             | DocsCommand::InsertImage { document_id, .. }
+            | DocsCommand::InsertPageBreak { document_id, .. }
+            | DocsCommand::InsertSectionBreak { document_id, .. }
+            | DocsCommand::CreateHeader { document_id, .. }
+            | DocsCommand::CreateFooter { document_id, .. }
+            | DocsCommand::CreateFootnote { document_id, .. }
             | DocsCommand::InsertTable { document_id, .. }
             | DocsCommand::EditTable { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
             | DocsCommand::ApplyList { document_id, .. }
+            | DocsCommand::CreateNamedRange { document_id, .. }
+            | DocsCommand::DeleteNamedRange { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. }
             | DocsCommand::ShowStyleTemplate { document_id, .. } => document_id,
@@ -218,6 +226,18 @@ impl DocsCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsCommand {
+    /// Create a new, blank Google Docs Document
+    #[command(after_long_help = "Output shape:
+  Prints the created Document ID and its Google Docs edit URL, tab-separated.
+
+Notes:
+  The Document is always created at the root of My Drive; there is no --folder option today.
+  Move it afterward with the Google Drive web UI, or via a future `goog drive` move command.
+  Follow up with `goog docs batch-update` or the other `goog docs` editing commands to add content.")]
+    Create {
+        /// Title for the new Google Docs Document
+        title: String,
+    },
     /// Print a high-level map of editable Google Docs content
     Map {
         /// Google Docs Document ID or URL to map
@@ -345,6 +365,169 @@ pub enum DocsCommand {
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
         image_uri: String,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Insert a page break through a high-level Document Map location selector
+    InsertPageBreak {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Insert a section break through a high-level Document Map location selector
+    InsertSectionBreak {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Section break type
+        #[arg(long, value_enum, default_value_t = DocsSectionBreakType::NextPage)]
+        section_type: DocsSectionBreakType,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Insert after the matching heading text
+        #[arg(long)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Create the document's default header, returning its headerId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new headerId under replies[0].createHeader.headerId.
+
+Notes:
+  Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
+  Edit the header's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
+    CreateHeader {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Create the document's default footer, returning its footerId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new footerId under replies[0].createFooter.footerId.
+
+Notes:
+  Always creates the DEFAULT footer for the document's first section; there is no per-section footer support today.
+  Edit the footer's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footerId segment.")]
+    CreateFooter {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Create a footnote at a high-level Document Map location, returning its footnoteId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new footnoteId under replies[0].createFootnote.footnoteId.
+
+Notes:
+  The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
+  Edit the footnote's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
+    CreateFootnote {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
         /// Raw Google Docs UTF-16 index
         #[arg(long)]
         index: Option<i64>,
@@ -546,6 +729,74 @@ pub enum DocsCommand {
         #[arg(long)]
         no_auto_style: bool,
     },
+    /// Create a named range over a high-level Document Range, returning its namedRangeId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new namedRangeId under replies[0].createNamedRange.namedRangeId.
+
+Notes:
+  Named ranges do not track edits after creation; a later insert/delete before the range can leave it pointing at the wrong text.
+  Re-create the named range after content in or before it changes.")]
+    CreateNamedRange {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Name for the new named range (need not be unique)
+        name: String,
+        /// Raw Google Docs UTF-16 range start
+        #[arg(long)]
+        from_index: Option<i64>,
+        /// Raw Google Docs UTF-16 range end
+        #[arg(long)]
+        to_index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Matched text span to cover
+        #[arg(long)]
+        text: Option<String>,
+        /// Cover the Nth text match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Delete a named range by ID or name
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON (an empty replies array on success).
+
+Notes:
+  Provide exactly one of --named-range-id or --name; --name deletes every named range sharing that name.")]
+    DeleteNamedRange {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Exact namedRangeId returned by create-named-range
+        #[arg(long)]
+        named_range_id: Option<String>,
+        /// Name shared by the named range(s) to delete
+        #[arg(long)]
+        name: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
     /// Fetch a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.
@@ -617,6 +868,21 @@ Example:
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsSectionBreakType {
+    Continuous,
+    NextPage,
+}
+
+impl DocsSectionBreakType {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            DocsSectionBreakType::Continuous => "CONTINUOUS",
+            DocsSectionBreakType::NextPage => "NEXT_PAGE",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

@@ -9,9 +9,11 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::cli::DocsListType;
+use crate::cli::{DocsListType, DocsSectionBreakType};
 use crate::docs::change::{
-    ApplyListCommand, ApplyStylesCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
+    ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
+    CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
+    InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
     InsertTextCommand, ReplaceTextCommand,
 };
 use crate::docs::map::{ContentSelector, InsertTextSelector, RangeSelector};
@@ -1259,6 +1261,217 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
 }
 
 #[tokio::test]
+async fn run_insert_page_break_dry_run_emits_native_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_page_break_to(
+        &client,
+        InsertPageBreakCommand {
+            document_id: "document-123".into(),
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["location"]["index"], 44);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertPageBreak"]["location"]["index"],
+        44
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+}
+
+#[tokio::test]
+async fn run_insert_section_break_dry_run_emits_native_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_section_break_to(
+        &client,
+        InsertSectionBreakCommand {
+            document_id: "document-123".into(),
+            section_type: DocsSectionBreakType::Continuous,
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["location"]["index"], 44);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertSectionBreak"]["location"]["index"],
+        44
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertSectionBreak"]["sectionType"],
+        "CONTINUOUS"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+}
+
+#[tokio::test]
+async fn run_create_header_dry_run_emits_native_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_create_header_to(
+        &client,
+        CreateHeaderCommand {
+            document_id: "document-123".into(),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createHeader"]["type"],
+        "DEFAULT"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+}
+
+#[tokio::test]
+async fn run_create_footer_dry_run_emits_native_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_create_footer_to(
+        &client,
+        CreateFooterCommand {
+            document_id: "document-123".into(),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createFooter"]["type"],
+        "DEFAULT"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+}
+
+#[tokio::test]
+async fn run_create_footnote_dry_run_emits_native_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_create_footnote_to(
+        &client,
+        CreateFootnoteCommand {
+            document_id: "document-123".into(),
+            selector: InsertTextSelector::Index(44),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["location"]["index"], 44);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createFootnote"]["location"]["index"],
+        44
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+}
+
+#[tokio::test]
 async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -1618,6 +1831,126 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
         list["requestBody"]["requests"][0]["createParagraphBullets"]["range"]["startIndex"],
         14
     );
+}
+
+#[tokio::test]
+async fn run_create_named_range_dry_run_emits_native_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_create_named_range_to(
+        &client,
+        CreateNamedRangeCommand {
+            document_id: "document-123".into(),
+            name: "my-range".into(),
+            selector: RangeSelector::Entry(2),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createNamedRange"]["name"],
+        "my-range"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createNamedRange"]["range"]["startIndex"],
+        14
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+}
+
+#[tokio::test]
+async fn run_delete_named_range_dry_run_emits_native_request_by_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_delete_named_range_to(
+        &client,
+        DeleteNamedRangeCommand {
+            document_id: "document-123".into(),
+            named_range_id: Some("named-range-1".into()),
+            name: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["deleteNamedRange"]["namedRangeId"],
+        "named-range-1"
+    );
+}
+
+#[tokio::test]
+async fn run_delete_named_range_rejects_conflicting_selectors() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    let error = run_delete_named_range_to(
+        &client,
+        DeleteNamedRangeCommand {
+            document_id: "document-123".into(),
+            named_range_id: Some("named-range-1".into()),
+            name: Some("my-range".into()),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("exactly one of --named-range-id or --name"));
 }
 
 #[tokio::test]
@@ -2340,6 +2673,43 @@ fn run_show_style_template_supports_json_and_missing_cache_message() {
     assert_eq!(
         String::from_utf8(missing_out).unwrap(),
         "no cached style template for this document; run `docs get missing-document` first\n"
+    );
+}
+
+#[tokio::test]
+async fn run_create_prints_document_id_and_edit_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .and(body_json(
+            serde_json::json!({ "title": "goog-e2e-scratch" }),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-456",
+            "title": "goog-e2e-scratch"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_create_to(
+        &client,
+        "goog-e2e-scratch".into(),
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "document-456\thttps://docs.google.com/document/d/document-456/edit\n"
     );
 }
 

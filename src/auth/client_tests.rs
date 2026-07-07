@@ -421,7 +421,7 @@ async fn revoked_refresh_token_returns_token_revoked() {
 }
 
 #[tokio::test]
-async fn uses_active_account_from_config_by_default() {
+async fn uses_active_account_from_config_when_store_has_no_active_account() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
@@ -431,12 +431,7 @@ async fn uses_active_account_from_config_by_default() {
         .await;
 
     let store = MemoryStore::default();
-    store
-        .save_token("alice@example.com", &test_token("alice-access"))
-        .unwrap();
-    store
-        .save_token("bob@example.com", &test_token("bob-access"))
-        .unwrap();
+    store.seed_account_without_activating("bob@example.com", &test_token("bob-access"));
 
     let client =
         AuthClient::from_config(test_config_with_active("bob@example.com"), &store, None).unwrap();

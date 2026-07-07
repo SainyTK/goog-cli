@@ -3,7 +3,7 @@ use std::io::Write;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
-use crate::cli::DocsListType;
+use crate::cli::{DocsListType, DocsSectionBreakType};
 use crate::docs::map::{
     resolve_insert_text_location, resolve_range_selector, resolve_replace_text_ranges,
     text_block_contains_range, DocumentLocation, DocumentMap, DocumentMapEntry,
@@ -37,6 +37,50 @@ pub(crate) struct ReplaceTextCommand {
 pub(crate) struct InsertImageCommand {
     pub document_id: String,
     pub image_uri: String,
+    pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InsertPageBreakCommand {
+    pub document_id: String,
+    pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct InsertSectionBreakCommand {
+    pub document_id: String,
+    pub section_type: DocsSectionBreakType,
+    pub selector: InsertTextSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreateHeaderCommand {
+    pub document_id: String,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreateFooterCommand {
+    pub document_id: String,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreateFootnoteCommand {
+    pub document_id: String,
     pub selector: InsertTextSelector,
     pub dry_run: bool,
     pub json: bool,
@@ -93,6 +137,26 @@ pub(crate) struct ApplyListCommand {
     pub json: bool,
     pub required_revision_id: Option<String>,
     pub no_auto_style: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreateNamedRangeCommand {
+    pub document_id: String,
+    pub name: String,
+    pub selector: RangeSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DeleteNamedRangeCommand {
+    pub document_id: String,
+    pub named_range_id: Option<String>,
+    pub name: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
 }
 
 fn display_optional<T: std::fmt::Display>(value: Option<T>) -> String {
@@ -369,6 +433,161 @@ pub(crate) fn prepare_insert_image_change(
                 "Insert inline image at index {index} from {}",
                 command.image_uri
             ),
+            resolved.preview_before,
+            preview_after,
+        ),
+    }))
+}
+
+pub(crate) fn prepare_insert_page_break_change(
+    document_map: &DocumentMap,
+    command: &InsertPageBreakCommand,
+) -> Result<PreparedDocsChange> {
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let Some(index) = resolved.location.index else {
+        bail!("insert-page-break selector resolved without a Google Docs index");
+    };
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "insertPageBreak": {
+                "location": { "index": index }
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    let preview_after = insert_preview_text(
+        &resolved.preview_before,
+        resolved.preview_offset,
+        "[page break]",
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(resolved.location),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::with_context(
+            "insert-page-break",
+            format!("Insert page break at index {index}"),
+            resolved.preview_before,
+            preview_after,
+        ),
+    }))
+}
+
+pub(crate) fn prepare_insert_section_break_change(
+    document_map: &DocumentMap,
+    command: &InsertSectionBreakCommand,
+) -> Result<PreparedDocsChange> {
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let Some(index) = resolved.location.index else {
+        bail!("insert-section-break selector resolved without a Google Docs index");
+    };
+    let section_type = command.section_type.api_value();
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "insertSectionBreak": {
+                "location": { "index": index },
+                "sectionType": section_type
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    let preview_after = insert_preview_text(
+        &resolved.preview_before,
+        resolved.preview_offset,
+        "[section break]",
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(resolved.location),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::with_context(
+            "insert-section-break",
+            format!("Insert {section_type} section break at index {index}"),
+            resolved.preview_before,
+            preview_after,
+        ),
+    }))
+}
+
+pub(crate) fn prepare_create_header_change(
+    document_map: &DocumentMap,
+    command: &CreateHeaderCommand,
+) -> PreparedDocsChange {
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "createHeader": {
+                "type": "DEFAULT"
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "create-header",
+            "Create the document's DEFAULT header".to_string(),
+        ),
+    })
+}
+
+pub(crate) fn prepare_create_footer_change(
+    document_map: &DocumentMap,
+    command: &CreateFooterCommand,
+) -> PreparedDocsChange {
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "createFooter": {
+                "type": "DEFAULT"
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "create-footer",
+            "Create the document's DEFAULT footer".to_string(),
+        ),
+    })
+}
+
+pub(crate) fn prepare_create_footnote_change(
+    document_map: &DocumentMap,
+    command: &CreateFootnoteCommand,
+) -> Result<PreparedDocsChange> {
+    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
+    let Some(index) = resolved.location.index else {
+        bail!("create-footnote selector resolved without a Google Docs index");
+    };
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "createFootnote": {
+                "location": { "index": index }
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    let preview_after = insert_preview_text(
+        &resolved.preview_before,
+        resolved.preview_offset,
+        "[footnote reference]",
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(resolved.location),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::with_context(
+            "create-footnote",
+            format!("Create footnote reference at index {index}"),
             resolved.preview_before,
             preview_after,
         ),
@@ -662,6 +881,64 @@ pub(crate) fn prepare_apply_list_change(
                 range.start_index, range.end_index
             ),
         ),
+    }))
+}
+
+pub(crate) fn prepare_create_named_range_change(
+    document_map: &DocumentMap,
+    command: &CreateNamedRangeCommand,
+) -> Result<PreparedDocsChange> {
+    let range = resolve_range_selector(document_map, &command.selector)?;
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "createNamedRange": {
+                "name": command.name,
+                "range": docs_range(&range)
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: Some(range.clone()),
+        request_body,
+        preview: DocsChangePreview::new(
+            "create-named-range",
+            format!(
+                "Create named range '{}' over {}..{}",
+                command.name, range.start_index, range.end_index
+            ),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_delete_named_range_change(
+    document_map: &DocumentMap,
+    command: &DeleteNamedRangeCommand,
+) -> Result<PreparedDocsChange> {
+    let target = match (&command.named_range_id, &command.name) {
+        (Some(named_range_id), None) => {
+            serde_json::json!({ "namedRangeId": named_range_id })
+        }
+        (None, Some(name)) => serde_json::json!({ "name": name }),
+        _ => bail!("delete-named-range requires exactly one of --named-range-id or --name"),
+    };
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({ "deleteNamedRange": target })],
+        command.required_revision_id.as_deref(),
+    );
+    let summary = match (&command.named_range_id, &command.name) {
+        (Some(named_range_id), None) => format!("Delete named range {named_range_id}"),
+        (None, Some(name)) => format!("Delete named range(s) named '{name}'"),
+        _ => unreachable!("validated above"),
+    };
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new("delete-named-range", summary),
     }))
 }
 
