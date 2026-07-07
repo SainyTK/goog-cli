@@ -11,7 +11,7 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
     SheetsCommand, SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsSortOrder, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -348,6 +348,37 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Unmerge cells response",
+            )
+        }
+        SheetsSheetCommand::SortRange {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            sort_column,
+            order,
+        } => {
+            let request_body = sort_range_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                sort_column,
+                order,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to sort Google Sheets range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Sort range response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -773,6 +804,45 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Unmerge cells response",
+            )
+        }
+        SheetsSheetCommand::SortRange {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            sort_column,
+            order,
+        } => {
+            let request_body = sort_range_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                sort_column,
+                order,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to sort Google Sheets range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Sort range response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -1866,6 +1936,42 @@ fn unmerge_sheet_request_body(
             {
                 "unmergeCells": {
                     "range": grid_range(sheet_id, start_row, end_row, start_column, end_column)
+                }
+            }
+        ]
+    }))
+}
+
+fn sort_range_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+    sort_column: i64,
+    order: SheetsSortOrder,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+    if sort_column < start_column || sort_column >= end_column {
+        bail!("--sort-column must be inside the selected column range");
+    }
+
+    let sort_order = match order {
+        SheetsSortOrder::Ascending => "ASCENDING",
+        SheetsSortOrder::Descending => "DESCENDING",
+    };
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "sortRange": {
+                    "range": grid_range(sheet_id, start_row, end_row, start_column, end_column),
+                    "sortSpecs": [
+                        {
+                            "dimensionIndex": sort_column,
+                            "sortOrder": sort_order
+                        }
+                    ]
                 }
             }
         ]

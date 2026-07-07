@@ -11,7 +11,7 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::{
-    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand,
+    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand, SheetsSortOrder,
     SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 use crate::sheets::SHEETS_SCOPE;
@@ -2232,6 +2232,100 @@ async fn run_sheet_unmerge_builds_unmerge_cells_batch_update() {
         String::from_utf8(out).unwrap(),
         "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
     );
+}
+
+#[tokio::test]
+async fn run_sheet_sort_range_builds_sort_range_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "sortRange": {
+                    "range": {
+                        "sheetId": 42,
+                        "startRowIndex": 1,
+                        "endRowIndex": 100,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 5
+                    },
+                    "sortSpecs": [
+                        {
+                            "dimensionIndex": 3,
+                            "sortOrder": "DESCENDING"
+                        }
+                    ]
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::SortRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 100,
+            start_column: 0,
+            end_column: 5,
+            sort_column: 3,
+            order: SheetsSortOrder::Descending,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_sort_range_rejects_sort_column_outside_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::SortRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 100,
+            start_column: 1,
+            end_column: 5,
+            sort_column: 0,
+            order: SheetsSortOrder::Ascending,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--sort-column must be inside the selected column range"));
 }
 
 #[tokio::test]

@@ -4,7 +4,7 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
     DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
-    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand,
+    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand, SheetsSortOrder,
     SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
@@ -2419,6 +2419,80 @@ fn sheets_sheet_unmerge_accepts_grid_range() {
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn sheets_sheet_sort_range_accepts_grid_range_and_order() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "sort-range",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "100",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+        "--sort-column",
+        "3",
+        "--order",
+        "descending",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::SortRange {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            sort_column,
+                            order,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 1);
+            assert_eq!(end_row, 100);
+            assert_eq!(start_column, 0);
+            assert_eq!(end_column, 5);
+            assert_eq!(sort_column, 3);
+            assert_eq!(order, SheetsSortOrder::Descending);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_sort_range_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "sort-range",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "100",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+        "--sort-column",
+        "-1",
+    ])
+    .is_err());
 }
 
 #[test]

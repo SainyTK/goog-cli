@@ -1053,6 +1053,14 @@ pub enum SheetsMergeType {
     Columns,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsSortOrder {
+    /// Sort smallest to largest or A to Z
+    Ascending,
+    /// Sort largest to smallest or Z to A
+    Descending,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -1283,6 +1291,31 @@ pub enum SheetsSheetCommand {
         /// Zero-based exclusive end column
         #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
         end_column: i64,
+    },
+    /// Sort rows over a grid range without writing a Batch Update JSON body
+    SortRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Zero-based column index to sort by
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        sort_column: i64,
+        /// Sort direction
+        #[arg(long, value_enum, default_value = "ascending")]
+        order: SheetsSortOrder,
     },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
