@@ -2091,6 +2091,16 @@ pub enum SheetsSheetCommand {
         #[arg(long, default_value = "0", value_parser = clap::value_parser!(i64).range(0..))]
         index: i64,
     },
+    /// Delete a conditional format rule by index without writing a Batch Update JSON body
+    ConditionalFormatDelete {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based conditional format rule index to delete
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        index: i64,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update

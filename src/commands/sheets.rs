@@ -1172,6 +1172,24 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Conditional format response",
             )
         }
+        SheetsSheetCommand::ConditionalFormatDelete {
+            spreadsheet_id,
+            sheet_id,
+            index,
+        } => {
+            let request_body = conditional_format_delete_sheet_request_body(sheet_id, index);
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to delete Google Sheets conditional format rule")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Conditional format delete response",
+            )
+        }
         SheetsSheetCommand::TabColor {
             spreadsheet_id,
             sheet_id,
@@ -2630,6 +2648,32 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Conditional format response",
+            )
+        }
+        SheetsSheetCommand::ConditionalFormatDelete {
+            spreadsheet_id,
+            sheet_id,
+            index,
+        } => {
+            let request_body = conditional_format_delete_sheet_request_body(sheet_id, index);
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to delete Google Sheets conditional format rule")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Conditional format delete response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -4217,6 +4261,19 @@ fn conditional_format_color_sheet_request_body(
             }
         ]
     }))
+}
+
+fn conditional_format_delete_sheet_request_body(sheet_id: i64, index: i64) -> serde_json::Value {
+    serde_json::json!({
+        "requests": [
+            {
+                "deleteConditionalFormatRule": {
+                    "sheetId": sheet_id,
+                    "index": index
+                }
+            }
+        ]
+    })
 }
 
 fn font_size_sheet_request_body(
