@@ -2005,6 +2005,40 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         clear: bool,
     },
+    /// Set or clear checkbox data validation over a range without writing a Batch Update JSON body
+    DataValidationCheckbox {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Optional custom value for checked cells
+        #[arg(long, conflicts_with = "clear")]
+        checked_value: Option<String>,
+        /// Optional custom value for unchecked cells
+        #[arg(long, requires = "checked_value", conflicts_with = "clear")]
+        unchecked_value: Option<String>,
+        /// Show a warning instead of rejecting invalid values
+        #[arg(long, conflicts_with = "clear")]
+        allow_invalid: bool,
+        /// Optional validation help text shown in Google Sheets
+        #[arg(long, conflicts_with = "clear")]
+        input_message: Option<String>,
+        /// Clear data validation from the selected cells instead of setting checkboxes
+        #[arg(long)]
+        clear: bool,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update

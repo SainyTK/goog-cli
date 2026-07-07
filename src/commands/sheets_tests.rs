@@ -5423,6 +5423,241 @@ async fn run_sheet_data_validation_list_rejects_empty_value() {
 }
 
 #[tokio::test]
+async fn run_sheet_data_validation_checkbox_builds_set_data_validation_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "setDataValidation": {
+                    "range": {
+                        "sheetId": 42,
+                        "startRowIndex": 1,
+                        "endRowIndex": 20,
+                        "startColumnIndex": 3,
+                        "endColumnIndex": 4
+                    },
+                    "rule": {
+                        "condition": {
+                            "type": "BOOLEAN",
+                            "values": [
+                                { "userEnteredValue": "Done" },
+                                { "userEnteredValue": "Todo" }
+                            ]
+                        },
+                        "strict": false,
+                        "inputMessage": "Mark complete"
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::DataValidationCheckbox {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 20,
+            start_column: 3,
+            end_column: 4,
+            checked_value: Some("Done".into()),
+            unchecked_value: Some("Todo".into()),
+            allow_invalid: true,
+            input_message: Some("Mark complete".into()),
+            clear: false,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_data_validation_checkbox_builds_default_boolean_rule() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "setDataValidation": {
+                    "range": {
+                        "sheetId": 42,
+                        "startRowIndex": 1,
+                        "endRowIndex": 20,
+                        "startColumnIndex": 3,
+                        "endColumnIndex": 4
+                    },
+                    "rule": {
+                        "condition": {
+                            "type": "BOOLEAN"
+                        },
+                        "strict": true
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::DataValidationCheckbox {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 20,
+            start_column: 3,
+            end_column: 4,
+            checked_value: None,
+            unchecked_value: None,
+            allow_invalid: false,
+            input_message: None,
+            clear: false,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_data_validation_checkbox_clear_builds_set_data_validation_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "setDataValidation": {
+                    "range": {
+                        "sheetId": 42,
+                        "startRowIndex": 1,
+                        "endRowIndex": 20,
+                        "startColumnIndex": 3,
+                        "endColumnIndex": 4
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::DataValidationCheckbox {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 20,
+            start_column: 3,
+            end_column: 4,
+            checked_value: None,
+            unchecked_value: None,
+            allow_invalid: false,
+            input_message: None,
+            clear: true,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_data_validation_checkbox_rejects_empty_checked_value() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::DataValidationCheckbox {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 20,
+            start_column: 3,
+            end_column: 4,
+            checked_value: Some(" ".into()),
+            unchecked_value: None,
+            allow_invalid: false,
+            input_message: None,
+            clear: false,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--checked-value must not be empty"));
+}
+
+#[tokio::test]
 async fn run_sheet_tab_color_builds_update_sheet_properties_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

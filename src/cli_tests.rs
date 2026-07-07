@@ -4684,6 +4684,164 @@ fn sheets_sheet_data_validation_list_rejects_values_with_clear() {
 }
 
 #[test]
+fn sheets_sheet_data_validation_checkbox_accepts_options() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "data-validation-checkbox",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--checked-value",
+        "Done",
+        "--unchecked-value",
+        "Todo",
+        "--allow-invalid",
+        "--input-message",
+        "Mark complete",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::DataValidationCheckbox {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            checked_value,
+                            unchecked_value,
+                            allow_invalid,
+                            input_message,
+                            clear,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 1);
+            assert_eq!(end_row, 20);
+            assert_eq!(start_column, 3);
+            assert_eq!(end_column, 4);
+            assert_eq!(checked_value.as_deref(), Some("Done"));
+            assert_eq!(unchecked_value.as_deref(), Some("Todo"));
+            assert!(allow_invalid);
+            assert_eq!(input_message.as_deref(), Some("Mark complete"));
+            assert!(!clear);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_data_validation_checkbox_clear_accepts_grid_range() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "data-validation-checkbox",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--clear",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::DataValidationCheckbox {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            checked_value,
+                            unchecked_value,
+                            clear,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 1);
+            assert_eq!(end_row, 20);
+            assert_eq!(start_column, 3);
+            assert_eq!(end_column, 4);
+            assert!(checked_value.is_none());
+            assert!(unchecked_value.is_none());
+            assert!(clear);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_data_validation_checkbox_requires_checked_value_before_unchecked_value() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "data-validation-checkbox",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--unchecked-value",
+        "Todo",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_data_validation_checkbox_rejects_options_with_clear() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "data-validation-checkbox",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--checked-value",
+        "Done",
+        "--clear",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",
