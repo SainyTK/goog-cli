@@ -337,6 +337,48 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Unhide dimension response",
             )
         }
+        SheetsSheetCommand::GroupDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body =
+                dimension_group_sheet_request_body(sheet_id, dimension, start_index, end_index)?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to group Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Group dimension response",
+            )
+        }
+        SheetsSheetCommand::UngroupDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body =
+                dimension_ungroup_sheet_request_body(sheet_id, dimension, start_index, end_index)?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to ungroup Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Ungroup dimension response",
+            )
+        }
         SheetsSheetCommand::InsertDimension {
             spreadsheet_id,
             sheet_id,
@@ -1698,6 +1740,64 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Unhide dimension response",
+            )
+        }
+        SheetsSheetCommand::GroupDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body =
+                dimension_group_sheet_request_body(sheet_id, dimension, start_index, end_index)?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to group Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Group dimension response",
+            )
+        }
+        SheetsSheetCommand::UngroupDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body =
+                dimension_ungroup_sheet_request_body(sheet_id, dimension, start_index, end_index)?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to ungroup Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Ungroup dimension response",
             )
         }
         SheetsSheetCommand::InsertDimension {
@@ -4082,6 +4182,54 @@ fn dimension_visibility_sheet_request_body(
                         "hiddenByUser": hidden
                     },
                     "fields": "hiddenByUser"
+                }
+            }
+        ]
+    }))
+}
+
+fn dimension_group_sheet_request_body(
+    sheet_id: i64,
+    dimension: SheetsDimension,
+    start_index: i64,
+    end_index: i64,
+) -> Result<serde_json::Value> {
+    validate_dimension_range(start_index, end_index)?;
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "addDimensionGroup": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": dimension_name(dimension),
+                        "startIndex": start_index,
+                        "endIndex": end_index
+                    }
+                }
+            }
+        ]
+    }))
+}
+
+fn dimension_ungroup_sheet_request_body(
+    sheet_id: i64,
+    dimension: SheetsDimension,
+    start_index: i64,
+    end_index: i64,
+) -> Result<serde_json::Value> {
+    validate_dimension_range(start_index, end_index)?;
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "deleteDimensionGroup": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": dimension_name(dimension),
+                        "startIndex": start_index,
+                        "endIndex": end_index
+                    }
                 }
             }
         ]

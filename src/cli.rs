@@ -1421,6 +1421,38 @@ pub enum SheetsSheetCommand {
         #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
         end_index: i64,
     },
+    /// Group rows or columns without writing a Batch Update JSON body
+    GroupDimension {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to group
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
+    /// Ungroup rows or columns without writing a Batch Update JSON body
+    UngroupDimension {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to ungroup
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
     /// Insert rows or columns without writing a Batch Update JSON body
     InsertDimension {
         /// Google Sheets Spreadsheet ID to update
