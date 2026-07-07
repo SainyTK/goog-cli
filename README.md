@@ -221,6 +221,7 @@ goog docs batch-update DOCUMENT_ID --requests ./requests.json
 ### Sheets
 
 ```sh
+goog sheets create "Quarterly Plan"
 goog sheets get SPREADSHEET_ID --fields 'properties.title,sheets.properties'
 goog sheets values get SPREADSHEET_ID 'Sheet1!A1:D10'
 goog sheets values update SPREADSHEET_ID 'Sheet1!A1' --values ./value-range.json

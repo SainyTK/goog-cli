@@ -14,10 +14,10 @@ use crate::cli::{
     SheetsValuesCommand,
 };
 use crate::sheets::{
-    AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
+    create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
     BatchUpdateSpreadsheetOptions, BatchUpdateValuesOptions, ClearValuesOptions,
-    GetSpreadsheetOptions, GetValuesOptions, InsertDataOption, SheetsError, SheetsOperation,
-    UpdateValuesOptions, ValueInputOption, ValueRenderOption,
+    CreateSpreadsheetOptions, GetSpreadsheetOptions, GetValuesOptions, InsertDataOption,
+    SheetsError, SheetsOperation, UpdateValuesOptions, ValueInputOption, ValueRenderOption,
 };
 
 pub fn run<S: AccountStore>(
@@ -27,6 +27,10 @@ pub fn run<S: AccountStore>(
     account_override: Option<&str>,
 ) -> Result<()> {
     match cmd {
+        SheetsCommand::Create { title } => {
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            run_with_runtime(run_create_to(&client, title, &mut std::io::stdout(), None))
+        }
         SheetsCommand::Get {
             spreadsheet_id,
             fields,
@@ -80,6 +84,34 @@ pub fn run<S: AccountStore>(
 fn run_with_runtime(future: impl Future<Output = Result<()>>) -> Result<()> {
     let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
     runtime.block_on(future)
+}
+
+pub(super) async fn run_create_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    title: String,
+    out: &mut impl Write,
+    spreadsheets_url: Option<&str>,
+) -> Result<()> {
+    let mut options = CreateSpreadsheetOptions::new(title);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+
+    let spreadsheet = create_spreadsheet(client, &options)
+        .await
+        .context("failed to create Google Sheets Spreadsheet")?;
+    let spreadsheet_id = spreadsheet
+        .get("spreadsheetId")
+        .and_then(serde_json::Value::as_str)
+        .context("Google Sheets create response did not include a spreadsheetId")?;
+
+    writeln!(
+        out,
+        "{}\thttps://docs.google.com/spreadsheets/d/{}/edit",
+        spreadsheet_id, spreadsheet_id
+    )
+    .context("failed to write output")?;
+    Ok(())
 }
 
 #[cfg(test)]

@@ -1414,6 +1414,19 @@ fn sheets_get_with_spreadsheet_id() {
 }
 
 #[test]
+fn sheets_create_with_title() {
+    let cli = parse(&["sheets", "create", "Quarterly Plan"]).unwrap();
+    match cli.command {
+        Command::Sheets {
+            command: SheetsCommand::Create { title },
+        } => {
+            assert_eq!(title, "Quarterly Plan");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_get_with_google_query_flags() {
     let cli = parse(&[
         "sheets",

@@ -1037,6 +1037,18 @@ pub enum SheetsInsertDataOption {
 
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
+    /// Create a new, blank Google Sheets Spreadsheet
+    #[command(after_long_help = "Output shape:
+  Prints the created Spreadsheet ID and its Google Sheets edit URL, tab-separated.
+
+Notes:
+  The Spreadsheet is always created at the root of My Drive; there is no --folder option today.
+  Move it afterward with the Google Drive web UI, or via a future `goog drive` move command.
+  Follow up with `goog sheets values append-row` or `goog sheets values append-table` to add rows.")]
+    Create {
+        /// Title for the new Google Sheets Spreadsheet
+        title: String,
+    },
     /// Fetch raw Google Sheets Spreadsheet metadata
     Get {
         /// Google Sheets Spreadsheet ID to fetch

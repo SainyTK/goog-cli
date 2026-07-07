@@ -187,6 +187,45 @@ fn assert_api_failure(message: &str, operation: &str, api_body: &str) {
 }
 
 #[tokio::test]
+async fn run_create_prints_spreadsheet_id_and_edit_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets"))
+        .and(header("authorization", "Bearer sheets-access"))
+        .and(body_json(serde_json::json!({
+            "properties": { "title": "goog-e2e-scratch" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-456",
+            "properties": {
+                "title": "goog-e2e-scratch"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_create_to(
+        &client,
+        "goog-e2e-scratch".into(),
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "spreadsheet-456\thttps://docs.google.com/spreadsheets/d/spreadsheet-456/edit\n"
+    );
+}
+
+#[tokio::test]
 async fn run_get_prints_spreadsheet_json_to_stdout() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
