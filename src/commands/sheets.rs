@@ -285,6 +285,58 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Set dimension size response",
             )
         }
+        SheetsSheetCommand::HideDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body = dimension_visibility_sheet_request_body(
+                sheet_id,
+                dimension,
+                start_index,
+                end_index,
+                true,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to hide Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Hide dimension response",
+            )
+        }
+        SheetsSheetCommand::UnhideDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body = dimension_visibility_sheet_request_body(
+                sheet_id,
+                dimension,
+                start_index,
+                end_index,
+                false,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to unhide Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Unhide dimension response",
+            )
+        }
         SheetsSheetCommand::InsertDimension {
             spreadsheet_id,
             sheet_id,
@@ -1578,6 +1630,74 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Set dimension size response",
+            )
+        }
+        SheetsSheetCommand::HideDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body = dimension_visibility_sheet_request_body(
+                sheet_id,
+                dimension,
+                start_index,
+                end_index,
+                true,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to hide Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Hide dimension response",
+            )
+        }
+        SheetsSheetCommand::UnhideDimension {
+            spreadsheet_id,
+            sheet_id,
+            dimension,
+            start_index,
+            end_index,
+        } => {
+            let request_body = dimension_visibility_sheet_request_body(
+                sheet_id,
+                dimension,
+                start_index,
+                end_index,
+                false,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to unhide Google Sheets rows or columns")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Unhide dimension response",
             )
         }
         SheetsSheetCommand::InsertDimension {
@@ -3933,6 +4053,35 @@ fn set_dimension_size_sheet_request_body(
                         "pixelSize": pixel_size
                     },
                     "fields": "pixelSize"
+                }
+            }
+        ]
+    }))
+}
+
+fn dimension_visibility_sheet_request_body(
+    sheet_id: i64,
+    dimension: SheetsDimension,
+    start_index: i64,
+    end_index: i64,
+    hidden: bool,
+) -> Result<serde_json::Value> {
+    validate_dimension_range(start_index, end_index)?;
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": dimension_name(dimension),
+                        "startIndex": start_index,
+                        "endIndex": end_index
+                    },
+                    "properties": {
+                        "hiddenByUser": hidden
+                    },
+                    "fields": "hiddenByUser"
                 }
             }
         ]

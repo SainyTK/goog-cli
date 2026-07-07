@@ -2405,6 +2405,122 @@ fn sheets_sheet_set_dimension_size_rejects_zero_pixel_size() {
 }
 
 #[test]
+fn sheets_sheet_hide_dimension_accepts_dimension_and_indexes() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "hide-dimension",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "columns",
+        "--start-index",
+        "1",
+        "--end-index",
+        "3",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::HideDimension {
+                            spreadsheet_id,
+                            sheet_id,
+                            dimension,
+                            start_index,
+                            end_index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(dimension, SheetsDimension::Columns);
+            assert_eq!(start_index, 1);
+            assert_eq!(end_index, 3);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_hide_dimension_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "hide-dimension",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "rows",
+        "--start-index",
+        "-1",
+        "--end-index",
+        "5",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_unhide_dimension_accepts_dimension_and_indexes() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "unhide-dimension",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "rows",
+        "--start-index",
+        "4",
+        "--end-index",
+        "8",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::UnhideDimension {
+                            spreadsheet_id,
+                            sheet_id,
+                            dimension,
+                            start_index,
+                            end_index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(dimension, SheetsDimension::Rows);
+            assert_eq!(start_index, 4);
+            assert_eq!(end_index, 8);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_unhide_dimension_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "unhide-dimension",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "columns",
+        "--start-index",
+        "0",
+        "--end-index",
+        "-5",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_insert_dimension_accepts_dimension_indexes_and_inheritance() {
     let cli = parse(&[
         "sheets",
