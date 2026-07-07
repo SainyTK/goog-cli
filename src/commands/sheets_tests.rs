@@ -994,6 +994,61 @@ async fn run_values_update_table_rejects_ragged_data() {
 }
 
 #[tokio::test]
+async fn run_values_update_row_builds_value_range_from_flags() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "majorDimension": "ROWS",
+        "values": [["Grace", "99", "=SUM(B2:B4)"]]
+    });
+    Mock::given(method("PUT"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A2:C2",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "updatedRange": "Sheet1!A2:C2",
+            "updatedRows": 1
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::UpdateRow {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A2:C2".into(),
+            values: vec!["Grace".into(), "99".into(), "=SUM(B2:B4)".into()],
+            value_input_option: SheetsValueInputOption::Raw,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        concat!(
+            "{\"spreadsheetId\":\"spreadsheet-123\",",
+            "\"updatedRange\":\"Sheet1!A2:C2\",\"updatedRows\":1}\n"
+        )
+    );
+
+    let url = received_url(&server).await;
+    assert_query_value(&url, "valueInputOption", "RAW");
+}
+
+#[tokio::test]
 async fn run_values_batch_update_reads_values_from_file_and_passes_full_body_through() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

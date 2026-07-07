@@ -1580,6 +1580,19 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "user-entered")]
         value_input_option: SheetsValueInputOption,
     },
+    /// Update one row without writing a ValueRange JSON body
+    UpdateRow {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to update
+        range: String,
+        /// Cell value to write. Repeat once per column.
+        #[arg(long = "value", required = true)]
+        values: Vec<String>,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+    },
     /// Batch update Google Sheets values
     BatchUpdate {
         /// Google Sheets Spreadsheet ID to update
