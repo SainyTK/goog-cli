@@ -2608,6 +2608,157 @@ async fn run_sheet_sort_range_rejects_sort_column_outside_range() {
 }
 
 #[tokio::test]
+async fn run_sheet_find_replace_builds_all_sheets_find_replace_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "findReplace": {
+                    "find": "draft",
+                    "replacement": "final",
+                    "matchCase": true,
+                    "matchEntireCell": false,
+                    "searchByRegex": false,
+                    "includeFormulas": true,
+                    "allSheets": true
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [
+                {
+                    "findReplace": {
+                        "occurrencesChanged": 3
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::FindReplace {
+            spreadsheet_id: "spreadsheet-123".into(),
+            find: "draft".into(),
+            replacement: "final".into(),
+            sheet_id: None,
+            match_case: true,
+            match_entire_cell: false,
+            search_by_regex: false,
+            include_formulas: true,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{\"findReplace\":{\"occurrencesChanged\":3}}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_find_replace_builds_sheet_scoped_regex_request() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "findReplace": {
+                    "find": "^Q([0-9])$",
+                    "replacement": "Quarter $1",
+                    "matchCase": false,
+                    "matchEntireCell": true,
+                    "searchByRegex": true,
+                    "includeFormulas": false,
+                    "sheetId": 42
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::FindReplace {
+            spreadsheet_id: "spreadsheet-123".into(),
+            find: "^Q([0-9])$".into(),
+            replacement: "Quarter $1".into(),
+            sheet_id: Some(42),
+            match_case: false,
+            match_entire_cell: true,
+            search_by_regex: true,
+            include_formulas: false,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_find_replace_rejects_empty_find_text() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::FindReplace {
+            spreadsheet_id: "spreadsheet-123".into(),
+            find: "".into(),
+            replacement: "new".into(),
+            sheet_id: None,
+            match_case: false,
+            match_entire_cell: false,
+            search_by_regex: false,
+            include_formulas: false,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains("find text must not be empty"));
+}
+
+#[tokio::test]
 async fn run_sheet_tab_color_builds_update_sheet_properties_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

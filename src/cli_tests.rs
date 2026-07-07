@@ -2699,6 +2699,53 @@ fn sheets_sheet_sort_range_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_find_replace_accepts_scope_and_match_options() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "find-replace",
+        "spreadsheet-123",
+        "old",
+        "new",
+        "--sheet-id",
+        "42",
+        "--match-case",
+        "--match-entire-cell",
+        "--regex",
+        "--include-formulas",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::FindReplace {
+                            spreadsheet_id,
+                            find,
+                            replacement,
+                            sheet_id,
+                            match_case,
+                            match_entire_cell,
+                            search_by_regex,
+                            include_formulas,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(find, "old");
+            assert_eq!(replacement, "new");
+            assert_eq!(sheet_id, Some(42));
+            assert!(match_case);
+            assert!(match_entire_cell);
+            assert!(search_by_regex);
+            assert!(include_formulas);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",

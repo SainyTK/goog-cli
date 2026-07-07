@@ -456,6 +456,37 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Sort range response",
             )
         }
+        SheetsSheetCommand::FindReplace {
+            spreadsheet_id,
+            find,
+            replacement,
+            sheet_id,
+            match_case,
+            match_entire_cell,
+            search_by_regex,
+            include_formulas,
+        } => {
+            let request_body = find_replace_sheet_request_body(
+                find,
+                replacement,
+                sheet_id,
+                match_case,
+                match_entire_cell,
+                search_by_regex,
+                include_formulas,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to find and replace Google Sheets text")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Find and replace response",
+            )
+        }
         SheetsSheetCommand::TabColor {
             spreadsheet_id,
             sheet_id,
@@ -1017,6 +1048,45 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Sort range response",
+            )
+        }
+        SheetsSheetCommand::FindReplace {
+            spreadsheet_id,
+            find,
+            replacement,
+            sheet_id,
+            match_case,
+            match_entire_cell,
+            search_by_regex,
+            include_formulas,
+        } => {
+            let request_body = find_replace_sheet_request_body(
+                find,
+                replacement,
+                sheet_id,
+                match_case,
+                match_entire_cell,
+                search_by_regex,
+                include_formulas,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to find and replace Google Sheets text")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Find and replace response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -2223,6 +2293,53 @@ fn sort_range_sheet_request_body(
                         }
                     ]
                 }
+            }
+        ]
+    }))
+}
+
+fn find_replace_sheet_request_body(
+    find: String,
+    replacement: String,
+    sheet_id: Option<i64>,
+    match_case: bool,
+    match_entire_cell: bool,
+    search_by_regex: bool,
+    include_formulas: bool,
+) -> Result<serde_json::Value> {
+    if find.is_empty() {
+        bail!("find text must not be empty");
+    }
+
+    let mut find_replace = serde_json::Map::new();
+    find_replace.insert("find".to_string(), serde_json::Value::String(find));
+    find_replace.insert(
+        "replacement".to_string(),
+        serde_json::Value::String(replacement),
+    );
+    find_replace.insert("matchCase".to_string(), serde_json::json!(match_case));
+    find_replace.insert(
+        "matchEntireCell".to_string(),
+        serde_json::json!(match_entire_cell),
+    );
+    find_replace.insert(
+        "searchByRegex".to_string(),
+        serde_json::json!(search_by_regex),
+    );
+    find_replace.insert(
+        "includeFormulas".to_string(),
+        serde_json::json!(include_formulas),
+    );
+    if let Some(sheet_id) = sheet_id {
+        find_replace.insert("sheetId".to_string(), serde_json::json!(sheet_id));
+    } else {
+        find_replace.insert("allSheets".to_string(), serde_json::json!(true));
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "findReplace": find_replace
             }
         ]
     }))

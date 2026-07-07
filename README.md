@@ -238,6 +238,7 @@ goog sheets sheet clear-basic-filter SPREADSHEET_ID 123456789
 goog sheets sheet merge SPREADSHEET_ID 123456789 --start-row 0 --end-row 2 --start-column 0 --end-column 4 --merge-type all
 goog sheets sheet unmerge SPREADSHEET_ID 123456789 --start-row 0 --end-row 2 --start-column 0 --end-column 4
 goog sheets sheet sort-range SPREADSHEET_ID 123456789 --start-row 1 --end-row 100 --start-column 0 --end-column 5 --sort-column 3 --order descending
+goog sheets sheet find-replace SPREADSHEET_ID "draft" "final" --sheet-id 123456789 --match-case
 goog sheets sheet tab-color SPREADSHEET_ID 123456789 "#3366cc"
 goog sheets sheet clear-tab-color SPREADSHEET_ID 123456789
 goog sheets sheet hide SPREADSHEET_ID 123456789

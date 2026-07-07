@@ -1371,6 +1371,30 @@ pub enum SheetsSheetCommand {
         #[arg(long, value_enum, default_value = "ascending")]
         order: SheetsSortOrder,
     },
+    /// Find and replace text without writing a Batch Update JSON body
+    FindReplace {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Text or regex pattern to find
+        find: String,
+        /// Replacement text
+        replacement: String,
+        /// Limit replacement to one Google Sheets numeric sheetId
+        #[arg(long)]
+        sheet_id: Option<i64>,
+        /// Match case exactly
+        #[arg(long)]
+        match_case: bool,
+        /// Match the entire cell value
+        #[arg(long)]
+        match_entire_cell: bool,
+        /// Interpret the find text as a regular expression
+        #[arg(long = "regex")]
+        search_by_regex: bool,
+        /// Search formulas in addition to displayed values
+        #[arg(long)]
+        include_formulas: bool,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update
