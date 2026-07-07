@@ -196,7 +196,7 @@ impl DocsCommand {
     /// extracting it first if a Google Docs/Drive URL was passed instead.
     pub fn normalize_document_id(&mut self) {
         let document_id = match self {
-            DocsCommand::Create { .. } => return,
+            DocsCommand::Create { .. } | DocsCommand::List { .. } => return,
             DocsCommand::Map { document_id, .. }
             | DocsCommand::SearchText { document_id, .. }
             | DocsCommand::GetContent { document_id, .. }
@@ -226,6 +226,21 @@ impl DocsCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsCommand {
+    /// List native Google Docs Documents from Google Drive
+    List {
+        /// Maximum number of Documents to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all Documents across all pages
+        #[arg(long)]
+        all: bool,
+        /// Drive folder ID to list Documents from
+        #[arg(long)]
+        folder: Option<String>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Create a new, blank Google Docs Document
     #[command(after_long_help = "Output shape:
   Prints the created Document ID and its Google Docs edit URL, tab-separated.
@@ -1037,6 +1052,21 @@ pub enum SheetsInsertDataOption {
 
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
+    /// List native Google Sheets Spreadsheets from Google Drive
+    List {
+        /// Maximum number of Spreadsheets to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all Spreadsheets across all pages
+        #[arg(long)]
+        all: bool,
+        /// Drive folder ID to list Spreadsheets from
+        #[arg(long)]
+        folder: Option<String>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Fetch raw Google Sheets Spreadsheet metadata
     Get {
         /// Google Sheets Spreadsheet ID to fetch

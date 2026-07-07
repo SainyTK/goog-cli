@@ -45,9 +45,34 @@ pub fn run<S: AccountStore>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
+    output_json_by_default: bool,
+    quiet: bool,
 ) -> Result<()> {
     cmd.normalize_document_id();
     match cmd {
+        DocsCommand::List {
+            limit,
+            all,
+            folder,
+            json,
+        } => {
+            let json = super::drive::should_emit_json(json, output_json_by_default);
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(super::drive::run_docs_list_command_to(
+                config,
+                store,
+                account_override,
+                limit,
+                all,
+                folder,
+                json,
+                quiet,
+                &mut std::io::stdout(),
+                &mut std::io::stderr(),
+                None,
+            ))
+        }
         DocsCommand::Create { title } => {
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             let runtime =

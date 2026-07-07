@@ -204,6 +204,7 @@ goog drive download FILE_ID --output ./report.pdf
 ### Docs
 
 ```sh
+goog docs list --limit 20
 goog docs create "Q3 Report"
 goog docs map DOCUMENT_ID
 goog docs search-text DOCUMENT_ID "quarterly plan"
@@ -221,6 +222,7 @@ goog docs batch-update DOCUMENT_ID --requests ./requests.json
 ### Sheets
 
 ```sh
+goog sheets list --limit 20
 goog sheets get SPREADSHEET_ID --fields 'properties.title,sheets.properties'
 goog sheets values get SPREADSHEET_ID 'Sheet1!A1:D10'
 goog sheets values update SPREADSHEET_ID 'Sheet1!A1' --values ./value-range.json

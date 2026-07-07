@@ -25,8 +25,28 @@ pub fn run<S: AccountStore>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
+    output_json_by_default: bool,
+    quiet: bool,
 ) -> Result<()> {
     match cmd {
+        SheetsCommand::List {
+            limit,
+            all,
+            folder,
+            json,
+        } => run_with_runtime(super::drive::run_sheets_list_command_to(
+            config,
+            store,
+            account_override,
+            limit,
+            all,
+            folder,
+            super::drive::should_emit_json(json, output_json_by_default),
+            quiet,
+            &mut std::io::stdout(),
+            &mut std::io::stderr(),
+            None,
+        )),
         SheetsCommand::Get {
             spreadsheet_id,
             fields,
