@@ -2194,6 +2194,34 @@ fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
 }
 
 #[test]
+fn sheets_sheet_clear_tab_color_accepts_sheet_id() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "clear-tab-color",
+        "spreadsheet-123",
+        "42",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::ClearTabColor {
+                            spreadsheet_id,
+                            sheet_id,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_sheet_hide_accepts_sheet_id() {
     let cli = parse(&["sheets", "sheet", "hide", "spreadsheet-123", "42"]).unwrap();
     match cli.command {

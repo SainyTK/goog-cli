@@ -1210,6 +1210,13 @@ pub enum SheetsSheetCommand {
         /// Hex color for the sheet tab, as RRGGBB or #RRGGBB
         color: String,
     },
+    /// Clear a sheet tab color without writing a Batch Update JSON body
+    ClearTabColor {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+    },
     /// Hide a sheet tab without writing a Batch Update JSON body
     Hide {
         /// Google Sheets Spreadsheet ID to update
