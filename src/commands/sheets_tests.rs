@@ -2867,6 +2867,104 @@ async fn run_sheet_copy_paste_rejects_empty_destination_range() {
 }
 
 #[tokio::test]
+async fn run_sheet_cut_paste_builds_cut_paste_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "cutPaste": {
+                    "source": {
+                        "sheetId": 42,
+                        "startRowIndex": 1,
+                        "endRowIndex": 4,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 3
+                    },
+                    "destination": {
+                        "sheetId": 99,
+                        "rowIndex": 10,
+                        "columnIndex": 5
+                    },
+                    "pasteType": "PASTE_VALUES"
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::CutPaste {
+            spreadsheet_id: "spreadsheet-123".into(),
+            source_sheet_id: 42,
+            source_start_row: 1,
+            source_end_row: 4,
+            source_start_column: 0,
+            source_end_column: 3,
+            destination_sheet_id: 99,
+            destination_row: 10,
+            destination_column: 5,
+            paste_type: SheetsPasteType::Values,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_cut_paste_rejects_empty_source_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::CutPaste {
+            spreadsheet_id: "spreadsheet-123".into(),
+            source_sheet_id: 42,
+            source_start_row: 1,
+            source_end_row: 1,
+            source_start_column: 0,
+            source_end_column: 3,
+            destination_sheet_id: 99,
+            destination_row: 10,
+            destination_column: 5,
+            paste_type: SheetsPasteType::Normal,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-row must be greater than --start-row"));
+}
+
+#[tokio::test]
 async fn run_sheet_tab_color_builds_update_sheet_properties_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

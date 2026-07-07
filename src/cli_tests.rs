@@ -2849,6 +2849,92 @@ fn sheets_sheet_copy_paste_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_cut_paste_accepts_source_range_destination_coordinate_and_paste_type() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "cut-paste",
+        "spreadsheet-123",
+        "42",
+        "--source-start-row",
+        "1",
+        "--source-end-row",
+        "4",
+        "--source-start-column",
+        "0",
+        "--source-end-column",
+        "3",
+        "--destination-sheet-id",
+        "99",
+        "--destination-row",
+        "10",
+        "--destination-column",
+        "5",
+        "--paste-type",
+        "values",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::CutPaste {
+                            spreadsheet_id,
+                            source_sheet_id,
+                            source_start_row,
+                            source_end_row,
+                            source_start_column,
+                            source_end_column,
+                            destination_sheet_id,
+                            destination_row,
+                            destination_column,
+                            paste_type,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(source_sheet_id, 42);
+            assert_eq!(source_start_row, 1);
+            assert_eq!(source_end_row, 4);
+            assert_eq!(source_start_column, 0);
+            assert_eq!(source_end_column, 3);
+            assert_eq!(destination_sheet_id, 99);
+            assert_eq!(destination_row, 10);
+            assert_eq!(destination_column, 5);
+            assert_eq!(paste_type, SheetsPasteType::Values);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_cut_paste_rejects_negative_destination_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "cut-paste",
+        "spreadsheet-123",
+        "42",
+        "--source-start-row",
+        "1",
+        "--source-end-row",
+        "4",
+        "--source-start-column",
+        "0",
+        "--source-end-column",
+        "3",
+        "--destination-sheet-id",
+        "99",
+        "--destination-row",
+        "-1",
+        "--destination-column",
+        "5",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",

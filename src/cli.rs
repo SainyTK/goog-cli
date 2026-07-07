@@ -1461,6 +1461,37 @@ pub enum SheetsSheetCommand {
         #[arg(long, value_enum, default_value = "normal")]
         paste_orientation: SheetsPasteOrientation,
     },
+    /// Move cells from one grid range to a top-left coordinate without writing a Batch Update JSON body
+    CutPaste {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the source tab
+        source_sheet_id: i64,
+        /// Zero-based inclusive source start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_start_row: i64,
+        /// Zero-based exclusive source end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_end_row: i64,
+        /// Zero-based inclusive source start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_start_column: i64,
+        /// Zero-based exclusive source end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_end_column: i64,
+        /// Google Sheets numeric sheetId for the destination tab
+        #[arg(long)]
+        destination_sheet_id: i64,
+        /// Zero-based destination row for the top-left pasted cell
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_row: i64,
+        /// Zero-based destination column for the top-left pasted cell
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_column: i64,
+        /// What to paste from the source range
+        #[arg(long, value_enum, default_value = "normal")]
+        paste_type: SheetsPasteType,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update

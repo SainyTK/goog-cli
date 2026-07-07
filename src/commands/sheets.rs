@@ -529,6 +529,41 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Copy paste response",
             )
         }
+        SheetsSheetCommand::CutPaste {
+            spreadsheet_id,
+            source_sheet_id,
+            source_start_row,
+            source_end_row,
+            source_start_column,
+            source_end_column,
+            destination_sheet_id,
+            destination_row,
+            destination_column,
+            paste_type,
+        } => {
+            let request_body = cut_paste_sheet_request_body(
+                source_sheet_id,
+                source_start_row,
+                source_end_row,
+                source_start_column,
+                source_end_column,
+                destination_sheet_id,
+                destination_row,
+                destination_column,
+                paste_type,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to cut and paste Google Sheets cells")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Cut paste response",
+            )
+        }
         SheetsSheetCommand::TabColor {
             spreadsheet_id,
             sheet_id,
@@ -1178,6 +1213,49 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Copy paste response",
+            )
+        }
+        SheetsSheetCommand::CutPaste {
+            spreadsheet_id,
+            source_sheet_id,
+            source_start_row,
+            source_end_row,
+            source_start_column,
+            source_end_column,
+            destination_sheet_id,
+            destination_row,
+            destination_column,
+            paste_type,
+        } => {
+            let request_body = cut_paste_sheet_request_body(
+                source_sheet_id,
+                source_start_row,
+                source_end_row,
+                source_start_column,
+                source_end_column,
+                destination_sheet_id,
+                destination_row,
+                destination_column,
+                paste_type,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to cut and paste Google Sheets cells")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Cut paste response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -2489,6 +2567,47 @@ fn copy_paste_sheet_request_body(
     }))
 }
 
+fn cut_paste_sheet_request_body(
+    source_sheet_id: i64,
+    source_start_row: i64,
+    source_end_row: i64,
+    source_start_column: i64,
+    source_end_column: i64,
+    destination_sheet_id: i64,
+    destination_row: i64,
+    destination_column: i64,
+    paste_type: SheetsPasteType,
+) -> Result<serde_json::Value> {
+    validate_grid_range(
+        source_start_row,
+        source_end_row,
+        source_start_column,
+        source_end_column,
+    )?;
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "cutPaste": {
+                    "source": grid_range(
+                        source_sheet_id,
+                        source_start_row,
+                        source_end_row,
+                        source_start_column,
+                        source_end_column
+                    ),
+                    "destination": grid_coordinate(
+                        destination_sheet_id,
+                        destination_row,
+                        destination_column
+                    ),
+                    "pasteType": paste_type_name(paste_type)
+                }
+            }
+        ]
+    }))
+}
+
 fn validate_grid_range(
     start_row: i64,
     end_row: i64,
@@ -2552,6 +2671,14 @@ fn grid_range(
         "endRowIndex": end_row,
         "startColumnIndex": start_column,
         "endColumnIndex": end_column
+    })
+}
+
+fn grid_coordinate(sheet_id: i64, row_index: i64, column_index: i64) -> serde_json::Value {
+    serde_json::json!({
+        "sheetId": sheet_id,
+        "rowIndex": row_index,
+        "columnIndex": column_index
     })
 }
 
