@@ -1087,6 +1087,16 @@ pub enum SheetsPasteOrientation {
     Transposed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsHorizontalAlignment {
+    /// Align cell content to the left
+    Left,
+    /// Align cell content in the center
+    Center,
+    /// Align cell content to the right
+    Right,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -1621,6 +1631,28 @@ pub enum SheetsSheetCommand {
         /// Clear strikethrough style instead of applying it
         #[arg(long)]
         off: bool,
+    },
+    /// Set horizontal alignment over a cell range without writing a Batch Update JSON body
+    HorizontalAlign {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Horizontal alignment to apply
+        #[arg(long, value_enum)]
+        alignment: SheetsHorizontalAlignment,
     },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {

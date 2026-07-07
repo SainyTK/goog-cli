@@ -10,8 +10,8 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SheetsCommand, SheetsDimension, SheetsInsertDataOption, SheetsMergeType,
-    SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
+    SheetsCommand, SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption,
+    SheetsMergeType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
     SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 use crate::sheets::{
@@ -736,6 +736,35 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Strikethrough text response",
+            )
+        }
+        SheetsSheetCommand::HorizontalAlign {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            alignment,
+        } => {
+            let request_body = horizontal_align_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                alignment,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to set Google Sheets horizontal alignment")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Horizontal align response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -1652,6 +1681,43 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Strikethrough text response",
+            )
+        }
+        SheetsSheetCommand::HorizontalAlign {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            alignment,
+        } => {
+            let request_body = horizontal_align_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                alignment,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to set Google Sheets horizontal alignment")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Horizontal align response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -3286,6 +3352,32 @@ fn strikethrough_sheet_request_body(
     }))
 }
 
+fn horizontal_align_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+    alignment: SheetsHorizontalAlignment,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "repeatCell": {
+                    "range": grid_range(sheet_id, start_row, end_row, start_column, end_column),
+                    "cell": {
+                        "userEnteredFormat": {
+                            "horizontalAlignment": horizontal_alignment_name(alignment)
+                        }
+                    },
+                    "fields": "userEnteredFormat.horizontalAlignment"
+                }
+            }
+        ]
+    }))
+}
+
 fn validate_grid_range(
     start_row: i64,
     end_row: i64,
@@ -3333,6 +3425,14 @@ fn paste_orientation_name(paste_orientation: SheetsPasteOrientation) -> &'static
     match paste_orientation {
         SheetsPasteOrientation::Normal => "NORMAL",
         SheetsPasteOrientation::Transposed => "TRANSPOSE",
+    }
+}
+
+fn horizontal_alignment_name(alignment: SheetsHorizontalAlignment) -> &'static str {
+    match alignment {
+        SheetsHorizontalAlignment::Left => "LEFT",
+        SheetsHorizontalAlignment::Center => "CENTER",
+        SheetsHorizontalAlignment::Right => "RIGHT",
     }
 }
 

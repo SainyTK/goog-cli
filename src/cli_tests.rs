@@ -4,9 +4,9 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
     DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
-    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsPasteOrientation,
-    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsValueInputOption,
-    SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
+    SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -3550,6 +3550,98 @@ fn sheets_sheet_strikethrough_rejects_negative_indexes() {
         "-1",
         "--end-column",
         "4",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_horizontal_align_accepts_grid_range_and_alignment() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "horizontal-align",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--alignment",
+        "center",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::HorizontalAlign {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            alignment,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 10);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
+            assert_eq!(alignment, SheetsHorizontalAlignment::Center);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_horizontal_align_rejects_unknown_alignment() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "horizontal-align",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--alignment",
+        "justify",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_horizontal_align_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "horizontal-align",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "-1",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--alignment",
+        "left",
     ])
     .is_err());
 }
