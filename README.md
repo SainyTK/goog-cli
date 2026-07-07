@@ -226,6 +226,8 @@ goog sheets get SPREADSHEET_ID --fields 'properties.title,sheets.properties'
 goog sheets sheet add SPREADSHEET_ID "Raw Data"
 goog sheets sheet rename SPREADSHEET_ID 123456789 "Archive"
 goog sheets sheet duplicate SPREADSHEET_ID 123456789 "Archive Copy"
+goog sheets sheet hide SPREADSHEET_ID 123456789
+goog sheets sheet unhide SPREADSHEET_ID 123456789
 goog sheets sheet delete SPREADSHEET_ID 123456789
 goog sheets values get SPREADSHEET_ID 'Sheet1!A1:D10'
 goog sheets values update SPREADSHEET_ID 'Sheet1!A1' --values ./value-range.json

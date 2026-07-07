@@ -1155,6 +1155,20 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         index: Option<i64>,
     },
+    /// Hide a sheet tab without writing a Batch Update JSON body
+    Hide {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to hide
+        sheet_id: i64,
+    },
+    /// Unhide a sheet tab without writing a Batch Update JSON body
+    Unhide {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to unhide
+        sheet_id: i64,
+    },
 }
 
 #[derive(Debug, Subcommand)]

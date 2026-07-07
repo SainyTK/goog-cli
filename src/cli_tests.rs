@@ -2027,6 +2027,48 @@ fn sheets_sheet_duplicate_accepts_source_sheet_id_title_and_optional_properties(
 }
 
 #[test]
+fn sheets_sheet_hide_accepts_sheet_id() {
+    let cli = parse(&["sheets", "sheet", "hide", "spreadsheet-123", "42"]).unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Hide {
+                            spreadsheet_id,
+                            sheet_id,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_unhide_accepts_sheet_id() {
+    let cli = parse(&["sheets", "sheet", "unhide", "spreadsheet-123", "42"]).unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Unhide {
+                            spreadsheet_id,
+                            sheet_id,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_values_rejects_unknown_enum_values() {
     assert!(parse(&[
         "sheets",
