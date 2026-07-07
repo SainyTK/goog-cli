@@ -2105,6 +2105,61 @@ fn sheets_sheet_freeze_rejects_negative_counts() {
 }
 
 #[test]
+fn sheets_sheet_resize_accepts_rows_and_columns() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "resize",
+        "spreadsheet-123",
+        "42",
+        "--rows",
+        "200",
+        "--columns",
+        "12",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Resize {
+                            spreadsheet_id,
+                            sheet_id,
+                            rows,
+                            columns,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(rows, Some(200));
+            assert_eq!(columns, Some(12));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_resize_requires_rows_or_columns() {
+    assert!(parse(&["sheets", "sheet", "resize", "spreadsheet-123", "42"]).is_err());
+}
+
+#[test]
+fn sheets_sheet_resize_rejects_zero_counts() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "resize",
+        "spreadsheet-123",
+        "42",
+        "--rows",
+        "0",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_auto_resize_accepts_dimension_and_indexes() {
     let cli = parse(&[
         "sheets",

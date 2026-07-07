@@ -215,6 +215,25 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Freeze sheet response",
             )
         }
+        SheetsSheetCommand::Resize {
+            spreadsheet_id,
+            sheet_id,
+            rows,
+            columns,
+        } => {
+            let request_body = resize_sheet_request_body(sheet_id, rows, columns);
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to resize Google Sheets grid")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Resize sheet response",
+            )
+        }
         SheetsSheetCommand::AutoResize {
             spreadsheet_id,
             sheet_id,
@@ -476,6 +495,33 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Freeze sheet response",
+            )
+        }
+        SheetsSheetCommand::Resize {
+            spreadsheet_id,
+            sheet_id,
+            rows,
+            columns,
+        } => {
+            let request_body = resize_sheet_request_body(sheet_id, rows, columns);
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to resize Google Sheets grid")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Resize sheet response",
             )
         }
         SheetsSheetCommand::AutoResize {
@@ -1431,6 +1477,38 @@ fn freeze_sheet_request_body(
     if let Some(columns) = columns {
         grid_properties.insert("frozenColumnCount".to_string(), serde_json::json!(columns));
         fields.push("gridProperties.frozenColumnCount");
+    }
+
+    serde_json::json!({
+        "requests": [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": sheet_id,
+                        "gridProperties": grid_properties
+                    },
+                    "fields": fields.join(",")
+                }
+            }
+        ]
+    })
+}
+
+fn resize_sheet_request_body(
+    sheet_id: i64,
+    rows: Option<i64>,
+    columns: Option<i64>,
+) -> serde_json::Value {
+    let mut grid_properties = serde_json::Map::new();
+    let mut fields = Vec::new();
+
+    if let Some(rows) = rows {
+        grid_properties.insert("rowCount".to_string(), serde_json::json!(rows));
+        fields.push("gridProperties.rowCount");
+    }
+    if let Some(columns) = columns {
+        grid_properties.insert("columnCount".to_string(), serde_json::json!(columns));
+        fields.push("gridProperties.columnCount");
     }
 
     serde_json::json!({

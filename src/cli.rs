@@ -1185,6 +1185,19 @@ pub enum SheetsSheetCommand {
         #[arg(long, required_unless_present = "rows", value_parser = clap::value_parser!(i64).range(0..))]
         columns: Option<i64>,
     },
+    /// Resize a sheet grid without writing a Batch Update JSON body
+    Resize {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Total row count for the sheet grid
+        #[arg(long, required_unless_present = "columns", value_parser = clap::value_parser!(i64).range(1..))]
+        rows: Option<i64>,
+        /// Total column count for the sheet grid
+        #[arg(long, required_unless_present = "rows", value_parser = clap::value_parser!(i64).range(1..))]
+        columns: Option<i64>,
+    },
     /// Auto-resize rows or columns without writing a Batch Update JSON body
     AutoResize {
         /// Google Sheets Spreadsheet ID to update
