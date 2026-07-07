@@ -274,6 +274,8 @@ goog sheets sheet conditional-format-color SPREADSHEET_ID 123456789 --start-row 
 goog sheets sheet conditional-format-update SPREADSHEET_ID 123456789 0 --start-row 1 --end-row 100 --start-column 3 --end-column 4 --condition text-contains --value Blocked --background-color "#ffeeee"
 goog sheets sheet conditional-format-delete SPREADSHEET_ID 123456789 0
 goog sheets sheet conditional-format-move SPREADSHEET_ID 123456789 2 0
+goog sheets sheet protect-range SPREADSHEET_ID 123456789 --start-row 0 --end-row 1 --start-column 0 --end-column 5 --description "Lock headers"
+goog sheets sheet protect-range SPREADSHEET_ID 123456789 --start-row 1 --end-row 100 --start-column 0 --end-column 5 --warning-only
 goog sheets sheet tab-color SPREADSHEET_ID 123456789 "#3366cc"
 goog sheets sheet clear-tab-color SPREADSHEET_ID 123456789
 goog sheets sheet hide SPREADSHEET_ID 123456789

@@ -2244,6 +2244,31 @@ pub enum SheetsSheetCommand {
         #[arg(value_parser = clap::value_parser!(i64).range(0..))]
         new_index: i64,
     },
+    /// Protect a cell range without writing a Batch Update JSON body
+    ProtectRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Optional protected range description shown in Google Sheets
+        #[arg(long)]
+        description: Option<String>,
+        /// Warn users before edits instead of blocking edits
+        #[arg(long)]
+        warning_only: bool,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update

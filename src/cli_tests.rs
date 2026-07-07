@@ -5472,6 +5472,77 @@ fn sheets_sheet_conditional_format_move_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_protect_range_accepts_grid_range_and_options() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "protect-range",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "1",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+        "--description",
+        "Lock headers",
+        "--warning-only",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::ProtectRange {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            description,
+                            warning_only,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 1);
+            assert_eq!(start_column, 0);
+            assert_eq!(end_column, 5);
+            assert_eq!(description.as_deref(), Some("Lock headers"));
+            assert!(warning_only);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_protect_range_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "protect-range",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "-1",
+        "--end-row",
+        "1",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",

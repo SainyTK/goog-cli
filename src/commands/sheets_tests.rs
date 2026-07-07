@@ -6420,6 +6420,195 @@ async fn run_sheet_conditional_format_move_builds_update_rule_batch_update() {
 }
 
 #[tokio::test]
+async fn run_sheet_protect_range_builds_add_protected_range_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "addProtectedRange": {
+                    "protectedRange": {
+                        "range": {
+                            "sheetId": 42,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 5
+                        },
+                        "warningOnly": false,
+                        "description": "Lock headers"
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [
+                {
+                    "addProtectedRange": {
+                        "protectedRange": {
+                            "protectedRangeId": 7
+                        }
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::ProtectRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 0,
+            end_row: 1,
+            start_column: 0,
+            end_column: 5,
+            description: Some("Lock headers".into()),
+            warning_only: false,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{\"addProtectedRange\":{\"protectedRange\":{\"protectedRangeId\":7}}}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_protect_range_builds_warning_only_request() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "addProtectedRange": {
+                    "protectedRange": {
+                        "range": {
+                            "sheetId": 42,
+                            "startRowIndex": 1,
+                            "endRowIndex": 10,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 3
+                        },
+                        "warningOnly": true
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::ProtectRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 10,
+            start_column: 0,
+            end_column: 3,
+            description: None,
+            warning_only: true,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_protect_range_rejects_empty_description() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::ProtectRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 0,
+            end_row: 1,
+            start_column: 0,
+            end_column: 5,
+            description: Some("   ".into()),
+            warning_only: false,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains("--description must not be empty"));
+}
+
+#[tokio::test]
+async fn run_sheet_protect_range_rejects_empty_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::ProtectRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 1,
+            start_column: 0,
+            end_column: 5,
+            description: None,
+            warning_only: false,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-row must be greater than --start-row"));
+}
+
+#[tokio::test]
 async fn run_sheet_tab_color_builds_update_sheet_properties_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

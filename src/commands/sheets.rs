@@ -1393,6 +1393,37 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Conditional format move response",
             )
         }
+        SheetsSheetCommand::ProtectRange {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            description,
+            warning_only,
+        } => {
+            let request_body = protect_range_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                description.as_deref(),
+                warning_only,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to protect Google Sheets range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Protect range response",
+            )
+        }
         SheetsSheetCommand::TabColor {
             spreadsheet_id,
             sheet_id,
@@ -3144,6 +3175,45 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Conditional format move response",
+            )
+        }
+        SheetsSheetCommand::ProtectRange {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            description,
+            warning_only,
+        } => {
+            let request_body = protect_range_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                description.as_deref(),
+                warning_only,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to protect Google Sheets range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Protect range response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -4931,6 +5001,39 @@ fn conditional_format_move_sheet_request_body(
             }
         ]
     })
+}
+
+fn protect_range_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+    description: Option<&str>,
+    warning_only: bool,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+    if description.is_some_and(|description| description.trim().is_empty()) {
+        bail!("--description must not be empty");
+    }
+
+    let mut protected_range = serde_json::json!({
+        "range": grid_range(sheet_id, start_row, end_row, start_column, end_column),
+        "warningOnly": warning_only
+    });
+    if let Some(description) = description {
+        protected_range["description"] = serde_json::json!(description);
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "addProtectedRange": {
+                    "protectedRange": protected_range
+                }
+            }
+        ]
+    }))
 }
 
 fn font_size_sheet_request_body(
