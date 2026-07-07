@@ -4089,6 +4089,30 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 "failed to serialize Sheets Update row response",
             )
         }
+        SheetsValuesCommand::UpdateColumn {
+            spreadsheet_id,
+            range,
+            values,
+            value_input_option,
+        } => {
+            let request_body = column_value_range(values);
+            let options = update_values_options(
+                spreadsheet_id,
+                range,
+                request_body,
+                value_input_option.into(),
+                spreadsheets_url,
+            );
+            let response = SheetsOperation::UpdateValues(&options)
+                .execute(client)
+                .await
+                .context("failed to update Google Sheets column")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Update column response",
+            )
+        }
         SheetsValuesCommand::BatchUpdate {
             spreadsheet_id,
             values,
@@ -4483,6 +4507,35 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 "failed to serialize Sheets Update row response",
             )
         }
+        SheetsValuesCommand::UpdateColumn {
+            spreadsheet_id,
+            range,
+            values,
+            value_input_option,
+        } => {
+            let request_body = column_value_range(values);
+            let options = update_values_options(
+                spreadsheet_id.clone(),
+                range,
+                request_body,
+                value_input_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::UpdateValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to update Google Sheets column")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Update column response",
+            )
+        }
         SheetsValuesCommand::BatchUpdate {
             spreadsheet_id,
             values,
@@ -4782,6 +4835,13 @@ fn read_request_body(
 fn row_value_range(values: Vec<String>) -> serde_json::Value {
     serde_json::json!({
         "majorDimension": "ROWS",
+        "values": [values],
+    })
+}
+
+fn column_value_range(values: Vec<String>) -> serde_json::Value {
+    serde_json::json!({
+        "majorDimension": "COLUMNS",
         "values": [values],
     })
 }

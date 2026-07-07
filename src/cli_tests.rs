@@ -1887,6 +1887,58 @@ fn sheets_values_update_row_requires_value() {
 }
 
 #[test]
+fn sheets_values_update_column_accepts_repeated_values() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "update-column",
+        "spreadsheet-123",
+        "Sheet1!D2:D4",
+        "--value",
+        "Open",
+        "--value",
+        "Closed",
+        "--value",
+        "Blocked",
+        "--value-input-option",
+        "raw",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::UpdateColumn {
+                            spreadsheet_id,
+                            range,
+                            values,
+                            value_input_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!D2:D4");
+            assert_eq!(values, ["Open", "Closed", "Blocked"]);
+            assert_eq!(value_input_option, SheetsValueInputOption::Raw);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_update_column_requires_value() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "update-column",
+        "spreadsheet-123",
+        "Sheet1!D2:D4",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_values_batch_update_with_values_path() {
     let cli = parse(&[
         "sheets",
