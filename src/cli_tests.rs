@@ -261,6 +261,70 @@ fn drive_list_with_flags() {
 }
 
 #[test]
+fn docs_list_with_flags() {
+    let cli = parse(&[
+        "docs",
+        "list",
+        "--limit",
+        "25",
+        "--all",
+        "--folder",
+        "folder123",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::List {
+                    limit,
+                    all,
+                    folder,
+                    json,
+                },
+        } => {
+            assert_eq!(limit, Some(25));
+            assert!(all);
+            assert_eq!(folder.as_deref(), Some("folder123"));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_list_with_flags() {
+    let cli = parse(&[
+        "sheets",
+        "list",
+        "--limit",
+        "25",
+        "--all",
+        "--folder",
+        "folder123",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::List {
+                    limit,
+                    all,
+                    folder,
+                    json,
+                },
+        } => {
+            assert_eq!(limit, Some(25));
+            assert!(all);
+            assert_eq!(folder.as_deref(), Some("folder123"));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn drive_ls_with_flags() {
     let cli = parse(&[
         "drive",

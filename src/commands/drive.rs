@@ -23,6 +23,8 @@ const ALL_PAGE_SIZE: u32 = 1000;
 const TABLE_HEADER: &str = "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED";
 const FOLDER_TABLE_HEADER: &str = "NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED";
 const BROWSE_TABLE_HEADER: &str = "TYPE\tNAME\tID\tMIME TYPE\tMODIFIED";
+const DOCS_TABLE_HEADER: &str = "NAME\tDOCUMENT ID\tPARENT FOLDER IDS\tMODIFIED";
+const SHEETS_TABLE_HEADER: &str = "NAME\tSPREADSHEET ID\tPARENT FOLDER IDS\tMODIFIED";
 
 type DriveResult<T> = std::result::Result<T, DriveError>;
 
@@ -31,6 +33,8 @@ pub(super) enum DriveListKind {
     Files,
     Folders,
     Browse,
+    Docs,
+    Sheets,
 }
 
 impl DriveListKind {
@@ -39,6 +43,8 @@ impl DriveListKind {
             Self::Files => "files",
             Self::Folders => "folders",
             Self::Browse => "items",
+            Self::Docs => "documents",
+            Self::Sheets => "spreadsheets",
         }
     }
 }
@@ -200,6 +206,107 @@ pub(super) async fn run_list_command_to<S: AccountStore>(
     } else {
         let client = AuthClient::from_config(config.clone(), store, account_override)?;
         run_list_to(&client, limit, all, None, json, quiet, out, err, files_url).await
+    }
+}
+
+pub(super) async fn run_docs_list_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    run_resource_list_command_to(
+        config,
+        store,
+        account_override,
+        DriveListKind::Docs,
+        limit,
+        all,
+        folder,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+pub(super) async fn run_sheets_list_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    run_resource_list_command_to(
+        config,
+        store,
+        account_override,
+        DriveListKind::Sheets,
+        limit,
+        all,
+        folder,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_resource_list_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    kind: DriveListKind,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    if folder.is_some() {
+        run_list_unified_to(
+            config,
+            store,
+            account_override,
+            kind,
+            limit,
+            all,
+            folder,
+            json,
+            quiet,
+            out,
+            err,
+            files_url,
+            None,
+        )
+        .await
+    } else {
+        let client = AuthClient::from_config(config.clone(), store, account_override)?;
+        run_list_items_to(
+            &client, kind, limit, all, None, json, quiet, out, err, files_url,
+        )
+        .await
     }
 }
 
@@ -518,7 +625,10 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
     if json {
         match kind {
             DriveListKind::Browse => write_browse_ndjson(&files, out)?,
-            DriveListKind::Files | DriveListKind::Folders => write_ndjson(&files, out)?,
+            DriveListKind::Files
+            | DriveListKind::Folders
+            | DriveListKind::Docs
+            | DriveListKind::Sheets => write_ndjson(&files, out)?,
         }
     } else {
         let mut wrote_table_header = false;
@@ -526,6 +636,8 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
             DriveListKind::Files => write_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Folders => write_folder_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Browse => write_browse_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Docs => write_docs_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Sheets => write_sheets_table(&files, out, &mut wrote_table_header)?,
         }
     }
 
@@ -604,13 +716,18 @@ async fn run_list_items_to<S: AccountStore>(
     if json {
         match kind {
             DriveListKind::Browse => write_browse_ndjson(&files, out)?,
-            DriveListKind::Files | DriveListKind::Folders => write_ndjson(&files, out)?,
+            DriveListKind::Files
+            | DriveListKind::Folders
+            | DriveListKind::Docs
+            | DriveListKind::Sheets => write_ndjson(&files, out)?,
         }
     } else {
         match kind {
             DriveListKind::Files => write_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Folders => write_folder_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Browse => write_browse_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Docs => write_docs_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Sheets => write_sheets_table(&files, out, &mut wrote_table_header)?,
         }
     }
 
@@ -935,6 +1052,8 @@ pub(super) fn list_options(
         DriveListKind::Files => ListFilesOptions::new(page_size),
         DriveListKind::Folders => ListFilesOptions::folders(page_size),
         DriveListKind::Browse => ListFilesOptions::browse(page_size),
+        DriveListKind::Docs => ListFilesOptions::docs(page_size),
+        DriveListKind::Sheets => ListFilesOptions::sheets(page_size),
     };
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);
@@ -1076,6 +1195,48 @@ pub(super) fn write_folder_table(
 ) -> Result<()> {
     if !*wrote_header {
         writeln!(out, "{FOLDER_TABLE_HEADER}").context("failed to write output")?;
+        *wrote_header = true;
+    }
+
+    for file in files {
+        writeln!(
+            out,
+            "{}\t{}\t{}\t{}",
+            file.name,
+            file.id,
+            file.parent_ids.join(","),
+            file.modified_time
+        )
+        .context("failed to write output")?;
+    }
+
+    Ok(())
+}
+
+pub(super) fn write_docs_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+) -> Result<()> {
+    write_resource_table(files, out, wrote_header, DOCS_TABLE_HEADER)
+}
+
+pub(super) fn write_sheets_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+) -> Result<()> {
+    write_resource_table(files, out, wrote_header, SHEETS_TABLE_HEADER)
+}
+
+fn write_resource_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+    header: &str,
+) -> Result<()> {
+    if !*wrote_header {
+        writeln!(out, "{header}").context("failed to write output")?;
         *wrote_header = true;
     }
 
