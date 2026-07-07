@@ -11,10 +11,10 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::{
-    SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
-    SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
-    SheetsSortOrder, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
-    SheetsVerticalAlignment, SheetsWrapStrategy,
+    SheetsBorderEdge, SheetsBorderStyle, SheetsDimension, SheetsHorizontalAlignment,
+    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 use crate::sheets::SHEETS_SCOPE;
 
@@ -3700,6 +3700,158 @@ async fn run_sheet_number_format_rejects_empty_pattern() {
     .unwrap_err();
 
     assert!(err.to_string().contains("--pattern must not be empty"));
+}
+
+#[tokio::test]
+async fn run_sheet_borders_builds_update_borders_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "updateBorders": {
+                    "range": {
+                        "sheetId": 42,
+                        "startRowIndex": 0,
+                        "endRowIndex": 5,
+                        "startColumnIndex": 1,
+                        "endColumnIndex": 4
+                    },
+                    "top": {
+                        "style": "SOLID_THICK",
+                        "color": {
+                            "red": 0.2,
+                            "green": 0.4,
+                            "blue": 0.8
+                        }
+                    },
+                    "bottom": {
+                        "style": "SOLID_THICK",
+                        "color": {
+                            "red": 0.2,
+                            "green": 0.4,
+                            "blue": 0.8
+                        }
+                    },
+                    "left": {
+                        "style": "SOLID_THICK",
+                        "color": {
+                            "red": 0.2,
+                            "green": 0.4,
+                            "blue": 0.8
+                        }
+                    },
+                    "right": {
+                        "style": "SOLID_THICK",
+                        "color": {
+                            "red": 0.2,
+                            "green": 0.4,
+                            "blue": 0.8
+                        }
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::Borders {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 0,
+            end_row: 5,
+            start_column: 1,
+            end_column: 4,
+            edge: vec![SheetsBorderEdge::Outer],
+            style: SheetsBorderStyle::SolidThick,
+            color: Some("3366cc".into()),
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_borders_rejects_empty_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::Borders {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 0,
+            end_row: 0,
+            start_column: 1,
+            end_column: 4,
+            edge: vec![SheetsBorderEdge::All],
+            style: SheetsBorderStyle::Solid,
+            color: None,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-row must be greater than --start-row"));
+}
+
+#[tokio::test]
+async fn run_sheet_borders_rejects_non_hex_color() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::Borders {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 0,
+            end_row: 5,
+            start_column: 1,
+            end_column: 4,
+            edge: vec![SheetsBorderEdge::All],
+            style: SheetsBorderStyle::Solid,
+            color: Some("blue".into()),
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("color must be a hex RGB value like #3366cc or 3366cc"));
 }
 
 #[tokio::test]

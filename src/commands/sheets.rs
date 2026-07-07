@@ -10,10 +10,10 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SheetsCommand, SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption,
-    SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType,
-    SheetsSheetCommand, SheetsSortOrder, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
+    SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsDimension, SheetsHorizontalAlignment,
+    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -710,6 +710,39 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Number format response",
+            )
+        }
+        SheetsSheetCommand::Borders {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            edge,
+            style,
+            color,
+        } => {
+            let request_body = borders_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                &edge,
+                style,
+                color.as_deref(),
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to set Google Sheets borders")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Borders response",
             )
         }
         SheetsSheetCommand::Bold {
@@ -1794,6 +1827,47 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Number format response",
+            )
+        }
+        SheetsSheetCommand::Borders {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            edge,
+            style,
+            color,
+        } => {
+            let request_body = borders_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                &edge,
+                style,
+                color.as_deref(),
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to set Google Sheets borders")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Borders response",
             )
         }
         SheetsSheetCommand::Bold {
@@ -3674,6 +3748,81 @@ fn number_format_sheet_request_body(
     }))
 }
 
+fn borders_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+    edges: &[SheetsBorderEdge],
+    style: SheetsBorderStyle,
+    color: Option<&str>,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+    let border = border_value(style, color)?;
+    let mut update_borders = serde_json::json!({
+        "range": grid_range(sheet_id, start_row, end_row, start_column, end_column)
+    });
+
+    let mut set_edge = |name: &str| {
+        update_borders[name] = border.clone();
+    };
+    let effective_edges = if edges.is_empty() {
+        &[SheetsBorderEdge::All][..]
+    } else {
+        edges
+    };
+    for edge in effective_edges {
+        match edge {
+            SheetsBorderEdge::All => {
+                set_edge("top");
+                set_edge("bottom");
+                set_edge("left");
+                set_edge("right");
+                set_edge("innerHorizontal");
+                set_edge("innerVertical");
+            }
+            SheetsBorderEdge::Outer => {
+                set_edge("top");
+                set_edge("bottom");
+                set_edge("left");
+                set_edge("right");
+            }
+            SheetsBorderEdge::Inner => {
+                set_edge("innerHorizontal");
+                set_edge("innerVertical");
+            }
+            SheetsBorderEdge::Top => set_edge("top"),
+            SheetsBorderEdge::Bottom => set_edge("bottom"),
+            SheetsBorderEdge::Left => set_edge("left"),
+            SheetsBorderEdge::Right => set_edge("right"),
+        }
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updateBorders": update_borders
+            }
+        ]
+    }))
+}
+
+fn border_value(style: SheetsBorderStyle, color: Option<&str>) -> Result<serde_json::Value> {
+    let mut border = serde_json::json!({
+        "style": border_style_name(style)
+    });
+    if let Some(color) = color {
+        let (red, green, blue) = parse_hex_color(color)?;
+        border["color"] = serde_json::json!({
+            "red": red,
+            "green": green,
+            "blue": blue
+        });
+    }
+    Ok(border)
+}
+
 fn bold_sheet_request_body(
     sheet_id: i64,
     start_row: i64,
@@ -3948,6 +4097,18 @@ fn number_format_type_name(format_type: SheetsNumberFormatType) -> &'static str 
         SheetsNumberFormatType::Time => "TIME",
         SheetsNumberFormatType::DateTime => "DATE_TIME",
         SheetsNumberFormatType::Scientific => "SCIENTIFIC",
+    }
+}
+
+fn border_style_name(style: SheetsBorderStyle) -> &'static str {
+    match style {
+        SheetsBorderStyle::None => "NONE",
+        SheetsBorderStyle::Solid => "SOLID",
+        SheetsBorderStyle::SolidMedium => "SOLID_MEDIUM",
+        SheetsBorderStyle::SolidThick => "SOLID_THICK",
+        SheetsBorderStyle::Dashed => "DASHED",
+        SheetsBorderStyle::Dotted => "DOTTED",
+        SheetsBorderStyle::Double => "DOUBLE",
     }
 }
 

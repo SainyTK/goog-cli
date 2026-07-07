@@ -3,11 +3,11 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
-    DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
-    SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
-    SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
-    SheetsSortOrder, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
-    SheetsVerticalAlignment, SheetsWrapStrategy,
+    DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsBorderEdge,
+    SheetsBorderStyle, SheetsCommand, SheetsDimension, SheetsHorizontalAlignment,
+    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -3403,6 +3403,120 @@ fn sheets_sheet_number_format_rejects_negative_indexes() {
         "3",
         "--type",
         "number",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_borders_accepts_grid_range_edges_style_and_color() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "borders",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--edge",
+        "outer",
+        "--edge",
+        "inner",
+        "--style",
+        "solid-thick",
+        "--color",
+        "#3366cc",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Borders {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            edge,
+                            style,
+                            color,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 10);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
+            assert_eq!(edge, vec![SheetsBorderEdge::Outer, SheetsBorderEdge::Inner]);
+            assert_eq!(style, SheetsBorderStyle::SolidThick);
+            assert_eq!(color.as_deref(), Some("#3366cc"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_borders_defaults_to_all_solid() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "borders",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Borders {
+                            edge, style, color, ..
+                        },
+                },
+        } => {
+            assert_eq!(edge, vec![SheetsBorderEdge::All]);
+            assert_eq!(style, SheetsBorderStyle::Solid);
+            assert_eq!(color, None);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_borders_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "borders",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "-1",
+        "--end-column",
+        "4",
     ])
     .is_err());
 }

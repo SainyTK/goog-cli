@@ -1137,6 +1137,42 @@ pub enum SheetsNumberFormatType {
     Scientific,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsBorderEdge {
+    /// Apply to every outside and inside edge in the selected range
+    All,
+    /// Apply to the outside edges of the selected range
+    Outer,
+    /// Apply to the inside edges of the selected range
+    Inner,
+    /// Apply to the top edge of the selected range
+    Top,
+    /// Apply to the bottom edge of the selected range
+    Bottom,
+    /// Apply to the left edge of the selected range
+    Left,
+    /// Apply to the right edge of the selected range
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsBorderStyle {
+    /// Remove the selected border edges
+    None,
+    /// Thin solid border
+    Solid,
+    /// Medium solid border
+    SolidMedium,
+    /// Thick solid border
+    SolidThick,
+    /// Dashed border
+    Dashed,
+    /// Dotted border
+    Dotted,
+    /// Double-line border
+    Double,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -1652,6 +1688,34 @@ pub enum SheetsSheetCommand {
         /// Google Sheets number format pattern, such as #,##0.00 or m/d/yyyy
         #[arg(long)]
         pattern: Option<String>,
+    },
+    /// Set cell borders over a range without writing a Batch Update JSON body
+    Borders {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Border edge group to update. Repeat for multiple edges.
+        #[arg(long, value_enum, default_value = "all")]
+        edge: Vec<SheetsBorderEdge>,
+        /// Border line style to apply
+        #[arg(long, value_enum, default_value = "solid")]
+        style: SheetsBorderStyle,
+        /// Optional hex border color, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        color: Option<String>,
     },
     /// Set bold text style over a cell range without writing a Batch Update JSON body
     Bold {
