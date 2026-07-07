@@ -3184,6 +3184,192 @@ async fn run_sheet_sort_range_rejects_sort_column_outside_range() {
 }
 
 #[tokio::test]
+async fn run_sheet_delete_duplicates_builds_delete_duplicates_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "deleteDuplicates": {
+                    "range": {
+                        "sheetId": 42,
+                        "startRowIndex": 1,
+                        "endRowIndex": 100,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 5
+                    },
+                    "comparisonColumns": [
+                        {
+                            "sheetId": 42,
+                            "dimension": "COLUMNS",
+                            "startIndex": 1,
+                            "endIndex": 2
+                        },
+                        {
+                            "sheetId": 42,
+                            "dimension": "COLUMNS",
+                            "startIndex": 3,
+                            "endIndex": 4
+                        }
+                    ]
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::DeleteDuplicates {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 100,
+            start_column: 0,
+            end_column: 5,
+            comparison_columns: vec![1, 3],
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_delete_duplicates_omits_comparison_columns_by_default() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "deleteDuplicates": {
+                    "range": {
+                        "sheetId": 42,
+                        "startRowIndex": 1,
+                        "endRowIndex": 100,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 5
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::DeleteDuplicates {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 100,
+            start_column: 0,
+            end_column: 5,
+            comparison_columns: vec![],
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_delete_duplicates_rejects_comparison_column_outside_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::DeleteDuplicates {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 100,
+            start_column: 1,
+            end_column: 5,
+            comparison_columns: vec![0],
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--comparison-column must be inside the selected column range"));
+}
+
+#[tokio::test]
+async fn run_sheet_delete_duplicates_rejects_empty_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::DeleteDuplicates {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 1,
+            end_row: 1,
+            start_column: 0,
+            end_column: 5,
+            comparison_columns: vec![],
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-row must be greater than --start-row"));
+}
+
+#[tokio::test]
 async fn run_sheet_find_replace_builds_all_sheets_find_replace_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

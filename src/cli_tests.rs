@@ -3150,6 +3150,78 @@ fn sheets_sheet_sort_range_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_delete_duplicates_accepts_grid_range_and_comparison_columns() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "delete-duplicates",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "100",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+        "--comparison-column",
+        "1",
+        "--comparison-column",
+        "3",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::DeleteDuplicates {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            comparison_columns,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 1);
+            assert_eq!(end_row, 100);
+            assert_eq!(start_column, 0);
+            assert_eq!(end_column, 5);
+            assert_eq!(comparison_columns, vec![1, 3]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_delete_duplicates_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "delete-duplicates",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "100",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+        "--comparison-column",
+        "-1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_find_replace_accepts_scope_and_match_options() {
     let cli = parse(&[
         "sheets",
