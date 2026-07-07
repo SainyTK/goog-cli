@@ -4549,6 +4549,141 @@ fn sheets_sheet_note_clear_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_data_validation_list_accepts_values_and_options() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "data-validation-list",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--value",
+        "Open",
+        "--value",
+        "Closed",
+        "--allow-invalid",
+        "--hide-dropdown",
+        "--input-message",
+        "Pick a status",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::DataValidationList {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            values,
+                            allow_invalid,
+                            hide_dropdown,
+                            input_message,
+                            clear,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 1);
+            assert_eq!(end_row, 20);
+            assert_eq!(start_column, 3);
+            assert_eq!(end_column, 4);
+            assert_eq!(values, vec!["Open", "Closed"]);
+            assert!(allow_invalid);
+            assert!(hide_dropdown);
+            assert_eq!(input_message.as_deref(), Some("Pick a status"));
+            assert!(!clear);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_data_validation_list_clear_accepts_grid_range() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "data-validation-list",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--clear",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::DataValidationList {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            values,
+                            clear,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 1);
+            assert_eq!(end_row, 20);
+            assert_eq!(start_column, 3);
+            assert_eq!(end_column, 4);
+            assert!(values.is_empty());
+            assert!(clear);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_data_validation_list_rejects_values_with_clear() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "data-validation-list",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--value",
+        "Open",
+        "--clear",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",

@@ -1967,6 +1967,44 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         clear: bool,
     },
+    /// Set or clear dropdown list data validation over a range without writing a Batch Update JSON body
+    DataValidationList {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Allowed dropdown value. Repeat for multiple values.
+        #[arg(
+            long = "value",
+            required_unless_present = "clear",
+            conflicts_with = "clear"
+        )]
+        values: Vec<String>,
+        /// Show a warning instead of rejecting invalid values
+        #[arg(long)]
+        allow_invalid: bool,
+        /// Hide the dropdown picker in the Google Sheets UI
+        #[arg(long)]
+        hide_dropdown: bool,
+        /// Optional validation help text shown in Google Sheets
+        #[arg(long)]
+        input_message: Option<String>,
+        /// Clear data validation from the selected cells instead of setting a dropdown list
+        #[arg(long)]
+        clear: bool,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update
