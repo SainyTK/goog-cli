@@ -1107,6 +1107,16 @@ pub enum SheetsVerticalAlignment {
     Bottom,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsWrapStrategy {
+    /// Let text overflow into the next empty cell
+    Overflow,
+    /// Wrap text onto multiple lines within the cell
+    Wrap,
+    /// Clip text at the cell boundary
+    Clip,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -1685,6 +1695,28 @@ pub enum SheetsSheetCommand {
         /// Vertical alignment to apply
         #[arg(long, value_enum)]
         alignment: SheetsVerticalAlignment,
+    },
+    /// Set text wrapping over a cell range without writing a Batch Update JSON body
+    TextWrap {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Text wrapping behavior to apply
+        #[arg(long, value_enum)]
+        strategy: SheetsWrapStrategy,
     },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {

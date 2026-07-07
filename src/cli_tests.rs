@@ -7,6 +7,7 @@ use crate::cli::{
     SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
     SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
     SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
+    SheetsWrapStrategy,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -3734,6 +3735,98 @@ fn sheets_sheet_vertical_align_rejects_negative_indexes() {
         "4",
         "--alignment",
         "top",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_text_wrap_accepts_grid_range_and_strategy() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "text-wrap",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--strategy",
+        "wrap",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::TextWrap {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            strategy,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 0);
+            assert_eq!(end_row, 10);
+            assert_eq!(start_column, 1);
+            assert_eq!(end_column, 4);
+            assert_eq!(strategy, SheetsWrapStrategy::Wrap);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_text_wrap_rejects_unknown_strategy() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "text-wrap",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "1",
+        "--end-column",
+        "4",
+        "--strategy",
+        "shrink",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_text_wrap_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "text-wrap",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "10",
+        "--start-column",
+        "-1",
+        "--end-column",
+        "4",
+        "--strategy",
+        "clip",
     ])
     .is_err());
 }
