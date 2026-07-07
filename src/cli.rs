@@ -1124,6 +1124,13 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         index: Option<i64>,
     },
+    /// Delete a sheet tab without writing a Batch Update JSON body
+    Delete {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to delete
+        sheet_id: i64,
+    },
 }
 
 #[derive(Debug, Subcommand)]

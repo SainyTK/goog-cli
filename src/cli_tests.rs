@@ -1936,6 +1936,27 @@ fn sheets_sheet_add_accepts_title_and_optional_properties() {
 }
 
 #[test]
+fn sheets_sheet_delete_accepts_sheet_id() {
+    let cli = parse(&["sheets", "sheet", "delete", "spreadsheet-123", "42"]).unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Delete {
+                            spreadsheet_id,
+                            sheet_id,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_values_rejects_unknown_enum_values() {
     assert!(parse(&[
         "sheets",
