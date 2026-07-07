@@ -5811,6 +5811,91 @@ async fn run_sheet_conditional_format_color_rejects_empty_value() {
 }
 
 #[tokio::test]
+async fn run_sheet_conditional_format_update_builds_replace_rule_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "updateConditionalFormatRule": {
+                    "sheetId": 42,
+                    "index": 3,
+                    "rule": {
+                        "ranges": [
+                            {
+                                "sheetId": 42,
+                                "startRowIndex": 1,
+                                "endRowIndex": 20,
+                                "startColumnIndex": 3,
+                                "endColumnIndex": 4
+                            }
+                        ],
+                        "booleanRule": {
+                            "condition": {
+                                "type": "TEXT_CONTAINS",
+                                "values": [
+                                    {
+                                        "userEnteredValue": "Blocked"
+                                    }
+                                ]
+                            },
+                            "format": {
+                                "backgroundColor": {
+                                    "red": 1.0,
+                                    "green": 0.9333333333333333,
+                                    "blue": 0.9333333333333333
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::ConditionalFormatUpdate {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            index: 3,
+            start_row: 1,
+            end_row: 20,
+            start_column: 3,
+            end_column: 4,
+            condition: SheetsConditionalFormatCondition::TextContains,
+            value: "Blocked".into(),
+            background_color: Some("#ffeeee".into()),
+            text_color: None,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_sheet_conditional_format_delete_builds_delete_rule_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

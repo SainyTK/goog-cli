@@ -4934,6 +4934,94 @@ fn sheets_sheet_conditional_format_color_rejects_negative_index() {
 }
 
 #[test]
+fn sheets_sheet_conditional_format_update_accepts_replacement_rule_options() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "conditional-format-update",
+        "spreadsheet-123",
+        "42",
+        "3",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--condition",
+        "text-contains",
+        "--value",
+        "Blocked",
+        "--background-color",
+        "#ffeeee",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::ConditionalFormatUpdate {
+                            spreadsheet_id,
+                            sheet_id,
+                            index,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            condition,
+                            value,
+                            background_color,
+                            text_color,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(index, 3);
+            assert_eq!(start_row, 1);
+            assert_eq!(end_row, 20);
+            assert_eq!(start_column, 3);
+            assert_eq!(end_column, 4);
+            assert_eq!(condition, SheetsConditionalFormatCondition::TextContains);
+            assert_eq!(value, "Blocked");
+            assert_eq!(background_color.as_deref(), Some("#ffeeee"));
+            assert_eq!(text_color, None);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_conditional_format_update_rejects_negative_index() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "conditional-format-update",
+        "spreadsheet-123",
+        "42",
+        "-1",
+        "--start-row",
+        "1",
+        "--end-row",
+        "20",
+        "--start-column",
+        "3",
+        "--end-column",
+        "4",
+        "--condition",
+        "text-contains",
+        "--value",
+        "Blocked",
+        "--background-color",
+        "#ffeeee",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_conditional_format_delete_accepts_sheet_id_and_index() {
     let cli = parse(&[
         "sheets",

@@ -2091,6 +2091,40 @@ pub enum SheetsSheetCommand {
         #[arg(long, default_value = "0", value_parser = clap::value_parser!(i64).range(0..))]
         index: i64,
     },
+    /// Replace a single-color conditional format rule without writing a Batch Update JSON body
+    ConditionalFormatUpdate {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based conditional format rule index to replace
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        index: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Boolean condition for the replacement rule
+        #[arg(long, value_enum)]
+        condition: SheetsConditionalFormatCondition,
+        /// User-entered comparison value or custom formula
+        #[arg(long)]
+        value: String,
+        /// Optional hex background color to apply, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        background_color: Option<String>,
+        /// Optional hex text color to apply, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        text_color: Option<String>,
+    },
     /// Delete a conditional format rule by index without writing a Batch Update JSON body
     ConditionalFormatDelete {
         /// Google Sheets Spreadsheet ID to update
