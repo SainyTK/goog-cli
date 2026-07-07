@@ -2491,6 +2491,16 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "formatted-value")]
         value_render_option: SheetsValueRenderOption,
     },
+    /// Fetch a Google Sheets range as tab-separated rows
+    GetTable {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to fetch
+        range: String,
+        /// How values should be represented in the response
+        #[arg(long, value_enum, default_value = "formatted-value")]
+        value_render_option: SheetsValueRenderOption,
+    },
     /// Fetch raw Google Sheets values from multiple ranges
     BatchGet {
         /// Google Sheets Spreadsheet ID to fetch

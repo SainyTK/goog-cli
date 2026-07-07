@@ -3954,6 +3954,23 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 .context("failed to fetch Google Sheets column")?;
             write_first_column_lines(out, &response)
         }
+        SheetsValuesCommand::GetTable {
+            spreadsheet_id,
+            range,
+            value_render_option,
+        } => {
+            let options = get_values_options(
+                spreadsheet_id,
+                range,
+                value_render_option.into(),
+                spreadsheets_url,
+            );
+            let response = SheetsOperation::GetValues(&options)
+                .execute(client)
+                .await
+                .context("failed to fetch Google Sheets table")?;
+            write_table_lines(out, &response)
+        }
         SheetsValuesCommand::BatchGet {
             spreadsheet_id,
             ranges,
@@ -4300,6 +4317,28 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
             .await
             .context("failed to fetch Google Sheets column")?;
             write_first_column_lines(out, &response)
+        }
+        SheetsValuesCommand::GetTable {
+            spreadsheet_id,
+            range,
+            value_render_option,
+        } => {
+            let options = get_values_options(
+                spreadsheet_id.clone(),
+                range,
+                value_render_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::GetValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to fetch Google Sheets table")?;
+            write_table_lines(out, &response)
         }
         SheetsValuesCommand::BatchGet {
             spreadsheet_id,
@@ -6982,6 +7021,38 @@ fn write_first_column_lines(out: &mut impl Write, value_range: &serde_json::Valu
             continue;
         };
         writeln!(out, "{}", scalar_value_text(value)?).context("failed to write output")?;
+    }
+
+    Ok(())
+}
+
+fn write_table_lines(out: &mut impl Write, value_range: &serde_json::Value) -> Result<()> {
+    let Some(rows) = value_range
+        .get("values")
+        .and_then(|values| values.as_array())
+    else {
+        writeln!(out).context("failed to write output")?;
+        return Ok(());
+    };
+
+    if rows.is_empty() {
+        writeln!(out).context("failed to write output")?;
+        return Ok(());
+    }
+
+    for row in rows {
+        let Some(cells) = row.as_array() else {
+            writeln!(out).context("failed to write output")?;
+            continue;
+        };
+
+        for (index, value) in cells.iter().enumerate() {
+            if index > 0 {
+                write!(out, "\t").context("failed to write output")?;
+            }
+            write!(out, "{}", scalar_value_text(value)?).context("failed to write output")?;
+        }
+        writeln!(out).context("failed to write output")?;
     }
 
     Ok(())
