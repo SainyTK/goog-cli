@@ -1118,6 +1118,14 @@ pub enum SheetsWrapStrategy {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsTextDirection {
+    /// Display cell text left to right
+    LeftToRight,
+    /// Display cell text right to left
+    RightToLeft,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SheetsNumberFormatType {
     /// Plain text
     Text,
@@ -1911,6 +1919,28 @@ pub enum SheetsSheetCommand {
         /// Text rotation angle from -90 to 90 degrees
         #[arg(long, value_parser = clap::value_parser!(i64).range(-90..=90))]
         angle: i64,
+    },
+    /// Set text direction over a cell range without writing a Batch Update JSON body
+    TextDirection {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Text direction to apply
+        #[arg(long, value_enum)]
+        direction: SheetsTextDirection,
     },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
