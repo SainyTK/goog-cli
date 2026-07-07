@@ -1721,6 +1721,41 @@ fn sheets_values_get_row_accepts_range_and_render_option() {
 }
 
 #[test]
+fn sheets_values_get_column_accepts_range_and_render_option() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "get-column",
+        "spreadsheet-123",
+        "Sheet1!D2:D10",
+        "--value-render-option",
+        "unformatted-value",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::GetColumn {
+                            spreadsheet_id,
+                            range,
+                            value_render_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!D2:D10");
+            assert_eq!(
+                value_render_option,
+                SheetsValueRenderOption::UnformattedValue
+            );
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_values_update_cell_accepts_value_argument() {
     let cli = parse(&[
         "sheets",

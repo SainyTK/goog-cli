@@ -635,6 +635,86 @@ async fn run_values_get_row_prints_blank_line_for_empty_row() {
 }
 
 #[tokio::test]
+async fn run_values_get_column_prints_first_cell_of_each_row() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(header("authorization", "Bearer sheets-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "range": "Sheet1!D2:D4",
+            "values": [[10], [20], ["=SUM(D2:D3)"]]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::GetColumn {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!D2:D4".into(),
+            value_render_option: SheetsValueRenderOption::UnformattedValue,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "10\n20\n=SUM(D2:D3)\n");
+
+    let url = received_url(&server).await;
+    assert!(url
+        .path()
+        .ends_with("/spreadsheets/spreadsheet-123/values/Sheet1!D2:D4"));
+    assert_eq!(
+        query_value(&url, "valueRenderOption").as_deref(),
+        Some("UNFORMATTED_VALUE")
+    );
+}
+
+#[tokio::test]
+async fn run_values_get_column_prints_blank_line_for_empty_column() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(header("authorization", "Bearer sheets-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "range": "Sheet1!D2:D4"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::GetColumn {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!D2:D4".into(),
+            value_render_option: SheetsValueRenderOption::FormattedValue,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "\n");
+}
+
+#[tokio::test]
 async fn run_values_batch_get_prints_batch_response_json_to_stdout() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
