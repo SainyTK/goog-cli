@@ -11,8 +11,9 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::{
-    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand,
 };
 use crate::sheets::SHEETS_SCOPE;
 
@@ -2756,6 +2757,113 @@ async fn run_sheet_find_replace_rejects_empty_find_text() {
     .unwrap_err();
 
     assert!(err.to_string().contains("find text must not be empty"));
+}
+
+#[tokio::test]
+async fn run_sheet_copy_paste_builds_copy_paste_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "copyPaste": {
+                    "source": {
+                        "sheetId": 42,
+                        "startRowIndex": 1,
+                        "endRowIndex": 4,
+                        "startColumnIndex": 0,
+                        "endColumnIndex": 3
+                    },
+                    "destination": {
+                        "sheetId": 99,
+                        "startRowIndex": 10,
+                        "endRowIndex": 13,
+                        "startColumnIndex": 5,
+                        "endColumnIndex": 8
+                    },
+                    "pasteType": "PASTE_VALUES",
+                    "pasteOrientation": "TRANSPOSE"
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::CopyPaste {
+            spreadsheet_id: "spreadsheet-123".into(),
+            source_sheet_id: 42,
+            source_start_row: 1,
+            source_end_row: 4,
+            source_start_column: 0,
+            source_end_column: 3,
+            destination_sheet_id: 99,
+            destination_start_row: 10,
+            destination_end_row: 13,
+            destination_start_column: 5,
+            destination_end_column: 8,
+            paste_type: SheetsPasteType::Values,
+            paste_orientation: SheetsPasteOrientation::Transposed,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_copy_paste_rejects_empty_destination_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::CopyPaste {
+            spreadsheet_id: "spreadsheet-123".into(),
+            source_sheet_id: 42,
+            source_start_row: 1,
+            source_end_row: 4,
+            source_start_column: 0,
+            source_end_column: 3,
+            destination_sheet_id: 99,
+            destination_start_row: 10,
+            destination_end_row: 10,
+            destination_start_column: 5,
+            destination_end_column: 8,
+            paste_type: SheetsPasteType::Normal,
+            paste_orientation: SheetsPasteOrientation::Normal,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-row must be greater than --start-row"));
 }
 
 #[tokio::test]

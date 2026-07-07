@@ -4,8 +4,9 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
     DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
-    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -2743,6 +2744,108 @@ fn sheets_sheet_find_replace_accepts_scope_and_match_options() {
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn sheets_sheet_copy_paste_accepts_source_destination_and_paste_options() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "copy-paste",
+        "spreadsheet-123",
+        "42",
+        "--source-start-row",
+        "1",
+        "--source-end-row",
+        "4",
+        "--source-start-column",
+        "0",
+        "--source-end-column",
+        "3",
+        "--destination-sheet-id",
+        "99",
+        "--destination-start-row",
+        "10",
+        "--destination-end-row",
+        "13",
+        "--destination-start-column",
+        "5",
+        "--destination-end-column",
+        "8",
+        "--paste-type",
+        "values",
+        "--paste-orientation",
+        "transposed",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::CopyPaste {
+                            spreadsheet_id,
+                            source_sheet_id,
+                            source_start_row,
+                            source_end_row,
+                            source_start_column,
+                            source_end_column,
+                            destination_sheet_id,
+                            destination_start_row,
+                            destination_end_row,
+                            destination_start_column,
+                            destination_end_column,
+                            paste_type,
+                            paste_orientation,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(source_sheet_id, 42);
+            assert_eq!(source_start_row, 1);
+            assert_eq!(source_end_row, 4);
+            assert_eq!(source_start_column, 0);
+            assert_eq!(source_end_column, 3);
+            assert_eq!(destination_sheet_id, 99);
+            assert_eq!(destination_start_row, 10);
+            assert_eq!(destination_end_row, 13);
+            assert_eq!(destination_start_column, 5);
+            assert_eq!(destination_end_column, 8);
+            assert_eq!(paste_type, SheetsPasteType::Values);
+            assert_eq!(paste_orientation, SheetsPasteOrientation::Transposed);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_copy_paste_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "copy-paste",
+        "spreadsheet-123",
+        "42",
+        "--source-start-row",
+        "-1",
+        "--source-end-row",
+        "4",
+        "--source-start-column",
+        "0",
+        "--source-end-column",
+        "3",
+        "--destination-sheet-id",
+        "99",
+        "--destination-start-row",
+        "10",
+        "--destination-end-row",
+        "13",
+        "--destination-start-column",
+        "5",
+        "--destination-end-column",
+        "8",
+    ])
+    .is_err());
 }
 
 #[test]

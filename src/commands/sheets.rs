@@ -10,8 +10,9 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SheetsCommand, SheetsDimension, SheetsInsertDataOption, SheetsMergeType, SheetsSheetCommand,
-    SheetsSortOrder, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsCommand, SheetsDimension, SheetsInsertDataOption, SheetsMergeType,
+    SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -485,6 +486,47 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Find and replace response",
+            )
+        }
+        SheetsSheetCommand::CopyPaste {
+            spreadsheet_id,
+            source_sheet_id,
+            source_start_row,
+            source_end_row,
+            source_start_column,
+            source_end_column,
+            destination_sheet_id,
+            destination_start_row,
+            destination_end_row,
+            destination_start_column,
+            destination_end_column,
+            paste_type,
+            paste_orientation,
+        } => {
+            let request_body = copy_paste_sheet_request_body(
+                source_sheet_id,
+                source_start_row,
+                source_end_row,
+                source_start_column,
+                source_end_column,
+                destination_sheet_id,
+                destination_start_row,
+                destination_end_row,
+                destination_start_column,
+                destination_end_column,
+                paste_type,
+                paste_orientation,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to copy and paste Google Sheets cells")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Copy paste response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -1087,6 +1129,55 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Find and replace response",
+            )
+        }
+        SheetsSheetCommand::CopyPaste {
+            spreadsheet_id,
+            source_sheet_id,
+            source_start_row,
+            source_end_row,
+            source_start_column,
+            source_end_column,
+            destination_sheet_id,
+            destination_start_row,
+            destination_end_row,
+            destination_start_column,
+            destination_end_column,
+            paste_type,
+            paste_orientation,
+        } => {
+            let request_body = copy_paste_sheet_request_body(
+                source_sheet_id,
+                source_start_row,
+                source_end_row,
+                source_start_column,
+                source_end_column,
+                destination_sheet_id,
+                destination_start_row,
+                destination_end_row,
+                destination_start_column,
+                destination_end_column,
+                paste_type,
+                paste_orientation,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to copy and paste Google Sheets cells")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Copy paste response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -2345,6 +2436,59 @@ fn find_replace_sheet_request_body(
     }))
 }
 
+fn copy_paste_sheet_request_body(
+    source_sheet_id: i64,
+    source_start_row: i64,
+    source_end_row: i64,
+    source_start_column: i64,
+    source_end_column: i64,
+    destination_sheet_id: i64,
+    destination_start_row: i64,
+    destination_end_row: i64,
+    destination_start_column: i64,
+    destination_end_column: i64,
+    paste_type: SheetsPasteType,
+    paste_orientation: SheetsPasteOrientation,
+) -> Result<serde_json::Value> {
+    validate_grid_range(
+        source_start_row,
+        source_end_row,
+        source_start_column,
+        source_end_column,
+    )?;
+    validate_grid_range(
+        destination_start_row,
+        destination_end_row,
+        destination_start_column,
+        destination_end_column,
+    )?;
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "copyPaste": {
+                    "source": grid_range(
+                        source_sheet_id,
+                        source_start_row,
+                        source_end_row,
+                        source_start_column,
+                        source_end_column
+                    ),
+                    "destination": grid_range(
+                        destination_sheet_id,
+                        destination_start_row,
+                        destination_end_row,
+                        destination_start_column,
+                        destination_end_column
+                    ),
+                    "pasteType": paste_type_name(paste_type),
+                    "pasteOrientation": paste_orientation_name(paste_orientation)
+                }
+            }
+        ]
+    }))
+}
+
 fn validate_grid_range(
     start_row: i64,
     end_row: i64,
@@ -2373,6 +2517,25 @@ fn dimension_name(dimension: SheetsDimension) -> &'static str {
     match dimension {
         SheetsDimension::Rows => "ROWS",
         SheetsDimension::Columns => "COLUMNS",
+    }
+}
+
+fn paste_type_name(paste_type: SheetsPasteType) -> &'static str {
+    match paste_type {
+        SheetsPasteType::Normal => "PASTE_NORMAL",
+        SheetsPasteType::Values => "PASTE_VALUES",
+        SheetsPasteType::Format => "PASTE_FORMAT",
+        SheetsPasteType::Formula => "PASTE_FORMULA",
+        SheetsPasteType::NoBorders => "PASTE_NO_BORDERS",
+        SheetsPasteType::DataValidation => "PASTE_DATA_VALIDATION",
+        SheetsPasteType::ConditionalFormatting => "PASTE_CONDITIONAL_FORMATTING",
+    }
+}
+
+fn paste_orientation_name(paste_orientation: SheetsPasteOrientation) -> &'static str {
+    match paste_orientation {
+        SheetsPasteOrientation::Normal => "NORMAL",
+        SheetsPasteOrientation::Transposed => "TRANSPOSE",
     }
 }
 

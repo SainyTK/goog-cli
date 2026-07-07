@@ -1061,6 +1061,32 @@ pub enum SheetsSortOrder {
     Descending,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsPasteType {
+    /// Paste values, formulas, formats, and other cell data
+    Normal,
+    /// Paste values only
+    Values,
+    /// Paste formats only
+    Format,
+    /// Paste formulas only
+    Formula,
+    /// Paste everything except borders
+    NoBorders,
+    /// Paste data validation only
+    DataValidation,
+    /// Paste conditional formatting only
+    ConditionalFormatting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsPasteOrientation {
+    /// Keep the copied row and column orientation
+    Normal,
+    /// Transpose rows and columns while pasting
+    Transposed,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -1394,6 +1420,46 @@ pub enum SheetsSheetCommand {
         /// Search formulas in addition to displayed values
         #[arg(long)]
         include_formulas: bool,
+    },
+    /// Copy cells from one grid range to another without writing a Batch Update JSON body
+    CopyPaste {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the source tab
+        source_sheet_id: i64,
+        /// Zero-based inclusive source start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_start_row: i64,
+        /// Zero-based exclusive source end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_end_row: i64,
+        /// Zero-based inclusive source start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_start_column: i64,
+        /// Zero-based exclusive source end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_end_column: i64,
+        /// Google Sheets numeric sheetId for the destination tab
+        #[arg(long)]
+        destination_sheet_id: i64,
+        /// Zero-based inclusive destination start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_start_row: i64,
+        /// Zero-based exclusive destination end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_end_row: i64,
+        /// Zero-based inclusive destination start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_start_column: i64,
+        /// Zero-based exclusive destination end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_end_column: i64,
+        /// What to paste from the source range
+        #[arg(long, value_enum, default_value = "normal")]
+        paste_type: SheetsPasteType,
+        /// Whether to transpose rows and columns while pasting
+        #[arg(long, value_enum, default_value = "normal")]
+        paste_orientation: SheetsPasteOrientation,
     },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
