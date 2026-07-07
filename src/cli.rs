@@ -78,16 +78,16 @@ pub enum AuthCommand {
         /// Email address or partial email of the account to activate
         email: String,
     },
-    /// Export account tokens to a file, for use with GOOG_TOKEN_FILE in
-    /// headless environments that have no access to the OS keychain (e.g. a
-    /// Sandcastle sandbox). The output file grants full access to every
-    /// account it contains, within their authorized scopes -- never commit
-    /// it, and delete it once the headless environment no longer needs it.
+    /// Export full auth state to a file for use with GOOG_TOKEN_FILE in
+    /// headless environments such as Sandcastle. The output file grants
+    /// access to every account it contains, within their authorized scopes --
+    /// never commit it, and delete it once the headless environment no longer
+    /// needs it.
     Export {
         /// Email address or partial email of one account to export. Omit to
         /// export every authorized account.
         email: Option<String>,
-        /// Path to write the token JSON to. Overwrites any existing file.
+        /// Path to write the auth state JSON to. Overwrites any existing file.
         #[arg(long)]
         out: String,
     },
@@ -953,6 +953,35 @@ pub enum MailAttachmentCommand {
 pub enum MailDraftCommand {
     /// Create a GoogleMail Draft Message
     Create {
+        /// Recipient email address. Repeat for multiple To recipients.
+        #[arg(long, required = true)]
+        to: Vec<String>,
+        /// Cc recipient email address. Repeat for multiple Cc recipients.
+        #[arg(long)]
+        cc: Vec<String>,
+        /// Bcc recipient email address. Repeat for multiple Bcc recipients.
+        #[arg(long)]
+        bcc: Vec<String>,
+        /// Draft subject
+        #[arg(long)]
+        subject: String,
+        /// Plain text draft body
+        #[arg(long, conflicts_with = "body_file")]
+        body: Option<String>,
+        /// Path to a plain text draft body file
+        #[arg(long, conflicts_with = "body")]
+        body_file: Option<String>,
+        /// Local file to attach to the Draft. Repeat for multiple Attachments.
+        #[arg(long)]
+        attachment: Vec<String>,
+        /// Emit the raw GoogleMail Draft as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Edit a GoogleMail Draft Message
+    Edit {
+        /// GoogleMail Draft ID to update
+        draft_id: String,
         /// Recipient email address. Repeat for multiple To recipients.
         #[arg(long, required = true)]
         to: Vec<String>,

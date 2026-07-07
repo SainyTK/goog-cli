@@ -7,9 +7,12 @@ use super::error::AuthError;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Config {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub oauth_app: Option<OAuthAppConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<SettingsConfig>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     pub accounts: Vec<String>,
 }
 
@@ -34,7 +37,10 @@ pub enum OAuthAppType {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct SettingsConfig {
+    #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     pub active_account: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
 }
 
@@ -47,12 +53,36 @@ impl Config {
 }
 
 pub fn config_path() -> Result<PathBuf, AuthError> {
+    let home = dirs::home_dir().ok_or(AuthError::ConfigDirNotFound)?;
+    Ok(home.join(".goog").join("config.toml"))
+}
+
+fn old_config_path() -> Result<PathBuf, AuthError> {
     let dir = dirs::config_dir().ok_or(AuthError::ConfigDirNotFound)?;
     Ok(dir.join("goog").join("config.toml"))
 }
 
 pub fn load_config() -> Result<Config, AuthError> {
-    load_config_from_path(&config_path()?)
+    let path = config_path()?;
+    let old_path = old_config_path()?;
+    load_config_from_paths(&path, &old_path)
+}
+
+pub(super) fn load_config_from_paths(
+    path: &std::path::Path,
+    old_path: &std::path::Path,
+) -> Result<Config, AuthError> {
+    if path.exists() {
+        return load_config_from_path(&path);
+    }
+
+    if old_path.exists() {
+        let config = load_config_from_path(&old_path)?;
+        save_config_to_path(&config, &path)?;
+        return Ok(config);
+    }
+
+    Ok(Config::default())
 }
 
 pub(super) fn load_config_from_path(path: &std::path::Path) -> Result<Config, AuthError> {

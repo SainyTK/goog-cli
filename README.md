@@ -8,7 +8,7 @@ It is built first for power users and AI agents who want terminal-native access 
 Human-readable terminal workflows are the default experience.
 JSON is also supported for programmatic use, but it is not the primary product surface.
 
-The CLI uses one OAuth App for all accounts, stores account tokens in the system keychain, and requests API scopes incrementally when commands need them.
+The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account, Tokens, and Resource Account Mappings in `~/.goog/auth.json`, and requests API scopes incrementally when commands need them.
 
 ## Current API Coverage
 
@@ -65,9 +65,9 @@ cargo uninstall goog
 ```
 
 Those commands remove the executable only.
-To fully reset local `goog` state, delete the `goog` directory from your OS config directory and remove saved `goog` entries from your system keychain.
-On macOS, the config directory is usually `$HOME/Library/Application Support/goog`.
-On Linux, it is usually `$HOME/.config/goog`.
+To fully reset local `goog` state, delete `$HOME/.goog`.
+That directory contains OAuth App setup in `config.toml` and auth state in `auth.json`.
+The auth state file grants account access within authorized scopes, so do not commit it or sync it into places you do not trust.
 
 ## OAuth Setup
 

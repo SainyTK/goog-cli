@@ -1,6 +1,10 @@
+pub mod change;
 pub mod error;
 pub mod map;
 pub mod style_template;
+
+#[cfg(test)]
+mod change_tests;
 
 #[cfg(test)]
 mod style_template_tests;

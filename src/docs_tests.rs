@@ -9,6 +9,10 @@ use crate::auth::client::{AuthClient, AuthorizationCode, AuthorizationCodeFlow};
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
+use crate::docs::map::{
+    build_document_map, resolve_content_entry, resolve_insert_text_location,
+    resolve_range_selector, ContentSelector, InsertTextSelector, RangeSelector,
+};
 use crate::docs::*;
 
 const DOCUMENT_RESPONSE: &str = r#"{
@@ -591,4 +595,224 @@ fn extract_document_id_trims_surrounding_whitespace() {
         extract_document_id("  placeholder-document-id  "),
         "placeholder-document-id"
     );
+}
+
+#[test]
+fn document_map_resolves_content_selectors_at_the_map_boundary() {
+    let document_map = build_document_map(&selector_document());
+
+    let by_index = resolve_content_entry(&document_map, &ContentSelector::Index(44)).unwrap();
+    assert_eq!(by_index.preview, "Second page plan");
+
+    let by_entry = resolve_content_entry(&document_map, &ContentSelector::Entry(2)).unwrap();
+    assert_eq!(by_entry.preview, "Second page plan");
+
+    let by_page_line = resolve_content_entry(
+        &document_map,
+        &ContentSelector::PageLine { page: 2, line: 1 },
+    )
+    .unwrap();
+    assert_eq!(by_page_line.preview, "Second page plan");
+
+    let by_heading =
+        resolve_content_entry(&document_map, &ContentSelector::Heading("Overview".into())).unwrap();
+    assert_eq!(by_heading.preview, "Overview");
+}
+
+#[test]
+fn document_map_resolves_insert_selectors_at_the_map_boundary() {
+    let document_map = build_document_map(&selector_document());
+
+    let by_index =
+        resolve_insert_text_location(&document_map, &InsertTextSelector::Index(51)).unwrap();
+    assert_eq!(by_index.location.index, Some(51));
+    assert_eq!(by_index.preview_before, "Second page plan");
+
+    let after_heading = resolve_insert_text_location(
+        &document_map,
+        &InsertTextSelector::AfterHeading("Overview".into()),
+    )
+    .unwrap();
+    assert_eq!(after_heading.location.index, Some(10));
+
+    let before_text = resolve_insert_text_location(
+        &document_map,
+        &InsertTextSelector::BeforeText("unique anchor".into()),
+    )
+    .unwrap();
+    assert_eq!(before_text.location.index, Some(61));
+}
+
+#[test]
+fn document_map_resolves_range_selectors_at_the_map_boundary() {
+    let document_map = build_document_map(&selector_document());
+
+    let by_entry = resolve_range_selector(&document_map, &RangeSelector::Entry(2)).unwrap();
+    assert_eq!(by_entry.start_index, 41);
+    assert_eq!(by_entry.end_index, 58);
+
+    let by_text = resolve_range_selector(
+        &document_map,
+        &RangeSelector::Text {
+            text: "unique anchor".into(),
+            match_number: Some(1),
+        },
+    )
+    .unwrap();
+    assert_eq!(by_text.start_index, 61);
+    assert_eq!(by_text.end_index, 74);
+}
+
+#[test]
+fn document_map_rejects_ambiguous_heading_and_text_selectors_with_candidates() {
+    let document_map = build_document_map(&ambiguous_selector_document());
+
+    let heading_error =
+        resolve_content_entry(&document_map, &ContentSelector::Heading("Duplicate".into()))
+            .unwrap_err()
+            .to_string();
+    assert!(heading_error.contains("ambiguous heading selector \"Duplicate\"; candidates:"));
+    assert!(heading_error.contains("entry 1 index 1 page - line 1 preview Duplicate"));
+    assert!(heading_error.contains("entry 2 index 11 page - line 2 preview Duplicate"));
+
+    let text_error = resolve_insert_text_location(
+        &document_map,
+        &InsertTextSelector::BeforeText("Duplicate".into()),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(text_error.contains("ambiguous text selector \"Duplicate\"; candidates:"));
+    assert!(text_error.contains("match 1 index 1 page - line 1 preview Duplicate"));
+    assert!(text_error.contains("match 2 index 11 page - line 2 preview Duplicate"));
+}
+
+#[test]
+fn document_map_resolves_index_insertion_in_an_empty_document() {
+    let document_map = build_document_map(&serde_json::json!({
+        "documentId": "document-123",
+        "title": "Empty",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 2,
+                    "paragraph": {
+                        "elements": [
+                            {
+                                "startIndex": 1,
+                                "endIndex": 2,
+                                "textRun": { "content": "\n" }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    }));
+
+    assert!(document_map.entries.is_empty());
+    let resolved =
+        resolve_insert_text_location(&document_map, &InsertTextSelector::Index(1)).unwrap();
+    assert_eq!(resolved.location.index, Some(1));
+    assert_eq!(resolved.preview_before, "");
+    assert_eq!(resolved.preview_offset, 0);
+}
+
+fn selector_document() -> serde_json::Value {
+    serde_json::json!({
+        "documentId": "document-123",
+        "title": "Selectors",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 10,
+                    "paragraph": {
+                        "paragraphStyle": { "namedStyleType": "HEADING_1" },
+                        "elements": [
+                            {
+                                "startIndex": 1,
+                                "endIndex": 10,
+                                "textRun": { "content": "Overview\n" }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "startIndex": 40,
+                    "endIndex": 41,
+                    "paragraph": {
+                        "elements": [
+                            { "pageBreak": {} }
+                        ]
+                    }
+                },
+                {
+                    "startIndex": 41,
+                    "endIndex": 58,
+                    "paragraph": {
+                        "elements": [
+                            {
+                                "startIndex": 41,
+                                "endIndex": 58,
+                                "textRun": { "content": "Second page plan\n" }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "startIndex": 61,
+                    "endIndex": 88,
+                    "paragraph": {
+                        "elements": [
+                            {
+                                "startIndex": 61,
+                                "endIndex": 88,
+                                "textRun": { "content": "unique anchor paragraph\n" }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    })
+}
+
+fn ambiguous_selector_document() -> serde_json::Value {
+    serde_json::json!({
+        "documentId": "document-123",
+        "title": "Ambiguous",
+        "body": {
+            "content": [
+                {
+                    "startIndex": 1,
+                    "endIndex": 11,
+                    "paragraph": {
+                        "paragraphStyle": { "namedStyleType": "HEADING_1" },
+                        "elements": [
+                            {
+                                "startIndex": 1,
+                                "endIndex": 11,
+                                "textRun": { "content": "Duplicate\n" }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "startIndex": 11,
+                    "endIndex": 21,
+                    "paragraph": {
+                        "paragraphStyle": { "namedStyleType": "HEADING_1" },
+                        "elements": [
+                            {
+                                "startIndex": 11,
+                                "endIndex": 21,
+                                "textRun": { "content": "Duplicate\n" }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    })
 }

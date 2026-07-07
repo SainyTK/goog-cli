@@ -10,6 +10,13 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::{DocsListType, DocsSectionBreakType};
+use crate::docs::change::{
+    ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
+    CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
+    InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
+    InsertTextCommand, ReplaceTextCommand,
+};
+use crate::docs::map::{ContentSelector, InsertTextSelector, RangeSelector};
 use crate::docs::style_template::{
     load_style_template_in, save_style_template_in, ListStyleTemplate, NamedStyleTemplate,
     StyleTemplate, TextStyleTemplate,

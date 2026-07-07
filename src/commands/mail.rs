@@ -5,17 +5,15 @@ use anyhow::{Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::auth::config::{resolve_account, Config};
-use crate::auth::state::{
-    load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
-    save_runtime_state_to_path, RuntimeState,
-};
+use crate::auth::config::Config;
+use crate::auth::state::resource_key;
+use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{MailAttachmentCommand, MailCommand, MailDraftCommand};
 use crate::mail::{
     create_draft, decode_base64url, download_attachment, get_message, list_messages,
-    parse_message_reference, resolve_message_reference, CreateDraftOptions,
-    DownloadAttachmentOptions, DraftAttachment, GetMessageOptions, ListMessagesOptions, MailError,
-    MessageReference, MessageSummary,
+    parse_message_reference, resolve_message_reference, update_draft, CreateDraftOptions,
+    DownloadAttachmentOptions, DraftAttachment, DraftMessage, GetMessageOptions,
+    ListMessagesOptions, MailError, MessageReference, MessageSummary, UpdateDraftOptions,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 10;
@@ -122,6 +120,38 @@ pub fn run<S: AccountStore>(
                     None,
                 ))
             }
+            MailDraftCommand::Edit {
+                draft_id,
+                to,
+                cc,
+                bcc,
+                subject,
+                body,
+                body_file,
+                attachment,
+                json,
+            } => {
+                let runtime =
+                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+                let client = AuthClient::from_config(config.clone(), store, account_override)?;
+                let body = resolve_draft_body(body, body_file)?;
+                let attachments = resolve_draft_attachments(attachment)?;
+                runtime.block_on(run_draft_edit_to(
+                    &client,
+                    draft_id,
+                    CreateDraftInput {
+                        to,
+                        cc,
+                        bcc,
+                        subject,
+                        body,
+                        attachments,
+                    },
+                    json,
+                    &mut std::io::stdout(),
+                    None,
+                ))
+            }
         },
     }
 }
@@ -193,6 +223,21 @@ pub(super) async fn run_draft_create_to<S: AccountStore>(
     let draft = create_draft(client, &options)
         .await
         .context("failed to create GoogleMail Draft")?;
+    write_draft(&draft, json, out)
+}
+
+pub(super) async fn run_draft_edit_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    draft_id: String,
+    input: CreateDraftInput,
+    json: bool,
+    out: &mut impl Write,
+    drafts_url: Option<&str>,
+) -> Result<()> {
+    let options = update_draft_options(draft_id, input, drafts_url);
+    let draft = update_draft(client, &options)
+        .await
+        .context("failed to edit GoogleMail Draft")?;
     write_draft(&draft, json, out)
 }
 
@@ -380,66 +425,28 @@ async fn run_with_mail_unified_access<S: AccountStore>(
     attempt: MailAccessAttempt<'_>,
     state_path: Option<&Path>,
 ) -> Result<MailAccessResult, MailError> {
-    let mut state = load_mail_runtime_state(state_path)?;
-
-    if account_override.is_some() {
-        let account = resolve_account(config, account_override)
-            .map_err(MailError::Auth)?
-            .expect("explicit account resolution returns an account");
-        return run_mail_access_as_account(
-            config,
-            store,
-            &mut state,
-            state_path,
-            target_resource_key,
-            &attempt,
-            account,
-        )
-        .await;
-    }
-
-    let candidates = unified_access_candidates(config, &state, target_resource_key);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match run_mail_access_as_account(
-            config,
-            store,
-            &mut state,
-            state_path,
-            target_resource_key,
-            &attempt,
-            account,
-        )
-        .await
-        {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    Err(last_target_access_failure.unwrap_or(MailError::Auth(
-        crate::auth::error::AuthError::ActiveAccountNotConfigured,
-    )))
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, MailAccessResult, MailError> {
+            Box::pin(run_mail_access_as_account(config, store, &attempt, account))
+        },
+        is_target_access_failure,
+    )
+    .await
 }
 
 async fn run_mail_access_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    state: &mut RuntimeState,
-    state_path: Option<&Path>,
-    target_resource_key: &str,
     attempt: &MailAccessAttempt<'_>,
     account: String,
 ) -> Result<MailAccessResult, MailError> {
     let client =
         AuthClient::from_config(config.clone(), store, Some(&account)).map_err(MailError::Auth)?;
     let result = attempt_mail_access(&client, attempt).await?;
-    state.set_resource_account(target_resource_key, account);
-    save_mail_runtime_state(state, state_path)?;
     Ok(result)
 }
 
@@ -475,63 +482,6 @@ async fn attempt_mail_access<S: AccountStore>(
                 .await
                 .map(MailAccessResult::Downloaded)
         }
-    }
-}
-
-fn load_mail_runtime_state(state_path: Option<&Path>) -> Result<RuntimeState, MailError> {
-    match state_path {
-        Some(path) => load_runtime_state_from_path(path),
-        None => load_runtime_state(),
-    }
-    .map_err(MailError::Auth)
-}
-
-fn save_mail_runtime_state(
-    state: &RuntimeState,
-    state_path: Option<&Path>,
-) -> Result<(), MailError> {
-    match state_path {
-        Some(path) => save_runtime_state_to_path(state, path),
-        None => save_runtime_state(state),
-    }
-    .map_err(MailError::Auth)
-}
-
-fn unified_access_candidates(
-    config: &Config,
-    state: &RuntimeState,
-    target_resource_key: &str,
-) -> Vec<String> {
-    let mut candidates = Vec::new();
-
-    if let Some(mapped) = state.account_for_resource(target_resource_key) {
-        push_if_configured(config, &mut candidates, mapped);
-    }
-
-    if let Some(active) = config.active_account() {
-        push_if_configured(config, &mut candidates, active);
-    }
-
-    for account in &config.accounts {
-        push_candidate(&mut candidates, account);
-    }
-
-    candidates
-}
-
-fn push_if_configured(config: &Config, candidates: &mut Vec<String>, account: &str) {
-    if config
-        .accounts
-        .iter()
-        .any(|configured| configured == account)
-    {
-        push_candidate(candidates, account);
-    }
-}
-
-fn push_candidate(candidates: &mut Vec<String>, account: &str) {
-    if !candidates.iter().any(|candidate| candidate == account) {
-        candidates.push(account.to_string());
     }
 }
 
@@ -589,6 +539,36 @@ fn create_draft_options(input: CreateDraftInput, drafts_url: Option<&str>) -> Cr
                     })
                     .collect(),
             );
+    if let Some(drafts_url) = drafts_url {
+        options = options.with_drafts_url(drafts_url);
+    }
+    options
+}
+
+fn update_draft_options(
+    draft_id: String,
+    input: CreateDraftInput,
+    drafts_url: Option<&str>,
+) -> UpdateDraftOptions {
+    let mut options = UpdateDraftOptions::new(
+        draft_id,
+        DraftMessage {
+            to: input.to,
+            cc: input.cc,
+            bcc: input.bcc,
+            subject: input.subject,
+            body: input.body,
+            attachments: input
+                .attachments
+                .into_iter()
+                .map(|attachment| DraftAttachment {
+                    filename: attachment.filename,
+                    content_type: attachment.content_type,
+                    data: attachment.data,
+                })
+                .collect(),
+        },
+    );
     if let Some(drafts_url) = drafts_url {
         options = options.with_drafts_url(drafts_url);
     }

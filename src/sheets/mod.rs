@@ -32,6 +32,129 @@ pub type ClearValuesResponse = Value;
 pub type BatchClearValuesResponse = Value;
 pub type BatchUpdateSpreadsheetResponse = Value;
 
+pub enum SheetsOperation<'a> {
+    GetSpreadsheet(&'a GetSpreadsheetOptions),
+    GetValues(&'a GetValuesOptions),
+    BatchGetValues(&'a BatchGetValuesOptions),
+    UpdateValues(&'a UpdateValuesOptions),
+    BatchUpdateValues(&'a BatchUpdateValuesOptions),
+    AppendValues(&'a AppendValuesOptions),
+    ClearValues(&'a ClearValuesOptions),
+    BatchClearValues(&'a BatchClearValuesOptions),
+    BatchUpdateSpreadsheet(&'a BatchUpdateSpreadsheetOptions),
+}
+
+impl SheetsOperation<'_> {
+    pub fn spreadsheet_id(&self) -> &str {
+        match self {
+            Self::GetSpreadsheet(options) => &options.spreadsheet_id,
+            Self::GetValues(options) => &options.spreadsheet_id,
+            Self::BatchGetValues(options) => &options.spreadsheet_id,
+            Self::UpdateValues(options) => &options.spreadsheet_id,
+            Self::BatchUpdateValues(options) => &options.spreadsheet_id,
+            Self::AppendValues(options) => &options.spreadsheet_id,
+            Self::ClearValues(options) => &options.spreadsheet_id,
+            Self::BatchClearValues(options) => &options.spreadsheet_id,
+            Self::BatchUpdateSpreadsheet(options) => &options.spreadsheet_id,
+        }
+    }
+
+    pub async fn execute<S: AccountStore>(
+        &self,
+        client: &AuthClient<'_, S>,
+    ) -> Result<Value, SheetsError> {
+        match self {
+            Self::GetSpreadsheet(options) => {
+                send_json_request_with_office_file_fallback(
+                    client,
+                    client.get(options.request_url()?),
+                    SHEETS_SCOPES,
+                    || get_spreadsheet_via_temporary_conversion(client, options),
+                )
+                .await
+            }
+            Self::GetValues(options) => {
+                send_json_request_with_office_file_fallback(
+                    client,
+                    client.get(options.request_url()?),
+                    SHEETS_SCOPES,
+                    || get_values_via_temporary_conversion(client, options),
+                )
+                .await
+            }
+            Self::BatchGetValues(options) => {
+                send_json_request_with_office_file_fallback(
+                    client,
+                    client.get(options.request_url()?),
+                    SHEETS_SCOPES,
+                    || batch_get_values_via_temporary_conversion(client, options),
+                )
+                .await
+            }
+            Self::UpdateValues(options) => {
+                send_json_request(
+                    client,
+                    client
+                        .put(options.request_url()?)
+                        .json(&options.request_body),
+                    SHEETS_SCOPES,
+                )
+                .await
+            }
+            Self::BatchUpdateValues(options) => {
+                send_json_request(
+                    client,
+                    client
+                        .post(options.request_url()?)
+                        .json(&options.request_body),
+                    SHEETS_SCOPES,
+                )
+                .await
+            }
+            Self::AppendValues(options) => {
+                send_json_request(
+                    client,
+                    client
+                        .post(options.request_url()?)
+                        .json(&options.request_body),
+                    SHEETS_SCOPES,
+                )
+                .await
+            }
+            Self::ClearValues(options) => {
+                send_json_request(
+                    client,
+                    client
+                        .post(options.request_url()?)
+                        .json(&serde_json::json!({})),
+                    SHEETS_SCOPES,
+                )
+                .await
+            }
+            Self::BatchClearValues(options) => {
+                send_json_request(
+                    client,
+                    client
+                        .post(options.request_url()?)
+                        .json(&serde_json::json!({ "ranges": &options.ranges })),
+                    SHEETS_SCOPES,
+                )
+                .await
+            }
+            Self::BatchUpdateSpreadsheet(options) => {
+                send_json_request(
+                    client,
+                    client
+                        .post(options.request_url()?)
+                        .json(&options.request_body),
+                    SHEETS_SCOPES,
+                )
+                .await
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueRenderOption {
     FormattedValue,
@@ -520,123 +643,73 @@ pub async fn get_spreadsheet<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetSpreadsheetOptions,
 ) -> Result<Spreadsheet, SheetsError> {
-    send_json_request_with_office_file_fallback(
-        client,
-        client.get(options.request_url()?),
-        SHEETS_SCOPES,
-        || get_spreadsheet_via_temporary_conversion(client, options),
-    )
-    .await
+    SheetsOperation::GetSpreadsheet(options)
+        .execute(client)
+        .await
 }
 
 pub async fn get_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &GetValuesOptions,
 ) -> Result<ValueRange, SheetsError> {
-    send_json_request_with_office_file_fallback(
-        client,
-        client.get(options.request_url()?),
-        SHEETS_SCOPES,
-        || get_values_via_temporary_conversion(client, options),
-    )
-    .await
+    SheetsOperation::GetValues(options).execute(client).await
 }
 
 pub async fn batch_get_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchGetValuesOptions,
 ) -> Result<BatchGetValuesResponse, SheetsError> {
-    send_json_request_with_office_file_fallback(
-        client,
-        client.get(options.request_url()?),
-        SHEETS_SCOPES,
-        || batch_get_values_via_temporary_conversion(client, options),
-    )
-    .await
+    SheetsOperation::BatchGetValues(options)
+        .execute(client)
+        .await
 }
 
 pub async fn update_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &UpdateValuesOptions,
 ) -> Result<UpdateValuesResponse, SheetsError> {
-    send_json_request(
-        client,
-        client
-            .put(options.request_url()?)
-            .json(&options.request_body),
-        SHEETS_SCOPES,
-    )
-    .await
+    SheetsOperation::UpdateValues(options).execute(client).await
 }
 
 pub async fn batch_update_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchUpdateValuesOptions,
 ) -> Result<BatchUpdateValuesResponse, SheetsError> {
-    send_json_request(
-        client,
-        client
-            .post(options.request_url()?)
-            .json(&options.request_body),
-        SHEETS_SCOPES,
-    )
-    .await
+    SheetsOperation::BatchUpdateValues(options)
+        .execute(client)
+        .await
 }
 
 pub async fn append_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &AppendValuesOptions,
 ) -> Result<AppendValuesResponse, SheetsError> {
-    send_json_request(
-        client,
-        client
-            .post(options.request_url()?)
-            .json(&options.request_body),
-        SHEETS_SCOPES,
-    )
-    .await
+    SheetsOperation::AppendValues(options).execute(client).await
 }
 
 pub async fn clear_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ClearValuesOptions,
 ) -> Result<ClearValuesResponse, SheetsError> {
-    send_json_request(
-        client,
-        client
-            .post(options.request_url()?)
-            .json(&serde_json::json!({})),
-        SHEETS_SCOPES,
-    )
-    .await
+    SheetsOperation::ClearValues(options).execute(client).await
 }
 
 pub async fn batch_clear_values<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchClearValuesOptions,
 ) -> Result<BatchClearValuesResponse, SheetsError> {
-    send_json_request(
-        client,
-        client
-            .post(options.request_url()?)
-            .json(&serde_json::json!({ "ranges": &options.ranges })),
-        SHEETS_SCOPES,
-    )
-    .await
+    SheetsOperation::BatchClearValues(options)
+        .execute(client)
+        .await
 }
 
 pub async fn batch_update_spreadsheet<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &BatchUpdateSpreadsheetOptions,
 ) -> Result<BatchUpdateSpreadsheetResponse, SheetsError> {
-    send_json_request(
-        client,
-        client
-            .post(options.request_url()?)
-            .json(&options.request_body),
-        SHEETS_SCOPES,
-    )
-    .await
+    SheetsOperation::BatchUpdateSpreadsheet(options)
+        .execute(client)
+        .await
 }
 
 async fn send_json_request<S: AccountStore>(

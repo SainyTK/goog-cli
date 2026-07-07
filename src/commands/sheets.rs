@@ -6,22 +6,18 @@ use anyhow::{Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
-use crate::auth::config::{resolve_account, Config};
-use crate::auth::state::{
-    load_runtime_state, load_runtime_state_from_path, resource_key, save_runtime_state,
-    save_runtime_state_to_path, RuntimeState,
-};
+use crate::auth::config::Config;
+use crate::auth::state::resource_key;
+use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
     SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand,
 };
 use crate::sheets::{
-    append_values, batch_clear_values, batch_get_values, batch_update_spreadsheet,
-    batch_update_values, clear_values, get_spreadsheet, get_values, update_values,
     AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
     BatchUpdateSpreadsheetOptions, BatchUpdateValuesOptions, ClearValuesOptions,
-    GetSpreadsheetOptions, GetValuesOptions, InsertDataOption, SheetsError, UpdateValuesOptions,
-    ValueInputOption, ValueRenderOption,
+    GetSpreadsheetOptions, GetValuesOptions, InsertDataOption, SheetsError, SheetsOperation,
+    UpdateValuesOptions, ValueInputOption, ValueRenderOption,
 };
 
 pub fn run<S: AccountStore>(
@@ -104,7 +100,8 @@ pub(super) async fn run_get_to<S: AccountStore>(
         spreadsheets_url,
     );
 
-    let spreadsheet = get_spreadsheet(client, &options)
+    let spreadsheet = SheetsOperation::GetSpreadsheet(&options)
+        .execute(client)
         .await
         .context("failed to fetch Google Sheets Spreadsheet")?;
     write_json_line(out, &spreadsheet, "failed to serialize Sheets Spreadsheet")
@@ -133,8 +130,7 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
         config,
         store,
         account_override,
-        &spreadsheet_id,
-        SheetsAccessAttempt::GetSpreadsheet(&options),
+        &SheetsOperation::GetSpreadsheet(&options),
         state_path,
     )
     .await
@@ -163,7 +159,8 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 value_render_option.into(),
                 spreadsheets_url,
             );
-            let response = get_values(client, &options)
+            let response = SheetsOperation::GetValues(&options)
+                .execute(client)
                 .await
                 .context("failed to fetch Google Sheets ValueRange")?;
             write_json_line(out, &response, "failed to serialize Sheets ValueRange")
@@ -179,7 +176,8 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 value_render_option.into(),
                 spreadsheets_url,
             );
-            let response = batch_get_values(client, &options)
+            let response = SheetsOperation::BatchGetValues(&options)
+                .execute(client)
                 .await
                 .context("failed to fetch Google Sheets ValueRanges")?;
             write_json_line(
@@ -203,7 +201,8 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 value_input_option.into(),
                 spreadsheets_url,
             );
-            let response = update_values(client, &options)
+            let response = SheetsOperation::UpdateValues(&options)
+                .execute(client)
                 .await
                 .context("failed to update Google Sheets values")?;
             write_json_line(
@@ -220,7 +219,8 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 read_request_body(&values, input, "Google Sheets Values request body")?;
             let options =
                 batch_update_values_options(spreadsheet_id, request_body, spreadsheets_url);
-            let response = batch_update_values(client, &options)
+            let response = SheetsOperation::BatchUpdateValues(&options)
+                .execute(client)
                 .await
                 .context("failed to batch update Google Sheets values")?;
             write_json_line(
@@ -246,7 +246,8 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 insert_data_option.into(),
                 spreadsheets_url,
             );
-            let response = append_values(client, &options)
+            let response = SheetsOperation::AppendValues(&options)
+                .execute(client)
                 .await
                 .context("failed to append Google Sheets values")?;
             write_json_line(
@@ -260,7 +261,8 @@ pub(super) async fn run_values_to<S: AccountStore>(
             range,
         } => {
             let options = clear_values_options(spreadsheet_id, range, spreadsheets_url);
-            let response = clear_values(client, &options)
+            let response = SheetsOperation::ClearValues(&options)
+                .execute(client)
                 .await
                 .context("failed to clear Google Sheets values")?;
             write_json_line(
@@ -274,7 +276,8 @@ pub(super) async fn run_values_to<S: AccountStore>(
             ranges,
         } => {
             let options = batch_clear_values_options(spreadsheet_id, ranges, spreadsheets_url);
-            let response = batch_clear_values(client, &options)
+            let response = SheetsOperation::BatchClearValues(&options)
+                .execute(client)
                 .await
                 .context("failed to batch clear Google Sheets values")?;
             write_json_line(
@@ -312,8 +315,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 config,
                 store,
                 account_override,
-                &spreadsheet_id,
-                SheetsAccessAttempt::GetValues(&options),
+                &SheetsOperation::GetValues(&options),
                 state_path,
             )
             .await
@@ -335,8 +337,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 config,
                 store,
                 account_override,
-                &spreadsheet_id,
-                SheetsAccessAttempt::BatchGetValues(&options),
+                &SheetsOperation::BatchGetValues(&options),
                 state_path,
             )
             .await
@@ -366,8 +367,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 config,
                 store,
                 account_override,
-                &spreadsheet_id,
-                SheetsAccessAttempt::UpdateValues(&options),
+                &SheetsOperation::UpdateValues(&options),
                 state_path,
             )
             .await
@@ -390,8 +390,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 config,
                 store,
                 account_override,
-                &spreadsheet_id,
-                SheetsAccessAttempt::BatchUpdateValues(&options),
+                &SheetsOperation::BatchUpdateValues(&options),
                 state_path,
             )
             .await
@@ -423,8 +422,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 config,
                 store,
                 account_override,
-                &spreadsheet_id,
-                SheetsAccessAttempt::AppendValues(&options),
+                &SheetsOperation::AppendValues(&options),
                 state_path,
             )
             .await
@@ -444,8 +442,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 config,
                 store,
                 account_override,
-                &spreadsheet_id,
-                SheetsAccessAttempt::ClearValues(&options),
+                &SheetsOperation::ClearValues(&options),
                 state_path,
             )
             .await
@@ -466,8 +463,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 config,
                 store,
                 account_override,
-                &spreadsheet_id,
-                SheetsAccessAttempt::BatchClearValues(&options),
+                &SheetsOperation::BatchClearValues(&options),
                 state_path,
             )
             .await
@@ -494,7 +490,8 @@ pub(super) async fn run_batch_update_to<S: AccountStore>(
         read_request_body(&requests, input, "Google Sheets Batch Update request body")?;
     let options = batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
 
-    let response = batch_update_spreadsheet(client, &options)
+    let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+        .execute(client)
         .await
         .context("failed to apply Google Sheets Batch Update")?;
     write_json_line(
@@ -523,8 +520,7 @@ pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
         config,
         store,
         account_override,
-        &spreadsheet_id,
-        SheetsAccessAttempt::BatchUpdateSpreadsheet(&options),
+        &SheetsOperation::BatchUpdateSpreadsheet(&options),
         state_path,
     )
     .await
@@ -537,33 +533,20 @@ pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
     )
 }
 
-enum SheetsAccessAttempt<'a> {
-    GetSpreadsheet(&'a GetSpreadsheetOptions),
-    GetValues(&'a GetValuesOptions),
-    BatchGetValues(&'a BatchGetValuesOptions),
-    UpdateValues(&'a UpdateValuesOptions),
-    BatchUpdateValues(&'a BatchUpdateValuesOptions),
-    AppendValues(&'a AppendValuesOptions),
-    ClearValues(&'a ClearValuesOptions),
-    BatchClearValues(&'a BatchClearValuesOptions),
-    BatchUpdateSpreadsheet(&'a BatchUpdateSpreadsheetOptions),
-}
-
 async fn run_spreadsheet_attempt<S: AccountStore>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
-    spreadsheet_id: &str,
-    attempt: SheetsAccessAttempt<'_>,
+    operation: &SheetsOperation<'_>,
     state_path: Option<&Path>,
 ) -> Result<serde_json::Value, SheetsError> {
-    let target_resource_key = resource_key("sheets", spreadsheet_id);
+    let target_resource_key = resource_key("sheets", operation.spreadsheet_id());
     run_with_sheets_unified_access(
         config,
         store,
         account_override,
         &target_resource_key,
-        attempt,
+        operation,
         state_path,
     )
     .await
@@ -574,148 +557,34 @@ async fn run_with_sheets_unified_access<S: AccountStore>(
     store: &S,
     account_override: Option<&str>,
     target_resource_key: &str,
-    attempt: SheetsAccessAttempt<'_>,
+    operation: &SheetsOperation<'_>,
     state_path: Option<&Path>,
 ) -> Result<serde_json::Value, SheetsError> {
-    let mut state = load_sheets_runtime_state(state_path)?;
-
-    if let Some(account_override) = account_override {
-        let account = resolve_account(config, Some(account_override))
-            .map_err(SheetsError::Auth)?
-            .expect("explicit account resolution returns an account");
-        return run_sheets_access_as_account(
-            config,
-            store,
-            &mut state,
-            state_path,
-            target_resource_key,
-            &attempt,
-            account,
-        )
-        .await;
-    }
-
-    let candidates = unified_access_candidates(config, &state, target_resource_key);
-    let mut last_target_access_failure = None;
-
-    for account in candidates {
-        match run_sheets_access_as_account(
-            config,
-            store,
-            &mut state,
-            state_path,
-            target_resource_key,
-            &attempt,
-            account,
-        )
-        .await
-        {
-            Ok(result) => return Ok(result),
-            Err(err) if is_target_access_failure(&err) => {
-                last_target_access_failure = Some(err);
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    Err(last_target_access_failure.unwrap_or({
-        SheetsError::Auth(crate::auth::error::AuthError::ActiveAccountNotConfigured)
-    }))
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, serde_json::Value, SheetsError> {
+            Box::pin(run_sheets_access_as_account(
+                config, store, operation, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
 }
 
 async fn run_sheets_access_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
-    state: &mut RuntimeState,
-    state_path: Option<&Path>,
-    target_resource_key: &str,
-    attempt: &SheetsAccessAttempt<'_>,
+    operation: &SheetsOperation<'_>,
     account: String,
 ) -> Result<serde_json::Value, SheetsError> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))
         .map_err(SheetsError::Auth)?;
-    let result = attempt_sheets_access(&client, attempt).await?;
-    state.set_resource_account(target_resource_key, account);
-    save_sheets_runtime_state(state, state_path)?;
+    let result = operation.execute(&client).await?;
     Ok(result)
-}
-
-async fn attempt_sheets_access<S: AccountStore>(
-    client: &AuthClient<'_, S>,
-    attempt: &SheetsAccessAttempt<'_>,
-) -> Result<serde_json::Value, SheetsError> {
-    match attempt {
-        SheetsAccessAttempt::GetSpreadsheet(options) => get_spreadsheet(client, options).await,
-        SheetsAccessAttempt::GetValues(options) => get_values(client, options).await,
-        SheetsAccessAttempt::BatchGetValues(options) => batch_get_values(client, options).await,
-        SheetsAccessAttempt::UpdateValues(options) => update_values(client, options).await,
-        SheetsAccessAttempt::BatchUpdateValues(options) => {
-            batch_update_values(client, options).await
-        }
-        SheetsAccessAttempt::AppendValues(options) => append_values(client, options).await,
-        SheetsAccessAttempt::ClearValues(options) => clear_values(client, options).await,
-        SheetsAccessAttempt::BatchClearValues(options) => batch_clear_values(client, options).await,
-        SheetsAccessAttempt::BatchUpdateSpreadsheet(options) => {
-            batch_update_spreadsheet(client, options).await
-        }
-    }
-}
-
-fn load_sheets_runtime_state(state_path: Option<&Path>) -> Result<RuntimeState, SheetsError> {
-    match state_path {
-        Some(path) => load_runtime_state_from_path(path),
-        None => load_runtime_state(),
-    }
-    .map_err(SheetsError::Auth)
-}
-
-fn save_sheets_runtime_state(
-    state: &RuntimeState,
-    state_path: Option<&Path>,
-) -> Result<(), SheetsError> {
-    match state_path {
-        Some(path) => save_runtime_state_to_path(state, path),
-        None => save_runtime_state(state),
-    }
-    .map_err(SheetsError::Auth)
-}
-
-fn unified_access_candidates(
-    config: &Config,
-    state: &RuntimeState,
-    target_resource_key: &str,
-) -> Vec<String> {
-    let mut candidates = Vec::new();
-
-    if let Some(mapped) = state.account_for_resource(target_resource_key) {
-        push_if_configured(config, &mut candidates, mapped);
-    }
-
-    if let Some(active) = config.active_account() {
-        push_if_configured(config, &mut candidates, active);
-    }
-
-    for account in &config.accounts {
-        push_candidate(&mut candidates, account);
-    }
-
-    candidates
-}
-
-fn push_if_configured(config: &Config, candidates: &mut Vec<String>, account: &str) {
-    if config
-        .accounts
-        .iter()
-        .any(|configured| configured == account)
-    {
-        push_candidate(candidates, account);
-    }
-}
-
-fn push_candidate(candidates: &mut Vec<String>, account: &str) {
-    if !candidates.iter().any(|candidate| candidate == account) {
-        candidates.push(account.to_string());
-    }
 }
 
 fn is_target_access_failure(err: &SheetsError) -> bool {

@@ -205,6 +205,42 @@ async fn create_draft_rejects_newlines_in_headers() {
 }
 
 #[tokio::test]
+async fn update_draft_puts_to_gmail_draft_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/gmail/v1/users/me/drafts/draft-123"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(body_string_contains("\"id\":\"draft-123\""))
+        .and(body_string_contains("\"raw\""))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = UpdateDraftOptions::new(
+        "draft-123",
+        DraftMessage {
+            to: vec!["alice@example.com".into()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Updated subject".into(),
+            body: "Updated body".into(),
+            attachments: Vec::new(),
+        },
+    )
+    .with_drafts_url(drafts_url(&server));
+
+    let draft = update_draft(&client, &options).await.unwrap();
+
+    assert_eq!(draft["id"], "draft-123");
+}
+
+#[tokio::test]
 async fn list_messages_defaults_to_inbox_and_hydrates_summary_metadata() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
