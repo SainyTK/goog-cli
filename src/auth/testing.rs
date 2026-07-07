@@ -10,6 +10,16 @@ pub struct MemoryStore {
     active_account: Mutex<Option<String>>,
 }
 
+impl MemoryStore {
+    #[cfg(test)]
+    pub fn seed_account_without_activating(&self, email: &str, token: &Token) {
+        self.inner
+            .lock()
+            .unwrap()
+            .insert(email.to_string(), token.clone());
+    }
+}
+
 impl AccountStore for MemoryStore {
     fn save_token(&self, email: &str, token: &Token) -> Result<(), AuthError> {
         self.inner

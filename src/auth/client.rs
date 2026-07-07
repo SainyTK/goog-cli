@@ -317,28 +317,15 @@ fn resolve_account(
         return Ok(account.to_string());
     }
 
-    #[cfg(test)]
+    if let Some(active) = store.active_account()? {
+        return Ok(active);
+    }
+
     if let Some(active) = config.active_account() {
         if store.account_exists(active)? {
             return Ok(active.to_string());
         }
     }
 
-    if let Some(active) = store.active_account()? {
-        return Ok(active);
-    }
-
-    #[cfg(test)]
-    {
-        return config
-            .active_account()
-            .map(str::to_string)
-            .ok_or(AuthError::ActiveAccountNotConfigured);
-    }
-
-    #[cfg(not(test))]
-    {
-        let _ = config;
-        return Err(AuthError::ActiveAccountNotConfigured);
-    }
+    Err(AuthError::ActiveAccountNotConfigured)
 }

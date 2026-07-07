@@ -77,8 +77,12 @@ pub(super) fn load_config_from_paths(
     }
 
     if old_path.exists() {
-        let config = load_config_from_path(&old_path)?;
+        let mut config = load_config_from_path(&old_path)?;
         save_config_to_path(&config, &path)?;
+        config.accounts = Vec::new();
+        if let Some(settings) = config.settings.as_mut() {
+            settings.active_account = None;
+        }
         return Ok(config);
     }
 
