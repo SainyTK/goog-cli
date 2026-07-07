@@ -1890,6 +1890,28 @@ pub enum SheetsSheetCommand {
         #[arg(long, value_enum)]
         strategy: SheetsWrapStrategy,
     },
+    /// Set text rotation over a cell range without writing a Batch Update JSON body
+    TextRotation {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Text rotation angle from -90 to 90 degrees
+        #[arg(long, value_parser = clap::value_parser!(i64).range(-90..=90))]
+        angle: i64,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update
