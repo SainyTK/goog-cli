@@ -1,15 +1,11 @@
-use chrono::{TimeZone, Utc};
-use std::sync::Mutex;
-
-#[cfg(target_os = "macos")]
-use super::account::KeyringStore;
 use super::account::{
     resolve_account_store, AccountStore, AccountStoreImpl, FileAccountStore, Token,
-    TOKEN_FILE_ENV_VAR,
 };
+use super::state::{AuthState, TOKEN_FILE_ENV_VAR};
 use super::testing::MemoryStore;
+use chrono::{TimeZone, Utc};
 
-static ENV_LOCK: Mutex<()> = Mutex::new(());
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn sample_token() -> Token {
     Token {
@@ -128,6 +124,23 @@ fn file_store_login_save_reports_prompt_free_access_guaranteed() {
     assert_eq!(store.load_token("alice@example.com").unwrap(), Some(token));
 }
 
+#[cfg(unix)]
+#[test]
+fn file_store_writes_user_only_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auth.json");
+    let store = FileAccountStore::new(path.clone());
+
+    store
+        .save_token("alice@example.com", &sample_token())
+        .unwrap();
+
+    let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
 #[test]
 fn file_store_returns_none_when_file_is_missing() {
     let dir = tempfile::tempdir().unwrap();
@@ -185,8 +198,8 @@ fn file_store_replace_all_discards_accounts_not_in_the_new_set() {
         .save_token("stale@example.com", &sample_token())
         .unwrap();
 
-    let mut fresh = std::collections::HashMap::new();
-    fresh.insert("alice@example.com".to_string(), sample_token());
+    let mut fresh = AuthState::default();
+    fresh.save_token_for_account("alice@example.com", sample_token());
     store.replace_all(&fresh).unwrap();
 
     assert!(store.load_token("stale@example.com").unwrap().is_none());
@@ -194,13 +207,13 @@ fn file_store_replace_all_discards_accounts_not_in_the_new_set() {
 }
 
 #[test]
-fn resolve_account_store_uses_keyring_by_default() {
+fn resolve_account_store_uses_default_auth_state_file_by_default() {
     let _lock = ENV_LOCK.lock().unwrap();
     let _guard = EnvGuard::unset(TOKEN_FILE_ENV_VAR);
 
-    let store = resolve_account_store();
+    let store = resolve_account_store().unwrap();
 
-    assert!(matches!(store, AccountStoreImpl::Keyring(_)));
+    assert!(matches!(store, AccountStoreImpl::File(_)));
 }
 
 #[test]
@@ -210,57 +223,7 @@ fn resolve_account_store_uses_file_only_when_token_file_is_explicit() {
     let token_path = dir.path().join("tokens.json");
     let _guard = EnvGuard::set(TOKEN_FILE_ENV_VAR, &token_path);
 
-    let store = resolve_account_store();
+    let store = resolve_account_store().unwrap();
 
     assert!(matches!(store, AccountStoreImpl::File(_)));
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-#[ignore = "writes a disposable item to the macOS login keychain"]
-fn keyring_store_login_save_round_trips_through_macos_keychain() {
-    let store = KeyringStore;
-    let account = format!("goog-keychain-smoke-{}@example.invalid", std::process::id());
-    let token = sample_token();
-
-    let _cleanup = KeychainCleanup::new(&account);
-
-    let outcome = store.save_token_for_login(&account, &token).unwrap();
-
-    assert!(outcome.prompt_free_access_is_guaranteed());
-    assert_eq!(store.load_token(&account).unwrap(), Some(token));
-}
-
-#[cfg(target_os = "macos")]
-struct KeychainCleanup {
-    account: String,
-}
-
-#[cfg(target_os = "macos")]
-impl KeychainCleanup {
-    fn new(account: &str) -> Self {
-        let cleanup = Self {
-            account: account.to_string(),
-        };
-        cleanup.delete();
-        cleanup
-    }
-
-    fn delete(&self) {
-        let Ok(entry) = keyring::Entry::new("goog", &self.account) else {
-            return;
-        };
-
-        match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => {}
-            Err(_) => {}
-        }
-    }
-}
-
-#[cfg(target_os = "macos")]
-impl Drop for KeychainCleanup {
-    fn drop(&mut self) {
-        self.delete();
-    }
 }

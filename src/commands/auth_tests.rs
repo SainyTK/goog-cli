@@ -1,13 +1,16 @@
 use std::path::{Path, PathBuf};
 
-use crate::auth::account::TokenSaveOutcome;
+use chrono::{TimeZone, Utc};
+
+use crate::auth::account::{Token, TokenSaveOutcome};
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType};
 use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 
 use super::auth::{
-    add_account_to_config, build_oauth_app_secrets, perform_device_login, run_mappings_clear_to,
-    run_mappings_list_to, run_setup_to, write_login_completion_to, SETUP_GUIDE,
+    add_account_to_config, build_export_state, build_oauth_app_secrets, perform_device_login,
+    run_mappings_clear_to, run_mappings_list_to, run_setup_to, write_login_completion_to,
+    SETUP_GUIDE,
 };
 use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
@@ -16,6 +19,15 @@ use crate::auth::state::{
 struct RuntimeStateFixture {
     _temp_dir: tempfile::TempDir,
     path: PathBuf,
+}
+
+fn sample_token(access_token: &str) -> Token {
+    Token {
+        access_token: access_token.into(),
+        refresh_token: "refresh-token".into(),
+        expiry: Utc.with_ymd_and_hms(2030, 1, 1, 0, 0, 0).unwrap(),
+        scopes: vec!["openid".into()],
+    }
 }
 
 impl RuntimeStateFixture {
@@ -162,7 +174,7 @@ fn second_login_does_not_displace_active_account() {
 }
 
 #[test]
-fn login_warns_when_keychain_prompt_free_access_is_not_guaranteed() {
+fn login_does_not_emit_local_secret_store_warning() {
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
 
@@ -178,16 +190,11 @@ fn login_warns_when_keychain_prompt_free_access_is_not_guaranteed() {
         String::from_utf8(out).unwrap(),
         "Authorized as alice@example.com\n"
     );
-    let warning = String::from_utf8(err).unwrap();
-    assert!(warning.contains("Keychain Access Prompts"));
-    assert!(warning.contains("Google browser consent prompts"));
-    assert!(warning.contains("goog auth login"));
-    assert!(!warning.contains("access-abc"));
-    assert!(!warning.contains("refresh-def"));
+    assert!(String::from_utf8(err).unwrap().is_empty());
 }
 
 #[test]
-fn login_does_not_warn_when_keychain_prompt_free_access_is_guaranteed() {
+fn login_does_not_warn_when_file_token_store_save_succeeds() {
     let mut out: Vec<u8> = Vec::new();
     let mut err: Vec<u8> = Vec::new();
 
@@ -204,6 +211,36 @@ fn login_does_not_warn_when_keychain_prompt_free_access_is_guaranteed() {
         "Authorized as alice@example.com\n"
     );
     assert!(String::from_utf8(err).unwrap().is_empty());
+}
+
+#[test]
+fn export_state_filters_to_selected_account_and_relevant_mappings() {
+    let mut state = RuntimeState::default();
+    state.save_token_for_account("alice@example.com", sample_token("alice-access"));
+    state.save_token_for_account("bob@example.com", sample_token("bob-access"));
+    state.active_account = Some("bob@example.com".into());
+    state.set_resource_account(resource_key("docs", "doc-for-bob"), "bob@example.com");
+    state.set_resource_account(resource_key("docs", "doc-for-alice"), "alice@example.com");
+
+    let exported = build_export_state(&state, &["bob@example.com".into()]).unwrap();
+
+    assert_eq!(exported.account_emails(), vec!["bob@example.com"]);
+    assert_eq!(exported.active_account.as_deref(), Some("bob@example.com"));
+    assert_eq!(
+        exported
+            .token_for_account("bob@example.com")
+            .unwrap()
+            .access_token,
+        "bob-access"
+    );
+    assert_eq!(
+        exported.account_for_resource(&resource_key("docs", "doc-for-bob")),
+        Some("bob@example.com")
+    );
+    assert_eq!(
+        exported.account_for_resource(&resource_key("docs", "doc-for-alice")),
+        None
+    );
 }
 
 #[test]
