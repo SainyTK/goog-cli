@@ -5643,6 +5643,80 @@ fn sheets_sheet_delete_named_range_accepts_named_range_id() {
 }
 
 #[test]
+fn sheets_sheet_update_named_range_accepts_name_and_grid_range() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "update-named-range",
+        "spreadsheet-123",
+        "header_cells",
+        "--name",
+        "HeaderRows",
+        "--sheet-id",
+        "42",
+        "--start-row",
+        "0",
+        "--end-row",
+        "2",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::UpdateNamedRange {
+                            spreadsheet_id,
+                            named_range_id,
+                            name,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(named_range_id, "header_cells");
+            assert_eq!(name.as_deref(), Some("HeaderRows"));
+            assert_eq!(sheet_id, Some(42));
+            assert_eq!(start_row, Some(0));
+            assert_eq!(end_row, Some(2));
+            assert_eq!(start_column, Some(0));
+            assert_eq!(end_column, Some(5));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_update_named_range_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "update-named-range",
+        "spreadsheet-123",
+        "header_cells",
+        "--sheet-id",
+        "42",
+        "--start-row",
+        "-1",
+        "--end-row",
+        "2",
+        "--start-column",
+        "0",
+        "--end-column",
+        "5",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_update_protected_range_accepts_description_and_mode() {
     let cli = parse(&[
         "sheets",

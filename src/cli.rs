@@ -2300,6 +2300,31 @@ pub enum SheetsSheetCommand {
         /// Google Sheets namedRangeId to delete
         named_range_id: String,
     },
+    /// Update a named range without writing a Batch Update JSON body
+    UpdateNamedRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets namedRangeId to update
+        named_range_id: String,
+        /// New named range name
+        #[arg(long)]
+        name: Option<String>,
+        /// Google Sheets numeric sheetId for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        sheet_id: Option<i64>,
+        /// Zero-based inclusive start row for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: Option<i64>,
+        /// Zero-based exclusive end row for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: Option<i64>,
+        /// Zero-based inclusive start column for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: Option<i64>,
+        /// Zero-based exclusive end column for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: Option<i64>,
+    },
     /// Update a protected range without writing a Batch Update JSON body
     UpdateProtectedRange {
         /// Google Sheets Spreadsheet ID to update

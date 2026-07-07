@@ -6804,6 +6804,185 @@ async fn run_sheet_delete_named_range_rejects_empty_id() {
 }
 
 #[tokio::test]
+async fn run_sheet_update_named_range_builds_update_named_range_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "updateNamedRange": {
+                    "namedRange": {
+                        "namedRangeId": "header_cells",
+                        "name": "HeaderRows",
+                        "range": {
+                            "sheetId": 42,
+                            "startRowIndex": 0,
+                            "endRowIndex": 2,
+                            "startColumnIndex": 0,
+                            "endColumnIndex": 5
+                        }
+                    },
+                    "fields": "name,range"
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::UpdateNamedRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            named_range_id: "header_cells".into(),
+            name: Some("HeaderRows".into()),
+            sheet_id: Some(42),
+            start_row: Some(0),
+            end_row: Some(2),
+            start_column: Some(0),
+            end_column: Some(5),
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_update_named_range_allows_rename_only() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "updateNamedRange": {
+                    "namedRange": {
+                        "namedRangeId": "header_cells",
+                        "name": "HeaderRows"
+                    },
+                    "fields": "name"
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::UpdateNamedRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            named_range_id: "header_cells".into(),
+            name: Some("HeaderRows".into()),
+            sheet_id: None,
+            start_row: None,
+            end_row: None,
+            start_column: None,
+            end_column: None,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_update_named_range_rejects_partial_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::UpdateNamedRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            named_range_id: "header_cells".into(),
+            name: None,
+            sheet_id: Some(42),
+            start_row: Some(0),
+            end_row: Some(2),
+            start_column: Some(0),
+            end_column: None,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains(
+        "provide --sheet-id, --start-row, --end-row, --start-column, and --end-column together"
+    ));
+}
+
+#[tokio::test]
+async fn run_sheet_update_named_range_rejects_empty_update() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::UpdateNamedRange {
+            spreadsheet_id: "spreadsheet-123".into(),
+            named_range_id: "header_cells".into(),
+            name: None,
+            sheet_id: None,
+            start_row: None,
+            end_row: None,
+            start_column: None,
+            end_column: None,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("provide --name or a full range to update"));
+}
+
+#[tokio::test]
 async fn run_sheet_unprotect_range_builds_delete_protected_range_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

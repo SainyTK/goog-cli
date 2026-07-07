@@ -1472,6 +1472,37 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Delete named range response",
             )
         }
+        SheetsSheetCommand::UpdateNamedRange {
+            spreadsheet_id,
+            named_range_id,
+            name,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+        } => {
+            let request_body = update_named_range_sheet_request_body(
+                &named_range_id,
+                name.as_deref(),
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to update Google Sheets named range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Update named range response",
+            )
+        }
         SheetsSheetCommand::UnprotectRange {
             spreadsheet_id,
             protected_range_id,
@@ -3368,6 +3399,45 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Delete named range response",
+            )
+        }
+        SheetsSheetCommand::UpdateNamedRange {
+            spreadsheet_id,
+            named_range_id,
+            name,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+        } => {
+            let request_body = update_named_range_sheet_request_body(
+                &named_range_id,
+                name.as_deref(),
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to update Google Sheets named range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Update named range response",
             )
         }
         SheetsSheetCommand::UnprotectRange {
@@ -5294,6 +5364,69 @@ fn delete_named_range_sheet_request_body(named_range_id: &str) -> Result<serde_j
             {
                 "deleteNamedRange": {
                     "namedRangeId": named_range_id
+                }
+            }
+        ]
+    }))
+}
+
+fn update_named_range_sheet_request_body(
+    named_range_id: &str,
+    name: Option<&str>,
+    sheet_id: Option<i64>,
+    start_row: Option<i64>,
+    end_row: Option<i64>,
+    start_column: Option<i64>,
+    end_column: Option<i64>,
+) -> Result<serde_json::Value> {
+    if named_range_id.trim().is_empty() {
+        bail!("namedRangeId must not be empty");
+    }
+    if name.is_some_and(|name| name.trim().is_empty()) {
+        bail!("--name must not be empty");
+    }
+
+    let range_parts = [
+        sheet_id.is_some(),
+        start_row.is_some(),
+        end_row.is_some(),
+        start_column.is_some(),
+        end_column.is_some(),
+    ];
+    let has_any_range_part = range_parts.iter().any(|present| *present);
+    let has_full_range = range_parts.iter().all(|present| *present);
+    if has_any_range_part && !has_full_range {
+        bail!(
+            "provide --sheet-id, --start-row, --end-row, --start-column, and --end-column together"
+        );
+    }
+
+    let mut named_range = serde_json::json!({
+        "namedRangeId": named_range_id
+    });
+    let mut fields = Vec::new();
+
+    if let Some(name) = name {
+        named_range["name"] = serde_json::json!(name);
+        fields.push("name");
+    }
+    if let (Some(sheet_id), Some(start_row), Some(end_row), Some(start_column), Some(end_column)) =
+        (sheet_id, start_row, end_row, start_column, end_column)
+    {
+        validate_grid_range(start_row, end_row, start_column, end_column)?;
+        named_range["range"] = grid_range(sheet_id, start_row, end_row, start_column, end_column);
+        fields.push("range");
+    }
+    if fields.is_empty() {
+        bail!("provide --name or a full range to update");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updateNamedRange": {
+                    "namedRange": named_range,
+                    "fields": fields.join(",")
                 }
             }
         ]
