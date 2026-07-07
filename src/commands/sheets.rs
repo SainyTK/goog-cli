@@ -1455,6 +1455,23 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Add named range response",
             )
         }
+        SheetsSheetCommand::DeleteNamedRange {
+            spreadsheet_id,
+            named_range_id,
+        } => {
+            let request_body = delete_named_range_sheet_request_body(&named_range_id)?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to delete Google Sheets named range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Delete named range response",
+            )
+        }
         SheetsSheetCommand::UnprotectRange {
             spreadsheet_id,
             protected_range_id,
@@ -3326,6 +3343,31 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Add named range response",
+            )
+        }
+        SheetsSheetCommand::DeleteNamedRange {
+            spreadsheet_id,
+            named_range_id,
+        } => {
+            let request_body = delete_named_range_sheet_request_body(&named_range_id)?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to delete Google Sheets named range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Delete named range response",
             )
         }
         SheetsSheetCommand::UnprotectRange {
@@ -5236,6 +5278,22 @@ fn add_named_range_sheet_request_body(
             {
                 "addNamedRange": {
                     "namedRange": named_range
+                }
+            }
+        ]
+    }))
+}
+
+fn delete_named_range_sheet_request_body(named_range_id: &str) -> Result<serde_json::Value> {
+    if named_range_id.trim().is_empty() {
+        bail!("namedRangeId must not be empty");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "deleteNamedRange": {
+                    "namedRangeId": named_range_id
                 }
             }
         ]

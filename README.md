@@ -277,6 +277,7 @@ goog sheets sheet conditional-format-move SPREADSHEET_ID 123456789 2 0
 goog sheets sheet protect-range SPREADSHEET_ID 123456789 --start-row 0 --end-row 1 --start-column 0 --end-column 5 --description "Lock headers"
 goog sheets sheet protect-range SPREADSHEET_ID 123456789 --start-row 1 --end-row 100 --start-column 0 --end-column 5 --warning-only
 goog sheets sheet add-named-range SPREADSHEET_ID 123456789 HeaderCells --start-row 0 --end-row 1 --start-column 0 --end-column 5
+goog sheets sheet delete-named-range SPREADSHEET_ID header_cells
 goog sheets sheet update-protected-range SPREADSHEET_ID 7 --description "Warn before editing" --warning-only
 goog sheets sheet update-protected-range SPREADSHEET_ID 7 --enforce
 goog sheets sheet unprotect-range SPREADSHEET_ID 7

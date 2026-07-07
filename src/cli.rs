@@ -2293,6 +2293,13 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         named_range_id: Option<String>,
     },
+    /// Delete a named range without writing a Batch Update JSON body
+    DeleteNamedRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets namedRangeId to delete
+        named_range_id: String,
+    },
     /// Update a protected range without writing a Batch Update JSON body
     UpdateProtectedRange {
         /// Google Sheets Spreadsheet ID to update

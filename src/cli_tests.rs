@@ -5615,6 +5615,34 @@ fn sheets_sheet_add_named_range_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_delete_named_range_accepts_named_range_id() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "delete-named-range",
+        "spreadsheet-123",
+        "header_cells",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::DeleteNamedRange {
+                            spreadsheet_id,
+                            named_range_id,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(named_range_id, "header_cells");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_sheet_update_protected_range_accepts_description_and_mode() {
     let cli = parse(&[
         "sheets",
