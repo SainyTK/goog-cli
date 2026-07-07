@@ -2163,6 +2163,37 @@ fn sheets_sheet_auto_resize_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "tab-color",
+        "spreadsheet-123",
+        "42",
+        "#3366cc",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::TabColor {
+                            spreadsheet_id,
+                            sheet_id,
+                            color,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(color, "#3366cc");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_sheet_hide_accepts_sheet_id() {
     let cli = parse(&["sheets", "sheet", "hide", "spreadsheet-123", "42"]).unwrap();
     match cli.command {

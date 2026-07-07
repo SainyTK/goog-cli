@@ -1201,6 +1201,15 @@ pub enum SheetsSheetCommand {
         #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
         end_index: i64,
     },
+    /// Set a sheet tab color without writing a Batch Update JSON body
+    TabColor {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Hex color for the sheet tab, as RRGGBB or #RRGGBB
+        color: String,
+    },
     /// Hide a sheet tab without writing a Batch Update JSON body
     Hide {
         /// Google Sheets Spreadsheet ID to update

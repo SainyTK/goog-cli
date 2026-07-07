@@ -236,6 +236,24 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Auto-resize sheet response",
             )
         }
+        SheetsSheetCommand::TabColor {
+            spreadsheet_id,
+            sheet_id,
+            color,
+        } => {
+            let request_body = tab_color_sheet_request_body(sheet_id, &color)?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to set Google Sheets tab color")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Tab color response",
+            )
+        }
         SheetsSheetCommand::Hide {
             spreadsheet_id,
             sheet_id,
@@ -470,6 +488,32 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Auto-resize sheet response",
+            )
+        }
+        SheetsSheetCommand::TabColor {
+            spreadsheet_id,
+            sheet_id,
+            color,
+        } => {
+            let request_body = tab_color_sheet_request_body(sheet_id, &color)?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to set Google Sheets tab color")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Tab color response",
             )
         }
         SheetsSheetCommand::Hide {
@@ -1391,6 +1435,45 @@ fn auto_resize_sheet_request_body(
             }
         ]
     }))
+}
+
+fn tab_color_sheet_request_body(sheet_id: i64, color: &str) -> Result<serde_json::Value> {
+    let (red, green, blue) = parse_hex_color(color)?;
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": sheet_id,
+                        "tabColor": {
+                            "red": red,
+                            "green": green,
+                            "blue": blue
+                        }
+                    },
+                    "fields": "tabColor"
+                }
+            }
+        ]
+    }))
+}
+
+fn parse_hex_color(color: &str) -> Result<(f64, f64, f64)> {
+    let hex = color.strip_prefix('#').unwrap_or(color);
+    if hex.len() != 6 || !hex.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        bail!("color must be a hex RGB value like #3366cc or 3366cc");
+    }
+
+    let red = u8::from_str_radix(&hex[0..2], 16).context("failed to parse red channel")?;
+    let green = u8::from_str_radix(&hex[2..4], 16).context("failed to parse green channel")?;
+    let blue = u8::from_str_radix(&hex[4..6], 16).context("failed to parse blue channel")?;
+
+    Ok((
+        f64::from(red) / 255.0,
+        f64::from(green) / 255.0,
+        f64::from(blue) / 255.0,
+    ))
 }
 
 fn set_sheet_hidden_request_body(sheet_id: i64, hidden: bool) -> serde_json::Value {
