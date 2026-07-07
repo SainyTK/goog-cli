@@ -5860,6 +5860,57 @@ async fn run_sheet_conditional_format_delete_builds_delete_rule_batch_update() {
 }
 
 #[tokio::test]
+async fn run_sheet_conditional_format_move_builds_update_rule_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "updateConditionalFormatRule": {
+                    "sheetId": 42,
+                    "index": 3,
+                    "newIndex": 0
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::ConditionalFormatMove {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            index: 3,
+            new_index: 0,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_sheet_tab_color_builds_update_sheet_properties_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

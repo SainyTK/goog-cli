@@ -2101,6 +2101,19 @@ pub enum SheetsSheetCommand {
         #[arg(value_parser = clap::value_parser!(i64).range(0..))]
         index: i64,
     },
+    /// Move a conditional format rule to another index without writing a Batch Update JSON body
+    ConditionalFormatMove {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based conditional format rule index to move
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        index: i64,
+        /// Zero-based destination index for the rule
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        new_index: i64,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update

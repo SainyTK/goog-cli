@@ -4978,6 +4978,64 @@ fn sheets_sheet_conditional_format_delete_rejects_negative_index() {
 }
 
 #[test]
+fn sheets_sheet_conditional_format_move_accepts_sheet_id_and_indexes() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "conditional-format-move",
+        "spreadsheet-123",
+        "42",
+        "3",
+        "0",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::ConditionalFormatMove {
+                            spreadsheet_id,
+                            sheet_id,
+                            index,
+                            new_index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(index, 3);
+            assert_eq!(new_index, 0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_conditional_format_move_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "conditional-format-move",
+        "spreadsheet-123",
+        "42",
+        "-1",
+        "0",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "conditional-format-move",
+        "spreadsheet-123",
+        "42",
+        "1",
+        "-1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",
