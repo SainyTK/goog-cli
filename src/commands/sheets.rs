@@ -139,6 +139,24 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Delete sheet response",
             )
         }
+        SheetsSheetCommand::Rename {
+            spreadsheet_id,
+            sheet_id,
+            title,
+        } => {
+            let request_body = rename_sheet_request_body(sheet_id, title);
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to rename Google Sheets sheet")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Rename sheet response",
+            )
+        }
     }
 }
 
@@ -202,6 +220,32 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Delete sheet response",
+            )
+        }
+        SheetsSheetCommand::Rename {
+            spreadsheet_id,
+            sheet_id,
+            title,
+        } => {
+            let request_body = rename_sheet_request_body(sheet_id, title);
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to rename Google Sheets sheet")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Rename sheet response",
             )
         }
     }
@@ -946,6 +990,22 @@ fn delete_sheet_request_body(sheet_id: i64) -> serde_json::Value {
             {
                 "deleteSheet": {
                     "sheetId": sheet_id
+                }
+            }
+        ]
+    })
+}
+
+fn rename_sheet_request_body(sheet_id: i64, title: String) -> serde_json::Value {
+    serde_json::json!({
+        "requests": [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": sheet_id,
+                        "title": title
+                    },
+                    "fields": "title"
                 }
             }
         ]

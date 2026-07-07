@@ -1957,6 +1957,37 @@ fn sheets_sheet_delete_accepts_sheet_id() {
 }
 
 #[test]
+fn sheets_sheet_rename_accepts_sheet_id_and_title() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "rename",
+        "spreadsheet-123",
+        "42",
+        "Archive",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Rename {
+                            spreadsheet_id,
+                            sheet_id,
+                            title,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(title, "Archive");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_values_rejects_unknown_enum_values() {
     assert!(parse(&[
         "sheets",

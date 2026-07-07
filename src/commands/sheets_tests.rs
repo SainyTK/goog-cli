@@ -1569,6 +1569,58 @@ async fn run_sheet_delete_builds_delete_sheet_batch_update() {
 }
 
 #[tokio::test]
+async fn run_sheet_rename_builds_update_sheet_properties_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": 42,
+                        "title": "Archive"
+                    },
+                    "fields": "title"
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::Rename {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            title: "Archive".into(),
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_batch_update_unified_uses_fallback_and_mapping_for_structural_writes() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({

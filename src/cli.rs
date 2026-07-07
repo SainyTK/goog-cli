@@ -1131,6 +1131,15 @@ pub enum SheetsSheetCommand {
         /// Google Sheets numeric sheetId for the tab to delete
         sheet_id: i64,
     },
+    /// Rename a sheet tab without writing a Batch Update JSON body
+    Rename {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to rename
+        sheet_id: i64,
+        /// New title for the sheet tab
+        title: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
