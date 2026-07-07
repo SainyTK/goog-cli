@@ -1988,6 +1988,29 @@ fn sheets_sheet_rename_accepts_sheet_id_and_title() {
 }
 
 #[test]
+fn sheets_sheet_move_accepts_sheet_id_and_index() {
+    let cli = parse(&["sheets", "sheet", "move", "spreadsheet-123", "42", "3"]).unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::Move {
+                            spreadsheet_id,
+                            sheet_id,
+                            index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(index, 3);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_sheet_duplicate_accepts_source_sheet_id_title_and_optional_properties() {
     let cli = parse(&[
         "sheets",

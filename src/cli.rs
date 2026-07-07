@@ -1140,6 +1140,15 @@ pub enum SheetsSheetCommand {
         /// New title for the sheet tab
         title: String,
     },
+    /// Move a sheet tab to a zero-based index without writing a Batch Update JSON body
+    Move {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to move
+        sheet_id: i64,
+        /// Zero-based index where Google Sheets should place the tab
+        index: i64,
+    },
     /// Duplicate a sheet tab without writing a Batch Update JSON body
     Duplicate {
         /// Google Sheets Spreadsheet ID to update

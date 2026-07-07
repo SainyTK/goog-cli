@@ -157,6 +157,24 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Rename sheet response",
             )
         }
+        SheetsSheetCommand::Move {
+            spreadsheet_id,
+            sheet_id,
+            index,
+        } => {
+            let request_body = move_sheet_request_body(sheet_id, index);
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to move Google Sheets sheet")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Move sheet response",
+            )
+        }
         SheetsSheetCommand::Duplicate {
             spreadsheet_id,
             source_sheet_id,
@@ -301,6 +319,32 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Rename sheet response",
+            )
+        }
+        SheetsSheetCommand::Move {
+            spreadsheet_id,
+            sheet_id,
+            index,
+        } => {
+            let request_body = move_sheet_request_body(sheet_id, index);
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to move Google Sheets sheet")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Move sheet response",
             )
         }
         SheetsSheetCommand::Duplicate {
@@ -1140,6 +1184,22 @@ fn rename_sheet_request_body(sheet_id: i64, title: String) -> serde_json::Value 
                         "title": title
                     },
                     "fields": "title"
+                }
+            }
+        ]
+    })
+}
+
+fn move_sheet_request_body(sheet_id: i64, index: i64) -> serde_json::Value {
+    serde_json::json!({
+        "requests": [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": sheet_id,
+                        "index": index
+                    },
+                    "fields": "index"
                 }
             }
         ]
