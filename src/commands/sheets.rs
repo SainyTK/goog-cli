@@ -3903,6 +3903,23 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 .context("failed to fetch Google Sheets ValueRange")?;
             write_json_line(out, &response, "failed to serialize Sheets ValueRange")
         }
+        SheetsValuesCommand::GetCell {
+            spreadsheet_id,
+            range,
+            value_render_option,
+        } => {
+            let options = get_values_options(
+                spreadsheet_id,
+                range,
+                value_render_option.into(),
+                spreadsheets_url,
+            );
+            let response = SheetsOperation::GetValues(&options)
+                .execute(client)
+                .await
+                .context("failed to fetch Google Sheets cell")?;
+            write_first_cell_line(out, &response)
+        }
         SheetsValuesCommand::BatchGet {
             spreadsheet_id,
             ranges,
@@ -4183,6 +4200,28 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
             .await
             .context("failed to fetch Google Sheets ValueRange")?;
             write_json_line(out, &response, "failed to serialize Sheets ValueRange")
+        }
+        SheetsValuesCommand::GetCell {
+            spreadsheet_id,
+            range,
+            value_render_option,
+        } => {
+            let options = get_values_options(
+                spreadsheet_id.clone(),
+                range,
+                value_render_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::GetValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to fetch Google Sheets cell")?;
+            write_first_cell_line(out, &response)
         }
         SheetsValuesCommand::BatchGet {
             spreadsheet_id,
@@ -6800,5 +6839,26 @@ impl From<SheetsInsertDataOption> for InsertDataOption {
 fn write_json_line(out: &mut impl Write, value: &serde_json::Value, context: &str) -> Result<()> {
     serde_json::to_writer(&mut *out, value).context(context.to_string())?;
     writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+fn write_first_cell_line(out: &mut impl Write, value_range: &serde_json::Value) -> Result<()> {
+    let value = value_range
+        .get("values")
+        .and_then(|values| values.as_array())
+        .and_then(|rows| rows.first())
+        .and_then(|row| row.as_array())
+        .and_then(|cells| cells.first());
+
+    match value {
+        Some(serde_json::Value::String(text)) => writeln!(out, "{text}"),
+        Some(value) => writeln!(
+            out,
+            "{}",
+            serde_json::to_string(value).context("failed to serialize Sheets cell value")?
+        ),
+        None => writeln!(out),
+    }
+    .context("failed to write output")?;
     Ok(())
 }

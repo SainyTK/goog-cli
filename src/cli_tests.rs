@@ -1657,6 +1657,38 @@ fn sheets_values_update_table_requires_data_file() {
 }
 
 #[test]
+fn sheets_values_get_cell_accepts_range_and_render_option() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "get-cell",
+        "spreadsheet-123",
+        "Sheet1!D2",
+        "--value-render-option",
+        "formula",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::GetCell {
+                            spreadsheet_id,
+                            range,
+                            value_render_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!D2");
+            assert_eq!(value_render_option, SheetsValueRenderOption::Formula);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_values_update_cell_accepts_value_argument() {
     let cli = parse(&[
         "sheets",

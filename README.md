@@ -291,6 +291,7 @@ goog sheets sheet hide SPREADSHEET_ID 123456789
 goog sheets sheet unhide SPREADSHEET_ID 123456789
 goog sheets sheet delete SPREADSHEET_ID 123456789
 goog sheets values get SPREADSHEET_ID 'Sheet1!A1:D10'
+goog sheets values get-cell SPREADSHEET_ID 'Sheet1!D2' --value-render-option formula
 goog sheets values update SPREADSHEET_ID 'Sheet1!A1' --values ./value-range.json
 goog sheets values update-cell SPREADSHEET_ID 'Sheet1!D2' '=SUM(C2:C10)'
 goog sheets values update-row SPREADSHEET_ID 'Sheet1!A2:C2' --value Ada --value Lovelace --value '=SUM(C2:C10)'
