@@ -5,9 +5,9 @@ use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
     DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
     SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
-    SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
-    SheetsWrapStrategy,
+    SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
+    SheetsSortOrder, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -3329,6 +3329,80 @@ fn sheets_sheet_font_family_rejects_negative_indexes() {
         "4",
         "--family",
         "Roboto",
+    ])
+    .is_err());
+}
+
+#[test]
+fn sheets_sheet_number_format_accepts_grid_range_type_and_pattern() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "number-format",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "10",
+        "--start-column",
+        "2",
+        "--end-column",
+        "3",
+        "--type",
+        "currency",
+        "--pattern",
+        "$#,##0.00",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::NumberFormat {
+                            spreadsheet_id,
+                            sheet_id,
+                            start_row,
+                            end_row,
+                            start_column,
+                            end_column,
+                            format_type,
+                            pattern,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(start_row, 1);
+            assert_eq!(end_row, 10);
+            assert_eq!(start_column, 2);
+            assert_eq!(end_column, 3);
+            assert_eq!(format_type, SheetsNumberFormatType::Currency);
+            assert_eq!(pattern.as_deref(), Some("$#,##0.00"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_number_format_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "number-format",
+        "spreadsheet-123",
+        "42",
+        "--start-row",
+        "1",
+        "--end-row",
+        "10",
+        "--start-column",
+        "-1",
+        "--end-column",
+        "3",
+        "--type",
+        "number",
     ])
     .is_err());
 }

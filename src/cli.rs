@@ -1117,6 +1117,26 @@ pub enum SheetsWrapStrategy {
     Clip,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsNumberFormatType {
+    /// Plain text
+    Text,
+    /// General number formatting
+    Number,
+    /// Percent formatting
+    Percent,
+    /// Currency formatting
+    Currency,
+    /// Date formatting
+    Date,
+    /// Time formatting
+    Time,
+    /// Date and time formatting
+    DateTime,
+    /// Scientific notation formatting
+    Scientific,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
     /// Create a new, blank Google Sheets Spreadsheet
@@ -1607,6 +1627,31 @@ pub enum SheetsSheetCommand {
         /// Font family name, such as Arial or Roboto
         #[arg(long)]
         family: String,
+    },
+    /// Set number formatting over a cell range without writing a Batch Update JSON body
+    NumberFormat {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Number format type to apply
+        #[arg(long = "type", value_enum)]
+        format_type: SheetsNumberFormatType,
+        /// Google Sheets number format pattern, such as #,##0.00 or m/d/yyyy
+        #[arg(long)]
+        pattern: Option<String>,
     },
     /// Set bold text style over a cell range without writing a Batch Update JSON body
     Bold {

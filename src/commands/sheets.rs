@@ -11,9 +11,9 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
     SheetsCommand, SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption,
-    SheetsMergeType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
-    SheetsWrapStrategy,
+    SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType,
+    SheetsSheetCommand, SheetsSortOrder, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -679,6 +679,37 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Font family response",
+            )
+        }
+        SheetsSheetCommand::NumberFormat {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            format_type,
+            pattern,
+        } => {
+            let request_body = number_format_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                format_type,
+                pattern.as_deref(),
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to set Google Sheets number format")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Number format response",
             )
         }
         SheetsSheetCommand::Bold {
@@ -1724,6 +1755,45 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Font family response",
+            )
+        }
+        SheetsSheetCommand::NumberFormat {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+            format_type,
+            pattern,
+        } => {
+            let request_body = number_format_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+                format_type,
+                pattern.as_deref(),
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to set Google Sheets number format")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Number format response",
             )
         }
         SheetsSheetCommand::Bold {
@@ -3564,6 +3634,46 @@ fn font_family_sheet_request_body(
     }))
 }
 
+fn number_format_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+    format_type: SheetsNumberFormatType,
+    pattern: Option<&str>,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+    if let Some(pattern) = pattern {
+        if pattern.trim().is_empty() {
+            bail!("--pattern must not be empty");
+        }
+    }
+
+    let mut number_format = serde_json::json!({
+        "type": number_format_type_name(format_type)
+    });
+    if let Some(pattern) = pattern {
+        number_format["pattern"] = serde_json::Value::String(pattern.to_string());
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "repeatCell": {
+                    "range": grid_range(sheet_id, start_row, end_row, start_column, end_column),
+                    "cell": {
+                        "userEnteredFormat": {
+                            "numberFormat": number_format
+                        }
+                    },
+                    "fields": "userEnteredFormat.numberFormat"
+                }
+            }
+        ]
+    }))
+}
+
 fn bold_sheet_request_body(
     sheet_id: i64,
     start_row: i64,
@@ -3825,6 +3935,19 @@ fn wrap_strategy_name(strategy: SheetsWrapStrategy) -> &'static str {
         SheetsWrapStrategy::Overflow => "OVERFLOW_CELL",
         SheetsWrapStrategy::Wrap => "WRAP",
         SheetsWrapStrategy::Clip => "CLIP",
+    }
+}
+
+fn number_format_type_name(format_type: SheetsNumberFormatType) -> &'static str {
+    match format_type {
+        SheetsNumberFormatType::Text => "TEXT",
+        SheetsNumberFormatType::Number => "NUMBER",
+        SheetsNumberFormatType::Percent => "PERCENT",
+        SheetsNumberFormatType::Currency => "CURRENCY",
+        SheetsNumberFormatType::Date => "DATE",
+        SheetsNumberFormatType::Time => "TIME",
+        SheetsNumberFormatType::DateTime => "DATE_TIME",
+        SheetsNumberFormatType::Scientific => "SCIENTIFIC",
     }
 }
 
