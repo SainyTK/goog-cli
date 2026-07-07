@@ -3855,6 +3855,94 @@ async fn run_sheet_borders_rejects_non_hex_color() {
 }
 
 #[tokio::test]
+async fn run_sheet_clear_format_builds_repeat_cell_batch_update() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "requests": [
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": 42,
+                        "startRowIndex": 0,
+                        "endRowIndex": 10,
+                        "startColumnIndex": 1,
+                        "endColumnIndex": 4
+                    },
+                    "cell": {
+                        "userEnteredFormat": {}
+                    },
+                    "fields": "userEnteredFormat"
+                }
+            }
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/spreadsheet-123:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        SheetsSheetCommand::ClearFormat {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 0,
+            end_row: 10,
+            start_column: 1,
+            end_column: 4,
+        },
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"replies\":[{}],\"spreadsheetId\":\"spreadsheet-123\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_clear_format_rejects_empty_range() {
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+
+    let err = run_sheet_to(
+        &client,
+        SheetsSheetCommand::ClearFormat {
+            spreadsheet_id: "spreadsheet-123".into(),
+            sheet_id: 42,
+            start_row: 0,
+            end_row: 0,
+            start_column: 1,
+            end_column: 4,
+        },
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-row must be greater than --start-row"));
+}
+
+#[tokio::test]
 async fn run_sheet_bold_builds_repeat_cell_batch_update() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
