@@ -1424,6 +1424,23 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Protect range response",
             )
         }
+        SheetsSheetCommand::UnprotectRange {
+            spreadsheet_id,
+            protected_range_id,
+        } => {
+            let request_body = unprotect_range_sheet_request_body(protected_range_id);
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to remove Google Sheets protected range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Unprotect range response",
+            )
+        }
         SheetsSheetCommand::TabColor {
             spreadsheet_id,
             sheet_id,
@@ -3214,6 +3231,31 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Protect range response",
+            )
+        }
+        SheetsSheetCommand::UnprotectRange {
+            spreadsheet_id,
+            protected_range_id,
+        } => {
+            let request_body = unprotect_range_sheet_request_body(protected_range_id);
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to remove Google Sheets protected range")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Unprotect range response",
             )
         }
         SheetsSheetCommand::TabColor {
@@ -5034,6 +5076,18 @@ fn protect_range_sheet_request_body(
             }
         ]
     }))
+}
+
+fn unprotect_range_sheet_request_body(protected_range_id: i64) -> serde_json::Value {
+    serde_json::json!({
+        "requests": [
+            {
+                "deleteProtectedRange": {
+                    "protectedRangeId": protected_range_id
+                }
+            }
+        ]
+    })
 }
 
 fn font_size_sheet_request_body(

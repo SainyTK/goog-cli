@@ -5543,6 +5543,39 @@ fn sheets_sheet_protect_range_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_unprotect_range_accepts_protected_range_id() {
+    let cli = parse(&["sheets", "sheet", "unprotect-range", "spreadsheet-123", "7"]).unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::UnprotectRange {
+                            spreadsheet_id,
+                            protected_range_id,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(protected_range_id, 7);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_unprotect_range_rejects_negative_protected_range_id() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "unprotect-range",
+        "spreadsheet-123",
+        "-1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_tab_color_accepts_sheet_id_and_color() {
     let cli = parse(&[
         "sheets",

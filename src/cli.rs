@@ -2269,6 +2269,14 @@ pub enum SheetsSheetCommand {
         #[arg(long)]
         warning_only: bool,
     },
+    /// Remove a protected range without writing a Batch Update JSON body
+    UnprotectRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets protectedRangeId to delete
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        protected_range_id: i64,
+    },
     /// Clear the basic filter from a sheet without writing a Batch Update JSON body
     ClearBasicFilter {
         /// Google Sheets Spreadsheet ID to update
