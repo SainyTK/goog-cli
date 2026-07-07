@@ -2279,6 +2279,64 @@ fn sheets_sheet_insert_dimension_rejects_negative_indexes() {
 }
 
 #[test]
+fn sheets_sheet_delete_dimension_accepts_dimension_and_indexes() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "delete-dimension",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "columns",
+        "--start-index",
+        "3",
+        "--end-index",
+        "6",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::DeleteDimension {
+                            spreadsheet_id,
+                            sheet_id,
+                            dimension,
+                            start_index,
+                            end_index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(dimension, SheetsDimension::Columns);
+            assert_eq!(start_index, 3);
+            assert_eq!(end_index, 6);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_delete_dimension_rejects_negative_indexes() {
+    assert!(parse(&[
+        "sheets",
+        "sheet",
+        "delete-dimension",
+        "spreadsheet-123",
+        "42",
+        "--dimension",
+        "rows",
+        "--start-index",
+        "0",
+        "--end-index",
+        "-1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_sheet_basic_filter_accepts_grid_range() {
     let cli = parse(&[
         "sheets",
