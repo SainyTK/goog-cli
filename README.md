@@ -226,6 +226,7 @@ goog sheets values get SPREADSHEET_ID 'Sheet1!A1:D10'
 goog sheets values update SPREADSHEET_ID 'Sheet1!A1' --values ./value-range.json
 goog sheets values append SPREADSHEET_ID 'Sheet1!A:D' --values ./rows.json
 goog sheets values append-row SPREADSHEET_ID 'Sheet1!A:D' --value Ada --value Lovelace --value '=SUM(C2:C10)'
+goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --data ./rows.csv
 ```
 
 ### GoogleMail

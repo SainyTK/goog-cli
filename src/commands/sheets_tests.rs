@@ -1131,6 +1131,101 @@ async fn run_values_append_row_builds_value_range_from_flags() {
 }
 
 #[tokio::test]
+async fn run_values_append_table_builds_value_range_from_csv_file() {
+    let server = MockServer::start().await;
+    let request_body = serde_json::json!({
+        "majorDimension": "ROWS",
+        "values": [
+            ["Name", "Score"],
+            ["Grace", "99"],
+            ["Ada", "100"]
+        ]
+    });
+    Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A:B:append",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(&request_body))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "updates": {
+                "updatedRange": "Sheet1!A1:B3",
+                "updatedRows": 3
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("rows.csv");
+    std::fs::write(&data_path, "Name,Score\nGrace,99\nAda,100\n").unwrap();
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_values_to(
+        &client,
+        SheetsValuesCommand::AppendTable {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A:B".into(),
+            data: data_path.to_string_lossy().into_owned(),
+            value_input_option: SheetsValueInputOption::Raw,
+            insert_data_option: SheetsInsertDataOption::Overwrite,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"updates\":{\"updatedRange\":\"Sheet1!A1:B3\",\"updatedRows\":3}}\n"
+    );
+
+    let url = received_url(&server).await;
+    assert_query_value(&url, "valueInputOption", "RAW");
+    assert_query_value(&url, "insertDataOption", "OVERWRITE");
+}
+
+#[tokio::test]
+async fn run_values_append_table_rejects_ragged_data() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let data_path = temp_dir.path().join("rows.csv");
+    std::fs::write(&data_path, "Name,Score\nGrace\n").unwrap();
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+
+    let err = run_values_to(
+        &client,
+        SheetsValuesCommand::AppendTable {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: "Sheet1!A:B".into(),
+            data: data_path.to_string_lossy().into_owned(),
+            value_input_option: SheetsValueInputOption::Raw,
+            insert_data_option: SheetsInsertDataOption::Overwrite,
+        },
+        &mut input,
+        &mut out,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("Google Sheets table data must be rectangular"));
+}
+
+#[tokio::test]
 async fn run_values_batch_clear_prints_response_json() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

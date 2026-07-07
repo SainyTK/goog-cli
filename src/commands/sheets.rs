@@ -282,6 +282,32 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 "failed to serialize Sheets Append row response",
             )
         }
+        SheetsValuesCommand::AppendTable {
+            spreadsheet_id,
+            range,
+            data,
+            value_input_option,
+            insert_data_option,
+        } => {
+            let request_body = table_value_range(&data)?;
+            let options = append_values_options(
+                spreadsheet_id,
+                range,
+                request_body,
+                value_input_option.into(),
+                insert_data_option.into(),
+                spreadsheets_url,
+            );
+            let response = SheetsOperation::AppendValues(&options)
+                .execute(client)
+                .await
+                .context("failed to append Google Sheets table")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Append table response",
+            )
+        }
         SheetsValuesCommand::Clear {
             spreadsheet_id,
             range,
@@ -490,6 +516,37 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                 "failed to serialize Sheets Append row response",
             )
         }
+        SheetsValuesCommand::AppendTable {
+            spreadsheet_id,
+            range,
+            data,
+            value_input_option,
+            insert_data_option,
+        } => {
+            let request_body = table_value_range(&data)?;
+            let options = append_values_options(
+                spreadsheet_id.clone(),
+                range,
+                request_body,
+                value_input_option.into(),
+                insert_data_option.into(),
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::AppendValues(&options),
+                state_path,
+            )
+            .await
+            .context("failed to append Google Sheets table")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Append table response",
+            )
+        }
         SheetsValuesCommand::Clear {
             spreadsheet_id,
             range,
@@ -674,6 +731,35 @@ fn row_value_range(values: Vec<String>) -> serde_json::Value {
         "majorDimension": "ROWS",
         "values": [values],
     })
+}
+
+fn table_value_range(path: &str) -> Result<serde_json::Value> {
+    let delimiter = if path.ends_with(".tsv") { '\t' } else { ',' };
+    let body = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read Google Sheets table data file: {path}"))?;
+    let rows: Vec<Vec<String>> = body
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            line.split(delimiter)
+                .map(|cell| cell.trim().to_string())
+                .collect()
+        })
+        .collect();
+
+    if rows.is_empty() {
+        anyhow::bail!("Google Sheets table data file is empty");
+    }
+
+    let columns = rows[0].len();
+    if columns == 0 || rows.iter().any(|row| row.len() != columns) {
+        anyhow::bail!("Google Sheets table data must be rectangular");
+    }
+
+    Ok(serde_json::json!({
+        "majorDimension": "ROWS",
+        "values": rows,
+    }))
 }
 
 fn get_spreadsheet_options(

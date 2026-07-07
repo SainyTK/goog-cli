@@ -1168,6 +1168,22 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "insert-rows")]
         insert_data_option: SheetsInsertDataOption,
     },
+    /// Append CSV or TSV rows without writing a ValueRange JSON body
+    AppendTable {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to append into
+        range: String,
+        /// CSV or TSV data file to append
+        #[arg(long)]
+        data: String,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+        /// How Google Sheets should insert appended data
+        #[arg(long, value_enum, default_value = "insert-rows")]
+        insert_data_option: SheetsInsertDataOption,
+    },
     /// Clear values from a Google Sheets Range
     Clear {
         /// Google Sheets Spreadsheet ID to clear

@@ -1770,6 +1770,58 @@ fn sheets_values_append_row_requires_value() {
 }
 
 #[test]
+fn sheets_values_append_table_accepts_data_file() {
+    let cli = parse(&[
+        "sheets",
+        "values",
+        "append-table",
+        "spreadsheet-123",
+        "Sheet1!A:C",
+        "--data",
+        "./rows.tsv",
+        "--value-input-option",
+        "raw",
+        "--insert-data-option",
+        "overwrite",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Values {
+                    command:
+                        SheetsValuesCommand::AppendTable {
+                            spreadsheet_id,
+                            range,
+                            data,
+                            value_input_option,
+                            insert_data_option,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, "Sheet1!A:C");
+            assert_eq!(data, "./rows.tsv");
+            assert_eq!(value_input_option, SheetsValueInputOption::Raw);
+            assert_eq!(insert_data_option, SheetsInsertDataOption::Overwrite);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_values_append_table_requires_data_file() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "append-table",
+        "spreadsheet-123",
+        "Sheet1!A:C",
+    ])
+    .is_err());
+}
+
+#[test]
 fn sheets_values_clear_with_range() {
     let cli = parse(&[
         "sheets",
