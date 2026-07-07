@@ -1627,6 +1627,25 @@ pub enum SheetsSheetCommand {
         #[arg(long = "comparison-column", value_parser = clap::value_parser!(i64).range(0..))]
         comparison_columns: Vec<i64>,
     },
+    /// Trim whitespace in every cell over a grid range without writing a Batch Update JSON body
+    TrimWhitespace {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+    },
     /// Find and replace text without writing a Batch Update JSON body
     FindReplace {
         /// Google Sheets Spreadsheet ID to update

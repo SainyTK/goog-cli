@@ -634,6 +634,33 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 "failed to serialize Sheets Delete duplicates response",
             )
         }
+        SheetsSheetCommand::TrimWhitespace {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+        } => {
+            let request_body = trim_whitespace_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+            )?;
+            let options =
+                batch_update_spreadsheet_options(spreadsheet_id, request_body, spreadsheets_url);
+            let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                .execute(client)
+                .await
+                .context("failed to trim Google Sheets whitespace")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Trim whitespace response",
+            )
+        }
         SheetsSheetCommand::FindReplace {
             spreadsheet_id,
             find,
@@ -2366,6 +2393,41 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Delete duplicates response",
+            )
+        }
+        SheetsSheetCommand::TrimWhitespace {
+            spreadsheet_id,
+            sheet_id,
+            start_row,
+            end_row,
+            start_column,
+            end_column,
+        } => {
+            let request_body = trim_whitespace_sheet_request_body(
+                sheet_id,
+                start_row,
+                end_row,
+                start_column,
+                end_column,
+            )?;
+            let options = batch_update_spreadsheet_options(
+                spreadsheet_id.clone(),
+                request_body,
+                spreadsheets_url,
+            );
+            let response = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                state_path,
+            )
+            .await
+            .context("failed to trim Google Sheets whitespace")?;
+            write_json_line(
+                out,
+                &response,
+                "failed to serialize Sheets Trim whitespace response",
             )
         }
         SheetsSheetCommand::FindReplace {
@@ -5023,6 +5085,26 @@ fn delete_duplicates_sheet_request_body(
         "requests": [
             {
                 "deleteDuplicates": delete_duplicates
+            }
+        ]
+    }))
+}
+
+fn trim_whitespace_sheet_request_body(
+    sheet_id: i64,
+    start_row: i64,
+    end_row: i64,
+    start_column: i64,
+    end_column: i64,
+) -> Result<serde_json::Value> {
+    validate_grid_range(start_row, end_row, start_column, end_column)?;
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "trimWhitespace": {
+                    "range": grid_range(sheet_id, start_row, end_row, start_column, end_column)
+                }
             }
         ]
     }))
