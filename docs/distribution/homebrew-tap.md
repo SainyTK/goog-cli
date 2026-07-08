@@ -24,7 +24,8 @@ In `SainyTK/goog-cli`, configure:
 - Repository variable `GOOG_HOMEBREW_TAP_REPO` with value `SainyTK/homebrew-tap`.
 - Repository secret `GOOG_HOMEBREW_TAP_TOKEN` with a token that can push to the tap repository.
 
-When a version tag is published from `main`, `.github/workflows/release.yml` creates the Canonical Release and then writes `Formula/goog.rb` in the tap repository.
+When a stable version tag is published from `main`, `.github/workflows/release.yml` creates the Canonical Release and then writes `Formula/goog.rb` in the tap repository.
+Preview tags from `preview` create GitHub pre-releases only and must not update the Homebrew tap.
 
 ## Generated Formula
 

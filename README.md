@@ -24,12 +24,20 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 
 ### Installer Script
 
-The installer script is the default install path for macOS and Linux. It installs the latest Canonical Release from GitHub Releases rather than branch-head code.
+The installer script is the supported install path for macOS and Linux.
+It installs the latest Canonical Release from GitHub Releases rather than branch-head code.
 It installs to `/usr/local/bin` when that directory is writable.
 If `/usr/local/bin` is not writable, it installs to `$HOME/.local/bin` and prints a PATH warning if needed.
+Stable is the default release channel.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
+```
+
+Install the latest preview pre-release with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --channel preview
 ```
 
 Install a specific Canonical Release with:
@@ -344,7 +352,8 @@ cargo test
 npm run typecheck
 ```
 
-Issues live in GitHub Issues. Pick work labeled `ready-for-agent` or `bug` (there is no separate `Sandcastle` label), keep changes scoped to the issue, and link the issue from the pull request.
+Issues live in GitHub Issues.
+Pick work labeled `ready-for-agent` or `bug` (there is no separate `Sandcastle` label), keep changes scoped to the issue, and link the issue from the pull request.
 
 Pull requests should include:
 

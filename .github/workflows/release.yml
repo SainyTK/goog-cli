@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+      - "v*.*.*-preview.*"
 
 permissions:
   contents: write
@@ -12,19 +13,34 @@ jobs:
   verify-tag:
     name: Verify tag source
     runs-on: ubuntu-latest
+    outputs:
+      release_channel: ${{ steps.channel.outputs.release_channel }}
     steps:
       - name: Checkout tag
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Require tag commit on main
+      - name: Require tag commit on channel base
+        id: channel
         run: |
           case "$GITHUB_REF_NAME" in
-            v[0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "Tag must look like vX.Y.Z" >&2; exit 1 ;;
+            v[0-9]*.[0-9]*.[0-9]*-preview.[0-9]*)
+              release_channel="preview"
+              base_branch="preview"
+              ;;
+            v[0-9]*.[0-9]*.[0-9]*)
+              release_channel="stable"
+              base_branch="main"
+              ;;
+            *)
+              echo "Tag must look like vX.Y.Z or vX.Y.Z-preview.N" >&2
+              exit 1
+              ;;
           esac
-          git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+          git fetch origin "$base_branch"
+          git merge-base --is-ancestor "$GITHUB_SHA" "origin/${base_branch}"
+          echo "release_channel=${release_channel}" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.target }}
@@ -77,7 +93,9 @@ jobs:
 
   publish:
     name: Publish Canonical Release
-    needs: build
+    needs:
+      - verify-tag
+      - build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -90,19 +108,31 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ needs.verify-tag.outputs.release_channel }}
         run: |
+          release_flag=""
+          release_notes="Canonical Release for goog ${GITHUB_REF_NAME}."
+
+          if [ "$RELEASE_CHANNEL" = "preview" ]; then
+            release_flag="--prerelease"
+            release_notes="Preview Release for goog ${GITHUB_REF_NAME}. This release is for opt-in validation before stable promotion."
+          fi
+
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --title "goog ${GITHUB_REF_NAME}" \
-            --notes "Canonical Release for goog ${GITHUB_REF_NAME}." \
+            --notes "$release_notes" \
+            $release_flag \
             goog-"$GITHUB_REF_NAME"-*.tar.gz \
             goog-"$GITHUB_REF_NAME"-*.tar.gz.sha256
 
   update-homebrew-tap:
     name: Update Homebrew Tap
-    needs: publish
+    needs:
+      - verify-tag
+      - publish
     runs-on: ubuntu-latest
-    if: ${{ vars.GOOG_HOMEBREW_TAP_REPO != '' }}
+    if: ${{ vars.GOOG_HOMEBREW_TAP_REPO != '' && needs.verify-tag.outputs.release_channel == 'stable' }}
     steps:
       - name: Checkout application repository
         uses: actions/checkout@v4

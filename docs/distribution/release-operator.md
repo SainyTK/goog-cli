@@ -1,8 +1,60 @@
 # Release Operator Workflow
 
-GitHub Releases are the only Canonical Release authority for `goog`. Installer Script, Homebrew Tap, and Rust-native fallback documentation all point users toward a tagged release or source installation, never a branch-head binary.
+GitHub Releases are the only release authority for `goog`.
+Stable LTS releases are Canonical Releases from `main`.
+Preview releases are GitHub pre-releases from `preview` for opt-in validation before stable promotion.
+Installer Script, Homebrew Tap, and Rust-native fallback documentation all point users toward a tagged release or source installation, never a branch-head binary.
 
-## Cut A Canonical Release
+## Cut A Preview Release
+
+1. Start from `develop` or the current release-prep branch and confirm it is current:
+
+   ```sh
+   git checkout develop
+   git pull --ff-only origin develop
+   cargo test
+   ```
+
+2. Create or update the `preview` branch to the tested commit:
+
+   ```sh
+   git checkout -B preview
+   git push origin preview
+   ```
+
+3. Confirm `Cargo.toml` contains the intended preview version, such as `0.2.4-preview.1`.
+
+4. Create and push a preview version tag:
+
+   ```sh
+   git tag v0.2.4-preview.1
+   git push origin v0.2.4-preview.1
+   ```
+
+5. Watch the `Canonical Release` workflow.
+   It verifies the tag commit is reachable from `origin/preview`, builds macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets, uploads checksums, and creates a GitHub pre-release.
+
+6. Verify the installer can consume the preview channel:
+
+   ```sh
+   tmp="$(mktemp -d)"
+   curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --channel preview --install-dir "$tmp/bin"
+   "$tmp/bin/goog" --help
+   ```
+
+Homebrew tap updates are stable-only and must not run for preview tags.
+
+## Promote Preview To Stable LTS
+
+1. Merge or fast-forward the tested preview commit into `main`.
+
+2. Replace the preview package version with the stable version in `Cargo.toml`.
+
+3. Run the stable release verification gates, then cut the stable tag from `main`.
+
+4. After the stable release is published and installed-binary checks pass, fast-forward `develop` to the same commit if no divergence remains.
+
+## Cut A Stable LTS Release
 
 1. Start from `main` and confirm it is current:
 
@@ -21,7 +73,8 @@ GitHub Releases are the only Canonical Release authority for `goog`. Installer S
    git push origin v0.1.0
    ```
 
-4. Watch the `Canonical Release` workflow. It verifies the tag commit is reachable from `origin/main`, builds macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets, uploads checksums, and creates the GitHub Release.
+4. Watch the `Canonical Release` workflow.
+   It verifies the tag commit is reachable from `origin/main`, builds macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets, uploads checksums, creates the GitHub Release, and updates stable distribution metadata.
 
 5. Confirm the GitHub Release contains:
 
@@ -50,6 +103,14 @@ curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | 
 ```
 
 The installer must download from the GitHub Release, verify the `.sha256` checksum, and install a runnable `goog` binary.
+
+For preview:
+
+```sh
+tmp="$(mktemp -d)"
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --channel preview --install-dir "$tmp/bin"
+"$tmp/bin/goog" --help
+```
 
 ## Verify Homebrew Tap
 
@@ -98,7 +159,19 @@ This path requires a local Rust toolchain and builds from source instead of cons
 
 ## Recovery
 
-If release automation fails before the GitHub Release is created:
+If preview release automation fails before the GitHub Release is created:
+
+1. Fix the workflow or code on `preview`.
+2. Delete the failed local and remote tag:
+
+   ```sh
+   git tag -d v0.2.4-preview.1
+   git push origin :refs/tags/v0.2.4-preview.1
+   ```
+
+3. Create the tag again from the fixed `preview` commit and push it.
+
+If stable release automation fails before the GitHub Release is created:
 
 1. Fix the workflow or code on `main`.
 2. Delete the failed local and remote tag:

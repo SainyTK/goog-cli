@@ -502,7 +502,7 @@ dependencies = [
 
 [[package]]
 name = "goog"
-version = "0.2.3"
+version = "0.2.4-preview.1"
 dependencies = [
  "anyhow",
  "base64",

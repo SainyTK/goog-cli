@@ -10,8 +10,10 @@ fn readme_covers_public_distribution_and_usage_contract() {
         "power users and AI agents",
         "JSON is also supported for programmatic use, but it is not the primary product surface.",
         "Installer Script",
-        "Rust-Native Fallback",
+        "Stable is the default release channel.",
+        "--channel preview",
         "Uninstall",
+        "Rust-Native Fallback",
         "rm -f /usr/local/bin/goog \"$HOME/.local/bin/goog\"",
         "cargo uninstall goog",
         "delete `$HOME/.goog`",
@@ -44,6 +46,10 @@ fn installer_resolves_canonical_releases_and_supported_targets() {
 
     for expected in [
         "https://api.github.com/repos/${REPO}/releases/latest",
+        "https://api.github.com/repos/${REPO}/releases?per_page=30",
+        "--channel",
+        "stable|preview",
+        "-preview\\.",
         "--version",
         "aarch64-apple-darwin",
         "x86_64-apple-darwin",
@@ -56,6 +62,7 @@ fn installer_resolves_canonical_releases_and_supported_targets() {
         "INSTALL_DIR=\"${HOME}/.local/bin\"",
         "install directory is not writable",
         "is not on PATH",
+        "--version must look like vX.Y.Z or vX.Y.Z-preview.N",
     ] {
         assert!(
             installer.contains(expected),
@@ -72,8 +79,14 @@ fn release_workflow_builds_assets_from_version_tags_only() {
     for expected in [
         "tags:",
         "\"v*.*.*\"",
-        "Tag must look like vX.Y.Z",
+        "\"v*.*.*-preview.*\"",
+        "release_channel=\"preview\"",
+        "base_branch=\"preview\"",
+        "release_channel=\"stable\"",
+        "base_branch=\"main\"",
+        "Tag must look like vX.Y.Z or vX.Y.Z-preview.N",
         "git merge-base --is-ancestor",
+        "--prerelease",
         "aarch64-apple-darwin",
         "x86_64-apple-darwin",
         "x86_64-unknown-linux-gnu",
@@ -115,7 +128,15 @@ fn release_operator_docs_cover_channel_verification_and_recovery() {
         .expect("release operator docs should exist");
 
     for expected in [
-        "GitHub Releases are the only Canonical Release authority",
+        "GitHub Releases are the only release authority for `goog`.",
+        "Stable LTS releases are Canonical Releases from `main`.",
+        "Preview releases are GitHub pre-releases from `preview`",
+        "Cut A Preview Release",
+        "git checkout -B preview",
+        "git push origin v0.2.4-preview.1",
+        "--channel preview",
+        "Homebrew tap updates are stable-only",
+        "Promote Preview To Stable LTS",
         "git push origin v0.1.0",
         "Verify Installer Script",
         "On macOS",
