@@ -7343,7 +7343,10 @@ mod table_input_tests {
     #[test]
     fn parses_quoted_csv_fields_with_commas() {
         let rows = parse_csv_rows("a,\"b,c\",d\n");
-        assert_eq!(rows, vec![vec!["a".to_string(), "b,c".to_string(), "d".to_string()]]);
+        assert_eq!(
+            rows,
+            vec![vec!["a".to_string(), "b,c".to_string(), "d".to_string()]]
+        );
     }
 
     #[test]
@@ -7412,8 +7415,12 @@ mod table_input_tests {
         let text = "needs, escaping";
         let escaped = csv_escape(text);
         let body = format!("header\n{escaped}\n");
-        let value_range = table_value_range("-", SheetsTableInputFormat::Csv, &mut std::io::Cursor::new(body))
-            .expect("csv table input should parse");
+        let value_range = table_value_range(
+            "-",
+            SheetsTableInputFormat::Csv,
+            &mut std::io::Cursor::new(body),
+        )
+        .expect("csv table input should parse");
         assert_eq!(
             value_range["values"],
             serde_json::json!([["header"], [text]])
@@ -7423,8 +7430,12 @@ mod table_input_tests {
     #[test]
     fn table_value_range_tsv_still_splits_on_tabs() {
         let body = "a\tb\nc\td\n";
-        let value_range = table_value_range("-", SheetsTableInputFormat::Tsv, &mut std::io::Cursor::new(body))
-            .expect("tsv table input should parse");
+        let value_range = table_value_range(
+            "-",
+            SheetsTableInputFormat::Tsv,
+            &mut std::io::Cursor::new(body),
+        )
+        .expect("tsv table input should parse");
         assert_eq!(
             value_range["values"],
             serde_json::json!([["a", "b"], ["c", "d"]])
