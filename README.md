@@ -22,60 +22,11 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 
 ## Installation
 
-### Installer Script
-
-The installer script is the supported install path for macOS and Linux.
-It installs the latest Canonical Release from GitHub Releases rather than branch-head code.
-It installs to `/usr/local/bin` when that directory is writable.
-If `/usr/local/bin` is not writable, it installs to `$HOME/.local/bin` and prints a PATH warning if needed.
-Stable is the default release channel.
+Install `goog` on macOS or Linux with:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
 ```
-
-Install the latest preview pre-release with:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --channel preview
-```
-
-Install a specific Canonical Release with:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.2.3
-```
-
-The installer supports macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets.
-
-### Rust-Native Fallback
-
-Users outside the binary release support matrix can install from source with Cargo:
-
-```sh
-cargo install --git https://github.com/SainyTK/goog-cli goog
-```
-
-This path requires a local Rust toolchain.
-
-### Uninstall
-
-If you installed with the installer script, remove the binary from the supported install locations:
-
-```sh
-rm -f /usr/local/bin/goog "$HOME/.local/bin/goog"
-```
-
-If you installed with Cargo, uninstall the Cargo package:
-
-```sh
-cargo uninstall goog
-```
-
-Those commands remove the executable only.
-To fully reset local `goog` state, delete `$HOME/.goog`.
-That directory contains OAuth App setup in `config.toml` and auth state in `auth.json`.
-The auth state file grants account access within authorized scopes, so do not commit it or sync it into places you do not trust.
 
 ## OAuth Setup
 
@@ -330,6 +281,50 @@ goog mail attachment download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
 ```
 
 Use `goog help`, `goog <command> --help`, and nested command help for the full command reference.
+
+### Additional Installation Options
+
+The installer script installs the latest Stable LTS Canonical Release by default.
+It installs to `/usr/local/bin` when that directory is writable.
+If `/usr/local/bin` is not writable, it installs to `$HOME/.local/bin` and prints a PATH warning if needed.
+The installer supports macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets.
+
+Install the latest preview pre-release with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --channel preview
+```
+
+Install a specific Canonical Release with:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.2.3
+```
+
+Users outside the binary release support matrix can install from source with Cargo:
+
+```sh
+cargo install --git https://github.com/SainyTK/goog-cli goog
+```
+
+### Uninstall
+
+If you installed with the installer script, remove the binary from the supported install locations:
+
+```sh
+rm -f /usr/local/bin/goog "$HOME/.local/bin/goog"
+```
+
+If you installed with Cargo, uninstall the Cargo package:
+
+```sh
+cargo uninstall goog
+```
+
+Those commands remove the executable only.
+To fully reset local `goog` state, delete `$HOME/.goog`.
+That directory contains OAuth App setup in `config.toml` and auth state in `auth.json`.
+The auth state file grants account access within authorized scopes, so do not commit it or sync it into places you do not trust.
 
 ### Limitations
 
