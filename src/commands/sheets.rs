@@ -4946,15 +4946,18 @@ fn table_value_range(
         std::fs::read_to_string(path)
             .with_context(|| format!("failed to read Google Sheets table data file: {path}"))?
     };
-    let rows: Vec<Vec<String>> = body
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| {
-            line.split(delimiter)
-                .map(|cell| cell.trim().to_string())
-                .collect()
-        })
-        .collect();
+    let rows: Vec<Vec<String>> = if delimiter == ',' {
+        parse_csv_rows(&body)
+    } else {
+        body.lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                line.split(delimiter)
+                    .map(|cell| cell.trim().to_string())
+                    .collect()
+            })
+            .collect()
+    };
 
     if rows.is_empty() {
         anyhow::bail!("Google Sheets table data file is empty");
@@ -4969,6 +4972,75 @@ fn table_value_range(
         "majorDimension": "ROWS",
         "values": rows,
     }))
+}
+
+fn parse_csv_rows(body: &str) -> Vec<Vec<String>> {
+    let mut rows = Vec::new();
+    let mut row = Vec::new();
+    let mut field = String::new();
+    let mut field_quoted = false;
+    let mut in_quotes = false;
+    let mut chars = body.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if in_quotes {
+            match c {
+                '"' if chars.peek() == Some(&'"') => {
+                    field.push('"');
+                    chars.next();
+                }
+                '"' => in_quotes = false,
+                _ => field.push(c),
+            }
+            continue;
+        }
+
+        match c {
+            '"' if field.trim().is_empty() && !field_quoted => {
+                field.clear();
+                in_quotes = true;
+                field_quoted = true;
+            }
+            ',' => {
+                row.push(if field_quoted {
+                    std::mem::take(&mut field)
+                } else {
+                    field.trim().to_string()
+                });
+                field.clear();
+                field_quoted = false;
+            }
+            '\r' => {}
+            '\n' => {
+                row.push(if field_quoted {
+                    std::mem::take(&mut field)
+                } else {
+                    field.trim().to_string()
+                });
+                field.clear();
+                field_quoted = false;
+                if !(row.len() == 1 && row[0].is_empty()) {
+                    rows.push(std::mem::take(&mut row));
+                } else {
+                    row.clear();
+                }
+            }
+            _ => field.push(c),
+        }
+    }
+
+    if field_quoted || !field.is_empty() || !row.is_empty() {
+        row.push(if field_quoted {
+            field
+        } else {
+            field.trim().to_string()
+        });
+        if !(row.len() == 1 && row[0].is_empty()) {
+            rows.push(row);
+        }
+    }
+
+    rows
 }
 
 fn table_input_delimiter(path: &str, format: SheetsTableInputFormat) -> Result<char> {
@@ -7258,5 +7330,76 @@ fn scalar_value_text(value: &serde_json::Value) -> Result<String> {
     match value {
         serde_json::Value::String(text) => Ok(text.clone()),
         value => serde_json::to_string(value).context("failed to serialize Sheets cell value"),
+    }
+}
+
+#[cfg(test)]
+mod table_input_tests {
+    use super::*;
+
+    #[test]
+    fn parses_quoted_csv_fields_with_commas() {
+        let rows = parse_csv_rows("a,\"b,c\",d\n");
+        assert_eq!(rows, vec![vec!["a".to_string(), "b,c".to_string(), "d".to_string()]]);
+    }
+
+    #[test]
+    fn parses_quoted_csv_fields_with_escaped_quotes() {
+        let rows = parse_csv_rows("\"say \"\"hi\"\"\",b\n");
+        assert_eq!(rows, vec![vec!["say \"hi\"".to_string(), "b".to_string()]]);
+    }
+
+    #[test]
+    fn parses_quoted_csv_fields_with_embedded_newlines() {
+        let rows = parse_csv_rows("\"line1\nline2\",b\nc,d\n");
+        assert_eq!(
+            rows,
+            vec![
+                vec!["line1\nline2".to_string(), "b".to_string()],
+                vec!["c".to_string(), "d".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn trims_unquoted_csv_fields_but_preserves_quoted_whitespace() {
+        let rows = parse_csv_rows(" a , \" b \"\n");
+        assert_eq!(rows, vec![vec!["a".to_string(), " b ".to_string()]]);
+    }
+
+    #[test]
+    fn skips_blank_lines_between_csv_rows() {
+        let rows = parse_csv_rows("a,b\n\nc,d\n");
+        assert_eq!(
+            rows,
+            vec![
+                vec!["a".to_string(), "b".to_string()],
+                vec!["c".to_string(), "d".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn table_value_range_round_trips_csv_export_with_special_characters() {
+        let text = "needs, escaping";
+        let escaped = csv_escape(text);
+        let body = format!("header\n{escaped}\n");
+        let value_range = table_value_range("-", SheetsTableInputFormat::Csv, &mut std::io::Cursor::new(body))
+            .expect("csv table input should parse");
+        assert_eq!(
+            value_range["values"],
+            serde_json::json!([["header"], [text]])
+        );
+    }
+
+    #[test]
+    fn table_value_range_tsv_still_splits_on_tabs() {
+        let body = "a\tb\nc\td\n";
+        let value_range = table_value_range("-", SheetsTableInputFormat::Tsv, &mut std::io::Cursor::new(body))
+            .expect("tsv table input should parse");
+        assert_eq!(
+            value_range["values"],
+            serde_json::json!([["a", "b"], ["c", "d"]])
+        );
     }
 }
