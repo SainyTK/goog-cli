@@ -4990,6 +4990,7 @@ fn parse_csv_rows(body: &str) -> Vec<Vec<String>> {
                     chars.next();
                 }
                 '"' => in_quotes = false,
+                '\r' => {}
                 _ => field.push(c),
             }
             continue;
@@ -5012,6 +5013,7 @@ fn parse_csv_rows(body: &str) -> Vec<Vec<String>> {
             }
             '\r' => {}
             '\n' => {
+                let was_quoted = field_quoted;
                 row.push(if field_quoted {
                     std::mem::take(&mut field)
                 } else {
@@ -5019,10 +5021,10 @@ fn parse_csv_rows(body: &str) -> Vec<Vec<String>> {
                 });
                 field.clear();
                 field_quoted = false;
-                if !(row.len() == 1 && row[0].is_empty()) {
-                    rows.push(std::mem::take(&mut row));
-                } else {
+                if row.len() == 1 && row[0].is_empty() && !was_quoted {
                     row.clear();
+                } else {
+                    rows.push(std::mem::take(&mut row));
                 }
             }
             _ => field.push(c),
@@ -5030,12 +5032,13 @@ fn parse_csv_rows(body: &str) -> Vec<Vec<String>> {
     }
 
     if field_quoted || !field.is_empty() || !row.is_empty() {
+        let was_quoted = field_quoted;
         row.push(if field_quoted {
             field
         } else {
             field.trim().to_string()
         });
-        if !(row.len() == 1 && row[0].is_empty()) {
+        if !(row.len() == 1 && row[0].is_empty() && !was_quoted) {
             rows.push(row);
         }
     }
@@ -7374,6 +7377,31 @@ mod table_input_tests {
             rows,
             vec![
                 vec!["a".to_string(), "b".to_string()],
+                vec!["c".to_string(), "d".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_quoted_empty_field_as_data_in_single_column_csv() {
+        let rows = parse_csv_rows("a\n\"\"\nb\n");
+        assert_eq!(
+            rows,
+            vec![
+                vec!["a".to_string()],
+                vec!["".to_string()],
+                vec!["b".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn normalizes_crlf_inside_quoted_csv_fields() {
+        let rows = parse_csv_rows("a,\"line1\r\nline2\"\r\nc,d\r\n");
+        assert_eq!(
+            rows,
+            vec![
+                vec!["a".to_string(), "line1\nline2".to_string()],
                 vec!["c".to_string(), "d".to_string()],
             ]
         );
