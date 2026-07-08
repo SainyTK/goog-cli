@@ -27,6 +27,12 @@ fn readme_covers_public_distribution_and_usage_contract() {
         "goog docs map",
         "goog sheets values get",
         "goog mail list",
+        "Release Flow",
+        "Preview Release",
+        "git push origin HEAD:preview",
+        "Canonical Release",
+        "Stable LTS Release",
+        "git tag v0.2.4",
         "Contributor Workflow",
     ] {
         assert!(

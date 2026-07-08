@@ -330,6 +330,70 @@ The auth state file grants account access within authorized scopes, so do not co
 
 - **`goog` cannot write Office files (.xlsx, .docx) in Drive.** Writing to an Excel-format spreadsheet (`values update`, `values batch-update`, `values append`, `batch-update`) or a Word-format document (`batch-update`) is not supported. This is a Google Sheets/Docs API restriction, not a `goog` gap: neither API can write to `.xlsx` or `.docx` files at all. Convert the file to a native Google Sheet or Google Doc first (Drive UI: File > Save as Google Sheets/Docs) to edit it with `goog`.
 
+## Release Flow
+
+`goog` has two release channels.
+Preview releases are for opt-in validation before stable promotion.
+Stable LTS releases are the default install path.
+
+### Preview Release
+
+Start from `develop` or the release-prep branch.
+Run the release checks:
+
+```sh
+cargo fmt --check
+cargo test
+cargo test --test distribution_artifacts_tests
+```
+
+Bump `Cargo.toml` to a preview version such as `0.2.4-preview.2`, then let Cargo update `Cargo.lock`.
+Push the tested commit to `develop` and `preview`.
+Create and push a matching preview tag:
+
+```sh
+git push origin develop
+git push origin HEAD:preview
+git tag v0.2.4-preview.2
+git push origin v0.2.4-preview.2
+```
+
+The `Canonical Release` workflow requires preview tags to be reachable from `origin/preview`.
+It publishes a GitHub pre-release and skips the Homebrew tap.
+After the workflow succeeds, verify the preview installer against a temporary directory:
+
+```sh
+tmp="$(mktemp -d)"
+git show origin/preview:install.sh | sh -s -- --channel preview --install-dir "$tmp/bin"
+"$tmp/bin/goog" --version
+rm -rf "$tmp"
+```
+
+### Stable LTS Release
+
+Promote a tested preview by merging or fast-forwarding the release commit into `main`.
+Replace the preview package version with the stable version in `Cargo.toml`, then let Cargo update `Cargo.lock`.
+Run the release checks again.
+Create and push a stable tag:
+
+```sh
+git checkout main
+git pull --ff-only origin main
+git tag v0.2.4
+git push origin v0.2.4
+```
+
+The `Canonical Release` workflow requires stable tags to be reachable from `origin/main`.
+It publishes the stable GitHub Release and updates the Homebrew tap when tap credentials are configured.
+After the workflow succeeds, verify the default installer against a temporary directory:
+
+```sh
+tmp="$(mktemp -d)"
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --install-dir "$tmp/bin"
+"$tmp/bin/goog" --version
+rm -rf "$tmp"
+```
+
 ## Contributor Workflow
 
 Install local dependencies:
