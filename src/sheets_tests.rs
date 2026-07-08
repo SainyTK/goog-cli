@@ -118,6 +118,33 @@ fn values_body() -> serde_json::Value {
     })
 }
 
+#[tokio::test]
+async fn create_spreadsheet_posts_title_with_write_scope() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(serde_json::json!({
+            "properties": { "title": "Roadmap" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "properties": { "title": "Roadmap" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let options =
+        CreateSpreadsheetOptions::new("Roadmap").with_spreadsheets_url(spreadsheets_url(&server));
+
+    let response = create_spreadsheet(&client, &options).await.unwrap();
+
+    assert_eq!(response["spreadsheetId"], "spreadsheet-123");
+}
+
 fn office_file_precondition_response() -> ResponseTemplate {
     ResponseTemplate::new(400).set_body_json(serde_json::json!({
         "error": {

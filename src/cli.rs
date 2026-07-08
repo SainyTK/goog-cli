@@ -1050,8 +1050,202 @@ pub enum SheetsInsertDataOption {
     Overwrite,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsTableOutputFormat {
+    /// Print tab-separated rows
+    Tsv,
+    /// Print comma-separated rows with CSV quoting
+    Csv,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsTableInputFormat {
+    /// Infer CSV or TSV from the data file extension
+    Auto,
+    /// Read tab-separated rows
+    Tsv,
+    /// Read comma-separated rows
+    Csv,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsDimension {
+    /// Sheet rows
+    Rows,
+    /// Sheet columns
+    Columns,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsMergeType {
+    /// Merge the full range into one cell
+    All,
+    /// Merge each row across the selected columns
+    Rows,
+    /// Merge each column across the selected rows
+    Columns,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsSortOrder {
+    /// Sort smallest to largest or A to Z
+    Ascending,
+    /// Sort largest to smallest or Z to A
+    Descending,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsPasteType {
+    /// Paste values, formulas, formats, and other cell data
+    Normal,
+    /// Paste values only
+    Values,
+    /// Paste formats only
+    Format,
+    /// Paste formulas only
+    Formula,
+    /// Paste everything except borders
+    NoBorders,
+    /// Paste data validation only
+    DataValidation,
+    /// Paste conditional formatting only
+    ConditionalFormatting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsPasteOrientation {
+    /// Keep the copied row and column orientation
+    Normal,
+    /// Transpose rows and columns while pasting
+    Transposed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsHorizontalAlignment {
+    /// Align cell content to the left
+    Left,
+    /// Align cell content in the center
+    Center,
+    /// Align cell content to the right
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsVerticalAlignment {
+    /// Align cell content to the top
+    Top,
+    /// Align cell content in the middle
+    Middle,
+    /// Align cell content to the bottom
+    Bottom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsWrapStrategy {
+    /// Let text overflow into the next empty cell
+    Overflow,
+    /// Wrap text onto multiple lines within the cell
+    Wrap,
+    /// Clip text at the cell boundary
+    Clip,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsTextDirection {
+    /// Display cell text left to right
+    LeftToRight,
+    /// Display cell text right to left
+    RightToLeft,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsNumberFormatType {
+    /// Plain text
+    Text,
+    /// General number formatting
+    Number,
+    /// Percent formatting
+    Percent,
+    /// Currency formatting
+    Currency,
+    /// Date formatting
+    Date,
+    /// Time formatting
+    Time,
+    /// Date and time formatting
+    DateTime,
+    /// Scientific notation formatting
+    Scientific,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsBorderEdge {
+    /// Apply to every outside and inside edge in the selected range
+    All,
+    /// Apply to the outside edges of the selected range
+    Outer,
+    /// Apply to the inside edges of the selected range
+    Inner,
+    /// Apply to the top edge of the selected range
+    Top,
+    /// Apply to the bottom edge of the selected range
+    Bottom,
+    /// Apply to the left edge of the selected range
+    Left,
+    /// Apply to the right edge of the selected range
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsBorderStyle {
+    /// Remove the selected border edges
+    None,
+    /// Thin solid border
+    Solid,
+    /// Medium solid border
+    SolidMedium,
+    /// Thick solid border
+    SolidThick,
+    /// Dashed border
+    Dashed,
+    /// Dotted border
+    Dotted,
+    /// Double-line border
+    Double,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SheetsConditionalFormatCondition {
+    /// Cell number is greater than the provided value
+    NumberGreater,
+    /// Cell number is less than the provided value
+    NumberLess,
+    /// Cell value is equal to the provided value
+    Equal,
+    /// Cell value is not equal to the provided value
+    NotEqual,
+    /// Cell text contains the provided value
+    TextContains,
+    /// Cell text is exactly the provided value
+    TextEq,
+    /// Use the provided value as a custom formula
+    CustomFormula,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
+    /// Create a new, blank Google Sheets Spreadsheet
+    #[command(after_long_help = "Output shape:
+  Prints the created Spreadsheet ID and its Google Sheets edit URL, tab-separated.
+
+Notes:
+  The Spreadsheet is always created at the root of My Drive; there is no --folder option today.
+  Move it afterward with the Google Drive web UI, or via a future `goog drive` move command.
+  Follow up with `goog sheets values append-row` or `goog sheets values append-table` to add rows.")]
+    Create {
+        /// Title for the new Google Sheets Spreadsheet
+        title: String,
+    },
     /// List native Google Sheets Spreadsheets from Google Drive
     List {
         /// Maximum number of Spreadsheets to return (default: 50)
@@ -1085,6 +1279,11 @@ pub enum SheetsCommand {
     Values {
         #[command(subcommand)]
         command: SheetsValuesCommand,
+    },
+    /// Manage individual sheets inside a Spreadsheet
+    Sheet {
+        #[command(subcommand)]
+        command: SheetsSheetCommand,
     },
     /// Apply a raw Google Sheets structural Batch Update request body
     #[command(after_long_help = "Request shape:
@@ -1123,6 +1322,1182 @@ Example:
 }
 
 #[derive(Debug, Subcommand)]
+pub enum SheetsSheetCommand {
+    /// Add a new sheet tab without writing a Batch Update JSON body
+    Add {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Title for the new sheet tab
+        title: String,
+        /// Optional Google Sheets numeric sheetId for the new tab
+        #[arg(long)]
+        sheet_id: Option<i64>,
+        /// Zero-based index where Google Sheets should place the new tab
+        #[arg(long)]
+        index: Option<i64>,
+    },
+    /// Delete a sheet tab without writing a Batch Update JSON body
+    Delete {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to delete
+        sheet_id: i64,
+    },
+    /// Rename a sheet tab without writing a Batch Update JSON body
+    Rename {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to rename
+        sheet_id: i64,
+        /// New title for the sheet tab
+        title: String,
+    },
+    /// Move a sheet tab to a zero-based index without writing a Batch Update JSON body
+    Move {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to move
+        sheet_id: i64,
+        /// Zero-based index where Google Sheets should place the tab
+        index: i64,
+    },
+    /// Duplicate a sheet tab without writing a Batch Update JSON body
+    Duplicate {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to duplicate
+        source_sheet_id: i64,
+        /// Title for the duplicated sheet tab
+        title: String,
+        /// Optional Google Sheets numeric sheetId for the duplicated tab
+        #[arg(long)]
+        sheet_id: Option<i64>,
+        /// Zero-based index where Google Sheets should place the duplicated tab
+        #[arg(long)]
+        index: Option<i64>,
+    },
+    /// Freeze rows or columns without writing a Batch Update JSON body
+    Freeze {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Number of frozen rows, or 0 to unfreeze rows
+        #[arg(long, required_unless_present = "columns", value_parser = clap::value_parser!(i64).range(0..))]
+        rows: Option<i64>,
+        /// Number of frozen columns, or 0 to unfreeze columns
+        #[arg(long, required_unless_present = "rows", value_parser = clap::value_parser!(i64).range(0..))]
+        columns: Option<i64>,
+    },
+    /// Resize a sheet grid without writing a Batch Update JSON body
+    Resize {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Total row count for the sheet grid
+        #[arg(long, required_unless_present = "columns", value_parser = clap::value_parser!(i64).range(1..))]
+        rows: Option<i64>,
+        /// Total column count for the sheet grid
+        #[arg(long, required_unless_present = "rows", value_parser = clap::value_parser!(i64).range(1..))]
+        columns: Option<i64>,
+    },
+    /// Auto-resize rows or columns without writing a Batch Update JSON body
+    AutoResize {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to auto-resize
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
+    /// Set row height or column width without writing a Batch Update JSON body
+    SetDimensionSize {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to resize
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+        /// Pixel size for each selected row or column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        pixel_size: i64,
+    },
+    /// Hide rows or columns without writing a Batch Update JSON body
+    HideDimension {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to hide
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
+    /// Unhide rows or columns without writing a Batch Update JSON body
+    UnhideDimension {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to unhide
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
+    /// Group rows or columns without writing a Batch Update JSON body
+    GroupDimension {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to group
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
+    /// Ungroup rows or columns without writing a Batch Update JSON body
+    UngroupDimension {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to ungroup
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
+    /// Collapse a row or column group without writing a Batch Update JSON body
+    CollapseDimensionGroup {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension group to collapse
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
+    /// Expand a row or column group without writing a Batch Update JSON body
+    ExpandDimensionGroup {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension group to expand
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
+    /// Insert rows or columns without writing a Batch Update JSON body
+    InsertDimension {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to insert
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+        /// Inherit formatting from the row or column before the inserted range
+        #[arg(long)]
+        inherit_from_before: bool,
+    },
+    /// Delete rows or columns without writing a Batch Update JSON body
+    DeleteDimension {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Dimension to delete
+        #[arg(long)]
+        dimension: SheetsDimension,
+        /// Zero-based inclusive start index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_index: i64,
+        /// Zero-based exclusive end index
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_index: i64,
+    },
+    /// Set a basic filter over a grid range without writing a Batch Update JSON body
+    BasicFilter {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+    },
+    /// Merge cells over a grid range without writing a Batch Update JSON body
+    Merge {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Merge behavior for the selected range
+        #[arg(long, value_enum, default_value = "all")]
+        merge_type: SheetsMergeType,
+    },
+    /// Unmerge cells over a grid range without writing a Batch Update JSON body
+    Unmerge {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+    },
+    /// Sort rows over a grid range without writing a Batch Update JSON body
+    SortRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Zero-based column index to sort by
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        sort_column: i64,
+        /// Sort direction
+        #[arg(long, value_enum, default_value = "ascending")]
+        order: SheetsSortOrder,
+    },
+    /// Remove duplicate rows over a grid range without writing a Batch Update JSON body
+    DeleteDuplicates {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Zero-based sheet column to compare for duplicates. Repeat for multiple columns.
+        #[arg(long = "comparison-column", value_parser = clap::value_parser!(i64).range(0..))]
+        comparison_columns: Vec<i64>,
+    },
+    /// Trim whitespace in every cell over a grid range without writing a Batch Update JSON body
+    TrimWhitespace {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+    },
+    /// Randomize rows over a grid range without writing a Batch Update JSON body
+    RandomizeRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+    },
+    /// Find and replace text without writing a Batch Update JSON body
+    FindReplace {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Text or regex pattern to find
+        find: String,
+        /// Replacement text
+        replacement: String,
+        /// Limit replacement to one Google Sheets numeric sheetId
+        #[arg(long)]
+        sheet_id: Option<i64>,
+        /// Match case exactly
+        #[arg(long)]
+        match_case: bool,
+        /// Match the entire cell value
+        #[arg(long)]
+        match_entire_cell: bool,
+        /// Interpret the find text as a regular expression
+        #[arg(long = "regex")]
+        search_by_regex: bool,
+        /// Search formulas in addition to displayed values
+        #[arg(long)]
+        include_formulas: bool,
+    },
+    /// Copy cells from one grid range to another without writing a Batch Update JSON body
+    CopyPaste {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the source tab
+        source_sheet_id: i64,
+        /// Zero-based inclusive source start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_start_row: i64,
+        /// Zero-based exclusive source end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_end_row: i64,
+        /// Zero-based inclusive source start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_start_column: i64,
+        /// Zero-based exclusive source end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_end_column: i64,
+        /// Google Sheets numeric sheetId for the destination tab
+        #[arg(long)]
+        destination_sheet_id: i64,
+        /// Zero-based inclusive destination start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_start_row: i64,
+        /// Zero-based exclusive destination end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_end_row: i64,
+        /// Zero-based inclusive destination start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_start_column: i64,
+        /// Zero-based exclusive destination end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_end_column: i64,
+        /// What to paste from the source range
+        #[arg(long, value_enum, default_value = "normal")]
+        paste_type: SheetsPasteType,
+        /// Whether to transpose rows and columns while pasting
+        #[arg(long, value_enum, default_value = "normal")]
+        paste_orientation: SheetsPasteOrientation,
+    },
+    /// Move cells from one grid range to a top-left coordinate without writing a Batch Update JSON body
+    CutPaste {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the source tab
+        source_sheet_id: i64,
+        /// Zero-based inclusive source start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_start_row: i64,
+        /// Zero-based exclusive source end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_end_row: i64,
+        /// Zero-based inclusive source start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_start_column: i64,
+        /// Zero-based exclusive source end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        source_end_column: i64,
+        /// Google Sheets numeric sheetId for the destination tab
+        #[arg(long)]
+        destination_sheet_id: i64,
+        /// Zero-based destination row for the top-left pasted cell
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_row: i64,
+        /// Zero-based destination column for the top-left pasted cell
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        destination_column: i64,
+        /// What to paste from the source range
+        #[arg(long, value_enum, default_value = "normal")]
+        paste_type: SheetsPasteType,
+    },
+    /// Set a cell range background color without writing a Batch Update JSON body
+    BackgroundColor {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Hex background color for the selected cells, as RRGGBB or #RRGGBB
+        color: String,
+    },
+    /// Set a cell range text color without writing a Batch Update JSON body
+    TextColor {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Hex text color for the selected cells, as RRGGBB or #RRGGBB
+        color: String,
+    },
+    /// Set font size over a cell range without writing a Batch Update JSON body
+    FontSize {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Font size in points
+        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        size: i64,
+    },
+    /// Set font family over a cell range without writing a Batch Update JSON body
+    FontFamily {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Font family name, such as Arial or Roboto
+        #[arg(long)]
+        family: String,
+    },
+    /// Set number formatting over a cell range without writing a Batch Update JSON body
+    NumberFormat {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Number format type to apply
+        #[arg(long = "type", value_enum)]
+        format_type: SheetsNumberFormatType,
+        /// Google Sheets number format pattern, such as #,##0.00 or m/d/yyyy
+        #[arg(long)]
+        pattern: Option<String>,
+    },
+    /// Set cell borders over a range without writing a Batch Update JSON body
+    Borders {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Border edge group to update. Repeat for multiple edges.
+        #[arg(long, value_enum, default_value = "all")]
+        edge: Vec<SheetsBorderEdge>,
+        /// Border line style to apply
+        #[arg(long, value_enum, default_value = "solid")]
+        style: SheetsBorderStyle,
+        /// Optional hex border color, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        color: Option<String>,
+    },
+    /// Clear cell formatting over a range without writing a Batch Update JSON body
+    ClearFormat {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+    },
+    /// Set bold text style over a cell range without writing a Batch Update JSON body
+    Bold {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Clear bold style instead of applying it
+        #[arg(long)]
+        off: bool,
+    },
+    /// Set italic text style over a cell range without writing a Batch Update JSON body
+    Italic {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Clear italic style instead of applying it
+        #[arg(long)]
+        off: bool,
+    },
+    /// Set underline text style over a cell range without writing a Batch Update JSON body
+    Underline {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Clear underline style instead of applying it
+        #[arg(long)]
+        off: bool,
+    },
+    /// Set strikethrough text style over a cell range without writing a Batch Update JSON body
+    Strikethrough {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Clear strikethrough style instead of applying it
+        #[arg(long)]
+        off: bool,
+    },
+    /// Set horizontal alignment over a cell range without writing a Batch Update JSON body
+    HorizontalAlign {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Horizontal alignment to apply
+        #[arg(long, value_enum)]
+        alignment: SheetsHorizontalAlignment,
+    },
+    /// Set vertical alignment over a cell range without writing a Batch Update JSON body
+    VerticalAlign {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Vertical alignment to apply
+        #[arg(long, value_enum)]
+        alignment: SheetsVerticalAlignment,
+    },
+    /// Set text wrapping over a cell range without writing a Batch Update JSON body
+    TextWrap {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Text wrapping behavior to apply
+        #[arg(long, value_enum)]
+        strategy: SheetsWrapStrategy,
+    },
+    /// Set text rotation over a cell range without writing a Batch Update JSON body
+    TextRotation {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Text rotation angle from -90 to 90 degrees
+        #[arg(long, value_parser = clap::value_parser!(i64).range(-90..=90))]
+        angle: i64,
+    },
+    /// Set text direction over a cell range without writing a Batch Update JSON body
+    TextDirection {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Text direction to apply
+        #[arg(long, value_enum)]
+        direction: SheetsTextDirection,
+    },
+    /// Set a cell note over a range without writing a Batch Update JSON body
+    Note {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Note text to set on each selected cell
+        #[arg(required_unless_present = "clear", conflicts_with = "clear")]
+        note: Option<String>,
+        /// Clear notes from the selected cells instead of setting note text
+        #[arg(long)]
+        clear: bool,
+    },
+    /// Set or clear dropdown list data validation over a range without writing a Batch Update JSON body
+    DataValidationList {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Allowed dropdown value. Repeat for multiple values.
+        #[arg(
+            long = "value",
+            required_unless_present = "clear",
+            conflicts_with = "clear"
+        )]
+        values: Vec<String>,
+        /// Show a warning instead of rejecting invalid values
+        #[arg(long)]
+        allow_invalid: bool,
+        /// Hide the dropdown picker in the Google Sheets UI
+        #[arg(long)]
+        hide_dropdown: bool,
+        /// Optional validation help text shown in Google Sheets
+        #[arg(long)]
+        input_message: Option<String>,
+        /// Clear data validation from the selected cells instead of setting a dropdown list
+        #[arg(long)]
+        clear: bool,
+    },
+    /// Set or clear checkbox data validation over a range without writing a Batch Update JSON body
+    DataValidationCheckbox {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Optional custom value for checked cells
+        #[arg(long, conflicts_with = "clear")]
+        checked_value: Option<String>,
+        /// Optional custom value for unchecked cells
+        #[arg(long, requires = "checked_value", conflicts_with = "clear")]
+        unchecked_value: Option<String>,
+        /// Show a warning instead of rejecting invalid values
+        #[arg(long, conflicts_with = "clear")]
+        allow_invalid: bool,
+        /// Optional validation help text shown in Google Sheets
+        #[arg(long, conflicts_with = "clear")]
+        input_message: Option<String>,
+        /// Clear data validation from the selected cells instead of setting checkboxes
+        #[arg(long)]
+        clear: bool,
+    },
+    /// Add a single-color conditional format rule without writing a Batch Update JSON body
+    ConditionalFormatColor {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Boolean condition for the rule
+        #[arg(long, value_enum)]
+        condition: SheetsConditionalFormatCondition,
+        /// User-entered comparison value or custom formula
+        #[arg(long)]
+        value: String,
+        /// Optional hex background color to apply, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        background_color: Option<String>,
+        /// Optional hex text color to apply, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        text_color: Option<String>,
+        /// Conditional formatting rule insertion index
+        #[arg(long, default_value = "0", value_parser = clap::value_parser!(i64).range(0..))]
+        index: i64,
+    },
+    /// Replace a single-color conditional format rule without writing a Batch Update JSON body
+    ConditionalFormatUpdate {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based conditional format rule index to replace
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        index: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Boolean condition for the replacement rule
+        #[arg(long, value_enum)]
+        condition: SheetsConditionalFormatCondition,
+        /// User-entered comparison value or custom formula
+        #[arg(long)]
+        value: String,
+        /// Optional hex background color to apply, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        background_color: Option<String>,
+        /// Optional hex text color to apply, as RRGGBB or #RRGGBB
+        #[arg(long)]
+        text_color: Option<String>,
+    },
+    /// Delete a conditional format rule by index without writing a Batch Update JSON body
+    ConditionalFormatDelete {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based conditional format rule index to delete
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        index: i64,
+    },
+    /// Move a conditional format rule to another index without writing a Batch Update JSON body
+    ConditionalFormatMove {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based conditional format rule index to move
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        index: i64,
+        /// Zero-based destination index for the rule
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        new_index: i64,
+    },
+    /// Protect a cell range without writing a Batch Update JSON body
+    ProtectRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Optional protected range description shown in Google Sheets
+        #[arg(long)]
+        description: Option<String>,
+        /// Warn users before edits instead of blocking edits
+        #[arg(long)]
+        warning_only: bool,
+    },
+    /// Add a named range without writing a Batch Update JSON body
+    AddNamedRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the named range
+        sheet_id: i64,
+        /// Named range name to create
+        name: String,
+        /// Zero-based inclusive start row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: i64,
+        /// Zero-based exclusive end row
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: i64,
+        /// Zero-based inclusive start column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: i64,
+        /// Zero-based exclusive end column
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: i64,
+        /// Optional Google Sheets namedRangeId for the new named range
+        #[arg(long)]
+        named_range_id: Option<String>,
+    },
+    /// Delete a named range without writing a Batch Update JSON body
+    DeleteNamedRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets namedRangeId to delete
+        named_range_id: String,
+    },
+    /// Update a named range without writing a Batch Update JSON body
+    UpdateNamedRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets namedRangeId to update
+        named_range_id: String,
+        /// New named range name
+        #[arg(long)]
+        name: Option<String>,
+        /// Google Sheets numeric sheetId for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        sheet_id: Option<i64>,
+        /// Zero-based inclusive start row for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_row: Option<i64>,
+        /// Zero-based exclusive end row for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_row: Option<i64>,
+        /// Zero-based inclusive start column for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        start_column: Option<i64>,
+        /// Zero-based exclusive end column for the new range
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
+        end_column: Option<i64>,
+    },
+    /// Update a protected range without writing a Batch Update JSON body
+    UpdateProtectedRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets protectedRangeId to update
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        protected_range_id: i64,
+        /// New protected range description
+        #[arg(long, required_unless_present_any = ["warning_only", "enforce"])]
+        description: Option<String>,
+        /// Warn users before edits instead of blocking edits
+        #[arg(long, conflicts_with = "enforce")]
+        warning_only: bool,
+        /// Block edits instead of showing warnings only
+        #[arg(long, conflicts_with = "warning_only")]
+        enforce: bool,
+    },
+    /// Remove a protected range without writing a Batch Update JSON body
+    UnprotectRange {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets protectedRangeId to delete
+        #[arg(value_parser = clap::value_parser!(i64).range(0..))]
+        protected_range_id: i64,
+    },
+    /// Clear the basic filter from a sheet without writing a Batch Update JSON body
+    ClearBasicFilter {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+    },
+    /// Set a sheet tab color without writing a Batch Update JSON body
+    TabColor {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+        /// Hex color for the sheet tab, as RRGGBB or #RRGGBB
+        color: String,
+    },
+    /// Clear a sheet tab color without writing a Batch Update JSON body
+    ClearTabColor {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to update
+        sheet_id: i64,
+    },
+    /// Hide a sheet tab without writing a Batch Update JSON body
+    Hide {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to hide
+        sheet_id: i64,
+    },
+    /// Unhide a sheet tab without writing a Batch Update JSON body
+    Unhide {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to unhide
+        sheet_id: i64,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum SheetsValuesCommand {
     /// Fetch a raw Google Sheets ValueRange
     Get {
@@ -1133,6 +2508,49 @@ pub enum SheetsValuesCommand {
         /// How values should be represented in the response
         #[arg(long, value_enum, default_value = "formatted-value")]
         value_render_option: SheetsValueRenderOption,
+    },
+    /// Fetch one Google Sheets cell as a scalar line
+    GetCell {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google Sheets A1 cell Range to fetch
+        range: String,
+        /// How the value should be represented in the response
+        #[arg(long, value_enum, default_value = "formatted-value")]
+        value_render_option: SheetsValueRenderOption,
+    },
+    /// Fetch one Google Sheets row as a tab-separated line
+    GetRow {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google Sheets A1 row Range to fetch
+        range: String,
+        /// How values should be represented in the response
+        #[arg(long, value_enum, default_value = "formatted-value")]
+        value_render_option: SheetsValueRenderOption,
+    },
+    /// Fetch one Google Sheets column as one scalar value per line
+    GetColumn {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google Sheets A1 column Range to fetch
+        range: String,
+        /// How values should be represented in the response
+        #[arg(long, value_enum, default_value = "formatted-value")]
+        value_render_option: SheetsValueRenderOption,
+    },
+    /// Fetch a Google Sheets range as TSV or CSV rows
+    GetTable {
+        /// Google Sheets Spreadsheet ID to fetch
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to fetch
+        range: String,
+        /// How values should be represented in the response
+        #[arg(long, value_enum, default_value = "formatted-value")]
+        value_render_option: SheetsValueRenderOption,
+        /// Table output format
+        #[arg(long, value_enum, default_value = "tsv")]
+        format: SheetsTableOutputFormat,
     },
     /// Fetch raw Google Sheets values from multiple ranges
     BatchGet {
@@ -1158,6 +2576,60 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "user-entered")]
         value_input_option: SheetsValueInputOption,
     },
+    /// Update a Google Sheets Range from CSV or TSV without writing a ValueRange JSON body
+    UpdateTable {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to update
+        range: String,
+        /// CSV or TSV data file to write, or - for stdin
+        #[arg(long)]
+        data: String,
+        /// Table input format
+        #[arg(long, value_enum, default_value = "auto")]
+        format: SheetsTableInputFormat,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+    },
+    /// Update one cell without writing a ValueRange JSON body
+    UpdateCell {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 cell Range to update
+        range: String,
+        /// Cell value to write
+        value: String,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+    },
+    /// Update one row without writing a ValueRange JSON body
+    UpdateRow {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to update
+        range: String,
+        /// Cell value to write. Repeat once per column.
+        #[arg(long = "value", required = true)]
+        values: Vec<String>,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+    },
+    /// Update one column without writing a ValueRange JSON body
+    UpdateColumn {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to update
+        range: String,
+        /// Cell value to write. Repeat once per row.
+        #[arg(long = "value", required = true)]
+        values: Vec<String>,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+    },
     /// Batch update Google Sheets values
     BatchUpdate {
         /// Google Sheets Spreadsheet ID to update
@@ -1175,6 +2647,57 @@ pub enum SheetsValuesCommand {
         /// Path to a Google ValueRange JSON request body, or - for stdin
         #[arg(long)]
         values: String,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+        /// How Google Sheets should insert appended data
+        #[arg(long, value_enum, default_value = "insert-rows")]
+        insert_data_option: SheetsInsertDataOption,
+    },
+    /// Append one row without writing a ValueRange JSON body
+    AppendRow {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to append into
+        range: String,
+        /// Cell value to append. Repeat once per column.
+        #[arg(long = "value", required = true)]
+        values: Vec<String>,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+        /// How Google Sheets should insert appended data
+        #[arg(long, value_enum, default_value = "insert-rows")]
+        insert_data_option: SheetsInsertDataOption,
+    },
+    /// Append one column without writing a ValueRange JSON body
+    AppendColumn {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to append into
+        range: String,
+        /// Cell value to append. Repeat once per row.
+        #[arg(long = "value", required = true)]
+        values: Vec<String>,
+        /// How input values should be interpreted
+        #[arg(long, value_enum, default_value = "user-entered")]
+        value_input_option: SheetsValueInputOption,
+        /// How Google Sheets should insert appended data
+        #[arg(long, value_enum, default_value = "insert-rows")]
+        insert_data_option: SheetsInsertDataOption,
+    },
+    /// Append CSV or TSV rows without writing a ValueRange JSON body
+    AppendTable {
+        /// Google Sheets Spreadsheet ID to update
+        spreadsheet_id: String,
+        /// Google Sheets A1 Range to append into
+        range: String,
+        /// CSV or TSV data file to append, or - for stdin
+        #[arg(long)]
+        data: String,
+        /// Table input format
+        #[arg(long, value_enum, default_value = "auto")]
+        format: SheetsTableInputFormat,
         /// How input values should be interpreted
         #[arg(long, value_enum, default_value = "user-entered")]
         value_input_option: SheetsValueInputOption,
