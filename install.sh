@@ -6,15 +6,18 @@ BIN_NAME="goog"
 DEFAULT_INSTALL_DIR="/usr/local/bin"
 INSTALL_DIR="${GOOG_INSTALL_DIR:-}"
 VERSION=""
+CHANNEL="stable"
 
 usage() {
   cat <<'USAGE'
-Install goog from a Canonical GitHub Release.
+Install goog from a GitHub Release.
 
 Usage:
-  install.sh [--version vX.Y.Z] [--install-dir PATH]
+  install.sh [--channel stable|preview] [--version vX.Y.Z] [--install-dir PATH]
 
 Options:
+  --channel      Release channel to install when --version is not provided.
+                 Defaults to stable. Preview installs the latest preview pre-release.
   --version      Install a specific Canonical Release tag.
   --install-dir  Install directory for the goog binary.
                  Defaults to /usr/local/bin when writable, otherwise $HOME/.local/bin.
@@ -41,6 +44,11 @@ while [ "$#" -gt 0 ]; do
       VERSION="$2"
       shift 2
       ;;
+    --channel)
+      [ "$#" -ge 2 ] || fail "--channel requires a value"
+      CHANNEL="$2"
+      shift 2
+      ;;
     --install-dir)
       [ "$#" -ge 2 ] || fail "--install-dir requires a value"
       INSTALL_DIR="$2"
@@ -55,6 +63,11 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+case "$CHANNEL" in
+  stable|preview) ;;
+  *) fail "--channel must be stable or preview" ;;
+esac
 
 if [ -z "$INSTALL_DIR" ]; then
   if [ -d "$DEFAULT_INSTALL_DIR" ] && [ -w "$DEFAULT_INSTALL_DIR" ]; then
@@ -98,14 +111,24 @@ case "$target" in
 esac
 
 if [ -z "$VERSION" ]; then
-  latest_url="https://api.github.com/repos/${REPO}/releases/latest"
-  VERSION="$(curl -fsSL "$latest_url" | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-  [ -n "$VERSION" ] || fail "could not resolve the latest Canonical Release"
+  case "$CHANNEL" in
+    stable)
+      latest_url="https://api.github.com/repos/${REPO}/releases/latest"
+      VERSION="$(curl -fsSL "$latest_url" | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+      [ -n "$VERSION" ] || fail "could not resolve the latest stable release"
+      ;;
+    preview)
+      releases_url="https://api.github.com/repos/${REPO}/releases?per_page=30"
+      VERSION="$(curl -fsSL "$releases_url" | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | grep -- '-preview\.' | head -n 1)"
+      [ -n "$VERSION" ] || fail "could not resolve the latest preview release"
+      ;;
+  esac
 fi
 
 case "$VERSION" in
+  v[0-9]*.[0-9]*.[0-9]*-preview.[0-9]*) ;;
   v[0-9]*.[0-9]*.[0-9]*) ;;
-  *) fail "--version must look like vX.Y.Z" ;;
+  *) fail "--version must look like vX.Y.Z or vX.Y.Z-preview.N" ;;
 esac
 
 asset="${BIN_NAME}-${VERSION}-${target}.tar.gz"

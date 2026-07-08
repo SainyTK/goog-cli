@@ -10,6 +10,7 @@ fn readme_covers_public_distribution_and_usage_contract() {
         "power users and AI agents",
         "JSON is also supported for programmatic use, but it is not the primary product surface.",
         "Installer Script",
+        "--channel preview",
         "Rust-Native Fallback",
         "Uninstall",
         "rm -f /usr/local/bin/goog \"$HOME/.local/bin/goog\"",
@@ -44,6 +45,10 @@ fn installer_resolves_canonical_releases_and_supported_targets() {
 
     for expected in [
         "https://api.github.com/repos/${REPO}/releases/latest",
+        "https://api.github.com/repos/${REPO}/releases?per_page=30",
+        "--channel",
+        "stable|preview",
+        "-preview\\.",
         "--version",
         "aarch64-apple-darwin",
         "x86_64-apple-darwin",
@@ -56,6 +61,7 @@ fn installer_resolves_canonical_releases_and_supported_targets() {
         "INSTALL_DIR=\"${HOME}/.local/bin\"",
         "install directory is not writable",
         "is not on PATH",
+        "--version must look like vX.Y.Z or vX.Y.Z-preview.N",
     ] {
         assert!(
             installer.contains(expected),
@@ -118,6 +124,7 @@ fn release_operator_docs_cover_channel_verification_and_recovery() {
         "GitHub Releases are the only Canonical Release authority",
         "git push origin v0.1.0",
         "Verify Installer Script",
+        "--channel preview",
         "On macOS",
         "On Linux",
         "brew install SainyTK/tap/goog",

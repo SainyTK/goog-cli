@@ -51,6 +51,14 @@ curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | 
 
 The installer must download from the GitHub Release, verify the `.sha256` checksum, and install a runnable `goog` binary.
 
+For preview:
+
+```sh
+tmp="$(mktemp -d)"
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --channel preview --install-dir "$tmp/bin"
+"$tmp/bin/goog" --help
+```
+
 ## Verify Homebrew Tap
 
 After release automation updates `SainyTK/homebrew-tap`, verify:
