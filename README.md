@@ -359,7 +359,7 @@ git push origin v0.2.4-preview.2
 ```
 
 The `Canonical Release` workflow requires preview tags to be reachable from `origin/preview`.
-It publishes a GitHub pre-release and skips the Homebrew tap.
+It publishes a GitHub pre-release.
 After the workflow succeeds, verify the preview installer against a temporary directory:
 
 ```sh
@@ -384,7 +384,7 @@ git push origin v0.2.4
 ```
 
 The `Canonical Release` workflow requires stable tags to be reachable from `origin/main`.
-It publishes the stable GitHub Release and updates the Homebrew tap when tap credentials are configured.
+It publishes the stable GitHub Release.
 After the workflow succeeds, verify the default installer against a temporary directory:
 
 ```sh
@@ -419,6 +419,6 @@ Pull requests should include:
 - A concise summary of user-facing behavior.
 - Tests or verification notes covering the changed behavior.
 - Documentation updates when commands, OAuth behavior, or distribution paths change.
-- Release-document updates when Canonical Release assets, installer behavior, Homebrew tap behavior, or operator steps change.
+- Release-document updates when Canonical Release assets, installer behavior, or operator steps change.
 
 Distribution changes must keep GitHub Releases as the only Canonical Release authority.

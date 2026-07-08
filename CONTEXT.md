@@ -232,7 +232,7 @@ _Avoid_: Stable product, prototype, demo
 
 **Canonical Release**:
 A tagged GitHub Release created from `main` that owns the downloadable `goog` binaries and checksums for a published version.
-_Avoid_: Branch head, installer version, Homebrew version
+_Avoid_: Branch head, installer version
 
 **Preview Release**:
 A GitHub pre-release created from the `preview` branch for opt-in validation before Stable LTS promotion.
@@ -244,7 +244,8 @@ A downloadable binary archive or checksum file attached to a Canonical Release f
 _Avoid_: Build artifact, package
 
 **Distribution Channel**:
-A user-facing installation path that resolves to a GitHub Release, such as the GitHub-hosted installer script, Homebrew tap, or Rust-native install command.
+A user-facing installation path that resolves to a GitHub Release.
+The only supported distribution channel is the GitHub-hosted installer script.
 Stable resolves to Canonical Releases by default.
 Preview resolves to preview pre-releases only when explicitly requested.
 _Avoid_: Release source, package source
@@ -256,7 +257,3 @@ _Avoid_: Publish script, deploy script
 **Installer Script**:
 The GitHub-hosted shell entrypoint that detects the user's platform, downloads a stable or preview Release Asset, verifies it, and installs the `goog` binary.
 _Avoid_: Bash release, install command
-
-**Homebrew Tap**:
-The Homebrew formula repository that lets Homebrew users install `goog` from Stable LTS Canonical Release assets through `SainyTK/tap/goog`.
-_Avoid_: Brew package, Homebrew release

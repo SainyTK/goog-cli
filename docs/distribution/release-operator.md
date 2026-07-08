@@ -3,7 +3,7 @@
 GitHub Releases are the only release authority for `goog`.
 Stable LTS releases are Canonical Releases from `main`.
 Preview releases are GitHub pre-releases from `preview` for opt-in validation before stable promotion.
-Installer Script, Homebrew Tap, and Rust-native fallback documentation all point users toward a tagged release or source installation, never a branch-head binary.
+Installer Script and Rust-native fallback documentation point users toward a tagged release or source installation, never a branch-head binary.
 
 ## Cut A Preview Release
 
@@ -42,8 +42,6 @@ Installer Script, Homebrew Tap, and Rust-native fallback documentation all point
    "$tmp/bin/goog" --help
    ```
 
-Homebrew tap updates are stable-only and must not run for preview tags.
-
 ## Promote Preview To Stable LTS
 
 1. Merge or fast-forward the tested preview commit into `main`.
@@ -74,7 +72,7 @@ Homebrew tap updates are stable-only and must not run for preview tags.
    ```
 
 4. Watch the `Canonical Release` workflow.
-   It verifies the tag commit is reachable from `origin/main`, builds macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets, uploads checksums, creates the GitHub Release, and updates stable distribution metadata.
+   It verifies the tag commit is reachable from `origin/main`, builds macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets, uploads checksums, and creates the GitHub Release.
 
 5. Confirm the GitHub Release contains:
 
@@ -112,39 +110,14 @@ curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | 
 "$tmp/bin/goog" --help
 ```
 
-## Verify Homebrew Tap
-
-After release automation updates `SainyTK/homebrew-tap`, verify:
-
-```sh
-brew update
-brew install SainyTK/tap/goog
-goog --help
-brew test SainyTK/tap/goog
-```
-
-Do not document official Homebrew core installation unless `goog` has been accepted there. The supported Homebrew path is `brew install SainyTK/tap/goog`.
-
 ## Verify Release Automation Changes
 
-Before changing `.github/workflows/release.yml`, `install.sh`, or Homebrew formula generation, run:
+Before changing `.github/workflows/release.yml` or `install.sh`, run:
 
 ```sh
 sh -n install.sh
-ruby -c scripts/render-homebrew-formula.rb
 cargo test --test distribution_artifacts_tests
 cargo test
-```
-
-To verify formula rendering without publishing a release, create local checksum fixtures and render the formula:
-
-```sh
-tmp="$(mktemp -d)"
-for target in aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
-  printf '%064d  goog-v0.1.0-%s.tar.gz\n' 1 "$target" > "$tmp/goog-v0.1.0-$target.tar.gz.sha256"
-done
-ruby scripts/render-homebrew-formula.rb v0.1.0 "$tmp" > "$tmp/goog.rb"
-ruby -c "$tmp/goog.rb"
 ```
 
 ## Rust-Native Fallback
@@ -188,18 +161,5 @@ If the GitHub Release was created with missing or incorrect assets:
 1. Delete the broken GitHub Release from the Releases page or with `gh release delete v0.1.0`.
 2. Delete the remote tag if the tag points at the wrong commit.
 3. Fix `main`, recreate the tag if needed, and rerun the release workflow.
-
-If the Homebrew tap update fails after the GitHub Release is correct:
-
-1. Keep the GitHub Release as the Canonical Release.
-2. Rerun the failed workflow job after fixing tap credentials or repository configuration.
-3. If needed, generate the formula locally:
-
-   ```sh
-   gh release download v0.1.0 --repo SainyTK/goog-cli --pattern '*.sha256' --dir checksums
-   ruby scripts/render-homebrew-formula.rb v0.1.0 checksums > ../homebrew-tap/Formula/goog.rb
-   ```
-
-4. Commit the generated formula to `SainyTK/homebrew-tap`.
 
 Never point users to branch-head binaries as a recovery shortcut.

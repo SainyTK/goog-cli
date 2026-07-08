@@ -1,5 +1,4 @@
 use std::fs;
-use std::path::Path;
 
 #[test]
 fn readme_covers_public_distribution_and_usage_contract() {
@@ -40,11 +39,6 @@ fn readme_covers_public_distribution_and_usage_contract() {
             "README.md should contain {expected:?}"
         );
     }
-
-    assert!(
-        !readme.contains("brew install SainyTK/tap/goog"),
-        "README.md should not advertise Homebrew installation until the tap is actually public"
-    );
 }
 
 #[test]
@@ -99,32 +93,10 @@ fn release_workflow_builds_assets_from_version_tags_only() {
         "x86_64-unknown-linux-gnu",
         "aarch64-unknown-linux-gnu",
         "gh release create",
-        "render-homebrew-formula.rb",
     ] {
         assert!(
             workflow.contains(expected),
             "release workflow should contain {expected:?}"
-        );
-    }
-}
-
-#[test]
-fn homebrew_formula_renderer_contains_tap_install_contract() {
-    let renderer = fs::read_to_string("scripts/render-homebrew-formula.rb")
-        .expect("formula renderer should exist");
-
-    for expected in [
-        "class Goog < Formula",
-        "SainyTK/goog-cli",
-        "on_macos",
-        "on_linux",
-        "sha256",
-        "bin.install \"goog\"",
-        "goog --help",
-    ] {
-        assert!(
-            renderer.contains(expected),
-            "formula renderer should contain {expected:?}"
         );
     }
 }
@@ -142,13 +114,11 @@ fn release_operator_docs_cover_channel_verification_and_recovery() {
         "git checkout -B preview",
         "git push origin v0.2.4-preview.1",
         "--channel preview",
-        "Homebrew tap updates are stable-only",
         "Promote Preview To Stable LTS",
         "git push origin v0.1.0",
         "Verify Installer Script",
         "On macOS",
         "On Linux",
-        "brew install SainyTK/tap/goog",
         "Verify Release Automation Changes",
         "cargo test --test distribution_artifacts_tests",
         "Rust-Native Fallback",
@@ -160,30 +130,4 @@ fn release_operator_docs_cover_channel_verification_and_recovery() {
             "release docs should contain {expected:?}"
         );
     }
-}
-
-#[test]
-fn documented_homebrew_tap_setup_is_available_until_tap_exists() {
-    let docs = fs::read_to_string("docs/distribution/homebrew-tap.md")
-        .expect("Homebrew tap setup docs should exist");
-
-    for expected in [
-        "gh repo create SainyTK/homebrew-tap",
-        "Formula/goog.rb",
-        "GOOG_HOMEBREW_TAP_REPO",
-        "GOOG_HOMEBREW_TAP_TOKEN",
-        "brew install SainyTK/tap/goog",
-        "goog-vX.Y.Z-aarch64-apple-darwin.tar.gz",
-        "goog --help",
-    ] {
-        assert!(
-            docs.contains(expected),
-            "Homebrew tap setup docs should contain {expected:?}"
-        );
-    }
-
-    assert!(
-        Path::new("scripts/render-homebrew-formula.rb").exists(),
-        "formula renderer should exist"
-    );
 }
