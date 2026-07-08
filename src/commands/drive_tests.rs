@@ -267,6 +267,54 @@ fn write_folder_table_includes_expected_columns() {
 }
 
 #[test]
+fn write_docs_table_uses_document_id_header() {
+    let mut out = Vec::new();
+    let mut wrote_header = false;
+    write_docs_table(
+        &[DriveFile {
+            name: "Roadmap".into(),
+            id: "doc-1".into(),
+            parent_ids: vec!["folder-123".into()],
+            mime_type: "application/vnd.google-apps.document".into(),
+            modified_time: "2026-06-24T10:15:00.000Z".into(),
+        }],
+        &mut out,
+        &mut wrote_header,
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert_eq!(
+        rendered,
+        "NAME\tDOCUMENT ID\tPARENT FOLDER IDS\tMODIFIED\nRoadmap\tdoc-1\tfolder-123\t2026-06-24T10:15:00.000Z\n"
+    );
+}
+
+#[test]
+fn write_sheets_table_uses_spreadsheet_id_header() {
+    let mut out = Vec::new();
+    let mut wrote_header = false;
+    write_sheets_table(
+        &[DriveFile {
+            name: "Budget".into(),
+            id: "sheet-1".into(),
+            parent_ids: vec!["folder-123".into()],
+            mime_type: "application/vnd.google-apps.spreadsheet".into(),
+            modified_time: "2026-06-24T12:15:00.000Z".into(),
+        }],
+        &mut out,
+        &mut wrote_header,
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert_eq!(
+        rendered,
+        "NAME\tSPREADSHEET ID\tPARENT FOLDER IDS\tMODIFIED\nBudget\tsheet-1\tfolder-123\t2026-06-24T12:15:00.000Z\n"
+    );
+}
+
+#[test]
 fn write_browse_table_includes_type_and_blanks_folder_mime_type() {
     let mut out = Vec::new();
     let mut wrote_header = false;
