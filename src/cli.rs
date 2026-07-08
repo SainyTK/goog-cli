@@ -44,6 +44,29 @@ pub enum Command {
         command: MailCommand,
     },
     /// Interact with Google Sheets
+    #[command(after_help = "Common nested commands:
+  goog sheets values get-cell SPREADSHEET_ID RANGE
+  goog sheets values get-row SPREADSHEET_ID RANGE
+  goog sheets values get-column SPREADSHEET_ID RANGE
+  goog sheets values get-table SPREADSHEET_ID RANGE
+  goog sheets values update-cell SPREADSHEET_ID RANGE VALUE
+  goog sheets values update-row SPREADSHEET_ID RANGE --value VALUE
+  goog sheets values update-column SPREADSHEET_ID RANGE --value VALUE
+  goog sheets values update-table SPREADSHEET_ID RANGE --data rows.csv
+  goog sheets values append-row SPREADSHEET_ID RANGE --value VALUE
+  goog sheets values append-column SPREADSHEET_ID RANGE --value VALUE
+  goog sheets values append-table SPREADSHEET_ID RANGE --data rows.csv
+  goog sheets sheet add SPREADSHEET_ID TITLE
+  goog sheets sheet delete SPREADSHEET_ID SHEET_ID
+  goog sheets sheet rename SPREADSHEET_ID SHEET_ID TITLE
+  goog sheets sheet sort-range SPREADSHEET_ID SHEET_ID --range A1:D20 --sort-column 0
+  goog sheets sheet delete-duplicates SPREADSHEET_ID SHEET_ID --range A1:D20
+  goog sheets sheet trim-whitespace SPREADSHEET_ID SHEET_ID --range A1:D20
+  goog sheets sheet protect-range SPREADSHEET_ID SHEET_ID --range A1:D20
+
+More commands:
+  goog sheets values --help
+  goog sheets sheet --help")]
     Sheets {
         #[command(subcommand)]
         command: SheetsCommand,

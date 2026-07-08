@@ -6629,6 +6629,29 @@ fn sheets_batch_update_help_explains_request_shape() {
 }
 
 #[test]
+fn sheets_parent_help_surfaces_nested_commands() {
+    let help = help(&["sheets", "--help"]);
+
+    for expected in [
+        "Common nested commands:",
+        "goog sheets values get-cell",
+        "goog sheets values update-table",
+        "goog sheets values append-row",
+        "goog sheets values append-table",
+        "goog sheets sheet sort-range",
+        "goog sheets sheet delete-duplicates",
+        "goog sheets sheet protect-range",
+        "goog sheets values --help",
+        "goog sheets sheet --help",
+    ] {
+        assert!(
+            help.contains(expected),
+            "sheets parent help should contain {expected:?}"
+        );
+    }
+}
+
+#[test]
 fn global_account_flag() {
     let cli = parse(&["--account", "me@example.com", "auth", "list"]).unwrap();
     assert_eq!(cli.account.as_deref(), Some("me@example.com"));
