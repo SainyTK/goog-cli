@@ -294,7 +294,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
         ],
         "writeControl": { "requiredRevisionId": "rev-1" }
     });
-    let split = split_docs_request_bodies(&style_body, "apply-styles");
+    let split = split_docs_request_bodies(&style_body, "style apply");
     assert_eq!(split.len(), 2);
     assert!(split[0]["writeControl"].is_null());
     let mut second = split[1].clone();

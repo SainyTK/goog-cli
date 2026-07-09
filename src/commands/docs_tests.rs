@@ -1100,7 +1100,7 @@ async fn run_replace_text_rejects_ambiguous_match_with_candidates() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("ambiguous replace-text match"));
+    assert!(message.contains("ambiguous text replace match"));
     assert!(message.contains("match 1 index 9"));
     assert!(message.contains("match 2 index 49"));
     assert!(out.is_empty());
@@ -1643,7 +1643,7 @@ async fn run_insert_image_dry_run_human_shows_placeholder_in_context() {
     .unwrap();
 
     let output = String::from_utf8(out).unwrap();
-    assert!(output.contains("insert-image: Insert inline image at index 37"));
+    assert!(output.contains("image insert: Insert inline image at index 37"));
     assert!(output.contains("Before: Second Page Plan"));
     assert!(output.contains("After: [inline image]Second Page Plan"));
 
@@ -1741,7 +1741,7 @@ async fn run_edit_table_rejects_dimension_changes_without_supported_resize() {
     .await;
 
     let message = format!("{:#}", mismatch.unwrap_err());
-    assert!(message.contains("edit-table data dimensions are 1x2"));
+    assert!(message.contains("table edit data dimensions are 1x2"));
     assert!(message.contains("table-1 is 2x2"));
     assert!(message.contains("pass --resize"));
 
@@ -1762,7 +1762,7 @@ async fn run_edit_table_rejects_dimension_changes_without_supported_resize() {
     .await;
 
     let message = format!("{:#}", resize.unwrap_err());
-    assert!(message.contains("edit-table --resize is not supported yet"));
+    assert!(message.contains("table edit --resize is not supported yet"));
 }
 
 #[tokio::test]
@@ -2105,7 +2105,7 @@ async fn run_apply_list_targets_whole_blocks_and_rejects_ambiguous_text_ranges()
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("ambiguous replace-text match"));
+    assert!(message.contains("ambiguous text replace match"));
     assert!(message.contains("index 9"));
     assert!(message.contains("index 49"));
 }
