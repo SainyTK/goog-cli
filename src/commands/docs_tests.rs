@@ -552,6 +552,39 @@ fn get_content_selector_rejects_mixed_or_partial_selectors() {
     );
 }
 
+#[test]
+fn insert_text_selector_accepts_bare_heading_alias() {
+    let selector = insert_text_selector(
+        None,
+        None,
+        None,
+        None,
+        Some("Summary".into()),
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(selector, InsertTextSelector::AfterHeading("Summary".into()));
+
+    let error = insert_text_selector(
+        None,
+        None,
+        None,
+        None,
+        Some("Summary".into()),
+        Some("Summary".into()),
+        None,
+        None,
+        None,
+    )
+    .expect_err("--heading and --after-heading must be mutually exclusive");
+
+    assert!(error.to_string().contains("--heading"));
+}
+
 #[tokio::test]
 async fn run_get_content_json_resolves_page_line_and_heading() {
     let server = MockServer::start().await;

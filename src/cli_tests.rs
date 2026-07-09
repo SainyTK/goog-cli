@@ -515,6 +515,7 @@ fn docs_insert_text_parses_location_and_write_options() {
         entry,
         page,
         line,
+        heading,
         after_heading,
         before_heading,
         after_text,
@@ -533,6 +534,7 @@ fn docs_insert_text_parses_location_and_write_options() {
     assert_eq!(entry, None);
     assert_eq!(page, Some(2));
     assert_eq!(line, Some(1));
+    assert_eq!(heading, None);
     assert_eq!(after_heading, None);
     assert_eq!(before_heading, None);
     assert_eq!(after_text, None);
@@ -540,6 +542,34 @@ fn docs_insert_text_parses_location_and_write_options() {
     assert!(dry_run);
     assert!(json);
     assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
+}
+
+#[test]
+fn docs_insert_text_accepts_heading_selector() {
+    let cli = parse(&[
+        "docs",
+        "insert-text",
+        "document-123",
+        "Hello",
+        "--heading",
+        "Summary",
+    ])
+    .unwrap();
+
+    let Command::Docs {
+        command:
+            DocsCommand::InsertText {
+                heading,
+                after_heading,
+                ..
+            },
+    } = cli.command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(heading.as_deref(), Some("Summary"));
+    assert_eq!(after_heading, None);
 }
 
 #[test]
@@ -1108,6 +1138,7 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
     ] {
         let command_help = help(&["docs", command, "--help"]);
         assert!(command_help.contains("Provide exactly one insert location selector"));
+        assert!(command_help.contains("--heading"));
         assert!(command_help.contains("--after-heading"));
         assert!(command_help.contains("--before-text"));
     }

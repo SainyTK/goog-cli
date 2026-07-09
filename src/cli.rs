@@ -8,7 +8,7 @@ const DOCS_CONTENT_SELECTOR_HELP: &str = "Selector rules:
 
 const DOCS_INSERT_SELECTOR_HELP: &str = "Selector rules:
   Provide exactly one insert location selector.
-  Use --index N, --entry N, --page P --line L, --after-heading TEXT, --before-heading TEXT, --after-text TEXT, or --before-text TEXT.
+  Use --index N, --entry N, --page P --line L, --heading TEXT, --after-heading TEXT, --before-heading TEXT, --after-text TEXT, or --before-text TEXT.
 
 Write safety:
   Use --dry-run to preview without calling documents.batchUpdate.
@@ -305,6 +305,9 @@ Notes:
         /// Content line within the derived page
         #[arg(long)]
         line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT")]
+        heading: Option<String>,
         /// Insert after the matching heading text
         #[arg(long)]
         after_heading: Option<String>,
@@ -372,6 +375,9 @@ Notes:
         /// Content line within the derived page
         #[arg(long)]
         line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT")]
+        heading: Option<String>,
         /// Insert after the matching heading text
         #[arg(long)]
         after_heading: Option<String>,
@@ -411,6 +417,9 @@ Notes:
         /// Content line within the derived page
         #[arg(long)]
         line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT")]
+        heading: Option<String>,
         /// Insert after the matching heading text
         #[arg(long)]
         after_heading: Option<String>,
@@ -453,6 +462,9 @@ Notes:
         /// Content line within the derived page
         #[arg(long)]
         line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT")]
+        heading: Option<String>,
         /// Insert after the matching heading text
         #[arg(long)]
         after_heading: Option<String>,
@@ -520,7 +532,7 @@ Notes:
   Prints the raw documents.batchUpdate response JSON, which includes the new footnoteId under replies[0].createFootnote.footnoteId.
 
 Notes:
-  Provide exactly one insert location selector: --index, --entry, --page with --line, --after-heading, --before-heading, --after-text, or --before-text.
+  Provide exactly one insert location selector: --index, --entry, --page with --line, --heading, --after-heading, --before-heading, --after-text, or --before-text.
   The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
   Edit the footnote's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
     InsertFootnote {
@@ -538,6 +550,9 @@ Notes:
         /// Content line within the derived page
         #[arg(long)]
         line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT")]
+        heading: Option<String>,
         /// Insert after the matching heading text
         #[arg(long)]
         after_heading: Option<String>,
@@ -586,6 +601,9 @@ Notes:
         /// Content line within the derived page
         #[arg(long)]
         line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT")]
+        heading: Option<String>,
         /// Insert after the matching heading text
         #[arg(long)]
         after_heading: Option<String>,

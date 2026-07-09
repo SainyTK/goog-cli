@@ -121,6 +121,7 @@ pub fn run<S: AccountStore>(
             entry,
             page,
             line,
+            heading,
             after_heading,
             before_heading,
             after_text,
@@ -134,6 +135,7 @@ pub fn run<S: AccountStore>(
                 entry,
                 page,
                 line,
+                heading,
                 after_heading,
                 before_heading,
                 after_text,
@@ -196,6 +198,7 @@ pub fn run<S: AccountStore>(
             entry,
             page,
             line,
+            heading,
             after_heading,
             before_heading,
             after_text,
@@ -209,6 +212,7 @@ pub fn run<S: AccountStore>(
                 entry,
                 page,
                 line,
+                heading,
                 after_heading,
                 before_heading,
                 after_text,
@@ -239,6 +243,7 @@ pub fn run<S: AccountStore>(
             entry,
             page,
             line,
+            heading,
             after_heading,
             before_heading,
             after_text,
@@ -252,6 +257,7 @@ pub fn run<S: AccountStore>(
                 entry,
                 page,
                 line,
+                heading,
                 after_heading,
                 before_heading,
                 after_text,
@@ -282,6 +288,7 @@ pub fn run<S: AccountStore>(
             entry,
             page,
             line,
+            heading,
             after_heading,
             before_heading,
             after_text,
@@ -295,6 +302,7 @@ pub fn run<S: AccountStore>(
                 entry,
                 page,
                 line,
+                heading,
                 after_heading,
                 before_heading,
                 after_text,
@@ -371,6 +379,7 @@ pub fn run<S: AccountStore>(
             entry,
             page,
             line,
+            heading,
             after_heading,
             before_heading,
             after_text,
@@ -384,6 +393,7 @@ pub fn run<S: AccountStore>(
                 entry,
                 page,
                 line,
+                heading,
                 after_heading,
                 before_heading,
                 after_text,
@@ -416,6 +426,7 @@ pub fn run<S: AccountStore>(
             entry,
             page,
             line,
+            heading,
             after_heading,
             before_heading,
             after_text,
@@ -430,6 +441,7 @@ pub fn run<S: AccountStore>(
                 entry,
                 page,
                 line,
+                heading,
                 after_heading,
                 before_heading,
                 after_text,
@@ -2124,11 +2136,12 @@ fn optional_content_selector(
     content_selector(index, entry, page, line, heading).map(Some)
 }
 
-fn insert_text_selector(
+pub(super) fn insert_text_selector(
     index: Option<i64>,
     entry: Option<usize>,
     page: Option<usize>,
     line: Option<usize>,
+    heading: Option<String>,
     after_heading: Option<String>,
     before_heading: Option<String>,
     after_text: Option<String>,
@@ -2137,13 +2150,14 @@ fn insert_text_selector(
     let selector_count = usize::from(index.is_some())
         + usize::from(entry.is_some())
         + usize::from(page.is_some() || line.is_some())
+        + usize::from(heading.is_some())
         + usize::from(after_heading.is_some())
         + usize::from(before_heading.is_some())
         + usize::from(after_text.is_some())
         + usize::from(before_text.is_some());
     if selector_count != 1 {
         bail!(
-            "provide exactly one insert-text selector: --index, --entry, --page with --line, --after-heading, --before-heading, --after-text, or --before-text"
+            "provide exactly one insert-text selector: --index, --entry, --page with --line, --heading, --after-heading, --before-heading, --after-text, or --before-text"
         );
     }
 
@@ -2161,6 +2175,9 @@ fn insert_text_selector(
             bail!("--page and --line must be provided together");
         };
         return Ok(InsertTextSelector::PageLine { page, line });
+    }
+    if let Some(heading) = heading {
+        return Ok(InsertTextSelector::AfterHeading(heading));
     }
     if let Some(heading) = after_heading {
         return Ok(InsertTextSelector::AfterHeading(heading));
