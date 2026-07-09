@@ -3402,6 +3402,44 @@ fn calendar_calendars_list_with_flags() {
 }
 
 #[test]
+fn calendar_calendars_create_with_metadata_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "create",
+        "--summary",
+        "Team Launches",
+        "--description",
+        "Launch planning calendar",
+        "--location",
+        "Bangkok",
+        "--time-zone",
+        "Asia/Bangkok",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::Create {
+                            summary,
+                            description,
+                            location,
+                            time_zone,
+                        },
+                },
+        } => {
+            assert_eq!(summary, "Team Launches");
+            assert_eq!(description.as_deref(), Some("Launch planning calendar"));
+            assert_eq!(location.as_deref(), Some("Bangkok"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_get_with_google_query_flags() {
     let cli = parse(&[
         "sheets",

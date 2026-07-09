@@ -809,6 +809,21 @@ pub enum CalendarCalendarsCommand {
         /// Calendar ID to read. Use primary for the account's primary calendar.
         calendar_id: String,
     },
+    /// Create a secondary calendar
+    Create {
+        /// Calendar title
+        #[arg(long)]
+        summary: String,
+        /// Calendar description
+        #[arg(long)]
+        description: Option<String>,
+        /// Calendar location
+        #[arg(long)]
+        location: Option<String>,
+        /// Calendar time zone, such as Asia/Bangkok
+        #[arg(long)]
+        time_zone: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

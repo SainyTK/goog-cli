@@ -100,6 +100,30 @@ impl GetCalendarOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct InsertCalendarOptions {
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl InsertCalendarOptions {
+    pub fn new(request_body: Value) -> Self {
+        Self {
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["calendars"])
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ListEventsOptions {
     pub calendar_id: String,
     pub max_results: u32,
@@ -469,6 +493,19 @@ pub async fn get_calendar<S: AccountStore>(
     options: &GetCalendarOptions,
 ) -> Result<Calendar, CalendarError> {
     send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn insert_calendar<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &InsertCalendarOptions,
+) -> Result<Calendar, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
 }
 
 pub async fn list_events<S: AccountStore>(

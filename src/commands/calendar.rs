@@ -10,10 +10,11 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
-    delete_event, get_calendar, get_event, insert_event, list_calendars, list_events, move_event,
-    patch_event, query_freebusy, quick_add_event, update_event, CalendarError, DeleteEventOptions,
-    FreeBusyOptions, GetCalendarOptions, GetEventOptions, ListCalendarsOptions, ListEventsOptions,
-    MoveEventOptions, QuickAddEventOptions, SendUpdates, WriteEventOptions,
+    delete_event, get_calendar, get_event, insert_calendar, insert_event, list_calendars,
+    list_events, move_event, patch_event, query_freebusy, quick_add_event, update_event,
+    CalendarError, DeleteEventOptions, FreeBusyOptions, GetCalendarOptions, GetEventOptions,
+    InsertCalendarOptions, ListCalendarsOptions, ListEventsOptions, MoveEventOptions,
+    QuickAddEventOptions, SendUpdates, WriteEventOptions,
 };
 use crate::cli::{
     CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand, CalendarSendUpdates,
@@ -134,6 +135,22 @@ pub(super) async fn run_calendars_command_to<S: AccountStore>(
             )
             .await
             .context("failed to read Google Calendar")?;
+            write_json_line(out, &calendar, "failed to serialize Calendar")
+        }
+        CalendarCalendarsCommand::Create {
+            summary,
+            description,
+            location,
+            time_zone,
+        } => {
+            let options = insert_calendar_options(
+                build_calendar_request_body(summary, description, location, time_zone),
+                base_url,
+            );
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            let calendar = insert_calendar(&client, &options)
+                .await
+                .context("failed to create Google Calendar")?;
             write_json_line(out, &calendar, "failed to serialize Calendar")
         }
     }
@@ -716,6 +733,17 @@ fn calendar_get_options(calendar_id: String, base_url: Option<&str>) -> GetCalen
     options
 }
 
+fn insert_calendar_options(
+    request_body: serde_json::Value,
+    base_url: Option<&str>,
+) -> InsertCalendarOptions {
+    let mut options = InsertCalendarOptions::new(request_body);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
 #[allow(clippy::too_many_arguments)]
 fn list_events_options(
     calendar_id: String,
@@ -942,6 +970,26 @@ fn read_request_body(
 
     serde_json::from_str(&body)
         .with_context(|| format!("failed to parse {request_name} from {request_source}"))
+}
+
+fn build_calendar_request_body(
+    summary: String,
+    description: Option<String>,
+    location: Option<String>,
+    time_zone: Option<String>,
+) -> serde_json::Value {
+    let mut body = serde_json::Map::new();
+    body.insert("summary".into(), serde_json::Value::String(summary));
+    if let Some(description) = description {
+        body.insert("description".into(), serde_json::Value::String(description));
+    }
+    if let Some(location) = location {
+        body.insert("location".into(), serde_json::Value::String(location));
+    }
+    if let Some(time_zone) = time_zone {
+        body.insert("timeZone".into(), serde_json::Value::String(time_zone));
+    }
+    serde_json::Value::Object(body)
 }
 
 #[allow(clippy::too_many_arguments)]

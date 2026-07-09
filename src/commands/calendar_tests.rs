@@ -107,6 +107,56 @@ async fn run_calendars_list_prints_table() {
 }
 
 #[tokio::test]
+async fn run_calendars_create_sends_calendar_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/calendars"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "summary": "Team Launches",
+            "description": "Launch planning calendar",
+            "location": "Bangkok",
+            "timeZone": "Asia/Bangkok"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "team-launches@example.com",
+            "summary": "Team Launches"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_calendars_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarCalendarsCommand::Create {
+            summary: "Team Launches".into(),
+            description: Some("Launch planning calendar".into()),
+            location: Some("Bangkok".into()),
+            time_zone: Some("Asia/Bangkok".into()),
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"team-launches@example.com\",\"summary\":\"Team Launches\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
