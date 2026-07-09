@@ -9,6 +9,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
+use crate::cli::SlidesPredefinedLayout;
 use crate::slides::SLIDES_SCOPE;
 
 use super::slides::*;
@@ -204,6 +205,71 @@ async fn run_batch_update_sends_request_body() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_slide_create_sends_create_slide_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "createSlide": {
+                        "slideLayoutReference": {
+                            "predefinedLayout": "TITLE_AND_BODY"
+                        },
+                        "objectId": "slide-2",
+                        "insertionIndex": 1
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {
+                    "createSlide": {
+                        "objectId": "slide-2"
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_slide_create_unified_to(
+        &test_config(),
+        &store,
+        None,
+        SlideCreateRequest {
+            presentation_id: "presentation-123".into(),
+            object_id: Some("slide-2".into()),
+            insertion_index: Some(1),
+            layout: SlidesPredefinedLayout::TitleAndBody,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{\"createSlide\":{\"objectId\":\"slide-2\"}}]}\n"
     );
 }
 

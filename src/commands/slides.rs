@@ -9,7 +9,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::SlidesCommand;
+use crate::cli::{SlidesCommand, SlidesPredefinedLayout, SlidesSlideCommand};
 use crate::slides::{
     batch_update_presentation, create_presentation, get_presentation,
     BatchUpdatePresentationOptions, CreatePresentationOptions, GetPresentationOptions, SlidesError,
@@ -81,6 +81,28 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        SlidesCommand::Slide {
+            command:
+                SlidesSlideCommand::Create {
+                    presentation_id,
+                    object_id,
+                    insertion_index,
+                    layout,
+                },
+        } => run_with_runtime(run_slide_create_unified_to(
+            config,
+            store,
+            account_override,
+            SlideCreateRequest {
+                presentation_id,
+                object_id,
+                insertion_index,
+                layout,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::TextBox {
             presentation_id,
             page_id,
@@ -212,6 +234,73 @@ pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
         &response,
         "failed to serialize Slides Batch Update response",
     )
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct SlideCreateRequest {
+    pub presentation_id: String,
+    pub object_id: Option<String>,
+    pub insertion_index: Option<u32>,
+    pub layout: SlidesPredefinedLayout,
+}
+
+pub(super) async fn run_slide_create_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: SlideCreateRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_slide_create_batch_update(request);
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to create Google Slides slide")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides slide create response",
+    )
+}
+
+fn build_slide_create_batch_update(request: SlideCreateRequest) -> serde_json::Value {
+    let mut create_slide = serde_json::json!({
+        "slideLayoutReference": {
+            "predefinedLayout": request.layout.api_value()
+        }
+    });
+
+    if let Some(object_id) = request.object_id {
+        create_slide["objectId"] = serde_json::Value::String(object_id);
+    }
+
+    if let Some(insertion_index) = request.insertion_index {
+        create_slide["insertionIndex"] = serde_json::json!(insertion_index);
+    }
+
+    serde_json::json!({
+        "requests": [
+            {
+                "createSlide": create_slide
+            }
+        ]
+    })
 }
 
 #[derive(Debug, Clone)]

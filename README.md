@@ -283,6 +283,7 @@ cat rows.tsv | goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --dat
 goog slides list --limit 20
 goog slides create "Quarterly Review"
 goog slides get PRESENTATION_ID --fields 'presentationId,title,slides(objectId)'
+goog slides slide create PRESENTATION_ID --layout title-and-body --object-id agenda-slide
 goog slides text-box PRESENTATION_ID --page-id SLIDE_OBJECT_ID --text "Executive summary" --x 72 --y 72 --width 360 --height 120
 goog slides batch-update PRESENTATION_ID --requests ./slides-requests.json
 ```

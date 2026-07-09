@@ -12,6 +12,7 @@ use crate::cli::{
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
+    SlidesPredefinedLayout, SlidesSlideCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -2315,6 +2316,56 @@ fn slides_text_box_with_flags() {
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn slides_slide_create_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "slide",
+        "create",
+        "presentation-123",
+        "--object-id",
+        "slide-2",
+        "--insertion-index",
+        "1",
+        "--layout",
+        "title-and-body",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Create {
+                            presentation_id,
+                            object_id,
+                            insertion_index,
+                            layout,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id.as_deref(), Some("slide-2"));
+            assert_eq!(insertion_index, Some(1));
+            assert_eq!(layout, SlidesPredefinedLayout::TitleAndBody);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_create_rejects_negative_insertion_index() {
+    assert!(parse(&[
+        "slides",
+        "slide",
+        "create",
+        "presentation-123",
+        "--insertion-index",
+        "-1",
+    ])
+    .is_err());
 }
 
 #[test]

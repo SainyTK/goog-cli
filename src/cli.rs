@@ -251,6 +251,12 @@ impl SlidesCommand {
             | SlidesCommand::BatchUpdate {
                 presentation_id, ..
             }
+            | SlidesCommand::Slide {
+                command:
+                    SlidesSlideCommand::Create {
+                        presentation_id, ..
+                    },
+            }
             | SlidesCommand::TextBox {
                 presentation_id, ..
             } => presentation_id,
@@ -297,6 +303,11 @@ pub enum SlidesCommand {
         #[arg(long)]
         requests: String,
     },
+    /// Create or manage slides inside a presentation
+    Slide {
+        #[command(subcommand)]
+        command: SlidesSlideCommand,
+    },
     /// Add a text box to a slide without writing Batch Update JSON
     TextBox {
         /// Presentation ID or URL to update
@@ -323,6 +334,57 @@ pub enum SlidesCommand {
         #[arg(long, default_value_t = 120.0)]
         height: f64,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SlidesSlideCommand {
+    /// Create a slide without writing Batch Update JSON
+    Create {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Stable object ID for the new slide. Google generates one when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Zero-based insertion index. Appends when omitted.
+        #[arg(long)]
+        insertion_index: Option<u32>,
+        /// Google Slides predefined layout to use
+        #[arg(long, value_enum, default_value_t = SlidesPredefinedLayout::Blank)]
+        layout: SlidesPredefinedLayout,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesPredefinedLayout {
+    Blank,
+    CaptionOnly,
+    Title,
+    TitleAndBody,
+    TitleAndTwoColumns,
+    TitleOnly,
+    SectionHeader,
+    SectionTitleAndDescription,
+    OneColumnText,
+    MainPoint,
+    BigNumber,
+}
+
+impl SlidesPredefinedLayout {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            SlidesPredefinedLayout::Blank => "BLANK",
+            SlidesPredefinedLayout::CaptionOnly => "CAPTION_ONLY",
+            SlidesPredefinedLayout::Title => "TITLE",
+            SlidesPredefinedLayout::TitleAndBody => "TITLE_AND_BODY",
+            SlidesPredefinedLayout::TitleAndTwoColumns => "TITLE_AND_TWO_COLUMNS",
+            SlidesPredefinedLayout::TitleOnly => "TITLE_ONLY",
+            SlidesPredefinedLayout::SectionHeader => "SECTION_HEADER",
+            SlidesPredefinedLayout::SectionTitleAndDescription => "SECTION_TITLE_AND_DESCRIPTION",
+            SlidesPredefinedLayout::OneColumnText => "ONE_COLUMN_TEXT",
+            SlidesPredefinedLayout::MainPoint => "MAIN_POINT",
+            SlidesPredefinedLayout::BigNumber => "BIG_NUMBER",
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
