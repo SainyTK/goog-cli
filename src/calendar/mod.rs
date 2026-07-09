@@ -214,6 +214,7 @@ pub struct WriteEventOptions {
     pub calendar_id: String,
     pub event_id: Option<String>,
     pub request_body: Value,
+    pub send_updates: Option<SendUpdates>,
     base_url: String,
 }
 
@@ -223,6 +224,7 @@ impl WriteEventOptions {
             calendar_id: calendar_id.into(),
             event_id: None,
             request_body,
+            send_updates: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
@@ -236,6 +238,7 @@ impl WriteEventOptions {
             calendar_id: calendar_id.into(),
             event_id: Some(event_id.into()),
             request_body,
+            send_updates: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
@@ -249,8 +252,14 @@ impl WriteEventOptions {
             calendar_id: calendar_id.into(),
             event_id: Some(event_id.into()),
             request_body,
+            send_updates: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
+    }
+
+    pub fn with_send_updates(mut self, send_updates: SendUpdates) -> Self {
+        self.send_updates = Some(send_updates);
+        self
     }
 
     pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
@@ -259,7 +268,9 @@ impl WriteEventOptions {
     }
 
     fn insert_url(&self) -> Result<Url, CalendarError> {
-        calendar_url(&self.base_url, &["calendars", &self.calendar_id, "events"])
+        let mut url = calendar_url(&self.base_url, &["calendars", &self.calendar_id, "events"])?;
+        append_send_updates(&mut url, self.send_updates);
+        Ok(url)
     }
 
     fn update_url(&self) -> Result<Url, CalendarError> {
@@ -267,10 +278,12 @@ impl WriteEventOptions {
             .event_id
             .as_deref()
             .ok_or_else(|| CalendarError::InvalidResponse("event_id was missing".into()))?;
-        calendar_url(
+        let mut url = calendar_url(
             &self.base_url,
             &["calendars", &self.calendar_id, "events", event_id],
-        )
+        )?;
+        append_send_updates(&mut url, self.send_updates);
+        Ok(url)
     }
 }
 
@@ -278,6 +291,7 @@ impl WriteEventOptions {
 pub struct DeleteEventOptions {
     pub calendar_id: String,
     pub event_id: String,
+    pub send_updates: Option<SendUpdates>,
     base_url: String,
 }
 
@@ -286,8 +300,14 @@ impl DeleteEventOptions {
         Self {
             calendar_id: calendar_id.into(),
             event_id: event_id.into(),
+            send_updates: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
+    }
+
+    pub fn with_send_updates(mut self, send_updates: SendUpdates) -> Self {
+        self.send_updates = Some(send_updates);
+        self
     }
 
     pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
@@ -296,10 +316,12 @@ impl DeleteEventOptions {
     }
 
     fn request_url(&self) -> Result<Url, CalendarError> {
-        calendar_url(
+        let mut url = calendar_url(
             &self.base_url,
             &["calendars", &self.calendar_id, "events", &self.event_id],
-        )
+        )?;
+        append_send_updates(&mut url, self.send_updates);
+        Ok(url)
     }
 }
 
@@ -426,6 +448,13 @@ fn calendar_url(base_url: &str, path_segments: &[&str]) -> Result<Url, CalendarE
         }
     }
     Ok(url)
+}
+
+fn append_send_updates(url: &mut Url, send_updates: Option<SendUpdates>) {
+    if let Some(send_updates) = send_updates {
+        url.query_pairs_mut()
+            .append_pair("sendUpdates", send_updates.api_value());
+    }
 }
 
 pub async fn list_calendars<S: AccountStore>(

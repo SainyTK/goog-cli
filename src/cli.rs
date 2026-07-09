@@ -870,6 +870,9 @@ pub enum CalendarEventsCommand {
         /// Disable default reminders for this event.
         #[arg(long, conflicts_with = "event")]
         no_reminders: bool,
+        /// Guests who should receive creation notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
     },
     /// Replace an event from flags or an Events resource JSON body
     Update {
@@ -913,6 +916,9 @@ pub enum CalendarEventsCommand {
         /// Disable default reminders for this event.
         #[arg(long, conflicts_with = "event")]
         no_reminders: bool,
+        /// Guests who should receive update notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
     },
     /// Partially update an event from flags or an Events resource JSON body
     Patch {
@@ -956,6 +962,9 @@ pub enum CalendarEventsCommand {
         /// Disable default reminders for this event.
         #[arg(long, conflicts_with = "event")]
         no_reminders: bool,
+        /// Guests who should receive update notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
     },
     /// Move an event from one calendar to another
     Move {
@@ -983,6 +992,9 @@ pub enum CalendarEventsCommand {
         calendar_id: String,
         /// Event ID to delete
         event_id: String,
+        /// Guests who should receive deletion notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
     },
 }
 

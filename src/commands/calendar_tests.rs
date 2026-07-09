@@ -229,6 +229,7 @@ async fn run_events_create_sends_event_body() {
             recurrence: vec![],
             reminder: vec![],
             no_reminders: false,
+            send_updates: None,
         },
         &mut input,
         false,
@@ -250,6 +251,7 @@ async fn run_events_create_builds_event_body_from_flags() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/calendar/v3/calendars/primary/events"))
+        .and(query_param("sendUpdates", "all"))
         .and(header("authorization", "Bearer calendar-access"))
         .and(body_json(serde_json::json!({
             "summary": "Planning",
@@ -312,6 +314,7 @@ async fn run_events_create_builds_event_body_from_flags() {
             recurrence: vec!["RRULE:FREQ=WEEKLY;COUNT=4".into()],
             reminder: vec!["popup:10".into(), "email:60".into()],
             no_reminders: false,
+            send_updates: Some(crate::cli::CalendarSendUpdates::All),
         },
         &mut input,
         false,
@@ -373,6 +376,7 @@ async fn run_events_create_builds_all_day_event_body_from_flags() {
             recurrence: vec![],
             reminder: vec![],
             no_reminders: false,
+            send_updates: None,
         },
         &mut input,
         false,
@@ -435,6 +439,7 @@ async fn run_events_update_sends_event_body() {
             recurrence: vec![],
             reminder: vec![],
             no_reminders: false,
+            send_updates: None,
         },
         &mut input,
         false,
@@ -456,6 +461,7 @@ async fn run_events_update_builds_event_body_from_flags() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/calendar/v3/calendars/primary/events/event-789"))
+        .and(query_param("sendUpdates", "externalOnly"))
         .and(header("authorization", "Bearer calendar-access"))
         .and(body_json(serde_json::json!({
             "summary": "Planning moved",
@@ -514,6 +520,7 @@ async fn run_events_update_builds_event_body_from_flags() {
             recurrence: vec!["RRULE:FREQ=DAILY;COUNT=3".into()],
             reminder: vec![],
             no_reminders: true,
+            send_updates: Some(crate::cli::CalendarSendUpdates::ExternalOnly),
         },
         &mut input,
         false,
@@ -535,6 +542,7 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))
         .and(path("/calendar/v3/calendars/primary/events/event-789"))
+        .and(query_param("sendUpdates", "none"))
         .and(header("authorization", "Bearer calendar-access"))
         .and(body_json(serde_json::json!({
             "summary": "Planning renamed",
@@ -584,6 +592,7 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
             recurrence: vec!["RRULE:FREQ=MONTHLY;COUNT=2".into()],
             reminder: vec!["popup:5".into()],
             no_reminders: false,
+            send_updates: Some(crate::cli::CalendarSendUpdates::None),
         },
         &mut input,
         false,
@@ -626,6 +635,7 @@ async fn run_events_patch_rejects_empty_flag_body() {
             recurrence: vec![],
             reminder: vec![],
             no_reminders: false,
+            send_updates: None,
         },
         &mut input,
         false,
@@ -735,6 +745,50 @@ async fn run_events_quick_add_posts_text_and_send_updates() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"id\":\"quick-event-1\",\"summary\":\"Lunch with Sam\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_events_delete_sends_send_updates() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/calendar/v3/calendars/primary/events/event-789"))
+        .and(query_param("sendUpdates", "all"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Delete {
+            calendar_id: "primary".into(),
+            event_id: "event-789".into(),
+            send_updates: Some(crate::cli::CalendarSendUpdates::All),
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "deleted\tprimary\tevent-789\n"
     );
 }
 

@@ -2961,6 +2961,8 @@ fn calendar_event_create_with_flags() {
         "popup:10",
         "--reminder",
         "email:60",
+        "--send-updates",
+        "all",
     ])
     .unwrap();
     match cli.command {
@@ -2980,6 +2982,7 @@ fn calendar_event_create_with_flags() {
                             recurrence,
                             reminder,
                             no_reminders,
+                            send_updates,
                             ..
                         },
                 },
@@ -3004,6 +3007,7 @@ fn calendar_event_create_with_flags() {
                 vec!["popup:10".to_string(), "email:60".to_string()]
             );
             assert!(!no_reminders);
+            assert!(matches!(send_updates, Some(CalendarSendUpdates::All)));
         }
         _ => panic!("unexpected parse result"),
     }
@@ -3049,6 +3053,8 @@ fn calendar_event_update_with_flags() {
         "--recurrence",
         "RRULE:FREQ=DAILY;COUNT=3",
         "--no-reminders",
+        "--send-updates",
+        "external-only",
     ])
     .unwrap();
     match cli.command {
@@ -3068,6 +3074,7 @@ fn calendar_event_update_with_flags() {
                             attendee,
                             recurrence,
                             no_reminders,
+                            send_updates,
                             ..
                         },
                 },
@@ -3083,6 +3090,10 @@ fn calendar_event_update_with_flags() {
             assert_eq!(attendee, vec!["teammate@example.com".to_string()]);
             assert_eq!(recurrence, vec!["RRULE:FREQ=DAILY;COUNT=3".to_string()]);
             assert!(no_reminders);
+            assert!(matches!(
+                send_updates,
+                Some(CalendarSendUpdates::ExternalOnly)
+            ));
         }
         _ => panic!("unexpected parse result"),
     }
@@ -3122,6 +3133,8 @@ fn calendar_event_patch_with_flags() {
         "RRULE:FREQ=MONTHLY;COUNT=2",
         "--reminder",
         "popup:5",
+        "--send-updates",
+        "none",
     ])
     .unwrap();
     match cli.command {
@@ -3137,6 +3150,7 @@ fn calendar_event_patch_with_flags() {
                             location,
                             recurrence,
                             reminder,
+                            send_updates,
                             ..
                         },
                 },
@@ -3148,6 +3162,7 @@ fn calendar_event_patch_with_flags() {
             assert_eq!(location.as_deref(), Some("Office"));
             assert_eq!(recurrence, vec!["RRULE:FREQ=MONTHLY;COUNT=2".to_string()]);
             assert_eq!(reminder, vec!["popup:5".to_string()]);
+            assert!(matches!(send_updates, Some(CalendarSendUpdates::None)));
         }
         _ => panic!("unexpected parse result"),
     }
@@ -3233,6 +3248,38 @@ fn calendar_event_quick_add_with_text_and_send_updates() {
                 send_updates,
                 Some(CalendarSendUpdates::ExternalOnly)
             ));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_delete_with_send_updates() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "delete",
+        "primary",
+        "event-123",
+        "--send-updates",
+        "all",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Delete {
+                            calendar_id,
+                            event_id,
+                            send_updates,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert!(matches!(send_updates, Some(CalendarSendUpdates::All)));
         }
         _ => panic!("unexpected parse result"),
     }

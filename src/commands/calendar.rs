@@ -225,6 +225,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             recurrence,
             reminder,
             no_reminders,
+            send_updates,
         } => {
             let request_body = match event {
                 Some(event) => read_request_body(&event, input, "Google Calendar event")?,
@@ -242,7 +243,12 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     no_reminders,
                 )?,
             };
-            let options = write_event_options_insert(calendar_id.clone(), request_body, base_url);
+            let options = write_event_options_insert(
+                calendar_id.clone(),
+                request_body,
+                send_updates.map(SendUpdates::from),
+                base_url,
+            );
             let target_resource_key = resource_key("calendar", &calendar_id);
             let event = run_with_calendar_unified_access(
                 config,
@@ -271,6 +277,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             recurrence,
             reminder,
             no_reminders,
+            send_updates,
         } => {
             let request_body = match event {
                 Some(event) => read_request_body(&event, input, "Google Calendar event")?,
@@ -292,6 +299,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                 calendar_id.clone(),
                 event_id.clone(),
                 request_body,
+                send_updates.map(SendUpdates::from),
                 base_url,
             );
             let target_resource_key = calendar_event_resource_key(&calendar_id, &event_id);
@@ -322,6 +330,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             recurrence,
             reminder,
             no_reminders,
+            send_updates,
         } => {
             let request_body = match event {
                 Some(event) => read_request_body(&event, input, "Google Calendar event patch")?,
@@ -343,6 +352,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                 calendar_id.clone(),
                 event_id.clone(),
                 request_body,
+                send_updates.map(SendUpdates::from),
                 base_url,
             );
             let target_resource_key = calendar_event_resource_key(&calendar_id, &event_id);
@@ -409,8 +419,14 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
         CalendarEventsCommand::Delete {
             calendar_id,
             event_id,
+            send_updates,
         } => {
-            let options = delete_event_options(calendar_id.clone(), event_id.clone(), base_url);
+            let options = delete_event_options(
+                calendar_id.clone(),
+                event_id.clone(),
+                send_updates.map(SendUpdates::from),
+                base_url,
+            );
             let target_resource_key = calendar_event_resource_key(&calendar_id, &event_id);
             run_with_calendar_delete_access(
                 config,
@@ -746,9 +762,13 @@ fn get_event_options(
 fn write_event_options_insert(
     calendar_id: String,
     request_body: serde_json::Value,
+    send_updates: Option<SendUpdates>,
     base_url: Option<&str>,
 ) -> WriteEventOptions {
     let mut options = WriteEventOptions::insert(calendar_id, request_body);
+    if let Some(send_updates) = send_updates {
+        options = options.with_send_updates(send_updates);
+    }
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
@@ -759,9 +779,13 @@ fn write_event_options_update(
     calendar_id: String,
     event_id: String,
     request_body: serde_json::Value,
+    send_updates: Option<SendUpdates>,
     base_url: Option<&str>,
 ) -> WriteEventOptions {
     let mut options = WriteEventOptions::update(calendar_id, event_id, request_body);
+    if let Some(send_updates) = send_updates {
+        options = options.with_send_updates(send_updates);
+    }
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
@@ -772,9 +796,13 @@ fn write_event_options_patch(
     calendar_id: String,
     event_id: String,
     request_body: serde_json::Value,
+    send_updates: Option<SendUpdates>,
     base_url: Option<&str>,
 ) -> WriteEventOptions {
     let mut options = WriteEventOptions::patch(calendar_id, event_id, request_body);
+    if let Some(send_updates) = send_updates {
+        options = options.with_send_updates(send_updates);
+    }
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
@@ -784,9 +812,13 @@ fn write_event_options_patch(
 fn delete_event_options(
     calendar_id: String,
     event_id: String,
+    send_updates: Option<SendUpdates>,
     base_url: Option<&str>,
 ) -> DeleteEventOptions {
     let mut options = DeleteEventOptions::new(calendar_id, event_id);
+    if let Some(send_updates) = send_updates {
+        options = options.with_send_updates(send_updates);
+    }
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
