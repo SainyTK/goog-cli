@@ -297,7 +297,7 @@ goog slides line PRESENTATION_ID --page-id SLIDE_OBJECT_ID --category straight -
 goog slides object style PRESENTATION_ID PAGE_OBJECT_ID --fill-color "#1a73e8" --outline-color "#202124" --outline-weight 2
 goog slides object insert-text PRESENTATION_ID PAGE_OBJECT_ID --text "Updated takeaway" --index 0
 goog slides object delete-text PRESENTATION_ID PAGE_OBJECT_ID --start-index 0 --end-index 7
-goog slides object text-style PRESENTATION_ID PAGE_OBJECT_ID --color "#202124" --font-family Georgia --font-size 18 --bold --italic false
+goog slides object text-style PRESENTATION_ID PAGE_OBJECT_ID --color "#202124" --font-family Georgia --font-size 18 --bold --italic false --start-index 0 --end-index 17
 goog slides object alt-text PRESENTATION_ID PAGE_OBJECT_ID --title "Pipeline chart" --description "Bar chart showing qualified pipeline by stage"
 goog slides object move PRESENTATION_ID PAGE_OBJECT_ID --x 96 --y 144 --scale-x 1.2 --scale-y 1.2
 goog slides object order PRESENTATION_ID --object-id PAGE_OBJECT_ID --operation bring-to-front

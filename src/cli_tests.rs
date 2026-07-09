@@ -2897,6 +2897,10 @@ fn slides_object_text_style_with_flags() {
         "--italic",
         "false",
         "--underline",
+        "--start-index",
+        "2",
+        "--end-index",
+        "12",
     ])
     .unwrap();
     match cli.command {
@@ -2913,6 +2917,8 @@ fn slides_object_text_style_with_flags() {
                             bold,
                             italic,
                             underline,
+                            start_index,
+                            end_index,
                         },
                 },
         } => {
@@ -2924,6 +2930,8 @@ fn slides_object_text_style_with_flags() {
             assert_eq!(bold, Some(true));
             assert_eq!(italic, Some(false));
             assert_eq!(underline, Some(true));
+            assert_eq!(start_index, Some(2));
+            assert_eq!(end_index, Some(12));
         }
         _ => panic!("unexpected parse result"),
     }

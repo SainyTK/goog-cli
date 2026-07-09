@@ -265,6 +265,8 @@ pub fn run<S: AccountStore>(
                     bold,
                     italic,
                     underline,
+                    start_index,
+                    end_index,
                 },
         } => run_with_runtime(run_object_text_style_unified_to(
             config,
@@ -279,6 +281,8 @@ pub fn run<S: AccountStore>(
                 bold,
                 italic,
                 underline,
+                start_index,
+                end_index,
             },
             &mut std::io::stdout(),
             None,
@@ -1158,6 +1162,8 @@ pub(super) struct ObjectTextStyleRequest {
     pub bold: Option<bool>,
     pub italic: Option<bool>,
     pub underline: Option<bool>,
+    pub start_index: Option<u32>,
+    pub end_index: Option<u32>,
 }
 
 pub(super) async fn run_object_text_style_unified_to<S: AccountStore>(
@@ -1254,20 +1260,36 @@ pub(super) fn build_object_text_style_batch_update(
         fields.push("underline");
     }
 
+    let text_range = build_fixed_or_all_text_range(request.start_index, request.end_index)?;
+
     Ok(serde_json::json!({
         "requests": [
             {
                 "updateTextStyle": {
                     "objectId": request.object_id,
                     "style": style,
-                    "textRange": {
-                        "type": "ALL"
-                    },
+                    "textRange": text_range,
                     "fields": fields.join(",")
                 }
             }
         ]
     }))
+}
+
+fn build_fixed_or_all_text_range(
+    start_index: Option<u32>,
+    end_index: Option<u32>,
+) -> Result<serde_json::Value> {
+    match (start_index, end_index) {
+        (None, None) => Ok(serde_json::json!({ "type": "ALL" })),
+        (Some(start_index), Some(end_index)) if start_index < end_index => Ok(serde_json::json!({
+            "type": "FIXED_RANGE",
+            "startIndex": start_index,
+            "endIndex": end_index
+        })),
+        (Some(_), Some(_)) => bail!("--end-index must be greater than --start-index"),
+        _ => bail!("use both --start-index and --end-index to style a fixed text range"),
+    }
 }
 
 #[derive(Debug, Clone)]

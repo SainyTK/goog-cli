@@ -661,6 +661,12 @@ pub enum SlidesObjectCommand {
         /// Set or clear underline. Omit the value to set true.
         #[arg(long, num_args = 0..=1, default_missing_value = "true")]
         underline: Option<bool>,
+        /// Zero-based start index for a fixed text range
+        #[arg(long)]
+        start_index: Option<u32>,
+        /// Zero-based end index for a fixed text range
+        #[arg(long)]
+        end_index: Option<u32>,
     },
     /// Insert text into an existing shape or text box without writing Batch Update JSON
     InsertText {

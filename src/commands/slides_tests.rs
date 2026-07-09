@@ -685,6 +685,8 @@ async fn run_object_text_style_sends_update_text_style_request() {
             bold: Some(true),
             italic: Some(false),
             underline: Some(true),
+            start_index: None,
+            end_index: None,
         },
         &mut out,
         Some(&presentations_url(&server)),
@@ -710,10 +712,90 @@ fn object_text_style_requires_at_least_one_style_flag() {
         bold: None,
         italic: None,
         underline: None,
+        start_index: None,
+        end_index: None,
     })
     .unwrap_err();
 
     assert!(err.to_string().contains("at least one text style flag"));
+}
+
+#[test]
+fn object_text_style_can_style_fixed_range() {
+    let request_body = build_object_text_style_batch_update(ObjectTextStyleRequest {
+        presentation_id: "presentation-123".into(),
+        object_id: "shape-1".into(),
+        color: None,
+        font_family: None,
+        font_size: None,
+        bold: Some(true),
+        italic: None,
+        underline: None,
+        start_index: Some(2),
+        end_index: Some(9),
+    })
+    .unwrap();
+
+    assert_eq!(
+        request_body,
+        serde_json::json!({
+            "requests": [
+                {
+                    "updateTextStyle": {
+                        "objectId": "shape-1",
+                        "style": {
+                            "bold": true
+                        },
+                        "textRange": {
+                            "type": "FIXED_RANGE",
+                            "startIndex": 2,
+                            "endIndex": 9
+                        },
+                        "fields": "bold"
+                    }
+                }
+            ]
+        })
+    );
+}
+
+#[test]
+fn object_text_style_rejects_partial_or_backwards_range() {
+    let err = build_object_text_style_batch_update(ObjectTextStyleRequest {
+        presentation_id: "presentation-123".into(),
+        object_id: "shape-1".into(),
+        color: None,
+        font_family: None,
+        font_size: None,
+        bold: Some(true),
+        italic: None,
+        underline: None,
+        start_index: Some(9),
+        end_index: Some(2),
+    })
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-index must be greater than --start-index"));
+
+    let err = build_object_text_style_batch_update(ObjectTextStyleRequest {
+        presentation_id: "presentation-123".into(),
+        object_id: "shape-1".into(),
+        color: None,
+        font_family: None,
+        font_size: None,
+        bold: Some(true),
+        italic: None,
+        underline: None,
+        start_index: Some(2),
+        end_index: None,
+    })
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("use both --start-index and --end-index"));
 }
 
 #[test]
@@ -727,6 +809,8 @@ fn object_text_style_rejects_malformed_hex_color() {
         bold: None,
         italic: None,
         underline: None,
+        start_index: None,
+        end_index: None,
     })
     .unwrap_err();
 
