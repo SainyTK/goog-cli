@@ -11,7 +11,7 @@ use crate::auth::testing::MemoryStore;
 use crate::calendar::CALENDAR_SCOPE;
 use crate::cli::{
     CalendarAclCommand, CalendarAclRole, CalendarAclScope, CalendarCalendarsCommand,
-    CalendarEventsCommand,
+    CalendarColorsCommand, CalendarEventsCommand,
 };
 
 use super::calendar::*;
@@ -58,6 +58,101 @@ fn write_test_state() -> (tempfile::TempDir, std::path::PathBuf) {
     )
     .unwrap();
     (state_dir, state_path)
+}
+
+#[tokio::test]
+async fn run_colors_get_prints_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/calendar/v3/colors"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "calendar": {
+                "2": {
+                    "background": "#d06b64",
+                    "foreground": "#000000"
+                },
+                "1": {
+                    "background": "#ac725e",
+                    "foreground": "#1d1d1d"
+                }
+            },
+            "event": {
+                "1": {
+                    "background": "#a4bdfc",
+                    "foreground": "#1d1d1d"
+                }
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_colors_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarColorsCommand::Get { json: false },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "PALETTE\tCOLOR ID\tBACKGROUND\tFOREGROUND\ncalendar\t1\t#ac725e\t#1d1d1d\ncalendar\t2\t#d06b64\t#000000\nevent\t1\t#a4bdfc\t#1d1d1d\n"
+    );
+}
+
+#[tokio::test]
+async fn run_colors_get_prints_json_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/calendar/v3/colors"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "calendar": {
+                "1": {
+                    "background": "#ac725e",
+                    "foreground": "#1d1d1d"
+                }
+            },
+            "event": {}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_colors_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarColorsCommand::Get { json: true },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"calendar\":{\"1\":{\"background\":\"#ac725e\",\"foreground\":\"#1d1d1d\"}},\"event\":{}}\n"
+    );
 }
 
 #[tokio::test]

@@ -312,6 +312,7 @@ goog calendar calendars create --summary "Team Launches" --time-zone Asia/Bangko
 goog calendar calendars update team-launches@example.com --summary "Team Launches Updated" --time-zone Asia/Bangkok --description "Launch planning and retros"
 goog calendar calendars patch team-launches@example.com --description "Launch planning, retros, and launch notes"
 goog calendar calendars delete team-launches@example.com
+goog calendar colors get
 goog calendar acl list team-launches@example.com --limit 20
 goog calendar acl get team-launches@example.com user:teammate@example.com
 goog calendar acl add team-launches@example.com --scope user --value teammate@example.com --role writer --no-send-notifications

@@ -10,18 +10,18 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
-    delete_acl, delete_calendar, delete_event, get_acl, get_calendar, get_event, insert_acl,
-    insert_calendar, insert_event, list_acl, list_calendars, list_events, move_event, patch_acl,
-    patch_calendar, patch_event, query_freebusy, quick_add_event, update_acl, update_calendar,
-    update_event, CalendarError, DeleteAclOptions, DeleteCalendarOptions, DeleteEventOptions,
-    FreeBusyOptions, GetAclOptions, GetCalendarOptions, GetEventOptions, InsertAclOptions,
-    InsertCalendarOptions, ListAclOptions, ListCalendarsOptions, ListEventsOptions,
-    MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateAclOptions, UpdateCalendarOptions,
-    WriteEventOptions,
+    delete_acl, delete_calendar, delete_event, get_acl, get_calendar, get_colors, get_event,
+    insert_acl, insert_calendar, insert_event, list_acl, list_calendars, list_events, move_event,
+    patch_acl, patch_calendar, patch_event, query_freebusy, quick_add_event, update_acl,
+    update_calendar, update_event, CalendarError, DeleteAclOptions, DeleteCalendarOptions,
+    DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarOptions, GetColorsOptions,
+    GetEventOptions, InsertAclOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
+    ListEventsOptions, MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateAclOptions,
+    UpdateCalendarOptions, WriteEventOptions,
 };
 use crate::cli::{
-    CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarCommand,
-    CalendarEventsCommand, CalendarSendUpdates,
+    CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarColorsCommand,
+    CalendarCommand, CalendarEventsCommand, CalendarSendUpdates,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -53,6 +53,15 @@ pub fn run<S: AccountStore>(
             output_json_by_default,
             &mut std::io::stdout(),
             None,
+            None,
+        )),
+        CalendarCommand::Colors { command } => run_with_runtime(run_colors_command_to(
+            config,
+            store,
+            account_override,
+            command,
+            output_json_by_default,
+            &mut std::io::stdout(),
             None,
         )),
         CalendarCommand::Events { command } => {
@@ -111,6 +120,32 @@ pub(super) struct FreeBusyCommand {
 fn run_with_runtime(future: impl Future<Output = Result<()>>) -> Result<()> {
     let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
     runtime.block_on(future)
+}
+
+pub(super) async fn run_colors_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CalendarColorsCommand,
+    output_json_by_default: bool,
+    out: &mut impl Write,
+    base_url: Option<&str>,
+) -> Result<()> {
+    match command {
+        CalendarColorsCommand::Get { json } => {
+            let json = json || output_json_by_default;
+            let options = get_colors_options(base_url);
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            let colors = get_colors(&client, &options)
+                .await
+                .context("failed to read Google Calendar colors")?;
+            if json {
+                write_json_line(out, &colors, "failed to serialize Calendar colors")
+            } else {
+                write_colors_table(out, &colors)
+            }
+        }
+    }
 }
 
 pub(super) async fn run_calendars_command_to<S: AccountStore>(
@@ -1141,6 +1176,14 @@ fn delete_calendar_options(calendar_id: String, base_url: Option<&str>) -> Delet
     options
 }
 
+fn get_colors_options(base_url: Option<&str>) -> GetColorsOptions {
+    let mut options = GetColorsOptions::new();
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
 fn list_acl_options(
     calendar_id: String,
     page_size: u32,
@@ -1749,6 +1792,42 @@ fn write_acl_table(out: &mut impl Write, rules: &[serde_json::Value]) -> Result<
 
 fn write_acl_rule_table(out: &mut impl Write, rule: &serde_json::Value) -> Result<()> {
     write_acl_table(out, std::slice::from_ref(rule))
+}
+
+fn write_colors_table(out: &mut impl Write, colors: &serde_json::Value) -> Result<()> {
+    writeln!(out, "PALETTE\tCOLOR ID\tBACKGROUND\tFOREGROUND").context("failed to write output")?;
+    write_color_palette(out, colors, "calendar")?;
+    write_color_palette(out, colors, "event")?;
+    Ok(())
+}
+
+fn write_color_palette(
+    out: &mut impl Write,
+    colors: &serde_json::Value,
+    palette_name: &str,
+) -> Result<()> {
+    let Some(palette) = colors
+        .get(palette_name)
+        .and_then(serde_json::Value::as_object)
+    else {
+        return Ok(());
+    };
+
+    let mut ids = palette.keys().collect::<Vec<_>>();
+    ids.sort_by_key(|id| id.parse::<u32>().unwrap_or(u32::MAX));
+    for id in ids {
+        let color = &palette[id];
+        writeln!(
+            out,
+            "{}\t{}\t{}\t{}",
+            palette_name,
+            id.replace(['\t', '\n'], " "),
+            string_field(color, "background"),
+            string_field(color, "foreground"),
+        )
+        .context("failed to write output")?;
+    }
+    Ok(())
 }
 
 fn write_events_table(out: &mut impl Write, events: &[serde_json::Value]) -> Result<()> {

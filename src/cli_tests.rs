@@ -3,11 +3,11 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, CalendarAclCommand, CalendarAclRole, CalendarAclScope,
-    CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand, CalendarSendUpdates, Cli,
-    Command, DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand,
-    DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType, DocsMapType,
-    DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
-    DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
+    CalendarCalendarsCommand, CalendarColorsCommand, CalendarCommand, CalendarEventsCommand,
+    CalendarSendUpdates, Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand,
+    DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType,
+    DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand,
+    DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
     SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
     SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
@@ -3618,6 +3618,22 @@ fn calendar_acl_list_with_flags() {
             assert_eq!(calendar_id, "team-launches@example.com");
             assert_eq!(limit, Some(10));
             assert!(all);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_colors_get_with_json_flag() {
+    let cli = parse(&["calendar", "colors", "get", "--json"]).unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Colors {
+                    command: CalendarColorsCommand::Get { json },
+                },
+        } => {
             assert!(json);
         }
         _ => panic!("unexpected parse result"),

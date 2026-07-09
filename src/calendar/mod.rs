@@ -17,6 +17,7 @@ pub type Calendar = Value;
 pub type Acl = Value;
 pub type AclRule = Value;
 pub type CalendarList = Value;
+pub type Colors = Value;
 pub type Event = Value;
 pub type Events = Value;
 pub type FreeBusy = Value;
@@ -172,6 +173,34 @@ impl DeleteCalendarOptions {
 
     fn request_url(&self) -> Result<Url, CalendarError> {
         calendar_url(&self.base_url, &["calendars", &self.calendar_id])
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GetColorsOptions {
+    base_url: String,
+}
+
+impl GetColorsOptions {
+    pub fn new() -> Self {
+        Self {
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["colors"])
+    }
+}
+
+impl Default for GetColorsOptions {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -767,6 +796,13 @@ pub async fn delete_calendar<S: AccountStore>(
         .await
         .map_err(CalendarError::Auth)?;
     parse_empty_response(response).await
+}
+
+pub async fn get_colors<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &GetColorsOptions,
+) -> Result<Colors, CalendarError> {
+    send_json_request(client, client.get(options.request_url()?)).await
 }
 
 pub async fn list_acl<S: AccountStore>(

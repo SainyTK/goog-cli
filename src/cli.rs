@@ -810,6 +810,11 @@ pub enum CalendarCommand {
         #[command(subcommand)]
         command: CalendarAclCommand,
     },
+    /// Inspect available calendar and event color IDs
+    Colors {
+        #[command(subcommand)]
+        command: CalendarColorsCommand,
+    },
     /// List, create, update, move, quick-add, or delete Google Calendar events
     Events {
         #[command(subcommand)]
@@ -835,6 +840,16 @@ pub enum CalendarCommand {
         /// Maximum calendars to expand.
         #[arg(long)]
         calendar_expansion_max: Option<u32>,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CalendarColorsCommand {
+    /// Read the available color palettes for calendars and events
+    Get {
         /// Emit raw JSON response
         #[arg(long)]
         json: bool,
