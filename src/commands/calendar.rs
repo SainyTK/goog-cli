@@ -620,6 +620,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             time_min,
             time_max,
             query,
+            updated_min,
             single_events,
             show_deleted,
             show_hidden_invitations,
@@ -636,6 +637,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                 time_min,
                 time_max,
                 query,
+                updated_min,
                 single_events,
                 show_deleted,
                 show_hidden_invitations,
@@ -1112,6 +1114,7 @@ async fn collect_events_unified<S: AccountStore>(
             first_options.time_min.clone(),
             first_options.time_max.clone(),
             first_options.query.clone(),
+            first_options.updated_min.clone(),
             first_options.single_events,
             first_options.show_deleted,
             first_options.show_hidden_invitations,
@@ -1705,6 +1708,7 @@ fn list_events_options(
     time_min: Option<String>,
     time_max: Option<String>,
     query: Option<String>,
+    updated_min: Option<String>,
     single_events: bool,
     show_deleted: bool,
     show_hidden_invitations: bool,
@@ -1725,6 +1729,9 @@ fn list_events_options(
     }
     if let Some(query) = query {
         options = options.with_query(query);
+    }
+    if let Some(updated_min) = updated_min {
+        options = options.with_updated_min(updated_min);
     }
     if let Some(order_by) = order_by {
         options = options.with_order_by(order_by.api_value());

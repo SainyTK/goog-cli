@@ -313,6 +313,8 @@ fn calendar_events_list_with_flags() {
         "2026-07-10T09:00:00Z",
         "--query",
         "planning",
+        "--updated-min",
+        "2026-07-08T00:00:00Z",
         "--single-events",
         "--show-deleted",
         "--show-hidden-invitations",
@@ -333,6 +335,7 @@ fn calendar_events_list_with_flags() {
                             time_min,
                             time_max,
                             query,
+                            updated_min,
                             single_events,
                             show_deleted,
                             show_hidden_invitations,
@@ -347,6 +350,7 @@ fn calendar_events_list_with_flags() {
             assert_eq!(time_min.as_deref(), Some("2026-07-09T09:00:00Z"));
             assert_eq!(time_max.as_deref(), Some("2026-07-10T09:00:00Z"));
             assert_eq!(query.as_deref(), Some("planning"));
+            assert_eq!(updated_min.as_deref(), Some("2026-07-08T00:00:00Z"));
             assert!(single_events);
             assert!(show_deleted);
             assert!(show_hidden_invitations);

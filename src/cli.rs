@@ -1335,6 +1335,9 @@ pub enum CalendarEventsCommand {
         /// Free-text search query
         #[arg(long)]
         query: Option<String>,
+        /// Lower bound for event last modification time as RFC3339
+        #[arg(long)]
+        updated_min: Option<String>,
         /// Expand recurring events into instances
         #[arg(long)]
         single_events: bool,
