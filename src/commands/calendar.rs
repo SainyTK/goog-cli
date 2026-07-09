@@ -11,11 +11,12 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_acl, delete_calendar, delete_calendar_list_entry, delete_event, get_acl, get_calendar,
-    get_colors, get_event, insert_acl, insert_calendar, insert_event, list_acl, list_calendars,
-    list_events, move_event, patch_acl, patch_calendar, patch_calendar_list_entry, patch_event,
-    query_freebusy, quick_add_event, update_acl, update_calendar, update_event, CalendarError,
-    DeleteAclOptions, DeleteCalendarListEntryOptions, DeleteCalendarOptions, DeleteEventOptions,
-    FreeBusyOptions, GetAclOptions, GetCalendarOptions, GetColorsOptions, GetEventOptions,
+    get_calendar_list_entry, get_colors, get_event, insert_acl, insert_calendar, insert_event,
+    list_acl, list_calendars, list_events, move_event, patch_acl, patch_calendar,
+    patch_calendar_list_entry, patch_event, query_freebusy, quick_add_event, update_acl,
+    update_calendar, update_event, CalendarError, DeleteAclOptions, DeleteCalendarListEntryOptions,
+    DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions, GetAclOptions,
+    GetCalendarListEntryOptions, GetCalendarOptions, GetColorsOptions, GetEventOptions,
     InsertAclOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
     ListEventsOptions, MoveEventOptions, PatchCalendarListEntryOptions, QuickAddEventOptions,
     SendUpdates, UpdateAclOptions, UpdateCalendarOptions, WriteEventOptions,
@@ -269,6 +270,26 @@ pub(super) async fn run_calendars_command_to<S: AccountStore>(
             writeln!(out, "deleted\t{calendar_id}").context("failed to write output")
         }
         CalendarCalendarsCommand::ListEntry { command } => match command {
+            CalendarListEntryCommand::Get { calendar_id, json } => {
+                let json = json || output_json_by_default;
+                let options = calendar_list_entry_get_options(calendar_id.clone(), base_url);
+                let target_resource_key = resource_key("calendar-list", &calendar_id);
+                let entry = run_with_calendar_unified_access(
+                    config,
+                    store,
+                    account_override,
+                    &target_resource_key,
+                    CalendarAccessAttempt::GetCalendarListEntry(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to read Google Calendar list entry")?;
+                if json {
+                    write_json_line(out, &entry, "failed to serialize Calendar list entry")
+                } else {
+                    write_calendar_list_entry_table(out, &entry)
+                }
+            }
             CalendarListEntryCommand::Delete { calendar_id } => {
                 let options = delete_calendar_list_entry_options(calendar_id.clone(), base_url);
                 let target_resource_key = resource_key("calendar-list", &calendar_id);
@@ -1000,6 +1021,7 @@ enum CalendarAccessAttempt<'a> {
     GetCalendar(&'a GetCalendarOptions),
     UpdateCalendar(&'a UpdateCalendarOptions),
     PatchCalendar(&'a UpdateCalendarOptions),
+    GetCalendarListEntry(&'a GetCalendarListEntryOptions),
     PatchCalendarListEntry(&'a PatchCalendarListEntryOptions),
     ListAcl(&'a ListAclOptions),
     GetAcl(&'a GetAclOptions),
@@ -1051,6 +1073,9 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::GetCalendar(options) => get_calendar(&client, options).await,
         CalendarAccessAttempt::UpdateCalendar(options) => update_calendar(&client, options).await,
         CalendarAccessAttempt::PatchCalendar(options) => patch_calendar(&client, options).await,
+        CalendarAccessAttempt::GetCalendarListEntry(options) => {
+            get_calendar_list_entry(&client, options).await
+        }
         CalendarAccessAttempt::PatchCalendarListEntry(options) => {
             patch_calendar_list_entry(&client, options).await
         }
@@ -1272,6 +1297,17 @@ fn update_calendar_options(
 
 fn delete_calendar_options(calendar_id: String, base_url: Option<&str>) -> DeleteCalendarOptions {
     let mut options = DeleteCalendarOptions::new(calendar_id);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn calendar_list_entry_get_options(
+    calendar_id: String,
+    base_url: Option<&str>,
+) -> GetCalendarListEntryOptions {
+    let mut options = GetCalendarListEntryOptions::new(calendar_id);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }

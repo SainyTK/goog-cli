@@ -1137,6 +1137,14 @@ pub enum CalendarCalendarsCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CalendarListEntryCommand {
+    /// Read per-user settings for one calendar list entry
+    Get {
+        /// Calendar ID to read. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
     /// Remove one calendar from the authenticated user's calendar list
     Delete {
         /// Calendar ID to remove from the authenticated user's calendar list.

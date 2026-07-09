@@ -3774,6 +3774,34 @@ fn calendar_calendars_list_entry_patch_with_flags() {
 }
 
 #[test]
+fn calendar_calendars_list_entry_get_with_json() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list-entry",
+        "get",
+        "team-launches@example.com",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::ListEntry {
+                            command: CalendarListEntryCommand::Get { calendar_id, json },
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_calendars_list_entry_delete_parses_calendar_id() {
     let cli = parse(&[
         "calendar",

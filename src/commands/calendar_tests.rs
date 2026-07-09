@@ -547,6 +547,106 @@ async fn run_calendar_list_entry_patch_rejects_empty_body() {
 }
 
 #[tokio::test]
+async fn run_calendar_list_entry_get_prints_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(
+            r"^/calendar/v3/users/me/calendarList/team-launches(%40|@)example\.com$",
+        ))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "team-launches@example.com",
+            "summary": "Team Launches",
+            "colorId": "2",
+            "hidden": false,
+            "selected": true,
+            "defaultReminders": [
+                {
+                    "method": "popup",
+                    "minutes": 10
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::ListEntry {
+            command: CalendarListEntryCommand::Get {
+                calendar_id: "team-launches@example.com".into(),
+                json: false,
+            },
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SUMMARY\tCALENDAR ID\tCOLOR ID\tHIDDEN\tSELECTED\tDEFAULT REMINDERS\nTeam Launches\tteam-launches@example.com\t2\tfalse\ttrue\tpopup:10\n"
+    );
+}
+
+#[tokio::test]
+async fn run_calendar_list_entry_get_json_outputs_resource() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/calendar/v3/users/me/calendarList/primary$"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "primary",
+            "summary": "Primary",
+            "selected": true
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::ListEntry {
+            command: CalendarListEntryCommand::Get {
+                calendar_id: "primary".into(),
+                json: true,
+            },
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"primary\",\"selected\":true,\"summary\":\"Primary\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_calendar_list_entry_patch_json_can_clear_default_reminders() {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))
