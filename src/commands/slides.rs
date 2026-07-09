@@ -130,6 +130,26 @@ pub fn run<S: AccountStore>(
         )),
         SlidesCommand::Slide {
             command:
+                SlidesSlideCommand::Move {
+                    presentation_id,
+                    page_ids,
+                    insertion_index,
+                },
+        } => run_with_runtime(run_slide_move_unified_to(
+            config,
+            store,
+            account_override,
+            SlideMoveRequest {
+                presentation_id,
+                page_ids,
+                insertion_index,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Slide {
+            command:
                 SlidesSlideCommand::Delete {
                     presentation_id,
                     page_id,
@@ -892,6 +912,67 @@ fn build_slide_duplicate_batch_update(request: SlideDuplicateRequest) -> serde_j
     serde_json::json!({
         "requests": requests
     })
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct SlideMoveRequest {
+    pub presentation_id: String,
+    pub page_ids: Vec<String>,
+    pub insertion_index: u32,
+}
+
+pub(super) async fn run_slide_move_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: SlideMoveRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_slide_move_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to move Google Slides slide")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides slide move response",
+    )
+}
+
+pub(super) fn build_slide_move_batch_update(
+    request: SlideMoveRequest,
+) -> Result<serde_json::Value> {
+    if request.page_ids.is_empty() {
+        bail!("at least one --page-id value is required");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updateSlidesPosition": {
+                    "slideObjectIds": request.page_ids,
+                    "insertionIndex": request.insertion_index
+                }
+            }
+        ]
+    }))
 }
 
 #[derive(Debug, Clone)]

@@ -277,6 +277,89 @@ async fn run_slide_create_sends_create_slide_request() {
 }
 
 #[tokio::test]
+async fn run_slide_move_sends_update_slides_position_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updateSlidesPosition": {
+                        "slideObjectIds": ["slide-2", "slide-3"],
+                        "insertionIndex": 1
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_slide_move_unified_to(
+        &test_config(),
+        &store,
+        None,
+        SlideMoveRequest {
+            presentation_id: "presentation-123".into(),
+            page_ids: vec!["slide-2".into(), "slide-3".into()],
+            insertion_index: 1,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_slide_move_rejects_empty_page_ids() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    let err = run_slide_move_unified_to(
+        &test_config(),
+        &store,
+        None,
+        SlideMoveRequest {
+            presentation_id: "presentation-123".into(),
+            page_ids: vec![],
+            insertion_index: 1,
+        },
+        &mut out,
+        Some("https://example.invalid/slides/v1/presentations"),
+        Some(&state_path),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains("at least one --page-id"));
+}
+
+#[tokio::test]
 async fn run_slide_delete_sends_delete_object_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

@@ -2769,6 +2769,54 @@ fn slides_slide_create_with_flags() {
 }
 
 #[test]
+fn slides_slide_move_with_repeated_page_ids() {
+    let cli = parse(&[
+        "slides",
+        "slide",
+        "move",
+        "presentation-123",
+        "--page-id",
+        "slide-2",
+        "--page-id",
+        "slide-3",
+        "--insertion-index",
+        "1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Move {
+                            presentation_id,
+                            page_ids,
+                            insertion_index,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_ids, vec!["slide-2", "slide-3"]);
+            assert_eq!(insertion_index, 1);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_move_requires_page_id() {
+    assert!(parse(&[
+        "slides",
+        "slide",
+        "move",
+        "presentation-123",
+        "--insertion-index",
+        "1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn slides_slide_delete_with_page_id() {
     let cli = parse(&["slides", "slide", "delete", "presentation-123", "slide-2"]).unwrap();
     match cli.command {

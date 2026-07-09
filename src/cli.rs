@@ -259,6 +259,9 @@ impl SlidesCommand {
                     | SlidesSlideCommand::Duplicate {
                         presentation_id, ..
                     }
+                    | SlidesSlideCommand::Move {
+                        presentation_id, ..
+                    }
                     | SlidesSlideCommand::Background {
                         presentation_id, ..
                     }
@@ -607,6 +610,17 @@ pub enum SlidesSlideCommand {
         /// Zero-based insertion index for the duplicated slide. Requires --object-id.
         #[arg(long, requires = "object_id")]
         insertion_index: Option<u32>,
+    },
+    /// Move one or more existing slides to a new position without writing Batch Update JSON
+    Move {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to move. Repeat to move multiple slides together.
+        #[arg(long = "page-id", required = true)]
+        page_ids: Vec<String>,
+        /// Zero-based insertion index for the moved slide group
+        #[arg(long)]
+        insertion_index: u32,
     },
     /// Set a slide background color without writing Batch Update JSON
     Background {
