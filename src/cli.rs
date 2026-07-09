@@ -1341,6 +1341,12 @@ pub enum CalendarEventsCommand {
         /// Filter events by iCalendar UID
         #[arg(long, alias = "ical-uid")]
         i_cal_uid: Option<String>,
+        /// Filter by private extended property as NAME=VALUE. Repeat for multiple filters.
+        #[arg(long)]
+        private_extended_property: Vec<String>,
+        /// Filter by shared extended property as NAME=VALUE. Repeat for multiple filters.
+        #[arg(long)]
+        shared_extended_property: Vec<String>,
         /// Expand recurring events into instances
         #[arg(long)]
         single_events: bool,

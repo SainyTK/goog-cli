@@ -337,6 +337,7 @@ goog calendar freebusy --time-min 2026-07-09T09:00:00Z --time-max 2026-07-09T17:
 goog calendar events list primary --time-min 2026-07-09T00:00:00Z --time-max 2026-07-10T00:00:00Z --single-events
 goog calendar events list primary --updated-min 2026-07-08T00:00:00Z --show-deleted --show-hidden-invitations --order-by updated --json
 goog calendar events list primary --i-cal-uid abc123@example.com --json
+goog calendar events list primary --private-extended-property owner=agent --shared-extended-property project=alpha --json
 goog calendar events get primary EVENT_ID
 goog calendar events get primary EVENT_ID --json
 goog calendar events instances primary RECURRING_EVENT_ID --time-min 2026-07-09T00:00:00Z --time-max 2026-07-30T00:00:00Z

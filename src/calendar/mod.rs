@@ -523,6 +523,8 @@ pub struct ListEventsOptions {
     pub query: Option<String>,
     pub updated_min: Option<String>,
     pub i_cal_uid: Option<String>,
+    pub private_extended_properties: Vec<String>,
+    pub shared_extended_properties: Vec<String>,
     pub single_events: bool,
     pub show_deleted: bool,
     pub show_hidden_invitations: bool,
@@ -541,6 +543,8 @@ impl ListEventsOptions {
             query: None,
             updated_min: None,
             i_cal_uid: None,
+            private_extended_properties: Vec::new(),
+            shared_extended_properties: Vec::new(),
             single_events: false,
             show_deleted: false,
             show_hidden_invitations: false,
@@ -576,6 +580,22 @@ impl ListEventsOptions {
 
     pub fn with_i_cal_uid(mut self, i_cal_uid: impl Into<String>) -> Self {
         self.i_cal_uid = Some(i_cal_uid.into());
+        self
+    }
+
+    pub fn with_private_extended_properties(
+        mut self,
+        private_extended_properties: Vec<String>,
+    ) -> Self {
+        self.private_extended_properties = private_extended_properties;
+        self
+    }
+
+    pub fn with_shared_extended_properties(
+        mut self,
+        shared_extended_properties: Vec<String>,
+    ) -> Self {
+        self.shared_extended_properties = shared_extended_properties;
         self
     }
 
@@ -626,6 +646,12 @@ impl ListEventsOptions {
             }
             if let Some(i_cal_uid) = &self.i_cal_uid {
                 query.append_pair("iCalUID", i_cal_uid);
+            }
+            for extended_property in &self.private_extended_properties {
+                query.append_pair("privateExtendedProperty", extended_property);
+            }
+            for extended_property in &self.shared_extended_properties {
+                query.append_pair("sharedExtendedProperty", extended_property);
             }
             if self.single_events {
                 query.append_pair("singleEvents", "true");

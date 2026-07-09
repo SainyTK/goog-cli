@@ -317,6 +317,12 @@ fn calendar_events_list_with_flags() {
         "2026-07-08T00:00:00Z",
         "--i-cal-uid",
         "abc123@example.com",
+        "--private-extended-property",
+        "owner=agent",
+        "--private-extended-property",
+        "workflow=demo",
+        "--shared-extended-property",
+        "project=alpha",
         "--single-events",
         "--show-deleted",
         "--show-hidden-invitations",
@@ -339,6 +345,8 @@ fn calendar_events_list_with_flags() {
                             query,
                             updated_min,
                             i_cal_uid,
+                            private_extended_property,
+                            shared_extended_property,
                             single_events,
                             show_deleted,
                             show_hidden_invitations,
@@ -355,6 +363,11 @@ fn calendar_events_list_with_flags() {
             assert_eq!(query.as_deref(), Some("planning"));
             assert_eq!(updated_min.as_deref(), Some("2026-07-08T00:00:00Z"));
             assert_eq!(i_cal_uid.as_deref(), Some("abc123@example.com"));
+            assert_eq!(
+                private_extended_property,
+                vec!["owner=agent".to_string(), "workflow=demo".to_string()]
+            );
+            assert_eq!(shared_extended_property, vec!["project=alpha".to_string()]);
             assert!(single_events);
             assert!(show_deleted);
             assert!(show_hidden_invitations);

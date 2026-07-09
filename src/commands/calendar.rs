@@ -622,6 +622,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             query,
             updated_min,
             i_cal_uid,
+            private_extended_property,
+            shared_extended_property,
             single_events,
             show_deleted,
             show_hidden_invitations,
@@ -640,6 +642,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                 query,
                 updated_min,
                 i_cal_uid,
+                private_extended_property,
+                shared_extended_property,
                 single_events,
                 show_deleted,
                 show_hidden_invitations,
@@ -1118,6 +1122,8 @@ async fn collect_events_unified<S: AccountStore>(
             first_options.query.clone(),
             first_options.updated_min.clone(),
             first_options.i_cal_uid.clone(),
+            first_options.private_extended_properties.clone(),
+            first_options.shared_extended_properties.clone(),
             first_options.single_events,
             first_options.show_deleted,
             first_options.show_hidden_invitations,
@@ -1713,6 +1719,8 @@ fn list_events_options(
     query: Option<String>,
     updated_min: Option<String>,
     i_cal_uid: Option<String>,
+    private_extended_properties: Vec<String>,
+    shared_extended_properties: Vec<String>,
     single_events: bool,
     show_deleted: bool,
     show_hidden_invitations: bool,
@@ -1740,6 +1748,9 @@ fn list_events_options(
     if let Some(i_cal_uid) = i_cal_uid {
         options = options.with_i_cal_uid(i_cal_uid);
     }
+    options = options
+        .with_private_extended_properties(private_extended_properties)
+        .with_shared_extended_properties(shared_extended_properties);
     if let Some(order_by) = order_by {
         options = options.with_order_by(order_by.api_value());
     }
