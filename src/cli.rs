@@ -274,6 +274,9 @@ impl SlidesCommand {
                     | SlidesObjectCommand::Order {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::Group {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::Style {
                         presentation_id, ..
                     }
@@ -620,6 +623,17 @@ pub enum SlidesObjectCommand {
         /// Z-order operation to apply
         #[arg(long, value_enum)]
         operation: SlidesZOrderOperation,
+    },
+    /// Group two or more page objects without writing Batch Update JSON
+    Group {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID to group. Repeat for each child object.
+        #[arg(long = "object-id", required = true)]
+        object_ids: Vec<String>,
+        /// Stable object ID for the new group. Google generates one when omitted.
+        #[arg(long)]
+        group_id: Option<String>,
     },
     /// Style a shape or text box fill and outline without writing Batch Update JSON
     Style {

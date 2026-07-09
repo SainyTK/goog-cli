@@ -503,6 +503,95 @@ async fn run_object_order_sends_update_z_order_request() {
 }
 
 #[tokio::test]
+async fn run_object_group_sends_group_objects_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "groupObjects": {
+                        "groupObjectId": "group-1",
+                        "childrenObjectIds": ["box-1", "image-1"]
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {
+                    "groupObjects": {
+                        "objectId": "group-1"
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_object_group_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ObjectGroupRequest {
+            presentation_id: "presentation-123".into(),
+            object_ids: vec!["box-1".into(), "image-1".into()],
+            group_id: Some("group-1".into()),
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{\"groupObjects\":{\"objectId\":\"group-1\"}}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_object_group_rejects_single_object_id() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    let err = run_object_group_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ObjectGroupRequest {
+            presentation_id: "presentation-123".into(),
+            object_ids: vec!["box-1".into()],
+            group_id: None,
+        },
+        &mut out,
+        Some("https://example.invalid/slides/v1/presentations"),
+        Some(&state_path),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains("at least two --object-id"));
+}
+
+#[tokio::test]
 async fn run_object_style_sends_update_shape_properties_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

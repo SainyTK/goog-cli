@@ -232,6 +232,26 @@ pub fn run<S: AccountStore>(
         )),
         SlidesCommand::Object {
             command:
+                SlidesObjectCommand::Group {
+                    presentation_id,
+                    object_ids,
+                    group_id,
+                },
+        } => run_with_runtime(run_object_group_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectGroupRequest {
+                presentation_id,
+                object_ids,
+                group_id,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Object {
+            command:
                 SlidesObjectCommand::Style {
                     presentation_id,
                     object_id,
@@ -1036,6 +1056,70 @@ fn build_object_order_batch_update(request: ObjectOrderRequest) -> serde_json::V
             }
         ]
     })
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectGroupRequest {
+    pub presentation_id: String,
+    pub object_ids: Vec<String>,
+    pub group_id: Option<String>,
+}
+
+pub(super) async fn run_object_group_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectGroupRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_group_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to group Google Slides objects")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides object group response",
+    )
+}
+
+fn build_object_group_batch_update(request: ObjectGroupRequest) -> Result<serde_json::Value> {
+    if request.object_ids.len() < 2 {
+        bail!("at least two --object-id values are required");
+    }
+
+    let mut group_objects = serde_json::json!({
+        "childrenObjectIds": request.object_ids
+    });
+
+    if let Some(group_id) = request.group_id {
+        group_objects["groupObjectId"] = serde_json::Value::String(group_id);
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "groupObjects": group_objects
+            }
+        ]
+    }))
 }
 
 #[derive(Debug, Clone)]

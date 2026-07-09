@@ -2840,6 +2840,46 @@ fn slides_object_order_requires_object_id() {
 }
 
 #[test]
+fn slides_object_group_with_repeated_object_ids() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "group",
+        "presentation-123",
+        "--object-id",
+        "box-1",
+        "--object-id",
+        "image-1",
+        "--group-id",
+        "group-1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Group {
+                            presentation_id,
+                            object_ids,
+                            group_id,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_ids, vec!["box-1", "image-1"]);
+            assert_eq!(group_id.as_deref(), Some("group-1"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_group_requires_at_least_two_object_ids() {
+    assert!(parse(&["slides", "object", "group", "presentation-123",]).is_err());
+}
+
+#[test]
 fn slides_object_style_with_shape_properties() {
     let cli = parse(&[
         "slides",
