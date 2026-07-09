@@ -277,6 +277,9 @@ impl SlidesCommand {
                     | SlidesObjectCommand::Group {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::Ungroup {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::Style {
                         presentation_id, ..
                     }
@@ -634,6 +637,14 @@ pub enum SlidesObjectCommand {
         /// Stable object ID for the new group. Google generates one when omitted.
         #[arg(long)]
         group_id: Option<String>,
+    },
+    /// Ungroup one or more grouped page objects without writing Batch Update JSON
+    Ungroup {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Group object ID to ungroup. Repeat to ungroup multiple groups on the same slide.
+        #[arg(long = "object-id", required = true)]
+        object_ids: Vec<String>,
     },
     /// Style a shape or text box fill and outline without writing Batch Update JSON
     Style {

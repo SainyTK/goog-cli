@@ -2880,6 +2880,42 @@ fn slides_object_group_requires_at_least_two_object_ids() {
 }
 
 #[test]
+fn slides_object_ungroup_with_repeated_object_ids() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "ungroup",
+        "presentation-123",
+        "--object-id",
+        "group-1",
+        "--object-id",
+        "group-2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Ungroup {
+                            presentation_id,
+                            object_ids,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_ids, vec!["group-1", "group-2"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_ungroup_requires_object_id() {
+    assert!(parse(&["slides", "object", "ungroup", "presentation-123"]).is_err());
+}
+
+#[test]
 fn slides_object_style_with_shape_properties() {
     let cli = parse(&[
         "slides",

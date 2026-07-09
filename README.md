@@ -302,6 +302,7 @@ goog slides object alt-text PRESENTATION_ID PAGE_OBJECT_ID --title "Pipeline cha
 goog slides object move PRESENTATION_ID PAGE_OBJECT_ID --x 96 --y 144 --scale-x 1.2 --scale-y 1.2
 goog slides object order PRESENTATION_ID --object-id PAGE_OBJECT_ID --operation bring-to-front
 goog slides object group PRESENTATION_ID --object-id SHAPE_OBJECT_ID --object-id IMAGE_OBJECT_ID --group-id hero-group
+goog slides object ungroup PRESENTATION_ID --object-id hero-group
 goog slides replace-text PRESENTATION_ID --find "{{client_name}}" --replace "Acme Co." --page-id SLIDE_OBJECT_ID
 goog slides object delete PRESENTATION_ID PAGE_OBJECT_ID
 goog slides batch-update PRESENTATION_ID --requests ./slides-requests.json

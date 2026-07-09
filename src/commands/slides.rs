@@ -252,6 +252,24 @@ pub fn run<S: AccountStore>(
         )),
         SlidesCommand::Object {
             command:
+                SlidesObjectCommand::Ungroup {
+                    presentation_id,
+                    object_ids,
+                },
+        } => run_with_runtime(run_object_ungroup_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectUngroupRequest {
+                presentation_id,
+                object_ids,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Object {
+            command:
                 SlidesObjectCommand::Style {
                     presentation_id,
                     object_id,
@@ -1117,6 +1135,63 @@ fn build_object_group_batch_update(request: ObjectGroupRequest) -> Result<serde_
         "requests": [
             {
                 "groupObjects": group_objects
+            }
+        ]
+    }))
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectUngroupRequest {
+    pub presentation_id: String,
+    pub object_ids: Vec<String>,
+}
+
+pub(super) async fn run_object_ungroup_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectUngroupRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_ungroup_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to ungroup Google Slides objects")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides object ungroup response",
+    )
+}
+
+fn build_object_ungroup_batch_update(request: ObjectUngroupRequest) -> Result<serde_json::Value> {
+    if request.object_ids.is_empty() {
+        bail!("at least one --object-id value is required");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "ungroupObjects": {
+                    "objectIds": request.object_ids
+                }
             }
         ]
     }))
