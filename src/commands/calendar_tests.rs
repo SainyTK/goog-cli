@@ -210,6 +210,91 @@ async fn run_calendars_update_sends_calendar_body() {
 }
 
 #[tokio::test]
+async fn run_calendars_patch_sends_partial_calendar_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path_regex(
+            r"^/calendar/v3/calendars/team-launches(%40|@)example\.com$",
+        ))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "description": "Launch planning and retros",
+            "timeZone": "Asia/Bangkok"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "team-launches@example.com",
+            "summary": "Team Launches",
+            "description": "Launch planning and retros"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::Patch {
+            calendar_id: "team-launches@example.com".into(),
+            summary: None,
+            description: Some("Launch planning and retros".into()),
+            location: None,
+            time_zone: Some("Asia/Bangkok".into()),
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"description\":\"Launch planning and retros\",\"id\":\"team-launches@example.com\",\"summary\":\"Team Launches\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_calendars_patch_rejects_empty_body() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    let err = run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::Patch {
+            calendar_id: "team-launches@example.com".into(),
+            summary: None,
+            description: None,
+            location: None,
+            time_zone: None,
+        },
+        false,
+        &mut out,
+        None,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "at least one calendar metadata flag is required"
+    );
+}
+
+#[tokio::test]
 async fn run_calendars_delete_sends_delete_request() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))

@@ -571,6 +571,19 @@ pub async fn update_calendar<S: AccountStore>(
     .await
 }
 
+pub async fn patch_calendar<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateCalendarOptions,
+) -> Result<Calendar, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .request(Method::PATCH, options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
 pub async fn delete_calendar<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DeleteCalendarOptions,

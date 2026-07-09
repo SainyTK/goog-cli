@@ -3481,6 +3481,43 @@ fn calendar_calendars_update_with_metadata_flags() {
 }
 
 #[test]
+fn calendar_calendars_patch_with_metadata_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "patch",
+        "team-launches@example.com",
+        "--description",
+        "Launch planning and retros",
+        "--time-zone",
+        "Asia/Bangkok",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::Patch {
+                            calendar_id,
+                            summary,
+                            description,
+                            location,
+                            time_zone,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(summary, None);
+            assert_eq!(description.as_deref(), Some("Launch planning and retros"));
+            assert_eq!(location, None);
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_calendars_delete_parses_calendar_id() {
     let cli = parse(&[
         "calendar",
