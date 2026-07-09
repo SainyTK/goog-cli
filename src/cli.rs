@@ -164,7 +164,7 @@ pub enum DriveCommand {
         /// Maximum number of items to return (default: 50)
         #[arg(long)]
         limit: Option<u32>,
-        /// Fetch all items across all pages. Caps at --limit when both are given
+        /// List all items across all pages. Caps at --limit when both are given
         #[arg(long)]
         all: bool,
         /// Type of Drive items to list
