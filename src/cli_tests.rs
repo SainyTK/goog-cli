@@ -3040,6 +3040,8 @@ fn calendar_event_create_with_flags() {
         "Asia/Bangkok",
         "--location",
         "Office",
+        "--color-id",
+        "5",
         "--attendee",
         "teammate@example.com",
         "--attendee",
@@ -3067,6 +3069,7 @@ fn calendar_event_create_with_flags() {
                             end,
                             time_zone,
                             location,
+                            color_id,
                             attendee,
                             recurrence,
                             reminder,
@@ -3083,6 +3086,7 @@ fn calendar_event_create_with_flags() {
             assert_eq!(end.as_deref(), Some("2026-07-09T09:30:00+07:00"));
             assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
             assert_eq!(location.as_deref(), Some("Office"));
+            assert_eq!(color_id.as_deref(), Some("5"));
             assert_eq!(
                 attendee,
                 vec![
@@ -3137,6 +3141,8 @@ fn calendar_event_update_with_flags() {
         "Asia/Bangkok",
         "--location",
         "Office",
+        "--color-id",
+        "7",
         "--attendee",
         "teammate@example.com",
         "--recurrence",
@@ -3160,6 +3166,7 @@ fn calendar_event_update_with_flags() {
                             end,
                             time_zone,
                             location,
+                            color_id,
                             attendee,
                             recurrence,
                             no_reminders,
@@ -3176,6 +3183,7 @@ fn calendar_event_update_with_flags() {
             assert_eq!(end.as_deref(), Some("2026-07-09T10:30:00+07:00"));
             assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
             assert_eq!(location.as_deref(), Some("Office"));
+            assert_eq!(color_id.as_deref(), Some("7"));
             assert_eq!(attendee, vec!["teammate@example.com".to_string()]);
             assert_eq!(recurrence, vec!["RRULE:FREQ=DAILY;COUNT=3".to_string()]);
             assert!(no_reminders);
@@ -3218,6 +3226,8 @@ fn calendar_event_patch_with_flags() {
         "Planning renamed",
         "--location",
         "Office",
+        "--color-id",
+        "9",
         "--recurrence",
         "RRULE:FREQ=MONTHLY;COUNT=2",
         "--reminder",
@@ -3237,6 +3247,7 @@ fn calendar_event_patch_with_flags() {
                             event,
                             summary,
                             location,
+                            color_id,
                             recurrence,
                             reminder,
                             send_updates,
@@ -3249,6 +3260,7 @@ fn calendar_event_patch_with_flags() {
             assert_eq!(event, None);
             assert_eq!(summary.as_deref(), Some("Planning renamed"));
             assert_eq!(location.as_deref(), Some("Office"));
+            assert_eq!(color_id.as_deref(), Some("9"));
             assert_eq!(recurrence, vec!["RRULE:FREQ=MONTHLY;COUNT=2".to_string()]);
             assert_eq!(reminder, vec!["popup:5".to_string()]);
             assert!(matches!(send_updates, Some(CalendarSendUpdates::None)));

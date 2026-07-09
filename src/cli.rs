@@ -1121,6 +1121,9 @@ pub enum CalendarEventsCommand {
         /// Event description.
         #[arg(long, conflicts_with = "event")]
         description: Option<String>,
+        /// Event color ID from `goog calendar colors get`.
+        #[arg(long, conflicts_with = "event")]
+        color_id: Option<String>,
         /// Attendee email address. Repeat for multiple attendees.
         #[arg(long, conflicts_with = "event")]
         attendee: Vec<String>,
@@ -1167,6 +1170,9 @@ pub enum CalendarEventsCommand {
         /// Event description.
         #[arg(long, conflicts_with = "event")]
         description: Option<String>,
+        /// Event color ID from `goog calendar colors get`.
+        #[arg(long, conflicts_with = "event")]
+        color_id: Option<String>,
         /// Attendee email address. Repeat for multiple attendees.
         #[arg(long, conflicts_with = "event")]
         attendee: Vec<String>,
@@ -1213,6 +1219,9 @@ pub enum CalendarEventsCommand {
         /// Event description.
         #[arg(long, conflicts_with = "event")]
         description: Option<String>,
+        /// Event color ID from `goog calendar colors get`.
+        #[arg(long, conflicts_with = "event")]
+        color_id: Option<String>,
         /// Attendee email address. Repeat for multiple attendees.
         #[arg(long, conflicts_with = "event")]
         attendee: Vec<String>,

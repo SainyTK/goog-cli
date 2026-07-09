@@ -1159,6 +1159,7 @@ async fn run_events_create_sends_event_body() {
             all_day: false,
             location: None,
             description: None,
+            color_id: None,
             attendee: vec![],
             recurrence: vec![],
             reminder: vec![],
@@ -1199,6 +1200,7 @@ async fn run_events_create_builds_event_body_from_flags() {
             },
             "location": "Office",
             "description": "Weekly planning",
+            "colorId": "5",
             "attendees": [
                 { "email": "teammate@example.com" },
                 { "email": "lead@example.com" }
@@ -1244,6 +1246,7 @@ async fn run_events_create_builds_event_body_from_flags() {
             all_day: false,
             location: Some("Office".into()),
             description: Some("Weekly planning".into()),
+            color_id: Some("5".into()),
             attendee: vec!["teammate@example.com".into(), "lead@example.com".into()],
             recurrence: vec!["RRULE:FREQ=WEEKLY;COUNT=4".into()],
             reminder: vec!["popup:10".into(), "email:60".into()],
@@ -1306,6 +1309,7 @@ async fn run_events_create_builds_all_day_event_body_from_flags() {
             all_day: true,
             location: None,
             description: None,
+            color_id: None,
             attendee: vec![],
             recurrence: vec![],
             reminder: vec![],
@@ -1369,6 +1373,7 @@ async fn run_events_update_sends_event_body() {
             all_day: false,
             location: None,
             description: None,
+            color_id: None,
             attendee: vec![],
             recurrence: vec![],
             reminder: vec![],
@@ -1409,6 +1414,7 @@ async fn run_events_update_builds_event_body_from_flags() {
             },
             "location": "Office",
             "description": "Updated planning",
+            "colorId": "7",
             "attendees": [
                 { "email": "teammate@example.com" }
             ],
@@ -1450,6 +1456,7 @@ async fn run_events_update_builds_event_body_from_flags() {
             all_day: false,
             location: Some("Office".into()),
             description: Some("Updated planning".into()),
+            color_id: Some("7".into()),
             attendee: vec!["teammate@example.com".into()],
             recurrence: vec!["RRULE:FREQ=DAILY;COUNT=3".into()],
             reminder: vec![],
@@ -1481,6 +1488,7 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
         .and(body_json(serde_json::json!({
             "summary": "Planning renamed",
             "location": "Office",
+            "colorId": "9",
             "recurrence": [
                 "RRULE:FREQ=MONTHLY;COUNT=2"
             ],
@@ -1522,6 +1530,7 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
             all_day: false,
             location: Some("Office".into()),
             description: None,
+            color_id: Some("9".into()),
             attendee: vec![],
             recurrence: vec!["RRULE:FREQ=MONTHLY;COUNT=2".into()],
             reminder: vec!["popup:5".into()],
@@ -1565,6 +1574,7 @@ async fn run_events_patch_rejects_empty_flag_body() {
             all_day: false,
             location: None,
             description: None,
+            color_id: None,
             attendee: vec![],
             recurrence: vec![],
             reminder: vec![],

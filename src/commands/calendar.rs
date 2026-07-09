@@ -521,6 +521,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             all_day,
             location,
             description,
+            color_id,
             attendee,
             recurrence,
             reminder,
@@ -537,6 +538,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     all_day,
                     location,
                     description,
+                    color_id,
                     attendee,
                     recurrence,
                     reminder,
@@ -573,6 +575,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             all_day,
             location,
             description,
+            color_id,
             attendee,
             recurrence,
             reminder,
@@ -589,6 +592,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     all_day,
                     location,
                     description,
+                    color_id,
                     attendee,
                     recurrence,
                     reminder,
@@ -626,6 +630,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             all_day,
             location,
             description,
+            color_id,
             attendee,
             recurrence,
             reminder,
@@ -642,6 +647,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     all_day,
                     location,
                     description,
+                    color_id,
                     attendee,
                     recurrence,
                     reminder,
@@ -1561,6 +1567,7 @@ fn build_event_request_body(
     all_day: bool,
     location: Option<String>,
     description: Option<String>,
+    color_id: Option<String>,
     attendees: Vec<String>,
     recurrence: Vec<String>,
     reminders: Vec<String>,
@@ -1587,6 +1594,9 @@ fn build_event_request_body(
     }
     if let Some(description) = description {
         body.insert("description".into(), serde_json::Value::String(description));
+    }
+    if let Some(color_id) = color_id {
+        body.insert("colorId".into(), serde_json::Value::String(color_id));
     }
     if !attendees.is_empty() {
         body.insert(
@@ -1626,6 +1636,7 @@ fn build_event_patch_body(
     all_day: bool,
     location: Option<String>,
     description: Option<String>,
+    color_id: Option<String>,
     attendees: Vec<String>,
     recurrence: Vec<String>,
     reminders: Vec<String>,
@@ -1659,6 +1670,9 @@ fn build_event_patch_body(
     }
     if let Some(description) = description {
         body.insert("description".into(), serde_json::Value::String(description));
+    }
+    if let Some(color_id) = color_id {
+        body.insert("colorId".into(), serde_json::Value::String(color_id));
     }
     if !attendees.is_empty() {
         body.insert(
