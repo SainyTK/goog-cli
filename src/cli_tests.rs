@@ -634,7 +634,9 @@ fn docs_replace_text_parses_match_and_write_options() {
         "docs",
         "replace-text",
         "document-123",
+        "--find",
         "old",
+        "--replace",
         "new",
         "--match",
         "2",
@@ -670,6 +672,11 @@ fn docs_replace_text_parses_match_and_write_options() {
     assert!(dry_run);
     assert!(json);
     assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
+}
+
+#[test]
+fn docs_replace_text_rejects_order_sensitive_text_positionals() {
+    assert!(parse(&["docs", "replace-text", "document-123", "old", "new"]).is_err());
 }
 
 #[test]

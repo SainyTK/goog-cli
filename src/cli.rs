@@ -357,8 +357,10 @@ Notes:
         /// Google Docs Document ID or URL to update
         document_id: String,
         /// Existing text to replace
+        #[arg(long = "find")]
         old_text: String,
         /// Replacement text
+        #[arg(long = "replace")]
         new_text: String,
         /// Replace the Nth text match
         #[arg(long = "match")]
