@@ -12,7 +12,7 @@ use crate::cli::{
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
-    SlidesPredefinedLayout, SlidesSlideCommand,
+    SlidesObjectCommand, SlidesPredefinedLayout, SlidesSlideCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -2458,6 +2458,27 @@ fn slides_slide_delete_with_page_id() {
         } => {
             assert_eq!(presentation_id, "presentation-123");
             assert_eq!(page_id, "slide-2");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_delete_with_object_id() {
+    let cli = parse(&["slides", "object", "delete", "presentation-123", "box-1"]).unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Delete {
+                            presentation_id,
+                            object_id,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "box-1");
         }
         _ => panic!("unexpected parse result"),
     }

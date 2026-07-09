@@ -263,6 +263,12 @@ impl SlidesCommand {
                         presentation_id, ..
                     },
             }
+            | SlidesCommand::Object {
+                command:
+                    SlidesObjectCommand::Delete {
+                        presentation_id, ..
+                    },
+            }
             | SlidesCommand::TextBox {
                 presentation_id, ..
             }
@@ -319,6 +325,11 @@ pub enum SlidesCommand {
     Slide {
         #[command(subcommand)]
         command: SlidesSlideCommand,
+    },
+    /// Manage objects inside slides
+    Object {
+        #[command(subcommand)]
+        command: SlidesObjectCommand,
     },
     /// Add a text box to a slide without writing Batch Update JSON
     TextBox {
@@ -426,6 +437,17 @@ pub enum SlidesSlideCommand {
         presentation_id: String,
         /// Slide page object ID to delete
         page_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SlidesObjectCommand {
+    /// Delete a shape, image, table, or other page object without writing Batch Update JSON
+    Delete {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID to delete
+        object_id: String,
     },
 }
 
