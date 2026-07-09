@@ -220,7 +220,7 @@ pub(super) async fn run_read_to<S: AccountStore>(
 
     let message = get_message(client, &options)
         .await
-        .context("failed to fetch Gmail message")?;
+        .context("failed to read Gmail message")?;
     write_message(&message, json, out)
 }
 
@@ -250,7 +250,7 @@ pub(super) async fn run_read_unified_to<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to fetch Gmail message")?;
+    .context("failed to read Gmail message")?;
     let MailAccessResult::Message(message) = result else {
         unreachable!("read access returns a message")
     };

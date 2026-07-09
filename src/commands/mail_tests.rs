@@ -1071,7 +1071,7 @@ async fn run_read_unified_does_not_fallback_for_explicit_account_but_maps_succes
     .await;
 
     let message = format!("{:#}", denied.unwrap_err());
-    assert!(message.contains("failed to fetch Gmail message"));
+    assert!(message.contains("failed to read Gmail message"));
     assert!(message.contains("Gmail message was not found"));
     assert!(denied_out.is_empty());
 
