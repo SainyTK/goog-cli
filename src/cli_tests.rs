@@ -249,6 +249,7 @@ fn drive_ls_defaults_to_items() {
 fn drive_ls_help_describes_limit_cap_and_type() {
     let text = help(&["drive", "ls", "--help"]);
 
+    assert!(text.contains("Without --all, defaults to 50"));
     assert!(text.contains("List all items across all pages"));
     assert!(text.contains("Caps at --limit when both are given"));
     assert!(text.contains("--type <TYPE>"));

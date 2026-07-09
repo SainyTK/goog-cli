@@ -161,7 +161,7 @@ pub enum AuthMappingsCommand {
 pub enum DriveCommand {
     /// List files and folders in Google Drive
     Ls {
-        /// Maximum number of items to return (default: 50)
+        /// Maximum number of items to return. Without --all, defaults to 50
         #[arg(long)]
         limit: Option<u32>,
         /// List all items across all pages. Caps at --limit when both are given
