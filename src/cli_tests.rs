@@ -992,7 +992,7 @@ fn docs_new_high_level_editing_commands_parse() {
         command:
             DocsCommand::ApplyStyles {
                 heading,
-                no_auto_style,
+                no_cached_style,
                 ..
             },
     } = parse(&[
@@ -1003,7 +1003,7 @@ fn docs_new_high_level_editing_commands_parse() {
         "2",
         "--heading",
         "HEADING_2",
-        "--no-auto-style",
+        "--no-cached-style",
     ])
     .unwrap()
     .command
@@ -1011,13 +1011,13 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(heading.as_deref(), Some("HEADING_2"));
-    assert!(no_auto_style);
+    assert!(no_cached_style);
 
     let Command::Docs {
         command:
             DocsCommand::ApplyList {
                 entry,
-                no_auto_style,
+                no_cached_style,
                 ..
             },
     } = parse(&[
@@ -1026,7 +1026,7 @@ fn docs_new_high_level_editing_commands_parse() {
         "document-123",
         "--entry",
         "2",
-        "--no-auto-style",
+        "--no-cached-style",
         "--preset",
         "BULLET_DISC_CIRCLE_SQUARE",
     ])
@@ -1036,7 +1036,45 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(entry, Some(2));
-    assert!(no_auto_style);
+    assert!(no_cached_style);
+}
+
+#[test]
+fn docs_apply_commands_reject_no_auto_style() {
+    assert!(parse(&[
+        "docs",
+        "apply-styles",
+        "document-123",
+        "--entry",
+        "2",
+        "--no-auto-style"
+    ])
+    .is_err());
+
+    assert!(parse(&[
+        "docs",
+        "apply-list",
+        "document-123",
+        "--entry",
+        "2",
+        "--type",
+        "bullet",
+        "--no-auto-style"
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_style_template_bypass_help_uses_distinct_flags() {
+    let insert_table_help = help(&["docs", "insert-table", "--help"]);
+    assert!(insert_table_help.contains("--no-auto-style"));
+    assert!(!insert_table_help.contains("--no-cached-style"));
+
+    for command in ["apply-styles", "apply-list"] {
+        let text = help(&["docs", command, "--help"]);
+        assert!(text.contains("--no-cached-style"));
+        assert!(!text.contains("--no-auto-style"));
+    }
 }
 
 #[test]

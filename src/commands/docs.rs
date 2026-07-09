@@ -530,7 +530,7 @@ pub fn run<S: AccountStore>(
             dry_run,
             json,
             required_revision_id,
-            no_auto_style,
+            no_cached_style,
         } => {
             let selector =
                 range_selector(from_index, to_index, entry, page, line, text, match_number)?;
@@ -552,7 +552,7 @@ pub fn run<S: AccountStore>(
                     dry_run,
                     json,
                     required_revision_id,
-                    no_auto_style,
+                    no_auto_style: no_cached_style,
                 },
                 &mut std::io::stdout(),
                 None,
@@ -574,7 +574,7 @@ pub fn run<S: AccountStore>(
             dry_run,
             json,
             required_revision_id,
-            no_auto_style,
+            no_cached_style,
         } => {
             let selector =
                 range_selector(from_index, to_index, entry, page, line, text, match_number)?;
@@ -592,7 +592,7 @@ pub fn run<S: AccountStore>(
                     dry_run,
                     json,
                     required_revision_id,
-                    no_auto_style,
+                    no_auto_style: no_cached_style,
                 },
                 &mut std::io::stdout(),
                 None,

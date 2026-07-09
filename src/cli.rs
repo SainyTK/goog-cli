@@ -728,7 +728,7 @@ Notes:
         required_revision_id: Option<String>,
         /// Ignore the cached style template for this document
         #[arg(long)]
-        no_auto_style: bool,
+        no_cached_style: bool,
     },
     /// Apply a common list preset through a high-level Document Range
     #[command(after_long_help = DOCS_RANGE_SELECTOR_HELP)]
@@ -773,7 +773,7 @@ Notes:
         required_revision_id: Option<String>,
         /// Ignore the cached style template for this document
         #[arg(long)]
-        no_auto_style: bool,
+        no_cached_style: bool,
     },
     /// Create a named range over a high-level Document Range, returning its namedRangeId
     #[command(after_long_help = DOCS_CREATE_NAMED_RANGE_HELP)]
