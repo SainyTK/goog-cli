@@ -565,7 +565,7 @@ pub(crate) fn prepare_create_footnote_change(
 ) -> Result<PreparedDocsChange> {
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
     let Some(index) = resolved.location.index else {
-        bail!("create-footnote selector resolved without a Google Docs index");
+        bail!("insert-footnote selector resolved without a Google Docs index");
     };
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
@@ -586,8 +586,8 @@ pub(crate) fn prepare_create_footnote_change(
         range: None,
         request_body,
         preview: DocsChangePreview::with_context(
-            "create-footnote",
-            format!("Create footnote reference at index {index}"),
+            "insert-footnote",
+            format!("Insert footnote reference at index {index}"),
             resolved.preview_before,
             preview_after,
         ),

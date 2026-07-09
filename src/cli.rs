@@ -240,7 +240,7 @@ impl DocsCommand {
             | DocsCommand::InsertSectionBreak { document_id, .. }
             | DocsCommand::CreateHeader { document_id, .. }
             | DocsCommand::CreateFooter { document_id, .. }
-            | DocsCommand::CreateFootnote { document_id, .. }
+            | DocsCommand::InsertFootnote { document_id, .. }
             | DocsCommand::InsertTable { document_id, .. }
             | DocsCommand::EditTable { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
@@ -554,7 +554,7 @@ Notes:
         #[arg(long)]
         required_revision_id: Option<String>,
     },
-    /// Create a footnote at a high-level Document Map location, returning its footnoteId
+    /// Insert a footnote at a high-level Document Map location, returning its footnoteId
     #[command(after_long_help = "Output shape:
   Prints the raw documents.batchUpdate response JSON, which includes the new footnoteId under replies[0].createFootnote.footnoteId.
 
@@ -562,7 +562,7 @@ Notes:
   Provide exactly one insert location selector: --index, --entry, --page with --line, --after-heading, --before-heading, --after-text, or --before-text.
   The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
   Edit the footnote's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
-    CreateFootnote {
+    InsertFootnote {
         /// Google Docs Document ID or URL to update
         document_id: String,
         /// Raw Google Docs UTF-16 index

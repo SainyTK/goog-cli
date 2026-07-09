@@ -390,7 +390,7 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::CreateFootnote {
+        DocsCommand::InsertFootnote {
             document_id,
             index,
             entry,

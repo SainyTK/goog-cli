@@ -725,6 +725,32 @@ fn docs_new_high_level_editing_commands_parse() {
     assert!(json);
 
     let Command::Docs {
+        command:
+            DocsCommand::InsertFootnote {
+                after_text,
+                dry_run,
+                json,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "insert-footnote",
+        "document-123",
+        "--after-text",
+        "quarterly plan",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(after_text.as_deref(), Some("quarterly plan"));
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
         command: DocsCommand::ApplyList {
             list_type, entry, ..
         },
@@ -1097,7 +1123,7 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
         "insert-image",
         "insert-page-break",
         "insert-section-break",
-        "create-footnote",
+        "insert-footnote",
         "insert-table",
     ] {
         let command_help = help(&["docs", command, "--help"]);
@@ -1112,6 +1138,11 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
         assert!(command_help.contains("--from-index START --to-index END"));
         assert!(command_help.contains("--text TEXT with optional --match N"));
     }
+}
+
+#[test]
+fn docs_create_footnote_is_not_a_command() {
+    assert!(parse(&["docs", "create-footnote", "document-123", "--index", "1"]).is_err());
 }
 
 #[test]
