@@ -212,9 +212,6 @@ impl DocsCommand {
         let document_id = match self {
             DocsCommand::Create { .. } => return,
             DocsCommand::Map { document_id, .. }
-            | DocsCommand::SearchText { document_id, .. }
-            | DocsCommand::InsertText { document_id, .. }
-            | DocsCommand::ReplaceText { document_id, .. }
             | DocsCommand::InsertImage { document_id, .. }
             | DocsCommand::InsertPageBreak { document_id, .. }
             | DocsCommand::InsertSectionBreak { document_id, .. }
@@ -231,6 +228,11 @@ impl DocsCommand {
             DocsCommand::NamedRange { command } => match command {
                 DocsNamedRangeCommand::Create { document_id, .. }
                 | DocsNamedRangeCommand::Delete { document_id, .. } => document_id,
+            },
+            DocsCommand::Text { command } => match command {
+                DocsTextCommand::Search { document_id, .. }
+                | DocsTextCommand::Insert { document_id, .. }
+                | DocsTextCommand::Replace { document_id, .. } => document_id,
             },
         };
         *document_id = crate::docs::extract_document_id(document_id);
@@ -278,88 +280,10 @@ Notes:
         #[arg(long)]
         json: bool,
     },
-    /// Search editable Google Docs content through the Document Map
-    SearchText {
-        /// Google Docs Document ID or URL to search
-        document_id: String,
-        /// Text to find
-        text: String,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Insert text through a high-level Document Map location selector
-    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
-    InsertText {
-        /// Google Docs Document ID or URL to update
-        document_id: String,
-        /// Text to insert
-        text: String,
-        /// Insert location selector
-        #[arg(long, value_name = "SELECTOR")]
-        at: Option<String>,
-        /// Raw Google Docs UTF-16 index
-        #[arg(long, hide = true)]
-        index: Option<i64>,
-        /// Document Map Entry number
-        #[arg(long, hide = true)]
-        entry: Option<usize>,
-        /// Derived page label
-        #[arg(long, hide = true)]
-        page: Option<usize>,
-        /// Content line within the derived page
-        #[arg(long, hide = true)]
-        line: Option<usize>,
-        /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT", hide = true)]
-        heading: Option<String>,
-        /// Insert after the matching heading text
-        #[arg(long, hide = true)]
-        after_heading: Option<String>,
-        /// Insert before the matching heading text
-        #[arg(long, hide = true)]
-        before_heading: Option<String>,
-        /// Insert after the matching text span
-        #[arg(long, hide = true)]
-        after_text: Option<String>,
-        /// Insert before the matching text span
-        #[arg(long, hide = true)]
-        before_text: Option<String>,
-        /// Preview the edit without calling documents.batchUpdate
-        #[arg(long)]
-        dry_run: bool,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-        /// Require the document to still be at this revision before applying the edit
-        #[arg(long)]
-        required_revision_id: Option<String>,
-    },
-    /// Replace text through a high-level Document Map text match
-    ReplaceText {
-        /// Google Docs Document ID or URL to update
-        document_id: String,
-        /// Existing text to replace
-        #[arg(long = "find")]
-        old_text: String,
-        /// Replacement text
-        #[arg(long = "replace")]
-        new_text: String,
-        /// Replace the Nth text match
-        #[arg(long = "match")]
-        match_number: Option<usize>,
-        /// Replace every text match
-        #[arg(long)]
-        all: bool,
-        /// Preview the edit without calling documents.batchUpdate
-        #[arg(long)]
-        dry_run: bool,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-        /// Require the document to still be at this revision before applying the edit
-        #[arg(long)]
-        required_revision_id: Option<String>,
+    /// Search, insert, or replace document text
+    Text {
+        #[command(subcommand)]
+        command: DocsTextCommand,
     },
     /// Insert an Inline Image through a high-level Document Map location selector
     #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
@@ -507,7 +431,7 @@ Notes:
 
 Notes:
   Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
-  Edit the header's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
+  Edit the header's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
     CreateHeader {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -527,7 +451,7 @@ Notes:
 
 Notes:
   Always creates the DEFAULT footer for the document's first section; there is no per-section footer support today.
-  Edit the footer's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footerId segment.")]
+  Edit the footer's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footerId segment.")]
     CreateFooter {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -549,7 +473,7 @@ Notes:
   Provide exactly one insert location selector with --at.
   Use --at index:N, --at entry:N, --at page:P,line:L, --at heading:TEXT, --at after-heading:TEXT, --at before-heading:TEXT, --at after-text:TEXT, or --at before-text:TEXT.
   The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
-  Edit the footnote's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
+  Edit the footnote's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
     InsertFootnote {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -850,6 +774,93 @@ Example:
         /// Emit structured JSON
         #[arg(long)]
         json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsTextCommand {
+    /// Search editable Google Docs content through the Document Map
+    Search {
+        /// Google Docs Document ID or URL to search
+        document_id: String,
+        /// Text to find
+        text: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Insert text through a high-level Document Map location selector
+    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
+    Insert {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Text to insert
+        text: String,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long, hide = true)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long, hide = true)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long, hide = true)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long, hide = true)]
+        line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT", hide = true)]
+        heading: Option<String>,
+        /// Insert after the matching heading text
+        #[arg(long, hide = true)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long, hide = true)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long, hide = true)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long, hide = true)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Replace text through a high-level Document Map text match
+    Replace {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Existing text to replace
+        #[arg(long = "find")]
+        old_text: String,
+        /// Replacement text
+        #[arg(long = "replace")]
+        new_text: String,
+        /// Replace the Nth text match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
+        /// Replace every text match
+        #[arg(long)]
+        all: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
     },
 }
 

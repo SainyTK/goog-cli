@@ -6,7 +6,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{DocsCommand, DocsMapType, DocsNamedRangeCommand};
+use crate::cli::{DocsCommand, DocsMapType, DocsNamedRangeCommand, DocsTextCommand};
 use crate::docs::{
     batch_update_document,
     change::{
@@ -95,10 +95,13 @@ pub fn run<S: AccountStore>(
                 ))
             }
         }
-        DocsCommand::SearchText {
-            document_id,
-            text,
-            json,
+        DocsCommand::Text {
+            command:
+                DocsTextCommand::Search {
+                    document_id,
+                    text,
+                    json,
+                },
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -114,22 +117,25 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::InsertText {
-            document_id,
-            text,
-            at,
-            index,
-            entry,
-            page,
-            line,
-            heading,
-            after_heading,
-            before_heading,
-            after_text,
-            before_text,
-            dry_run,
-            json,
-            required_revision_id,
+        DocsCommand::Text {
+            command:
+                DocsTextCommand::Insert {
+                    document_id,
+                    text,
+                    at,
+                    index,
+                    entry,
+                    page,
+                    line,
+                    heading,
+                    after_heading,
+                    before_heading,
+                    after_text,
+                    before_text,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
         } => {
             let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
@@ -162,15 +168,18 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::ReplaceText {
-            document_id,
-            old_text,
-            new_text,
-            match_number,
-            all,
-            dry_run,
-            json,
-            required_revision_id,
+        DocsCommand::Text {
+            command:
+                DocsTextCommand::Replace {
+                    document_id,
+                    old_text,
+                    new_text,
+                    match_number,
+                    all,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;

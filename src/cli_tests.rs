@@ -3,8 +3,9 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DocsMapType,
-    DocsNamedRangeCommand, DriveCommand, DriveListType, MailCommand, SheetsCommand,
-    SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    DocsNamedRangeCommand, DocsTextCommand, DriveCommand, DriveListType, MailCommand,
+    SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -416,14 +417,17 @@ fn docs_map_rejects_removed_list_object_verbs() {
 
 #[test]
 fn docs_search_text_with_document_id_text_and_json_flag() {
-    let cli = parse(&["docs", "search-text", "document-123", "Plan", "--json"]).unwrap();
+    let cli = parse(&["docs", "text", "search", "document-123", "Plan", "--json"]).unwrap();
     match cli.command {
         Command::Docs {
             command:
-                DocsCommand::SearchText {
-                    document_id,
-                    text,
-                    json,
+                DocsCommand::Text {
+                    command:
+                        DocsTextCommand::Search {
+                            document_id,
+                            text,
+                            json,
+                        },
                 },
         } => {
             assert_eq!(document_id, "document-123");
@@ -491,7 +495,8 @@ fn docs_map_accepts_content_location_selectors() {
 fn docs_insert_text_parses_location_and_write_options() {
     let cli = parse(&[
         "docs",
-        "insert-text",
+        "text",
+        "insert",
         "document-123",
         "Hello",
         "--page",
@@ -508,22 +513,25 @@ fn docs_insert_text_parses_location_and_write_options() {
     let Command::Docs { command } = cli.command else {
         panic!("unexpected parse result");
     };
-    let DocsCommand::InsertText {
-        document_id,
-        text,
-        at,
-        index,
-        entry,
-        page,
-        line,
-        heading,
-        after_heading,
-        before_heading,
-        after_text,
-        before_text,
-        dry_run,
-        json,
-        required_revision_id,
+    let DocsCommand::Text {
+        command:
+            DocsTextCommand::Insert {
+                document_id,
+                text,
+                at,
+                index,
+                entry,
+                page,
+                line,
+                heading,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+                dry_run,
+                json,
+                required_revision_id,
+            },
     } = command
     else {
         panic!("unexpected parse result");
@@ -550,15 +558,19 @@ fn docs_insert_text_parses_location_and_write_options() {
 fn docs_insert_commands_accept_at_selector() {
     let Command::Docs {
         command:
-            DocsCommand::InsertText {
-                at,
-                index,
-                after_text,
-                ..
+            DocsCommand::Text {
+                command:
+                    DocsTextCommand::Insert {
+                        at,
+                        index,
+                        after_text,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "insert-text",
+        "text",
+        "insert",
         "document-123",
         "Hello",
         "--at",
@@ -598,7 +610,8 @@ fn docs_insert_commands_accept_at_selector() {
 fn docs_insert_text_accepts_heading_selector() {
     let cli = parse(&[
         "docs",
-        "insert-text",
+        "text",
+        "insert",
         "document-123",
         "Hello",
         "--heading",
@@ -608,10 +621,13 @@ fn docs_insert_text_accepts_heading_selector() {
 
     let Command::Docs {
         command:
-            DocsCommand::InsertText {
-                heading,
-                after_heading,
-                ..
+            DocsCommand::Text {
+                command:
+                    DocsTextCommand::Insert {
+                        heading,
+                        after_heading,
+                        ..
+                    },
             },
     } = cli.command
     else {
@@ -626,7 +642,8 @@ fn docs_insert_text_accepts_heading_selector() {
 fn docs_replace_text_parses_match_and_write_options() {
     let cli = parse(&[
         "docs",
-        "replace-text",
+        "text",
+        "replace",
         "document-123",
         "--find",
         "old",
@@ -644,15 +661,18 @@ fn docs_replace_text_parses_match_and_write_options() {
     let Command::Docs { command } = cli.command else {
         panic!("unexpected parse result");
     };
-    let DocsCommand::ReplaceText {
-        document_id,
-        old_text,
-        new_text,
-        match_number,
-        all,
-        dry_run,
-        json,
-        required_revision_id,
+    let DocsCommand::Text {
+        command:
+            DocsTextCommand::Replace {
+                document_id,
+                old_text,
+                new_text,
+                match_number,
+                all,
+                dry_run,
+                json,
+                required_revision_id,
+            },
     } = command
     else {
         panic!("unexpected parse result");
@@ -670,7 +690,23 @@ fn docs_replace_text_parses_match_and_write_options() {
 
 #[test]
 fn docs_replace_text_rejects_order_sensitive_text_positionals() {
-    assert!(parse(&["docs", "replace-text", "document-123", "old", "new"]).is_err());
+    assert!(parse(&["docs", "text", "replace", "document-123", "old", "new"]).is_err());
+}
+
+#[test]
+fn docs_flat_text_commands_are_removed() {
+    assert!(parse(&["docs", "search-text", "document-123", "Plan"]).is_err());
+    assert!(parse(&["docs", "insert-text", "document-123", "Hello"]).is_err());
+    assert!(parse(&[
+        "docs",
+        "replace-text",
+        "document-123",
+        "--find",
+        "old",
+        "--replace",
+        "new",
+    ])
+    .is_err());
 }
 
 #[test]
@@ -1179,14 +1215,14 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
     assert!(map_help.contains("--heading TEXT"));
 
     for command in [
-        "insert-text",
-        "insert-image",
-        "insert-page-break",
-        "insert-section-break",
-        "insert-footnote",
-        "insert-table",
+        &["docs", "text", "insert", "--help"][..],
+        &["docs", "insert-image", "--help"],
+        &["docs", "insert-page-break", "--help"],
+        &["docs", "insert-section-break", "--help"],
+        &["docs", "insert-footnote", "--help"],
+        &["docs", "insert-table", "--help"],
     ] {
-        let command_help = help(&["docs", command, "--help"]);
+        let command_help = help(command);
         assert!(command_help.contains("Provide exactly one insert location selector"));
         assert!(command_help.contains("--at <SELECTOR>"));
         assert!(command_help.contains("--at heading:TEXT"));
