@@ -315,6 +315,8 @@ fn calendar_events_list_with_flags() {
         "planning",
         "--updated-min",
         "2026-07-08T00:00:00Z",
+        "--i-cal-uid",
+        "abc123@example.com",
         "--single-events",
         "--show-deleted",
         "--show-hidden-invitations",
@@ -336,6 +338,7 @@ fn calendar_events_list_with_flags() {
                             time_max,
                             query,
                             updated_min,
+                            i_cal_uid,
                             single_events,
                             show_deleted,
                             show_hidden_invitations,
@@ -351,6 +354,7 @@ fn calendar_events_list_with_flags() {
             assert_eq!(time_max.as_deref(), Some("2026-07-10T09:00:00Z"));
             assert_eq!(query.as_deref(), Some("planning"));
             assert_eq!(updated_min.as_deref(), Some("2026-07-08T00:00:00Z"));
+            assert_eq!(i_cal_uid.as_deref(), Some("abc123@example.com"));
             assert!(single_events);
             assert!(show_deleted);
             assert!(show_hidden_invitations);

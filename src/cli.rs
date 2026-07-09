@@ -1338,6 +1338,9 @@ pub enum CalendarEventsCommand {
         /// Lower bound for event last modification time as RFC3339
         #[arg(long)]
         updated_min: Option<String>,
+        /// Filter events by iCalendar UID
+        #[arg(long, alias = "ical-uid")]
+        i_cal_uid: Option<String>,
         /// Expand recurring events into instances
         #[arg(long)]
         single_events: bool,

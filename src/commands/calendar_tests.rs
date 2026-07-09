@@ -1598,6 +1598,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
         .and(query_param("showHiddenInvitations", "true"))
         .and(query_param("orderBy", "updated"))
         .and(query_param("updatedMin", "2026-07-08T00:00:00Z"))
+        .and(query_param("iCalUID", "abc123@example.com"))
         .and(header("authorization", "Bearer alice-access"))
         .respond_with(ResponseTemplate::new(403).set_body_string("denied"))
         .expect(1)
@@ -1610,6 +1611,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
         .and(query_param("showHiddenInvitations", "true"))
         .and(query_param("orderBy", "updated"))
         .and(query_param("updatedMin", "2026-07-08T00:00:00Z"))
+        .and(query_param("iCalUID", "abc123@example.com"))
         .and(header("authorization", "Bearer bob-access"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "items": [
@@ -1654,6 +1656,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
             time_max: None,
             query: None,
             updated_min: Some("2026-07-08T00:00:00Z".into()),
+            i_cal_uid: Some("abc123@example.com".into()),
             single_events: false,
             show_deleted: true,
             show_hidden_invitations: true,

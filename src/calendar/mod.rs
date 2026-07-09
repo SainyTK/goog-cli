@@ -522,6 +522,7 @@ pub struct ListEventsOptions {
     pub time_max: Option<String>,
     pub query: Option<String>,
     pub updated_min: Option<String>,
+    pub i_cal_uid: Option<String>,
     pub single_events: bool,
     pub show_deleted: bool,
     pub show_hidden_invitations: bool,
@@ -539,6 +540,7 @@ impl ListEventsOptions {
             time_max: None,
             query: None,
             updated_min: None,
+            i_cal_uid: None,
             single_events: false,
             show_deleted: false,
             show_hidden_invitations: false,
@@ -569,6 +571,11 @@ impl ListEventsOptions {
 
     pub fn with_updated_min(mut self, updated_min: impl Into<String>) -> Self {
         self.updated_min = Some(updated_min.into());
+        self
+    }
+
+    pub fn with_i_cal_uid(mut self, i_cal_uid: impl Into<String>) -> Self {
+        self.i_cal_uid = Some(i_cal_uid.into());
         self
     }
 
@@ -616,6 +623,9 @@ impl ListEventsOptions {
             }
             if let Some(updated_min) = &self.updated_min {
                 query.append_pair("updatedMin", updated_min);
+            }
+            if let Some(i_cal_uid) = &self.i_cal_uid {
+                query.append_pair("iCalUID", i_cal_uid);
             }
             if self.single_events {
                 query.append_pair("singleEvents", "true");
