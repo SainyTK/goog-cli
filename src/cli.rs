@@ -824,6 +824,11 @@ pub enum CalendarCalendarsCommand {
         #[arg(long)]
         time_zone: Option<String>,
     },
+    /// Delete a secondary calendar
+    Delete {
+        /// Calendar ID to delete. Primary calendars cannot be deleted.
+        calendar_id: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]

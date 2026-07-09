@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use wiremock::matchers::{body_json, header, method, path, query_param};
+use wiremock::matchers::{body_json, header, method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
@@ -153,6 +153,46 @@ async fn run_calendars_create_sends_calendar_body() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"id\":\"team-launches@example.com\",\"summary\":\"Team Launches\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_calendars_delete_sends_delete_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path_regex(
+            r"^/calendar/v3/calendars/team-launches(%40|@)example\.com$",
+        ))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::Delete {
+            calendar_id: "team-launches@example.com".into(),
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "deleted\tteam-launches@example.com\n"
     );
 }
 

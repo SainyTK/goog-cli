@@ -3440,6 +3440,28 @@ fn calendar_calendars_create_with_metadata_flags() {
 }
 
 #[test]
+fn calendar_calendars_delete_parses_calendar_id() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "delete",
+        "team-launches@example.com",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command: CalendarCalendarsCommand::Delete { calendar_id },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_get_with_google_query_flags() {
     let cli = parse(&[
         "sheets",

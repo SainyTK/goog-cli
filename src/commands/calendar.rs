@@ -10,11 +10,11 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
-    delete_event, get_calendar, get_event, insert_calendar, insert_event, list_calendars,
-    list_events, move_event, patch_event, query_freebusy, quick_add_event, update_event,
-    CalendarError, DeleteEventOptions, FreeBusyOptions, GetCalendarOptions, GetEventOptions,
-    InsertCalendarOptions, ListCalendarsOptions, ListEventsOptions, MoveEventOptions,
-    QuickAddEventOptions, SendUpdates, WriteEventOptions,
+    delete_calendar, delete_event, get_calendar, get_event, insert_calendar, insert_event,
+    list_calendars, list_events, move_event, patch_event, query_freebusy, quick_add_event,
+    update_event, CalendarError, DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions,
+    GetCalendarOptions, GetEventOptions, InsertCalendarOptions, ListCalendarsOptions,
+    ListEventsOptions, MoveEventOptions, QuickAddEventOptions, SendUpdates, WriteEventOptions,
 };
 use crate::cli::{
     CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand, CalendarSendUpdates,
@@ -152,6 +152,21 @@ pub(super) async fn run_calendars_command_to<S: AccountStore>(
                 .await
                 .context("failed to create Google Calendar")?;
             write_json_line(out, &calendar, "failed to serialize Calendar")
+        }
+        CalendarCalendarsCommand::Delete { calendar_id } => {
+            let options = delete_calendar_options(calendar_id.clone(), base_url);
+            let target_resource_key = resource_key("calendar", &calendar_id);
+            run_with_calendar_delete_calendar_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                &options,
+                state_path,
+            )
+            .await
+            .context("failed to delete Google Calendar")?;
+            writeln!(out, "deleted\t{calendar_id}").context("failed to write output")
         }
     }
 }
@@ -675,6 +690,38 @@ async fn run_with_calendar_delete_access<S: AccountStore>(
     .await
 }
 
+async fn run_with_calendar_delete_calendar_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &DeleteCalendarOptions,
+    state_path: Option<&Path>,
+) -> Result<(), CalendarError> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, (), CalendarError> {
+            Box::pin(delete_calendar_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn delete_calendar_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &DeleteCalendarOptions,
+    account: String,
+) -> Result<(), CalendarError> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))
+        .map_err(CalendarError::Auth)?;
+    delete_calendar(&client, options).await
+}
+
 async fn delete_event_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
@@ -738,6 +785,14 @@ fn insert_calendar_options(
     base_url: Option<&str>,
 ) -> InsertCalendarOptions {
     let mut options = InsertCalendarOptions::new(request_body);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn delete_calendar_options(calendar_id: String, base_url: Option<&str>) -> DeleteCalendarOptions {
+    let mut options = DeleteCalendarOptions::new(calendar_id);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
