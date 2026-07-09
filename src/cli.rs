@@ -988,7 +988,7 @@ pub enum SheetsCommand {
         /// Include grid data in the returned Spreadsheet
         #[arg(long)]
         include_grid_data: bool,
-        /// Limit returned grid data to a Google Sheets A1 Range. Repeat for multiple ranges.
+        /// Limit returned grid data to an A1 range. Repeat for multiple ranges.
         #[arg(long = "range")]
         ranges: Vec<String>,
     },
@@ -1040,9 +1040,9 @@ pub enum SheetsValuesCommand {
     Get {
         /// Spreadsheet ID to read
         spreadsheet_id: String,
-        /// Single Google Sheets A1 range to read
+        /// Single A1 range to read
         range: Option<String>,
-        /// Google Sheets A1 range to read. Repeat for multiple ranges.
+        /// A1 range to read. Repeat for multiple ranges.
         #[arg(long = "range")]
         ranges: Vec<String>,
         /// How values should be represented in the response
@@ -1053,7 +1053,7 @@ pub enum SheetsValuesCommand {
     Update {
         /// Spreadsheet ID to update
         spreadsheet_id: String,
-        /// Google Sheets A1 Range to update. Omit to pass a full spreadsheets.values.batchUpdate body.
+        /// A1 range to update. Omit to pass a full spreadsheets.values.batchUpdate body.
         range: Option<String>,
         /// Path to a Google ValueRange JSON request body, or - for stdin
         #[arg(long)]
@@ -1062,11 +1062,11 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "user-entered")]
         value_input_option: SheetsValueInputOption,
     },
-    /// Append values to a Google Sheets Range
+    /// Append values to a range
     Append {
         /// Spreadsheet ID to update
         spreadsheet_id: String,
-        /// Google Sheets A1 Range to append into
+        /// A1 range to append into
         range: String,
         /// Path to a Google ValueRange JSON request body, or - for stdin
         #[arg(long)]
@@ -1078,14 +1078,14 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "insert-rows")]
         insert_data_option: SheetsInsertDataOption,
     },
-    /// Clear values from one or more Google Sheets Ranges
+    /// Clear values from one or more ranges
     #[command(group(ArgGroup::new("values_clear_range").required(true).args(["range", "ranges"])))]
     Clear {
         /// Spreadsheet ID to clear
         spreadsheet_id: String,
-        /// Single Google Sheets A1 Range to clear
+        /// Single A1 range to clear
         range: Option<String>,
-        /// Google Sheets A1 Range to clear. Repeat for multiple ranges.
+        /// A1 range to clear. Repeat for multiple ranges.
         #[arg(long = "range")]
         ranges: Vec<String>,
     },

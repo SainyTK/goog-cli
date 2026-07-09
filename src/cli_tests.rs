@@ -2551,16 +2551,30 @@ fn sheets_help_uses_short_spreadsheet_id_wording() {
     let get_help = help(&["sheets", "get", "--help"]);
     assert!(get_help.contains("Read raw spreadsheet metadata"));
     assert!(get_help.contains("Spreadsheet ID to read"));
+    assert!(get_help.contains("Limit returned grid data to an A1 range"));
     assert!(!get_help.contains("Fetch raw Google Sheets Spreadsheet metadata"));
+    assert!(!get_help.contains("Google Sheets A1 Range"));
 
     let values_get_help = help(&["sheets", "values", "get", "--help"]);
     assert!(values_get_help.contains("Read raw sheet values"));
     assert!(values_get_help.contains("Spreadsheet ID to read"));
-    assert!(values_get_help.contains("Single Google Sheets A1 range to read"));
-    assert!(values_get_help.contains("Google Sheets A1 range to read. Repeat for multiple ranges"));
+    assert!(values_get_help.contains("Single A1 range to read"));
+    assert!(values_get_help.contains("A1 range to read. Repeat for multiple ranges"));
     assert!(!values_get_help.contains("Fetch raw Google Sheets values"));
     assert!(!values_get_help.contains("Single Google Sheets A1 Range to fetch"));
     assert!(!values_get_help.contains("Google Sheets A1 Range to fetch"));
+
+    for args in [
+        &["sheets", "values", "get", "--help"][..],
+        &["sheets", "values", "update", "--help"],
+        &["sheets", "values", "append", "--help"],
+        &["sheets", "values", "clear", "--help"],
+    ] {
+        let help = help(args);
+
+        assert!(!help.contains("Google Sheets A1 range"));
+        assert!(!help.contains("Google Sheets A1 Range"));
+    }
 }
 
 #[test]
