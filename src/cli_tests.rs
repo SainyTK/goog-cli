@@ -2488,6 +2488,23 @@ fn sheets_values_rejects_unknown_enum_values() {
 }
 
 #[test]
+fn sheets_help_uses_short_spreadsheet_id_wording() {
+    for args in [
+        &["sheets", "get", "--help"][..],
+        &["sheets", "batch-update", "--help"],
+        &["sheets", "values", "get", "--help"],
+        &["sheets", "values", "update", "--help"],
+        &["sheets", "values", "append", "--help"],
+        &["sheets", "values", "clear", "--help"],
+    ] {
+        let help = help(args);
+
+        assert!(help.contains("Spreadsheet ID"));
+        assert!(!help.contains("Google Sheets Spreadsheet ID"));
+    }
+}
+
+#[test]
 fn sheets_batch_update_with_requests_path() {
     let cli = parse(&[
         "sheets",

@@ -980,7 +980,7 @@ pub enum SheetsInsertDataOption {
 pub enum SheetsCommand {
     /// Fetch raw Google Sheets Spreadsheet metadata
     Get {
-        /// Google Sheets Spreadsheet ID to fetch
+        /// Spreadsheet ID to fetch
         spreadsheet_id: String,
         /// Google partial response field selector
         #[arg(long)]
@@ -1025,7 +1025,7 @@ Example:
   }
   JSON")]
     BatchUpdate {
-        /// Google Sheets Spreadsheet ID to update
+        /// Spreadsheet ID to update
         spreadsheet_id: String,
         /// Path to a full spreadsheets.batchUpdate JSON request body, or - for stdin
         #[arg(long)]
@@ -1038,7 +1038,7 @@ pub enum SheetsValuesCommand {
     /// Fetch raw Google Sheets values
     #[command(group(ArgGroup::new("values_get_range").required(true).args(["range", "ranges"])))]
     Get {
-        /// Google Sheets Spreadsheet ID to fetch
+        /// Spreadsheet ID to fetch
         spreadsheet_id: String,
         /// Single Google Sheets A1 Range to fetch
         range: Option<String>,
@@ -1051,7 +1051,7 @@ pub enum SheetsValuesCommand {
     },
     /// Update a Google Sheets ValueRange
     Update {
-        /// Google Sheets Spreadsheet ID to update
+        /// Spreadsheet ID to update
         spreadsheet_id: String,
         /// Google Sheets A1 Range to update. Omit to pass a full spreadsheets.values.batchUpdate body.
         range: Option<String>,
@@ -1064,7 +1064,7 @@ pub enum SheetsValuesCommand {
     },
     /// Append values to a Google Sheets Range
     Append {
-        /// Google Sheets Spreadsheet ID to update
+        /// Spreadsheet ID to update
         spreadsheet_id: String,
         /// Google Sheets A1 Range to append into
         range: String,
@@ -1081,7 +1081,7 @@ pub enum SheetsValuesCommand {
     /// Clear values from one or more Google Sheets Ranges
     #[command(group(ArgGroup::new("values_clear_range").required(true).args(["range", "ranges"])))]
     Clear {
-        /// Google Sheets Spreadsheet ID to clear
+        /// Spreadsheet ID to clear
         spreadsheet_id: String,
         /// Single Google Sheets A1 Range to clear
         range: Option<String>,
