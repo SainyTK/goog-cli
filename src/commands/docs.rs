@@ -8,7 +8,8 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
     DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand,
-    DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand,
+    DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
+    DocsTextCommand,
 };
 use crate::docs::{
     batch_update_document,
@@ -547,25 +548,28 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::ApplyStyles {
-            document_id,
-            from_index,
-            to_index,
-            entry,
-            page,
-            line,
-            text,
-            match_number,
-            bold,
-            italic,
-            font_size,
-            foreground_color,
-            heading,
-            style_json,
-            dry_run,
-            json,
-            required_revision_id,
-            no_cached_style,
+        DocsCommand::Style {
+            command:
+                DocsStyleCommand::Apply {
+                    document_id,
+                    from_index,
+                    to_index,
+                    entry,
+                    page,
+                    line,
+                    text,
+                    match_number,
+                    bold,
+                    italic,
+                    font_size,
+                    foreground_color,
+                    heading,
+                    style_json,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                    no_cached_style,
+                },
         } => {
             let selector =
                 range_selector(from_index, to_index, entry, page, line, text, match_number)?;
@@ -681,9 +685,9 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::StyleTemplate { document_id, json } => {
-            run_show_style_template(&document_id, json, &mut std::io::stdout(), None)
-        }
+        DocsCommand::Style {
+            command: DocsStyleCommand::Template { document_id, json },
+        } => run_show_style_template(&document_id, json, &mut std::io::stdout(), None),
     }
 }
 

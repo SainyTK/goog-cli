@@ -212,11 +212,13 @@ impl DocsCommand {
         let document_id = match self {
             DocsCommand::Create { .. } => return,
             DocsCommand::Map { document_id, .. }
-            | DocsCommand::ApplyStyles { document_id, .. }
             | DocsCommand::ApplyList { document_id, .. }
             | DocsCommand::Get { document_id, .. }
-            | DocsCommand::BatchUpdate { document_id, .. }
-            | DocsCommand::StyleTemplate { document_id, .. } => document_id,
+            | DocsCommand::BatchUpdate { document_id, .. } => document_id,
+            DocsCommand::Style { command } => match command {
+                DocsStyleCommand::Apply { document_id, .. }
+                | DocsStyleCommand::Template { document_id, .. } => document_id,
+            },
             DocsCommand::Header { command } => match command {
                 DocsHeaderCommand::Create { document_id, .. } => document_id,
             },
@@ -327,62 +329,10 @@ Notes:
         #[command(subcommand)]
         command: DocsTableCommand,
     },
-    /// Apply common text styles through a high-level Document Range
-    #[command(after_long_help = DOCS_RANGE_SELECTOR_HELP)]
-    ApplyStyles {
-        /// Google Docs Document ID or URL to update
-        document_id: String,
-        /// Raw Google Docs UTF-16 range start
-        #[arg(long)]
-        from_index: Option<i64>,
-        /// Raw Google Docs UTF-16 range end
-        #[arg(long)]
-        to_index: Option<i64>,
-        /// Document Map Entry number
-        #[arg(long)]
-        entry: Option<usize>,
-        /// Derived page label
-        #[arg(long)]
-        page: Option<usize>,
-        /// Content line within the derived page
-        #[arg(long)]
-        line: Option<usize>,
-        /// Matched text span to style
-        #[arg(long)]
-        text: Option<String>,
-        /// Style the Nth text match
-        #[arg(long = "match")]
-        match_number: Option<usize>,
-        /// Apply bold text style
-        #[arg(long)]
-        bold: bool,
-        /// Apply italic text style
-        #[arg(long)]
-        italic: bool,
-        /// Font size in points
-        #[arg(long)]
-        font_size: Option<f64>,
-        /// Foreground color as #RRGGBB
-        #[arg(long)]
-        foreground_color: Option<String>,
-        /// Named paragraph style such as HEADING_1
-        #[arg(long = "paragraph-style", value_name = "PARAGRAPH_STYLE")]
-        heading: Option<String>,
-        /// Raw Google Docs style JSON with optional textStyle and paragraphStyle objects
-        #[arg(long)]
-        style_json: Option<String>,
-        /// Preview the edit without calling documents.batchUpdate
-        #[arg(long)]
-        dry_run: bool,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-        /// Require the document to still be at this revision before applying the edit
-        #[arg(long)]
-        required_revision_id: Option<String>,
-        /// Ignore the cached style template for this document
-        #[arg(long)]
-        no_cached_style: bool,
+    /// Apply or inspect document styles
+    Style {
+        #[command(subcommand)]
+        command: DocsStyleCommand,
     },
     /// Apply a common list preset through a high-level Document Range
     #[command(after_long_help = DOCS_RANGE_SELECTOR_HELP)]
@@ -497,8 +447,69 @@ Example:
         #[arg(long)]
         requests: String,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsStyleCommand {
+    /// Apply common text styles through a high-level Document Range
+    #[command(after_long_help = DOCS_RANGE_SELECTOR_HELP)]
+    Apply {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Raw Google Docs UTF-16 range start
+        #[arg(long)]
+        from_index: Option<i64>,
+        /// Raw Google Docs UTF-16 range end
+        #[arg(long)]
+        to_index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Matched text span to style
+        #[arg(long)]
+        text: Option<String>,
+        /// Style the Nth text match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
+        /// Apply bold text style
+        #[arg(long)]
+        bold: bool,
+        /// Apply italic text style
+        #[arg(long)]
+        italic: bool,
+        /// Font size in points
+        #[arg(long)]
+        font_size: Option<f64>,
+        /// Foreground color as #RRGGBB
+        #[arg(long)]
+        foreground_color: Option<String>,
+        /// Named paragraph style such as HEADING_1
+        #[arg(long = "paragraph-style", value_name = "PARAGRAPH_STYLE")]
+        heading: Option<String>,
+        /// Raw Google Docs style JSON with optional textStyle and paragraphStyle objects
+        #[arg(long)]
+        style_json: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+        /// Ignore the cached style template for this document
+        #[arg(long)]
+        no_cached_style: bool,
+    },
     /// Read the locally cached style template for a Google Doc
-    StyleTemplate {
+    Template {
         /// Google Docs Document ID whose cached style template to read
         document_id: String,
         /// Emit structured JSON

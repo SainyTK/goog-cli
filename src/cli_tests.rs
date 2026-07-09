@@ -4,9 +4,9 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsBreakCommand, DocsCommand,
     DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListType,
-    DocsMapType, DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
-    DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
-    SheetsValueRenderOption, SheetsValuesCommand,
+    DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand,
+    DriveCommand, DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -1084,15 +1084,19 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::ApplyStyles {
-                style_json,
-                from_index,
-                to_index,
-                ..
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Apply {
+                        style_json,
+                        from_index,
+                        to_index,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "apply-styles",
+        "style",
+        "apply",
         "document-123",
         "--from-index",
         "1",
@@ -1220,14 +1224,18 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::ApplyStyles {
-                heading,
-                no_cached_style,
-                ..
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Apply {
+                        heading,
+                        no_cached_style,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "apply-styles",
+        "style",
+        "apply",
         "document-123",
         "--entry",
         "2",
@@ -1272,10 +1280,14 @@ fn docs_new_high_level_editing_commands_parse() {
 #[test]
 fn docs_apply_styles_uses_paragraph_style_flag() {
     let Command::Docs {
-        command: DocsCommand::ApplyStyles { heading, entry, .. },
+        command:
+            DocsCommand::Style {
+                command: DocsStyleCommand::Apply { heading, entry, .. },
+            },
     } = parse(&[
         "docs",
-        "apply-styles",
+        "style",
+        "apply",
         "document-123",
         "--entry",
         "2",
@@ -1292,7 +1304,8 @@ fn docs_apply_styles_uses_paragraph_style_flag() {
     assert_eq!(heading.as_deref(), Some("HEADING_1"));
     assert!(parse(&[
         "docs",
-        "apply-styles",
+        "style",
+        "apply",
         "document-123",
         "--entry",
         "2",
@@ -1306,7 +1319,8 @@ fn docs_apply_styles_uses_paragraph_style_flag() {
 fn docs_apply_commands_reject_no_auto_style() {
     assert!(parse(&[
         "docs",
-        "apply-styles",
+        "style",
+        "apply",
         "document-123",
         "--entry",
         "2",
@@ -1333,20 +1347,25 @@ fn docs_style_template_bypass_help_uses_distinct_flags() {
     assert!(insert_table_help.contains("--no-auto-style"));
     assert!(!insert_table_help.contains("--no-cached-style"));
 
-    for command in ["apply-styles", "apply-list"] {
-        let text = help(&["docs", command, "--help"]);
-        assert!(text.contains("--no-cached-style"));
-        assert!(!text.contains("--no-auto-style"));
-    }
+    let style_apply_help = help(&["docs", "style", "apply", "--help"]);
+    assert!(style_apply_help.contains("--no-cached-style"));
+    assert!(!style_apply_help.contains("--no-auto-style"));
+
+    let apply_list_help = help(&["docs", "apply-list", "--help"]);
+    assert!(apply_list_help.contains("--no-cached-style"));
+    assert!(!apply_list_help.contains("--no-auto-style"));
 }
 
 #[test]
 fn docs_style_template_parse() {
-    let cli = parse(&["docs", "style-template", "document-123", "--json"]).unwrap();
+    let cli = parse(&["docs", "style", "template", "document-123", "--json"]).unwrap();
 
     match cli.command {
         Command::Docs {
-            command: DocsCommand::StyleTemplate { document_id, json },
+            command:
+                DocsCommand::Style {
+                    command: DocsStyleCommand::Template { document_id, json },
+                },
         } => {
             assert_eq!(document_id, "document-123");
             assert!(json);
@@ -1358,6 +1377,8 @@ fn docs_style_template_parse() {
 #[test]
 fn docs_show_style_template_is_removed() {
     assert!(parse(&["docs", "show-style-template", "document-123"]).is_err());
+    assert!(parse(&["docs", "style-template", "document-123"]).is_err());
+    assert!(parse(&["docs", "apply-styles", "document-123", "--entry", "1"]).is_err());
 }
 
 #[test]
@@ -1440,8 +1461,11 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
         assert!(!command_help.contains("--after-heading <AFTER_HEADING>"));
     }
 
-    for command in ["apply-styles", "apply-list"] {
-        let command_help = help(&["docs", command, "--help"]);
+    for command in [
+        &["docs", "style", "apply", "--help"][..],
+        &["docs", "apply-list", "--help"],
+    ] {
+        let command_help = help(command);
         assert!(command_help.contains("Provide exactly one range selector."));
         assert!(command_help.contains("--from-index START --to-index END"));
         assert!(command_help.contains("--text TEXT with optional --match N"));
@@ -1452,7 +1476,7 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
     assert!(create_named_range_help.contains("--from-index START --to-index END"));
     assert!(create_named_range_help.contains("--text TEXT with optional --match N"));
 
-    let apply_styles_help = help(&["docs", "apply-styles", "--help"]);
+    let apply_styles_help = help(&["docs", "style", "apply", "--help"]);
     assert!(apply_styles_help.contains("--paragraph-style <PARAGRAPH_STYLE>"));
     assert!(!apply_styles_help.contains("--heading <HEADING>"));
 }
