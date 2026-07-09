@@ -2269,6 +2269,55 @@ fn slides_create_with_title() {
 }
 
 #[test]
+fn slides_text_box_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "text-box",
+        "presentation-123",
+        "--page-id",
+        "slide-1",
+        "--text",
+        "Quarterly plan",
+        "--object-id",
+        "box-1",
+        "--x",
+        "48",
+        "--y",
+        "96",
+        "--width",
+        "300",
+        "--height",
+        "80",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TextBox {
+                    presentation_id,
+                    page_id,
+                    text,
+                    object_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(text, "Quarterly plan");
+            assert_eq!(object_id.as_deref(), Some("box-1"));
+            assert_eq!(x, 48.0);
+            assert_eq!(y, 96.0);
+            assert_eq!(width, 300.0);
+            assert_eq!(height, 80.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_event_create_with_json_body_path() {
     let cli = parse(&[
         "calendar",

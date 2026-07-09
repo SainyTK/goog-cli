@@ -250,6 +250,9 @@ impl SlidesCommand {
             }
             | SlidesCommand::BatchUpdate {
                 presentation_id, ..
+            }
+            | SlidesCommand::TextBox {
+                presentation_id, ..
             } => presentation_id,
         };
         *presentation_id = crate::slides::extract_presentation_id(presentation_id);
@@ -293,6 +296,32 @@ pub enum SlidesCommand {
         /// Path to a full presentations.batchUpdate JSON request body, or - for stdin
         #[arg(long)]
         requests: String,
+    },
+    /// Add a text box to a slide without writing Batch Update JSON
+    TextBox {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the text box on
+        #[arg(long)]
+        page_id: String,
+        /// Text to insert into the text box
+        #[arg(long)]
+        text: String,
+        /// Stable object ID for the new text box. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Text box width in points
+        #[arg(long, default_value_t = 360.0)]
+        width: f64,
+        /// Text box height in points
+        #[arg(long, default_value_t = 120.0)]
+        height: f64,
     },
 }
 

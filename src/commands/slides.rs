@@ -81,6 +81,33 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        SlidesCommand::TextBox {
+            presentation_id,
+            page_id,
+            text,
+            object_id,
+            x,
+            y,
+            width,
+            height,
+        } => run_with_runtime(run_text_box_unified_to(
+            config,
+            store,
+            account_override,
+            TextBoxRequest {
+                presentation_id,
+                page_id,
+                text,
+                object_id,
+                x,
+                y,
+                width,
+                height,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
     }
 }
 
@@ -185,6 +212,100 @@ pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
         &response,
         "failed to serialize Slides Batch Update response",
     )
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TextBoxRequest {
+    pub presentation_id: String,
+    pub page_id: String,
+    pub text: String,
+    pub object_id: Option<String>,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+pub(super) async fn run_text_box_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: TextBoxRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_text_box_batch_update(request);
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to add Google Slides text box")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides text box response",
+    )
+}
+
+fn build_text_box_batch_update(request: TextBoxRequest) -> serde_json::Value {
+    let object_id = request
+        .object_id
+        .unwrap_or_else(generated_text_box_object_id);
+    serde_json::json!({
+        "requests": [
+            {
+                "createShape": {
+                    "objectId": object_id,
+                    "shapeType": "TEXT_BOX",
+                    "elementProperties": {
+                        "pageObjectId": request.page_id,
+                        "size": {
+                            "width": {
+                                "magnitude": request.width,
+                                "unit": "PT"
+                            },
+                            "height": {
+                                "magnitude": request.height,
+                                "unit": "PT"
+                            }
+                        },
+                        "transform": {
+                            "scaleX": 1.0,
+                            "scaleY": 1.0,
+                            "translateX": request.x,
+                            "translateY": request.y,
+                            "unit": "PT"
+                        }
+                    }
+                }
+            },
+            {
+                "insertText": {
+                    "objectId": object_id,
+                    "insertionIndex": 0,
+                    "text": request.text
+                }
+            }
+        ]
+    })
+}
+
+fn generated_text_box_object_id() -> String {
+    format!("goog_text_box_{}", chrono::Utc::now().timestamp_millis())
 }
 
 enum SlidesAccessAttempt<'a> {
