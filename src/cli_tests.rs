@@ -2,10 +2,10 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsImageCommand, DocsListType,
-    DocsMapType, DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
-    DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
-    SheetsValueRenderOption, SheetsValuesCommand,
+    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsFootnoteCommand,
+    DocsImageCommand, DocsListType, DocsMapType, DocsNamedRangeCommand, DocsTableCommand,
+    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsCommand,
+    SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -753,6 +753,11 @@ fn docs_flat_image_commands_are_removed() {
 }
 
 #[test]
+fn docs_flat_footnote_commands_are_removed() {
+    assert!(parse(&["docs", "insert-footnote", "document-123", "--at", "index:1",]).is_err());
+}
+
+#[test]
 fn docs_new_high_level_editing_commands_parse() {
     let Command::Docs {
         command:
@@ -793,15 +798,19 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::InsertFootnote {
-                after_text,
-                dry_run,
-                json,
-                ..
+            DocsCommand::Footnote {
+                command:
+                    DocsFootnoteCommand::Insert {
+                        after_text,
+                        dry_run,
+                        json,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "insert-footnote",
+        "footnote",
+        "insert",
         "document-123",
         "--after-text",
         "quarterly plan",
@@ -1278,7 +1287,7 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
         &["docs", "image", "insert", "--help"],
         &["docs", "insert-page-break", "--help"],
         &["docs", "insert-section-break", "--help"],
-        &["docs", "insert-footnote", "--help"],
+        &["docs", "footnote", "insert", "--help"],
         &["docs", "table", "insert", "--help"],
     ] {
         let command_help = help(command);

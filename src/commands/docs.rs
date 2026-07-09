@@ -7,8 +7,8 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    DocsCommand, DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsTableCommand,
-    DocsTextCommand,
+    DocsCommand, DocsFootnoteCommand, DocsImageCommand, DocsMapType, DocsNamedRangeCommand,
+    DocsTableCommand, DocsTextCommand,
 };
 use crate::docs::{
     batch_update_document,
@@ -396,21 +396,24 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::InsertFootnote {
-            document_id,
-            at,
-            index,
-            entry,
-            page,
-            line,
-            heading,
-            after_heading,
-            before_heading,
-            after_text,
-            before_text,
-            dry_run,
-            json,
-            required_revision_id,
+        DocsCommand::Footnote {
+            command:
+                DocsFootnoteCommand::Insert {
+                    document_id,
+                    at,
+                    index,
+                    entry,
+                    page,
+                    line,
+                    heading,
+                    after_heading,
+                    before_heading,
+                    after_text,
+                    before_text,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
         } => {
             let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,

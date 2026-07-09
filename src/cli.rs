@@ -216,12 +216,14 @@ impl DocsCommand {
             | DocsCommand::InsertSectionBreak { document_id, .. }
             | DocsCommand::CreateHeader { document_id, .. }
             | DocsCommand::CreateFooter { document_id, .. }
-            | DocsCommand::InsertFootnote { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
             | DocsCommand::ApplyList { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. }
             | DocsCommand::StyleTemplate { document_id, .. } => document_id,
+            DocsCommand::Footnote { command } => match command {
+                DocsFootnoteCommand::Insert { document_id, .. } => document_id,
+            },
             DocsCommand::Image { command } => match command {
                 DocsImageCommand::Insert { document_id, .. } => document_id,
             },
@@ -293,6 +295,11 @@ Notes:
     Image {
         #[command(subcommand)]
         command: DocsImageCommand,
+    },
+    /// Insert document footnotes
+    Footnote {
+        #[command(subcommand)]
+        command: DocsFootnoteCommand,
     },
     /// Insert a page break through a high-level Document Map location selector
     #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
@@ -417,58 +424,6 @@ Notes:
     CreateFooter {
         /// Google Docs Document ID or URL to update
         document_id: String,
-        /// Preview the edit without calling documents.batchUpdate
-        #[arg(long)]
-        dry_run: bool,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-        /// Require the document to still be at this revision before applying the edit
-        #[arg(long)]
-        required_revision_id: Option<String>,
-    },
-    /// Insert a footnote at a high-level Document Map location, returning its footnoteId
-    #[command(after_long_help = "Output shape:
-  Prints the raw documents.batchUpdate response JSON, which includes the new footnoteId under replies[0].createFootnote.footnoteId.
-
-Notes:
-  Provide exactly one insert location selector with --at.
-  Use --at index:N, --at entry:N, --at page:P,line:L, --at heading:TEXT, --at after-heading:TEXT, --at before-heading:TEXT, --at after-text:TEXT, or --at before-text:TEXT.
-  The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
-  Edit the footnote's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
-    InsertFootnote {
-        /// Google Docs Document ID or URL to update
-        document_id: String,
-        /// Insert location selector
-        #[arg(long, value_name = "SELECTOR")]
-        at: Option<String>,
-        /// Raw Google Docs UTF-16 index
-        #[arg(long, hide = true)]
-        index: Option<i64>,
-        /// Document Map Entry number
-        #[arg(long, hide = true)]
-        entry: Option<usize>,
-        /// Derived page label
-        #[arg(long, hide = true)]
-        page: Option<usize>,
-        /// Content line within the derived page
-        #[arg(long, hide = true)]
-        line: Option<usize>,
-        /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT", hide = true)]
-        heading: Option<String>,
-        /// Insert after the matching heading text
-        #[arg(long, hide = true)]
-        after_heading: Option<String>,
-        /// Insert before the matching heading text
-        #[arg(long, hide = true)]
-        before_heading: Option<String>,
-        /// Insert after the matching text span
-        #[arg(long, hide = true)]
-        after_text: Option<String>,
-        /// Insert before the matching text span
-        #[arg(long, hide = true)]
-        before_text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -760,6 +715,62 @@ pub enum DocsImageCommand {
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
         image_uri: String,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long, hide = true)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long, hide = true)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long, hide = true)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long, hide = true)]
+        line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT", hide = true)]
+        heading: Option<String>,
+        /// Insert after the matching heading text
+        #[arg(long, hide = true)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long, hide = true)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long, hide = true)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long, hide = true)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsFootnoteCommand {
+    /// Insert a footnote at a high-level Document Map location, returning its footnoteId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new footnoteId under replies[0].createFootnote.footnoteId.
+
+Notes:
+  Provide exactly one insert location selector with --at.
+  Use --at index:N, --at entry:N, --at page:P,line:L, --at heading:TEXT, --at after-heading:TEXT, --at before-heading:TEXT, --at after-text:TEXT, or --at before-text:TEXT.
+  The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
+  Edit the footnote's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
+    Insert {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
         at: Option<String>,
