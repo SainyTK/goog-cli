@@ -616,6 +616,29 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::TableInsertColumns {
+            presentation_id,
+            table_id,
+            reference_row,
+            reference_column,
+            number,
+            right,
+        } => run_with_runtime(run_table_insert_columns_unified_to(
+            config,
+            store,
+            account_override,
+            TableInsertColumnsRequest {
+                presentation_id,
+                table_id,
+                reference_row,
+                reference_column,
+                number,
+                right,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::Shape {
             presentation_id,
             page_id,
@@ -2568,6 +2591,75 @@ pub(super) fn build_table_insert_rows_batch_update(
                         "columnIndex": request.reference_column
                     },
                     "insertBelow": request.below,
+                    "number": request.number
+                }
+            }
+        ]
+    }))
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TableInsertColumnsRequest {
+    pub presentation_id: String,
+    pub table_id: String,
+    pub reference_row: u32,
+    pub reference_column: u32,
+    pub number: u32,
+    pub right: bool,
+}
+
+pub(super) async fn run_table_insert_columns_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: TableInsertColumnsRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_table_insert_columns_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to insert Google Slides table columns")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides table column insertion response",
+    )
+}
+
+pub(super) fn build_table_insert_columns_batch_update(
+    request: TableInsertColumnsRequest,
+) -> Result<serde_json::Value> {
+    if request.number == 0 || request.number > 20 {
+        bail!("slides table-insert-columns --number must be between 1 and 20");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "insertTableColumns": {
+                    "tableObjectId": request.table_id,
+                    "cellLocation": {
+                        "rowIndex": request.reference_row,
+                        "columnIndex": request.reference_column
+                    },
+                    "insertRight": request.right,
                     "number": request.number
                 }
             }
