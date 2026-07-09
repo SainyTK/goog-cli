@@ -290,6 +290,9 @@ impl SlidesCommand {
             | SlidesCommand::Table {
                 presentation_id, ..
             }
+            | SlidesCommand::TableFill {
+                presentation_id, ..
+            }
             | SlidesCommand::Shape {
                 presentation_id, ..
             }
@@ -429,6 +432,25 @@ pub enum SlidesCommand {
         /// Table height in points
         #[arg(long, default_value_t = 180.0)]
         height: f64,
+    },
+    /// Fill an existing table with row values without writing Batch Update JSON
+    TableFill {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to fill
+        table_id: String,
+        /// Table row values separated by --delimiter. Repeat once per row.
+        #[arg(long = "row", required = true)]
+        rows: Vec<String>,
+        /// Delimiter used to split each --row value into cells
+        #[arg(long, default_value = "|")]
+        delimiter: String,
+        /// Zero-based row index for the first provided row
+        #[arg(long, default_value_t = 0)]
+        start_row: u32,
+        /// Zero-based column index for the first provided cell
+        #[arg(long, default_value_t = 0)]
+        start_column: u32,
     },
     /// Add a shape to a slide without writing Batch Update JSON
     Shape {

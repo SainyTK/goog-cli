@@ -337,6 +337,29 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::TableFill {
+            presentation_id,
+            table_id,
+            rows,
+            delimiter,
+            start_row,
+            start_column,
+        } => run_with_runtime(run_table_fill_unified_to(
+            config,
+            store,
+            account_override,
+            TableFillRequest {
+                presentation_id,
+                table_id,
+                rows,
+                delimiter,
+                start_row,
+                start_column,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::Shape {
             presentation_id,
             page_id,
@@ -1315,6 +1338,90 @@ fn build_table_batch_update(request: TableRequest) -> Result<serde_json::Value> 
 
 fn generated_table_object_id() -> String {
     format!("goog_table_{}", chrono::Utc::now().timestamp_millis())
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TableFillRequest {
+    pub presentation_id: String,
+    pub table_id: String,
+    pub rows: Vec<String>,
+    pub delimiter: String,
+    pub start_row: u32,
+    pub start_column: u32,
+}
+
+pub(super) async fn run_table_fill_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: TableFillRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_table_fill_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to fill Google Slides table")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides table fill response",
+    )
+}
+
+pub(super) fn build_table_fill_batch_update(
+    request: TableFillRequest,
+) -> Result<serde_json::Value> {
+    if request.delimiter.is_empty() {
+        bail!("slides table-fill --delimiter must not be empty");
+    }
+
+    let delimiter = request.delimiter.as_str();
+    let mut requests = Vec::new();
+
+    for (row_offset, row) in request.rows.iter().enumerate() {
+        for (column_offset, cell_text) in row.split(delimiter).enumerate() {
+            if cell_text.is_empty() {
+                continue;
+            }
+
+            requests.push(serde_json::json!({
+                "insertText": {
+                    "objectId": &request.table_id,
+                    "cellLocation": {
+                        "rowIndex": request.start_row + row_offset as u32,
+                        "columnIndex": request.start_column + column_offset as u32
+                    },
+                    "insertionIndex": 0,
+                    "text": cell_text
+                }
+            }));
+        }
+    }
+
+    if requests.is_empty() {
+        bail!("slides table-fill requires at least one non-empty cell");
+    }
+
+    Ok(serde_json::json!({
+        "requests": requests
+    }))
 }
 
 #[derive(Debug, Clone)]

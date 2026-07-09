@@ -2422,6 +2422,48 @@ fn slides_table_with_flags() {
 }
 
 #[test]
+fn slides_table_fill_with_rows() {
+    let cli = parse(&[
+        "slides",
+        "table-fill",
+        "presentation-123",
+        "table-1",
+        "--row",
+        "Metric|Value",
+        "--row",
+        "ARR|1200000",
+        "--delimiter",
+        "|",
+        "--start-row",
+        "1",
+        "--start-column",
+        "2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableFill {
+                    presentation_id,
+                    table_id,
+                    rows,
+                    delimiter,
+                    start_row,
+                    start_column,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(rows, vec!["Metric|Value", "ARR|1200000"]);
+            assert_eq!(delimiter, "|");
+            assert_eq!(start_row, 1);
+            assert_eq!(start_column, 2);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_shape_with_flags() {
     let cli = parse(&[
         "slides",
