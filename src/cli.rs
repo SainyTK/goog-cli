@@ -811,6 +811,9 @@ pub enum CalendarEventsCommand {
         /// Attendee email address. Repeat for multiple attendees.
         #[arg(long, conflicts_with = "event")]
         attendee: Vec<String>,
+        /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
+        #[arg(long, conflicts_with = "event")]
+        recurrence: Vec<String>,
     },
     /// Replace an event from flags or an Events resource JSON body
     Update {
@@ -845,6 +848,9 @@ pub enum CalendarEventsCommand {
         /// Attendee email address. Repeat for multiple attendees.
         #[arg(long, conflicts_with = "event")]
         attendee: Vec<String>,
+        /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
+        #[arg(long, conflicts_with = "event")]
+        recurrence: Vec<String>,
     },
     /// Partially update an event from flags or an Events resource JSON body
     Patch {
@@ -879,6 +885,9 @@ pub enum CalendarEventsCommand {
         /// Attendee email address. Repeat for multiple attendees.
         #[arg(long, conflicts_with = "event")]
         attendee: Vec<String>,
+        /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
+        #[arg(long, conflicts_with = "event")]
+        recurrence: Vec<String>,
     },
     /// Move an event from one calendar to another
     Move {

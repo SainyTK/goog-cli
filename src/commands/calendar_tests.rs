@@ -226,6 +226,7 @@ async fn run_events_create_sends_event_body() {
             location: None,
             description: None,
             attendee: vec![],
+            recurrence: vec![],
         },
         &mut input,
         false,
@@ -263,6 +264,9 @@ async fn run_events_create_builds_event_body_from_flags() {
             "attendees": [
                 { "email": "teammate@example.com" },
                 { "email": "lead@example.com" }
+            ],
+            "recurrence": [
+                "RRULE:FREQ=WEEKLY;COUNT=4"
             ]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -296,6 +300,7 @@ async fn run_events_create_builds_event_body_from_flags() {
             location: Some("Office".into()),
             description: Some("Weekly planning".into()),
             attendee: vec!["teammate@example.com".into(), "lead@example.com".into()],
+            recurrence: vec!["RRULE:FREQ=WEEKLY;COUNT=4".into()],
         },
         &mut input,
         false,
@@ -354,6 +359,7 @@ async fn run_events_create_builds_all_day_event_body_from_flags() {
             location: None,
             description: None,
             attendee: vec![],
+            recurrence: vec![],
         },
         &mut input,
         false,
@@ -413,6 +419,7 @@ async fn run_events_update_sends_event_body() {
             location: None,
             description: None,
             attendee: vec![],
+            recurrence: vec![],
         },
         &mut input,
         false,
@@ -449,6 +456,9 @@ async fn run_events_update_builds_event_body_from_flags() {
             "description": "Updated planning",
             "attendees": [
                 { "email": "teammate@example.com" }
+            ],
+            "recurrence": [
+                "RRULE:FREQ=DAILY;COUNT=3"
             ]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -483,6 +493,7 @@ async fn run_events_update_builds_event_body_from_flags() {
             location: Some("Office".into()),
             description: Some("Updated planning".into()),
             attendee: vec!["teammate@example.com".into()],
+            recurrence: vec!["RRULE:FREQ=DAILY;COUNT=3".into()],
         },
         &mut input,
         false,
@@ -507,7 +518,10 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
         .and(header("authorization", "Bearer calendar-access"))
         .and(body_json(serde_json::json!({
             "summary": "Planning renamed",
-            "location": "Office"
+            "location": "Office",
+            "recurrence": [
+                "RRULE:FREQ=MONTHLY;COUNT=2"
+            ]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "event-789",
@@ -541,6 +555,7 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
             location: Some("Office".into()),
             description: None,
             attendee: vec![],
+            recurrence: vec!["RRULE:FREQ=MONTHLY;COUNT=2".into()],
         },
         &mut input,
         false,
@@ -580,6 +595,7 @@ async fn run_events_patch_rejects_empty_flag_body() {
             location: None,
             description: None,
             attendee: vec![],
+            recurrence: vec![],
         },
         &mut input,
         false,

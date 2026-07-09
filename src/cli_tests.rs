@@ -2863,6 +2863,8 @@ fn calendar_event_create_with_flags() {
         "teammate@example.com",
         "--attendee",
         "lead@example.com",
+        "--recurrence",
+        "RRULE:FREQ=WEEKLY;COUNT=4",
     ])
     .unwrap();
     match cli.command {
@@ -2879,6 +2881,7 @@ fn calendar_event_create_with_flags() {
                             time_zone,
                             location,
                             attendee,
+                            recurrence,
                             ..
                         },
                 },
@@ -2897,6 +2900,7 @@ fn calendar_event_create_with_flags() {
                     "lead@example.com".to_string()
                 ]
             );
+            assert_eq!(recurrence, vec!["RRULE:FREQ=WEEKLY;COUNT=4".to_string()]);
         }
         _ => panic!("unexpected parse result"),
     }
@@ -2939,6 +2943,8 @@ fn calendar_event_update_with_flags() {
         "Office",
         "--attendee",
         "teammate@example.com",
+        "--recurrence",
+        "RRULE:FREQ=DAILY;COUNT=3",
     ])
     .unwrap();
     match cli.command {
@@ -2956,6 +2962,7 @@ fn calendar_event_update_with_flags() {
                             time_zone,
                             location,
                             attendee,
+                            recurrence,
                             ..
                         },
                 },
@@ -2969,6 +2976,7 @@ fn calendar_event_update_with_flags() {
             assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
             assert_eq!(location.as_deref(), Some("Office"));
             assert_eq!(attendee, vec!["teammate@example.com".to_string()]);
+            assert_eq!(recurrence, vec!["RRULE:FREQ=DAILY;COUNT=3".to_string()]);
         }
         _ => panic!("unexpected parse result"),
     }
@@ -3004,6 +3012,8 @@ fn calendar_event_patch_with_flags() {
         "Planning renamed",
         "--location",
         "Office",
+        "--recurrence",
+        "RRULE:FREQ=MONTHLY;COUNT=2",
     ])
     .unwrap();
     match cli.command {
@@ -3017,6 +3027,7 @@ fn calendar_event_patch_with_flags() {
                             event,
                             summary,
                             location,
+                            recurrence,
                             ..
                         },
                 },
@@ -3026,6 +3037,7 @@ fn calendar_event_patch_with_flags() {
             assert_eq!(event, None);
             assert_eq!(summary.as_deref(), Some("Planning renamed"));
             assert_eq!(location.as_deref(), Some("Office"));
+            assert_eq!(recurrence, vec!["RRULE:FREQ=MONTHLY;COUNT=2".to_string()]);
         }
         _ => panic!("unexpected parse result"),
     }

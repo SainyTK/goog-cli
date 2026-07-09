@@ -307,7 +307,7 @@ goog calendar calendars get primary
 goog calendar freebusy --time-min 2026-07-09T09:00:00Z --time-max 2026-07-09T17:00:00Z --calendar primary --calendar teammate@example.com
 goog calendar events list primary --time-min 2026-07-09T00:00:00Z --time-max 2026-07-10T00:00:00Z --single-events
 goog calendar events get primary EVENT_ID
-goog calendar events create primary --summary "Planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok --attendee teammate@example.com
+goog calendar events create primary --summary "Planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok --attendee teammate@example.com --recurrence "RRULE:FREQ=WEEKLY;COUNT=4"
 goog calendar events create primary --summary "Out of office" --start 2026-07-09 --end 2026-07-10 --all-day
 goog calendar events create primary --event ./event.json
 goog calendar events quick-add primary "Lunch with Sam tomorrow at noon" --send-updates none

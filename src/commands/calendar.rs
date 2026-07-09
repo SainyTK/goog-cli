@@ -222,6 +222,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             location,
             description,
             attendee,
+            recurrence,
         } => {
             let request_body = match event {
                 Some(event) => read_request_body(&event, input, "Google Calendar event")?,
@@ -234,6 +235,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     location,
                     description,
                     attendee,
+                    recurrence,
                 )?,
             };
             let options = write_event_options_insert(calendar_id.clone(), request_body, base_url);
@@ -262,6 +264,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             location,
             description,
             attendee,
+            recurrence,
         } => {
             let request_body = match event {
                 Some(event) => read_request_body(&event, input, "Google Calendar event")?,
@@ -274,6 +277,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     location,
                     description,
                     attendee,
+                    recurrence,
                 )?,
             };
             let options = write_event_options_update(
@@ -307,6 +311,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             location,
             description,
             attendee,
+            recurrence,
         } => {
             let request_body = match event {
                 Some(event) => read_request_body(&event, input, "Google Calendar event patch")?,
@@ -319,6 +324,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     location,
                     description,
                     attendee,
+                    recurrence,
                 )?,
             };
             let options = write_event_options_patch(
@@ -904,6 +910,7 @@ fn build_event_request_body(
     location: Option<String>,
     description: Option<String>,
     attendees: Vec<String>,
+    recurrence: Vec<String>,
 ) -> Result<serde_json::Value> {
     let summary = summary.context("--summary is required unless --event is used")?;
     let start = start.context("--start is required unless --event is used")?;
@@ -938,6 +945,17 @@ fn build_event_request_body(
             ),
         );
     }
+    if !recurrence.is_empty() {
+        body.insert(
+            "recurrence".into(),
+            serde_json::Value::Array(
+                recurrence
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
+    }
 
     Ok(serde_json::Value::Object(body))
 }
@@ -952,6 +970,7 @@ fn build_event_patch_body(
     location: Option<String>,
     description: Option<String>,
     attendees: Vec<String>,
+    recurrence: Vec<String>,
 ) -> Result<serde_json::Value> {
     if all_day && start.is_none() && end.is_none() {
         anyhow::bail!("--all-day requires --start or --end when patching");
@@ -989,6 +1008,17 @@ fn build_event_patch_body(
                 attendees
                     .into_iter()
                     .map(|email| serde_json::json!({ "email": email }))
+                    .collect(),
+            ),
+        );
+    }
+    if !recurrence.is_empty() {
+        body.insert(
+            "recurrence".into(),
+            serde_json::Value::Array(
+                recurrence
+                    .into_iter()
+                    .map(serde_json::Value::String)
                     .collect(),
             ),
         );
