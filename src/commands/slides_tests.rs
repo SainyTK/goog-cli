@@ -2727,6 +2727,86 @@ fn build_table_merge_cells_rejects_zero_span() {
 }
 
 #[tokio::test]
+async fn run_table_unmerge_cells_sends_unmerge_table_cells_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "unmergeTableCells": {
+                        "objectId": "table-1",
+                        "tableRange": {
+                            "location": {
+                                "rowIndex": 1,
+                                "columnIndex": 2
+                            },
+                            "rowSpan": 2,
+                            "columnSpan": 3
+                        }
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_table_unmerge_cells_unified_to(
+        &test_config(),
+        &store,
+        None,
+        TableUnmergeCellsRequest {
+            presentation_id: "presentation-123".into(),
+            table_id: "table-1".into(),
+            start_row: 1,
+            start_column: 2,
+            row_span: 2,
+            column_span: 3,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[test]
+fn build_table_unmerge_cells_rejects_zero_span() {
+    let err = build_table_unmerge_cells_batch_update(TableUnmergeCellsRequest {
+        presentation_id: "presentation-123".into(),
+        table_id: "table-1".into(),
+        start_row: 0,
+        start_column: 0,
+        row_span: 0,
+        column_span: 2,
+    })
+    .unwrap_err();
+
+    assert!(err.to_string().contains("spans must be greater than zero"));
+}
+
+#[tokio::test]
 async fn run_replace_text_sends_replace_all_text_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
