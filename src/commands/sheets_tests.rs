@@ -256,7 +256,7 @@ async fn run_get_returns_clear_error_for_not_found_response() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("failed to fetch Google Sheets Spreadsheet"));
+    assert!(message.contains("failed to read Google Sheets Spreadsheet"));
     assert!(message.contains("Google Sheets Spreadsheet was not found"));
     assert!(out.is_empty());
 }
@@ -368,7 +368,7 @@ async fn run_get_unified_does_not_fallback_for_explicit_account_but_maps_success
     .await;
 
     let message = format!("{:#}", denied.unwrap_err());
-    assert!(message.contains("failed to fetch Google Sheets Spreadsheet"));
+    assert!(message.contains("failed to read Google Sheets Spreadsheet"));
     assert!(message.contains("Google Sheets Spreadsheet was not found"));
     assert!(denied_out.is_empty());
 
@@ -502,6 +502,76 @@ async fn run_values_batch_get_prints_batch_response_json_to_stdout() {
         query_value(&url, "valueRenderOption").as_deref(),
         Some("FORMULA")
     );
+}
+
+#[tokio::test]
+async fn run_values_get_returns_read_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("missing range"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_values_to(
+        &client,
+        SheetsValuesCommand::Get {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: Some("Sheet1!A1:B2".into()),
+            ranges: Vec::new(),
+            value_render_option: SheetsValueRenderOption::FormattedValue,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to read Google Sheets ValueRange"));
+    assert!(message.contains("Google Sheets Spreadsheet was not found"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_values_batch_get_returns_read_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("missing ranges"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_values_to(
+        &client,
+        SheetsValuesCommand::Get {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: None,
+            ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
+            value_render_option: SheetsValueRenderOption::FormattedValue,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to read Google Sheets ValueRanges"));
+    assert!(message.contains("Google Sheets Spreadsheet was not found"));
+    assert!(out.is_empty());
 }
 
 #[tokio::test]

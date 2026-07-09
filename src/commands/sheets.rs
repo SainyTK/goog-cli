@@ -103,7 +103,7 @@ pub(super) async fn run_get_to<S: AccountStore>(
     let spreadsheet = SheetsOperation::GetSpreadsheet(&options)
         .execute(client)
         .await
-        .context("failed to fetch Google Sheets Spreadsheet")?;
+        .context("failed to read Google Sheets Spreadsheet")?;
     write_json_line(out, &spreadsheet, "failed to serialize Sheets Spreadsheet")
 }
 
@@ -134,7 +134,7 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to fetch Google Sheets Spreadsheet")?;
+    .context("failed to read Google Sheets Spreadsheet")?;
 
     write_json_line(out, &spreadsheet, "failed to serialize Sheets Spreadsheet")
 }
@@ -164,7 +164,7 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 let response = SheetsOperation::GetValues(&options)
                     .execute(client)
                     .await
-                    .context("failed to fetch Google Sheets ValueRange")?;
+                    .context("failed to read Google Sheets ValueRange")?;
                 write_json_line(out, &response, "failed to serialize Sheets ValueRange")
             } else if !ranges.is_empty() {
                 let options = batch_get_values_options(
@@ -176,7 +176,7 @@ pub(super) async fn run_values_to<S: AccountStore>(
                 let response = SheetsOperation::BatchGetValues(&options)
                     .execute(client)
                     .await
-                    .context("failed to fetch Google Sheets ValueRanges")?;
+                    .context("failed to read Google Sheets ValueRanges")?;
                 write_json_line(
                     out,
                     &response,
@@ -318,7 +318,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                     state_path,
                 )
                 .await
-                .context("failed to fetch Google Sheets ValueRange")?;
+                .context("failed to read Google Sheets ValueRange")?;
                 write_json_line(out, &response, "failed to serialize Sheets ValueRange")
             } else if !ranges.is_empty() {
                 let options = batch_get_values_options(
@@ -335,7 +335,7 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
                     state_path,
                 )
                 .await
-                .context("failed to fetch Google Sheets ValueRanges")?;
+                .context("failed to read Google Sheets ValueRanges")?;
                 write_json_line(
                     out,
                     &response,
