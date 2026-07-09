@@ -10,14 +10,15 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
-    delete_acl, delete_calendar, delete_event, get_acl, get_calendar, get_colors, get_event,
-    insert_acl, insert_calendar, insert_event, list_acl, list_calendars, list_events, move_event,
-    patch_acl, patch_calendar, patch_calendar_list_entry, patch_event, query_freebusy,
-    quick_add_event, update_acl, update_calendar, update_event, CalendarError, DeleteAclOptions,
-    DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarOptions,
-    GetColorsOptions, GetEventOptions, InsertAclOptions, InsertCalendarOptions, ListAclOptions,
-    ListCalendarsOptions, ListEventsOptions, MoveEventOptions, PatchCalendarListEntryOptions,
-    QuickAddEventOptions, SendUpdates, UpdateAclOptions, UpdateCalendarOptions, WriteEventOptions,
+    delete_acl, delete_calendar, delete_calendar_list_entry, delete_event, get_acl, get_calendar,
+    get_colors, get_event, insert_acl, insert_calendar, insert_event, list_acl, list_calendars,
+    list_events, move_event, patch_acl, patch_calendar, patch_calendar_list_entry, patch_event,
+    query_freebusy, quick_add_event, update_acl, update_calendar, update_event, CalendarError,
+    DeleteAclOptions, DeleteCalendarListEntryOptions, DeleteCalendarOptions, DeleteEventOptions,
+    FreeBusyOptions, GetAclOptions, GetCalendarOptions, GetColorsOptions, GetEventOptions,
+    InsertAclOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
+    ListEventsOptions, MoveEventOptions, PatchCalendarListEntryOptions, QuickAddEventOptions,
+    SendUpdates, UpdateAclOptions, UpdateCalendarOptions, WriteEventOptions,
 };
 use crate::cli::{
     CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarColorsCommand,
@@ -268,6 +269,21 @@ pub(super) async fn run_calendars_command_to<S: AccountStore>(
             writeln!(out, "deleted\t{calendar_id}").context("failed to write output")
         }
         CalendarCalendarsCommand::ListEntry { command } => match command {
+            CalendarListEntryCommand::Delete { calendar_id } => {
+                let options = delete_calendar_list_entry_options(calendar_id.clone(), base_url);
+                let target_resource_key = resource_key("calendar-list", &calendar_id);
+                run_with_calendar_delete_calendar_list_entry_access(
+                    config,
+                    store,
+                    account_override,
+                    &target_resource_key,
+                    &options,
+                    state_path,
+                )
+                .await
+                .context("failed to delete Google Calendar list entry")?;
+                writeln!(out, "deleted\t{calendar_id}").context("failed to write output")
+            }
             CalendarListEntryCommand::Patch {
                 calendar_id,
                 summary_override,
@@ -1117,6 +1133,29 @@ async fn run_with_calendar_delete_acl_access<S: AccountStore>(
     .await
 }
 
+async fn run_with_calendar_delete_calendar_list_entry_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &DeleteCalendarListEntryOptions,
+    state_path: Option<&Path>,
+) -> Result<(), CalendarError> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, (), CalendarError> {
+            Box::pin(delete_calendar_list_entry_as_account(
+                config, store, options, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
 async fn delete_calendar_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
@@ -1126,6 +1165,17 @@ async fn delete_calendar_as_account<S: AccountStore>(
     let client = AuthClient::from_config(config.clone(), store, Some(&account))
         .map_err(CalendarError::Auth)?;
     delete_calendar(&client, options).await
+}
+
+async fn delete_calendar_list_entry_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &DeleteCalendarListEntryOptions,
+    account: String,
+) -> Result<(), CalendarError> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))
+        .map_err(CalendarError::Auth)?;
+    delete_calendar_list_entry(&client, options).await
 }
 
 async fn delete_acl_as_account<S: AccountStore>(
@@ -1234,6 +1284,17 @@ fn patch_calendar_list_entry_options(
     base_url: Option<&str>,
 ) -> PatchCalendarListEntryOptions {
     let mut options = PatchCalendarListEntryOptions::new(calendar_id, request_body);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn delete_calendar_list_entry_options(
+    calendar_id: String,
+    base_url: Option<&str>,
+) -> DeleteCalendarListEntryOptions {
+    let mut options = DeleteCalendarListEntryOptions::new(calendar_id);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }

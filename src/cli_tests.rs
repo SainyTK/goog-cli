@@ -3774,6 +3774,32 @@ fn calendar_calendars_list_entry_patch_with_flags() {
 }
 
 #[test]
+fn calendar_calendars_list_entry_delete_parses_calendar_id() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list-entry",
+        "delete",
+        "team-launches@example.com",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::ListEntry {
+                            command: CalendarListEntryCommand::Delete { calendar_id },
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_acl_list_with_flags() {
     let cli = parse(&[
         "calendar",

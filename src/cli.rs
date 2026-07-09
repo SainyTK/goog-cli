@@ -1137,6 +1137,11 @@ pub enum CalendarCalendarsCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CalendarListEntryCommand {
+    /// Remove one calendar from the authenticated user's calendar list
+    Delete {
+        /// Calendar ID to remove from the authenticated user's calendar list.
+        calendar_id: String,
+    },
     /// Patch per-user settings for one calendar list entry
     Patch {
         /// Calendar ID to patch. Use primary for the account's primary calendar.
