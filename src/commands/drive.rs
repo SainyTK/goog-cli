@@ -667,7 +667,7 @@ impl<'a, W: Write> UnifiedDriveListProgress<'a, W> {
 
         writeln!(
             self.err.borrow_mut(),
-            "Fetched {total} {}...",
+            "Listed {total} {}...",
             kind.item_name()
         )?;
         self.highest_reported_total.set(total);
@@ -740,7 +740,7 @@ async fn collect_list_items<S: AccountStore>(
         }
 
         if all && !quiet {
-            writeln!(err, "Fetched {total} {}...", kind.item_name())
+            writeln!(err, "Listed {total} {}...", kind.item_name())
                 .context("failed to write progress")?;
         }
 

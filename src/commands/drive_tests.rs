@@ -475,7 +475,7 @@ async fn run_ls_emits_ndjson_with_drive_native_mime_type_field() {
 }
 
 #[tokio::test]
-async fn run_ls_all_fetches_following_pages_and_reports_progress() {
+async fn run_ls_all_lists_following_pages_and_reports_progress() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
@@ -520,7 +520,7 @@ async fn run_ls_all_fetches_following_pages_and_reports_progress() {
     assert!(rendered.contains("file\tNotes\tfile-2\ttext/plain"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 items...\nFetched 2 items...\n"
+        "Listed 1 items...\nListed 2 items...\n"
     );
 }
 
@@ -731,7 +731,7 @@ async fn run_folder_list_emits_ndjson_with_parent_ids() {
 }
 
 #[tokio::test]
-async fn run_folder_list_all_fetches_following_pages_and_reports_progress() {
+async fn run_folder_list_all_lists_following_pages_and_reports_progress() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
@@ -782,12 +782,12 @@ async fn run_folder_list_all_fetches_following_pages_and_reports_progress() {
     assert!(rendered.contains("Second\tfolder-2\troot\t"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 folders...\nFetched 2 folders...\n"
+        "Listed 1 folders...\nListed 2 folders...\n"
     );
 }
 
 #[tokio::test]
-async fn run_list_all_fetches_following_pages_and_reports_progress() {
+async fn run_list_all_lists_following_pages_and_reports_progress() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
@@ -838,7 +838,7 @@ async fn run_list_all_fetches_following_pages_and_reports_progress() {
     assert!(rendered.contains("Second\tfile-2\t\ttext/plain"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 files...\nFetched 2 files...\n"
+        "Listed 1 files...\nListed 2 files...\n"
     );
 }
 
@@ -1419,7 +1419,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
 
     assert_eq!(
         err_probe.snapshot(),
-        "Fetched 1 items...\n",
+        "Listed 1 items...\n",
         "progress for the first page must reach the real writer before the second page finishes"
     );
 
@@ -1427,7 +1427,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
 
     assert_eq!(
         err_probe.snapshot(),
-        "Fetched 1 items...\nFetched 2 items...\n"
+        "Listed 1 items...\nListed 2 items...\n"
     );
 }
 
@@ -1501,7 +1501,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
 
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 items...\nFetched 2 items...\n"
+        "Listed 1 items...\nListed 2 items...\n"
     );
     assert_eq!(
         load_runtime_state_from_path(&state_path)
