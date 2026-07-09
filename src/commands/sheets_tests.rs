@@ -139,7 +139,7 @@ fn update_values_command(
 ) -> SheetsValuesCommand {
     SheetsValuesCommand::Update {
         spreadsheet_id: "spreadsheet-123".into(),
-        range: "Sheet1!A1:B2".into(),
+        range: Some("Sheet1!A1:B2".into()),
         values: values.into(),
         value_input_option,
     }
@@ -160,9 +160,11 @@ fn append_values_command(
 }
 
 fn batch_update_values_command(values: impl Into<String>) -> SheetsValuesCommand {
-    SheetsValuesCommand::BatchUpdate {
+    SheetsValuesCommand::Update {
         spreadsheet_id: "spreadsheet-123".into(),
+        range: None,
         values: values.into(),
+        value_input_option: SheetsValueInputOption::UserEntered,
     }
 }
 
@@ -662,7 +664,7 @@ async fn run_values_write_commands_use_unified_mapping() {
         None,
         SheetsValuesCommand::Update {
             spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B1".into(),
+            range: Some("Sheet1!A1:B1".into()),
             values: "-".into(),
             value_input_option: SheetsValueInputOption::Raw,
         },

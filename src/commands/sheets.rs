@@ -194,40 +194,36 @@ pub(super) async fn run_values_to<S: AccountStore>(
         } => {
             let request_body =
                 read_request_body(&values, input, "Google Sheets Values request body")?;
-            let options = update_values_options(
-                spreadsheet_id,
-                range,
-                request_body,
-                value_input_option.into(),
-                spreadsheets_url,
-            );
-            let response = SheetsOperation::UpdateValues(&options)
-                .execute(client)
-                .await
-                .context("failed to update Google Sheets values")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Update values response",
-            )
-        }
-        SheetsValuesCommand::BatchUpdate {
-            spreadsheet_id,
-            values,
-        } => {
-            let request_body =
-                read_request_body(&values, input, "Google Sheets Values request body")?;
-            let options =
-                batch_update_values_options(spreadsheet_id, request_body, spreadsheets_url);
-            let response = SheetsOperation::BatchUpdateValues(&options)
-                .execute(client)
-                .await
-                .context("failed to batch update Google Sheets values")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Batch Update values response",
-            )
+            if let Some(range) = range {
+                let options = update_values_options(
+                    spreadsheet_id,
+                    range,
+                    request_body,
+                    value_input_option.into(),
+                    spreadsheets_url,
+                );
+                let response = SheetsOperation::UpdateValues(&options)
+                    .execute(client)
+                    .await
+                    .context("failed to update Google Sheets values")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Update values response",
+                )
+            } else {
+                let options =
+                    batch_update_values_options(spreadsheet_id, request_body, spreadsheets_url);
+                let response = SheetsOperation::BatchUpdateValues(&options)
+                    .execute(client)
+                    .await
+                    .context("failed to batch update Google Sheets values")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Batch Update values response",
+                )
+            }
         }
         SheetsValuesCommand::Append {
             spreadsheet_id,
@@ -357,50 +353,49 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
         } => {
             let request_body =
                 read_request_body(&values, input, "Google Sheets Values request body")?;
-            let options = update_values_options(
-                spreadsheet_id.clone(),
-                range,
-                request_body,
-                value_input_option.into(),
-                spreadsheets_url,
-            );
-            let response = run_spreadsheet_attempt(
-                config,
-                store,
-                account_override,
-                &SheetsOperation::UpdateValues(&options),
-                state_path,
-            )
-            .await
-            .context("failed to update Google Sheets values")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Update values response",
-            )
-        }
-        SheetsValuesCommand::BatchUpdate {
-            spreadsheet_id,
-            values,
-        } => {
-            let request_body =
-                read_request_body(&values, input, "Google Sheets Values request body")?;
-            let options =
-                batch_update_values_options(spreadsheet_id.clone(), request_body, spreadsheets_url);
-            let response = run_spreadsheet_attempt(
-                config,
-                store,
-                account_override,
-                &SheetsOperation::BatchUpdateValues(&options),
-                state_path,
-            )
-            .await
-            .context("failed to batch update Google Sheets values")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Batch Update values response",
-            )
+            if let Some(range) = range {
+                let options = update_values_options(
+                    spreadsheet_id.clone(),
+                    range,
+                    request_body,
+                    value_input_option.into(),
+                    spreadsheets_url,
+                );
+                let response = run_spreadsheet_attempt(
+                    config,
+                    store,
+                    account_override,
+                    &SheetsOperation::UpdateValues(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to update Google Sheets values")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Update values response",
+                )
+            } else {
+                let options = batch_update_values_options(
+                    spreadsheet_id.clone(),
+                    request_body,
+                    spreadsheets_url,
+                );
+                let response = run_spreadsheet_attempt(
+                    config,
+                    store,
+                    account_override,
+                    &SheetsOperation::BatchUpdateValues(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to batch update Google Sheets values")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Batch Update values response",
+                )
+            }
         }
         SheetsValuesCommand::Append {
             spreadsheet_id,

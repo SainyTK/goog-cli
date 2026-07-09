@@ -2254,7 +2254,7 @@ fn sheets_values_update_defaults_to_user_entered() {
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
-            assert_eq!(range, "Sheet1!A1:B2");
+            assert_eq!(range.as_deref(), Some("Sheet1!A1:B2"));
             assert_eq!(values, "values.json");
             assert_eq!(value_input_option, SheetsValueInputOption::UserEntered);
         }
@@ -2275,11 +2275,11 @@ fn sheets_values_update_requires_values() {
 }
 
 #[test]
-fn sheets_values_batch_update_with_values_path() {
+fn sheets_values_update_without_range_accepts_batch_update_body() {
     let cli = parse(&[
         "sheets",
         "values",
-        "batch-update",
+        "update",
         "spreadsheet-123",
         "--values",
         "values.json",
@@ -2290,21 +2290,25 @@ fn sheets_values_batch_update_with_values_path() {
             command:
                 SheetsCommand::Values {
                     command:
-                        SheetsValuesCommand::BatchUpdate {
+                        SheetsValuesCommand::Update {
                             spreadsheet_id,
+                            range,
                             values,
+                            value_input_option,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert!(range.is_none());
             assert_eq!(values, "values.json");
+            assert_eq!(value_input_option, SheetsValueInputOption::UserEntered);
         }
         _ => panic!("unexpected parse result"),
     }
 }
 
 #[test]
-fn sheets_values_batch_update_requires_values() {
+fn sheets_values_batch_update_command_is_removed() {
     assert!(parse(&["sheets", "values", "batch-update", "spreadsheet-123"]).is_err());
 }
 

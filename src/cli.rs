@@ -1215,22 +1215,14 @@ pub enum SheetsValuesCommand {
     Update {
         /// Google Sheets Spreadsheet ID to update
         spreadsheet_id: String,
-        /// Google Sheets A1 Range to update
-        range: String,
+        /// Google Sheets A1 Range to update. Omit to pass a full spreadsheets.values.batchUpdate body.
+        range: Option<String>,
         /// Path to a Google ValueRange JSON request body, or - for stdin
         #[arg(long)]
         values: String,
-        /// How input values should be interpreted
+        /// How input values should be interpreted when RANGE is provided
         #[arg(long, value_enum, default_value = "user-entered")]
         value_input_option: SheetsValueInputOption,
-    },
-    /// Batch update Google Sheets values
-    BatchUpdate {
-        /// Google Sheets Spreadsheet ID to update
-        spreadsheet_id: String,
-        /// Path to a full spreadsheets.values.batchUpdate JSON request body, or - for stdin
-        #[arg(long)]
-        values: String,
     },
     /// Append values to a Google Sheets Range
     Append {
