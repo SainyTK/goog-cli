@@ -2844,6 +2844,45 @@ fn slides_object_text_style_with_flags() {
 }
 
 #[test]
+fn slides_object_alt_text_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "alt-text",
+        "presentation-123",
+        "image-1",
+        "--title",
+        "Pipeline chart",
+        "--description",
+        "Bar chart showing qualified pipeline by stage",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::AltText {
+                            presentation_id,
+                            object_id,
+                            title,
+                            description,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "image-1");
+            assert_eq!(title.as_deref(), Some("Pipeline chart"));
+            assert_eq!(
+                description.as_deref(),
+                Some("Bar chart showing qualified pipeline by stage")
+            );
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_slide_duplicate_with_flags() {
     let cli = parse(&[
         "slides",

@@ -284,6 +284,28 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::Object {
+            command:
+                SlidesObjectCommand::AltText {
+                    presentation_id,
+                    object_id,
+                    title,
+                    description,
+                },
+        } => run_with_runtime(run_object_alt_text_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectAltTextRequest {
+                presentation_id,
+                object_id,
+                title,
+                description,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::TextBox {
             presentation_id,
             page_id,
@@ -1148,6 +1170,79 @@ pub(super) fn build_object_text_style_batch_update(
                     },
                     "fields": fields.join(",")
                 }
+            }
+        ]
+    }))
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectAltTextRequest {
+    pub presentation_id: String,
+    pub object_id: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+}
+
+pub(super) async fn run_object_alt_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectAltTextRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_alt_text_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to set Google Slides object alt text")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides object alt text response",
+    )
+}
+
+pub(super) fn build_object_alt_text_batch_update(
+    request: ObjectAltTextRequest,
+) -> Result<serde_json::Value> {
+    if request.title.is_none() && request.description.is_none() {
+        bail!("at least one alt text flag is required");
+    }
+
+    let mut update = serde_json::Map::new();
+    update.insert(
+        "objectId".into(),
+        serde_json::Value::String(request.object_id),
+    );
+
+    if let Some(title) = request.title {
+        update.insert("title".into(), serde_json::Value::String(title));
+    }
+
+    if let Some(description) = request.description {
+        update.insert("description".into(), serde_json::Value::String(description));
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updatePageElementAltText": update
             }
         ]
     }))

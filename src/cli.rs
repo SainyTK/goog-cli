@@ -280,6 +280,9 @@ impl SlidesCommand {
                     | SlidesObjectCommand::TextStyle {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::AltText {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::Delete {
                         presentation_id, ..
                     },
@@ -620,6 +623,19 @@ pub enum SlidesObjectCommand {
         /// Set or clear underline. Omit the value to set true.
         #[arg(long, num_args = 0..=1, default_missing_value = "true")]
         underline: Option<bool>,
+    },
+    /// Set accessibility alt text on a page object without writing Batch Update JSON
+    AltText {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID whose alt text should be updated
+        object_id: String,
+        /// Human-readable alt text title
+        #[arg(long)]
+        title: Option<String>,
+        /// Human-readable alt text description
+        #[arg(long)]
+        description: Option<String>,
     },
     /// Delete a shape, image, table, or other page object without writing Batch Update JSON
     Delete {

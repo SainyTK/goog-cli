@@ -1265,6 +1265,76 @@ async fn run_table_rejects_zero_dimensions() {
 }
 
 #[tokio::test]
+async fn run_object_alt_text_sends_update_page_element_alt_text_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updatePageElementAltText": {
+                        "objectId": "image-1",
+                        "title": "Pipeline chart",
+                        "description": "Bar chart showing qualified pipeline by stage"
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_object_alt_text_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ObjectAltTextRequest {
+            presentation_id: "presentation-123".into(),
+            object_id: "image-1".into(),
+            title: Some("Pipeline chart".into()),
+            description: Some("Bar chart showing qualified pipeline by stage".into()),
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[test]
+fn build_object_alt_text_rejects_empty_update() {
+    let err = build_object_alt_text_batch_update(ObjectAltTextRequest {
+        presentation_id: "presentation-123".into(),
+        object_id: "image-1".into(),
+        title: None,
+        description: None,
+    })
+    .unwrap_err();
+
+    assert!(err.to_string().contains("at least one alt text flag"));
+}
+
+#[tokio::test]
 async fn run_table_fill_sends_insert_text_requests_for_cells() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
