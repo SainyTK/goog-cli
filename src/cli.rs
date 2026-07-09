@@ -997,7 +997,7 @@ pub enum SheetsCommand {
         #[command(subcommand)]
         command: SheetsValuesCommand,
     },
-    /// Apply a raw Google Sheets structural Batch Update request body
+    /// Apply a raw structural spreadsheet update request body
     #[command(after_long_help = "Request shape:
   --requests reads the full Google Sheets spreadsheets.batchUpdate JSON body, not only the requests array.
   The body usually contains requests: an ordered array of structural mutation objects.
@@ -1049,13 +1049,13 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "formatted-value")]
         value_render_option: SheetsValueRenderOption,
     },
-    /// Update a Google Sheets ValueRange
+    /// Update sheet values
     Update {
         /// Spreadsheet ID to update
         spreadsheet_id: String,
         /// A1 range to update. Omit to pass a full spreadsheets.values.batchUpdate body.
         range: Option<String>,
-        /// Path to a Google ValueRange JSON request body, or - for stdin
+        /// Path to a ValueRange JSON request body, or - for stdin
         #[arg(long)]
         values: String,
         /// How input values should be interpreted when RANGE is provided
@@ -1068,13 +1068,13 @@ pub enum SheetsValuesCommand {
         spreadsheet_id: String,
         /// A1 range to append into
         range: String,
-        /// Path to a Google ValueRange JSON request body, or - for stdin
+        /// Path to a ValueRange JSON request body, or - for stdin
         #[arg(long)]
         values: String,
         /// How input values should be interpreted
         #[arg(long, value_enum, default_value = "user-entered")]
         value_input_option: SheetsValueInputOption,
-        /// How Google Sheets should insert appended data
+        /// How appended data should be inserted
         #[arg(long, value_enum, default_value = "insert-rows")]
         insert_data_option: SheetsInsertDataOption,
     },

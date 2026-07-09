@@ -2575,6 +2575,23 @@ fn sheets_help_uses_short_spreadsheet_id_wording() {
         assert!(!help.contains("Google Sheets A1 range"));
         assert!(!help.contains("Google Sheets A1 Range"));
     }
+
+    let batch_update_help = help(&["sheets", "batch-update", "--help"]);
+    assert!(batch_update_help.contains("Apply a raw structural spreadsheet update request body"));
+    assert!(!batch_update_help
+        .contains("Apply a raw Google Sheets structural Batch Update request body"));
+
+    let values_update_help = help(&["sheets", "values", "update", "--help"]);
+    assert!(values_update_help.contains("Update sheet values"));
+    assert!(values_update_help.contains("Path to a ValueRange JSON request body"));
+    assert!(!values_update_help.contains("Update a Google Sheets ValueRange"));
+    assert!(!values_update_help.contains("Path to a Google ValueRange JSON request body"));
+
+    let values_append_help = help(&["sheets", "values", "append", "--help"]);
+    assert!(values_append_help.contains("Path to a ValueRange JSON request body"));
+    assert!(values_append_help.contains("How appended data should be inserted"));
+    assert!(!values_append_help.contains("Path to a Google ValueRange JSON request body"));
+    assert!(!values_append_help.contains("How Google Sheets should insert appended data"));
 }
 
 #[test]
