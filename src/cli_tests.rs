@@ -2405,6 +2405,27 @@ fn slides_slide_create_with_flags() {
 }
 
 #[test]
+fn slides_slide_delete_with_page_id() {
+    let cli = parse(&["slides", "slide", "delete", "presentation-123", "slide-2"]).unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Delete {
+                            presentation_id,
+                            page_id,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-2");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_slide_create_rejects_negative_insertion_index() {
     assert!(parse(&[
         "slides",

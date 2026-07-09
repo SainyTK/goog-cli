@@ -255,6 +255,9 @@ impl SlidesCommand {
                 command:
                     SlidesSlideCommand::Create {
                         presentation_id, ..
+                    }
+                    | SlidesSlideCommand::Delete {
+                        presentation_id, ..
                     },
             }
             | SlidesCommand::TextBox {
@@ -380,6 +383,13 @@ pub enum SlidesSlideCommand {
         /// Google Slides predefined layout to use
         #[arg(long, value_enum, default_value_t = SlidesPredefinedLayout::Blank)]
         layout: SlidesPredefinedLayout,
+    },
+    /// Delete a slide without writing Batch Update JSON
+    Delete {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to delete
+        page_id: String,
     },
 }
 
