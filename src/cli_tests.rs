@@ -13,8 +13,8 @@ use crate::cli::{
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
-    SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType,
-    SlidesSlideCommand, SlidesZOrderOperation,
+    SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout,
+    SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -2364,6 +2364,42 @@ fn slides_image_with_flags() {
             assert_eq!(y, 96.0);
             assert_eq!(width, 300.0);
             assert_eq!(height, 180.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_replace_image_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "replace-image",
+        "presentation-123",
+        "image-1",
+        "--url",
+        "https://example.com/new-chart.png",
+        "--method",
+        "center-crop",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::ReplaceImage {
+                            presentation_id,
+                            image_id,
+                            url,
+                            method,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(image_id, "image-1");
+            assert_eq!(url, "https://example.com/new-chart.png");
+            assert_eq!(method, SlidesImageReplaceMethod::CenterCrop);
         }
         _ => panic!("unexpected parse result"),
     }

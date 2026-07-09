@@ -10,8 +10,8 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SlidesCommand, SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout,
-    SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
+    SlidesCommand, SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand,
+    SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
 };
 use crate::slides::{
     batch_update_presentation, create_presentation, get_presentation,
@@ -301,6 +301,28 @@ pub fn run<S: AccountStore>(
                 object_id,
                 title,
                 description,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Object {
+            command:
+                SlidesObjectCommand::ReplaceImage {
+                    presentation_id,
+                    image_id,
+                    url,
+                    method,
+                },
+        } => run_with_runtime(run_object_replace_image_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectReplaceImageRequest {
+                presentation_id,
+                image_id,
+                url,
+                method,
             },
             &mut std::io::stdout(),
             None,
@@ -1273,6 +1295,65 @@ pub(super) fn build_object_alt_text_batch_update(
             }
         ]
     }))
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectReplaceImageRequest {
+    pub presentation_id: String,
+    pub image_id: String,
+    pub url: String,
+    pub method: SlidesImageReplaceMethod,
+}
+
+pub(super) async fn run_object_replace_image_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectReplaceImageRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_replace_image_batch_update(request);
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to replace Google Slides image")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides image replacement response",
+    )
+}
+
+fn build_object_replace_image_batch_update(
+    request: ObjectReplaceImageRequest,
+) -> serde_json::Value {
+    serde_json::json!({
+        "requests": [
+            {
+                "replaceImage": {
+                    "imageObjectId": request.image_id,
+                    "url": request.url,
+                    "imageReplaceMethod": request.method.as_api_value()
+                }
+            }
+        ]
+    })
 }
 
 fn parse_hex_rgb_color(color: &str) -> Result<serde_json::Value> {

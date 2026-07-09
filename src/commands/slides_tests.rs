@@ -10,7 +10,8 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::cli::{
-    SlidesLineCategory, SlidesPredefinedLayout, SlidesShapeType, SlidesZOrderOperation,
+    SlidesImageReplaceMethod, SlidesLineCategory, SlidesPredefinedLayout, SlidesShapeType,
+    SlidesZOrderOperation,
 };
 use crate::slides::SLIDES_SCOPE;
 
@@ -1420,6 +1421,63 @@ fn build_object_alt_text_rejects_empty_update() {
     .unwrap_err();
 
     assert!(err.to_string().contains("at least one alt text flag"));
+}
+
+#[tokio::test]
+async fn run_object_replace_image_sends_replace_image_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "replaceImage": {
+                        "imageObjectId": "image-1",
+                        "url": "https://example.com/new-chart.png",
+                        "imageReplaceMethod": "CENTER_CROP"
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_object_replace_image_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ObjectReplaceImageRequest {
+            presentation_id: "presentation-123".into(),
+            image_id: "image-1".into(),
+            url: "https://example.com/new-chart.png".into(),
+            method: SlidesImageReplaceMethod::CenterCrop,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
 }
 
 #[tokio::test]

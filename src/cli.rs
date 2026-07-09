@@ -283,6 +283,9 @@ impl SlidesCommand {
                     | SlidesObjectCommand::AltText {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::ReplaceImage {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::Delete {
                         presentation_id, ..
                     },
@@ -666,6 +669,19 @@ pub enum SlidesObjectCommand {
         #[arg(long)]
         description: Option<String>,
     },
+    /// Replace an existing image while preserving its size and position
+    ReplaceImage {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Image page object ID to replace
+        image_id: String,
+        /// Publicly reachable replacement image URL
+        #[arg(long)]
+        url: String,
+        /// How the replacement image should fit the existing image bounds
+        #[arg(long, value_enum, default_value_t = SlidesImageReplaceMethod::CenterInside)]
+        method: SlidesImageReplaceMethod,
+    },
     /// Delete a shape, image, table, or other page object without writing Batch Update JSON
     Delete {
         /// Presentation ID or URL to update
@@ -673,6 +689,21 @@ pub enum SlidesObjectCommand {
         /// Page object ID to delete
         object_id: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesImageReplaceMethod {
+    CenterInside,
+    CenterCrop,
+}
+
+impl SlidesImageReplaceMethod {
+    pub fn as_api_value(self) -> &'static str {
+        match self {
+            SlidesImageReplaceMethod::CenterInside => "CENTER_INSIDE",
+            SlidesImageReplaceMethod::CenterCrop => "CENTER_CROP",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
