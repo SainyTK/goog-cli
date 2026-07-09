@@ -890,7 +890,7 @@ fn docs_new_high_level_editing_commands_parse() {
         "document-123",
         "--entry",
         "2",
-        "--heading",
+        "--paragraph-style",
         "HEADING_2",
         "--no-cached-style",
     ])
@@ -926,6 +926,39 @@ fn docs_new_high_level_editing_commands_parse() {
     };
     assert_eq!(entry, Some(2));
     assert!(no_cached_style);
+}
+
+#[test]
+fn docs_apply_styles_uses_paragraph_style_flag() {
+    let Command::Docs {
+        command: DocsCommand::ApplyStyles { heading, entry, .. },
+    } = parse(&[
+        "docs",
+        "apply-styles",
+        "document-123",
+        "--entry",
+        "2",
+        "--paragraph-style",
+        "HEADING_1",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(entry, Some(2));
+    assert_eq!(heading.as_deref(), Some("HEADING_1"));
+    assert!(parse(&[
+        "docs",
+        "apply-styles",
+        "document-123",
+        "--entry",
+        "2",
+        "--heading",
+        "HEADING_1",
+    ])
+    .is_err());
 }
 
 #[test]
@@ -1070,6 +1103,10 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
         assert!(command_help.contains("--from-index START --to-index END"));
         assert!(command_help.contains("--text TEXT with optional --match N"));
     }
+
+    let apply_styles_help = help(&["docs", "apply-styles", "--help"]);
+    assert!(apply_styles_help.contains("--paragraph-style <PARAGRAPH_STYLE>"));
+    assert!(!apply_styles_help.contains("--heading <HEADING>"));
 }
 
 #[test]

@@ -697,7 +697,7 @@ Notes:
         #[arg(long)]
         foreground_color: Option<String>,
         /// Named paragraph style such as HEADING_1
-        #[arg(long)]
+        #[arg(long = "paragraph-style", value_name = "PARAGRAPH_STYLE")]
         heading: Option<String>,
         /// Raw Google Docs style JSON with optional textStyle and paragraphStyle objects
         #[arg(long)]
