@@ -18,7 +18,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 - Google Docs document listing, creation, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
 - Google Slides presentation listing, creation, raw reads, high-level slide/text/image edits, and raw batch updates.
-- Google Calendar calendar listing, calendar metadata reads, and event list/read/create/update/delete commands.
+- Google Calendar calendar listing, calendar metadata reads, free/busy lookup, and event list/read/create/update/delete commands.
 - Gmail message listing, search, raw message reads, draft creation, and attachment downloads.
 - Multi-account OAuth setup, login, account listing, and active account switching.
 
@@ -298,6 +298,7 @@ goog slides batch-update PRESENTATION_ID --requests ./slides-requests.json
 ```sh
 goog calendar calendars list --limit 20
 goog calendar calendars get primary
+goog calendar freebusy --time-min 2026-07-09T09:00:00Z --time-max 2026-07-09T17:00:00Z --calendar primary --calendar teammate@example.com
 goog calendar events list primary --time-min 2026-07-09T00:00:00Z --time-max 2026-07-10T00:00:00Z --single-events
 goog calendar events get primary EVENT_ID
 goog calendar events create primary --summary "Planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok --attendee teammate@example.com

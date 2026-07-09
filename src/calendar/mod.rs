@@ -17,6 +17,7 @@ pub type Calendar = Value;
 pub type CalendarList = Value;
 pub type Event = Value;
 pub type Events = Value;
+pub type FreeBusy = Value;
 
 #[derive(Debug, Clone)]
 pub struct ListCalendarsOptions {
@@ -285,6 +286,30 @@ impl DeleteEventOptions {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FreeBusyOptions {
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl FreeBusyOptions {
+    pub fn new(request_body: Value) -> Self {
+        Self {
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["freeBusy"])
+    }
+}
+
 fn calendar_url(base_url: &str, path_segments: &[&str]) -> Result<Url, CalendarError> {
     let mut url = Url::parse(base_url)?;
     {
@@ -374,6 +399,19 @@ pub async fn delete_event<S: AccountStore>(
         .await
         .map_err(CalendarError::Auth)?;
     parse_empty_response(response).await
+}
+
+pub async fn query_freebusy<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &FreeBusyOptions,
+) -> Result<FreeBusy, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
 }
 
 async fn send_json_request<S: AccountStore>(

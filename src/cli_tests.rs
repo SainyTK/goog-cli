@@ -2783,6 +2783,56 @@ fn calendar_event_patch_rejects_mixed_json_body_and_flags() {
 }
 
 #[test]
+fn calendar_freebusy_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "freebusy",
+        "--time-min",
+        "2026-07-09T09:00:00Z",
+        "--time-max",
+        "2026-07-09T17:00:00Z",
+        "--calendar",
+        "primary",
+        "--calendar",
+        "team@example.com",
+        "--time-zone",
+        "Asia/Bangkok",
+        "--group-expansion-max",
+        "10",
+        "--calendar-expansion-max",
+        "20",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Freebusy {
+                    time_min,
+                    time_max,
+                    calendars,
+                    time_zone,
+                    group_expansion_max,
+                    calendar_expansion_max,
+                    json,
+                },
+        } => {
+            assert_eq!(time_min, "2026-07-09T09:00:00Z");
+            assert_eq!(time_max, "2026-07-09T17:00:00Z");
+            assert_eq!(
+                calendars,
+                vec!["primary".to_string(), "team@example.com".to_string()]
+            );
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+            assert_eq!(group_expansion_max, Some(10));
+            assert_eq!(calendar_expansion_max, Some(20));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_calendars_list_with_flags() {
     let cli = parse(&[
         "calendar",

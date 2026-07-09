@@ -11,8 +11,9 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_event, get_calendar, get_event, insert_event, list_calendars, list_events, patch_event,
-    update_event, CalendarError, DeleteEventOptions, GetCalendarOptions, GetEventOptions,
-    ListCalendarsOptions, ListEventsOptions, WriteEventOptions,
+    query_freebusy, update_event, CalendarError, DeleteEventOptions, FreeBusyOptions,
+    GetCalendarOptions, GetEventOptions, ListCalendarsOptions, ListEventsOptions,
+    WriteEventOptions,
 };
 use crate::cli::{CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand};
 
@@ -51,7 +52,43 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        CalendarCommand::Freebusy {
+            time_min,
+            time_max,
+            calendars,
+            time_zone,
+            group_expansion_max,
+            calendar_expansion_max,
+            json,
+        } => run_with_runtime(run_freebusy_command_to(
+            config,
+            store,
+            account_override,
+            FreeBusyCommand {
+                time_min,
+                time_max,
+                calendars,
+                time_zone,
+                group_expansion_max,
+                calendar_expansion_max,
+                json,
+            },
+            output_json_by_default,
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
     }
+}
+
+pub(super) struct FreeBusyCommand {
+    pub time_min: String,
+    pub time_max: String,
+    pub calendars: Vec<String>,
+    pub time_zone: Option<String>,
+    pub group_expansion_max: Option<u32>,
+    pub calendar_expansion_max: Option<u32>,
+    pub json: bool,
 }
 
 fn run_with_runtime(future: impl Future<Output = Result<()>>) -> Result<()> {
@@ -322,6 +359,41 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
     }
 }
 
+pub(super) async fn run_freebusy_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: FreeBusyCommand,
+    output_json_by_default: bool,
+    out: &mut impl Write,
+    base_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let json = command.json || output_json_by_default;
+    let options = freebusy_options(&command, base_url)?;
+    let target_resource_key = freebusy_resource_key(&command.calendars);
+    let response = run_with_calendar_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        CalendarAccessAttempt::FreeBusy(&options),
+        state_path,
+    )
+    .await
+    .context("failed to query Google Calendar free/busy")?;
+
+    if json {
+        write_json_line(
+            out,
+            &response,
+            "failed to serialize Calendar free/busy response",
+        )
+    } else {
+        write_freebusy_table(out, &response)
+    }
+}
+
 async fn collect_calendars<S: AccountStore>(
     client: &AuthClient<'_, S>,
     limit: Option<u32>,
@@ -432,6 +504,7 @@ enum CalendarAccessAttempt<'a> {
     InsertEvent(&'a WriteEventOptions),
     UpdateEvent(&'a WriteEventOptions),
     PatchEvent(&'a WriteEventOptions),
+    FreeBusy(&'a FreeBusyOptions),
 }
 
 async fn run_with_calendar_unified_access<S: AccountStore>(
@@ -472,6 +545,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
         CalendarAccessAttempt::UpdateEvent(options) => update_event(&client, options).await,
         CalendarAccessAttempt::PatchEvent(options) => patch_event(&client, options).await,
+        CalendarAccessAttempt::FreeBusy(options) => query_freebusy(&client, options).await,
     }
 }
 
@@ -647,8 +721,63 @@ fn delete_event_options(
     options
 }
 
+fn freebusy_options(command: &FreeBusyCommand, base_url: Option<&str>) -> Result<FreeBusyOptions> {
+    validate_calendar_date_time("time-min", &command.time_min)?;
+    validate_calendar_date_time("time-max", &command.time_max)?;
+
+    let mut body = serde_json::Map::from_iter([
+        (
+            "timeMin".to_string(),
+            serde_json::Value::String(command.time_min.clone()),
+        ),
+        (
+            "timeMax".to_string(),
+            serde_json::Value::String(command.time_max.clone()),
+        ),
+        (
+            "items".to_string(),
+            serde_json::Value::Array(
+                command
+                    .calendars
+                    .iter()
+                    .map(|id| serde_json::json!({ "id": id }))
+                    .collect(),
+            ),
+        ),
+    ]);
+
+    if let Some(time_zone) = &command.time_zone {
+        body.insert(
+            "timeZone".into(),
+            serde_json::Value::String(time_zone.clone()),
+        );
+    }
+    if let Some(group_expansion_max) = command.group_expansion_max {
+        body.insert(
+            "groupExpansionMax".into(),
+            serde_json::Value::Number(group_expansion_max.into()),
+        );
+    }
+    if let Some(calendar_expansion_max) = command.calendar_expansion_max {
+        body.insert(
+            "calendarExpansionMax".into(),
+            serde_json::Value::Number(calendar_expansion_max.into()),
+        );
+    }
+
+    let mut options = FreeBusyOptions::new(serde_json::Value::Object(body));
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    Ok(options)
+}
+
 fn calendar_event_resource_key(calendar_id: &str, event_id: &str) -> String {
     resource_key("calendar", &format!("{calendar_id}/{event_id}"))
+}
+
+fn freebusy_resource_key(calendars: &[String]) -> String {
+    resource_key("calendar-freebusy", &calendars.join(","))
 }
 
 fn read_request_body(
@@ -842,6 +971,33 @@ fn write_events_table(out: &mut impl Write, events: &[serde_json::Value]) -> Res
             string_field(event, "status"),
         )
         .context("failed to write output")?;
+    }
+    Ok(())
+}
+
+fn write_freebusy_table(out: &mut impl Write, response: &serde_json::Value) -> Result<()> {
+    writeln!(out, "CALENDAR ID\tSTART\tEND").context("failed to write output")?;
+    let Some(calendars) = response
+        .get("calendars")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return Ok(());
+    };
+
+    for (calendar_id, calendar) in calendars {
+        let Some(busy) = calendar.get("busy").and_then(serde_json::Value::as_array) else {
+            continue;
+        };
+        for slot in busy {
+            writeln!(
+                out,
+                "{}\t{}\t{}",
+                calendar_id.replace('\t', " ").replace('\n', " "),
+                string_field(slot, "start"),
+                string_field(slot, "end"),
+            )
+            .context("failed to write output")?;
+        }
     }
     Ok(())
 }

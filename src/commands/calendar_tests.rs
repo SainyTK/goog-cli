@@ -594,3 +594,121 @@ async fn run_events_patch_rejects_empty_flag_body() {
         .to_string()
         .contains("patch requires --event or at least one event field flag"));
 }
+
+#[tokio::test]
+async fn run_freebusy_sends_query_body_and_prints_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/freeBusy"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "timeMin": "2026-07-09T09:00:00Z",
+            "timeMax": "2026-07-09T17:00:00Z",
+            "items": [
+                { "id": "primary" },
+                { "id": "team@example.com" }
+            ],
+            "timeZone": "Asia/Bangkok",
+            "groupExpansionMax": 10,
+            "calendarExpansionMax": 20
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "calendars": {
+                "primary": {
+                    "busy": [
+                        {
+                            "start": "2026-07-09T10:00:00Z",
+                            "end": "2026-07-09T10:30:00Z"
+                        }
+                    ]
+                },
+                "team@example.com": {
+                    "busy": []
+                }
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_freebusy_command_to(
+        &test_config(),
+        &store,
+        None,
+        FreeBusyCommand {
+            time_min: "2026-07-09T09:00:00Z".into(),
+            time_max: "2026-07-09T17:00:00Z".into(),
+            calendars: vec!["primary".into(), "team@example.com".into()],
+            time_zone: Some("Asia/Bangkok".into()),
+            group_expansion_max: Some(10),
+            calendar_expansion_max: Some(20),
+            json: false,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "CALENDAR ID\tSTART\tEND\nprimary\t2026-07-09T10:00:00Z\t2026-07-09T10:30:00Z\n"
+    );
+}
+
+#[tokio::test]
+async fn run_freebusy_json_emits_raw_response() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/freeBusy"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "calendars": {
+                "primary": { "busy": [] }
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_freebusy_command_to(
+        &test_config(),
+        &store,
+        None,
+        FreeBusyCommand {
+            time_min: "2026-07-09T09:00:00Z".into(),
+            time_max: "2026-07-09T17:00:00Z".into(),
+            calendars: vec!["primary".into()],
+            time_zone: None,
+            group_expansion_max: None,
+            calendar_expansion_max: None,
+            json: true,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"calendars\":{\"primary\":{\"busy\":[]}}}\n"
+    );
+}

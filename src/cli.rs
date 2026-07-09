@@ -496,6 +496,30 @@ pub enum CalendarCommand {
         #[command(subcommand)]
         command: CalendarEventsCommand,
     },
+    /// Query free/busy windows across calendars
+    Freebusy {
+        /// Query interval start as RFC3339, such as 2026-07-09T09:00:00Z
+        #[arg(long)]
+        time_min: String,
+        /// Query interval end as RFC3339, such as 2026-07-09T17:00:00Z
+        #[arg(long)]
+        time_max: String,
+        /// Calendar or group ID to query. Repeat for multiple calendars.
+        #[arg(long = "calendar", required = true)]
+        calendars: Vec<String>,
+        /// Time zone used in the response, such as Asia/Bangkok.
+        #[arg(long)]
+        time_zone: Option<String>,
+        /// Maximum members to expand for a group.
+        #[arg(long)]
+        group_expansion_max: Option<u32>,
+        /// Maximum calendars to expand.
+        #[arg(long)]
+        calendar_expansion_max: Option<u32>,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
