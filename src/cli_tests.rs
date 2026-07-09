@@ -1364,7 +1364,7 @@ fn mail_attachment_download_with_explicit_output() {
                 },
         } => {
             assert_eq!(message_id, "message-123");
-            assert_eq!(attachment_id, "attachment-456");
+            assert_eq!(attachment_id.as_deref(), Some("attachment-456"));
             assert_eq!(output.as_deref(), Some("report.pdf"));
         }
         _ => panic!("unexpected parse result"),
@@ -1372,7 +1372,7 @@ fn mail_attachment_download_with_explicit_output() {
 }
 
 #[test]
-fn mail_attachment_download_output_is_optional() {
+fn mail_attachment_download_output_and_attachment_id_are_optional() {
     let cli = parse(&["mail", "download", "message-123", "attachment-456"]).unwrap();
     match cli.command {
         Command::Mail {
@@ -1384,7 +1384,24 @@ fn mail_attachment_download_output_is_optional() {
                 },
         } => {
             assert_eq!(message_id, "message-123");
-            assert_eq!(attachment_id, "attachment-456");
+            assert_eq!(attachment_id.as_deref(), Some("attachment-456"));
+            assert!(output.is_none());
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    let cli = parse(&["mail", "download", "message-123"]).unwrap();
+    match cli.command {
+        Command::Mail {
+            command:
+                MailCommand::Download {
+                    message_id,
+                    attachment_id,
+                    output,
+                },
+        } => {
+            assert_eq!(message_id, "message-123");
+            assert!(attachment_id.is_none());
             assert!(output.is_none());
         }
         _ => panic!("unexpected parse result"),

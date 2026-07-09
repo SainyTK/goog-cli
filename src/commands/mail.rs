@@ -294,7 +294,8 @@ pub(super) async fn run_attachment_download_to<S: AccountStore>(
     let message_id = resolve_message_reference(client, &reference, messages_url)
         .await
         .context("failed to resolve GoogleMail Message reference")?;
-    let options = attachment_download_options(message_id, attachment_id, output, messages_url);
+    let options =
+        attachment_download_options(message_id, Some(attachment_id), output, messages_url);
     let downloaded = download_attachment(client, &options)
         .await
         .context("failed to download GoogleMail Attachment")?;
@@ -310,7 +311,7 @@ pub(super) async fn run_attachment_download_unified_to<S: AccountStore>(
     store: &S,
     account_override: Option<&str>,
     message_id: String,
-    attachment_id: String,
+    attachment_id: Option<String>,
     output: Option<PathBuf>,
     quiet: bool,
     messages_url: Option<&str>,
@@ -378,7 +379,7 @@ enum MailAccessAttempt<'a> {
     },
     DownloadAttachment {
         reference: MessageReference,
-        attachment_id: String,
+        attachment_id: Option<String>,
         output: Option<PathBuf>,
         messages_url: Option<&'a str>,
     },
@@ -479,11 +480,14 @@ fn list_options(
 
 fn attachment_download_options(
     message_id: String,
-    attachment_id: String,
+    attachment_id: Option<String>,
     output: Option<PathBuf>,
     messages_url: Option<&str>,
 ) -> DownloadAttachmentOptions {
-    let mut options = DownloadAttachmentOptions::new(message_id, attachment_id);
+    let mut options = match attachment_id {
+        Some(attachment_id) => DownloadAttachmentOptions::new(message_id, attachment_id),
+        None => DownloadAttachmentOptions::without_attachment_id(message_id),
+    };
     if let Some(output) = output {
         options = options.with_output(output);
     }

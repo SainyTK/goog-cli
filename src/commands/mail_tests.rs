@@ -1107,7 +1107,7 @@ async fn run_attachment_download_unified_uses_message_target_fallback_and_maps_s
         &store,
         None,
         "message-123".into(),
-        "attachment-1".into(),
+        Some("attachment-1".into()),
         Some(output.clone()),
         true,
         Some(&messages_url),

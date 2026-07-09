@@ -959,8 +959,8 @@ pub enum MailCommand {
     Download {
         /// Gmail message ID or URL containing the attachment
         message_id: String,
-        /// Gmail attachment ID to download
-        attachment_id: String,
+        /// Gmail attachment ID to download. Omit when the message has one attachment.
+        attachment_id: Option<String>,
         /// Destination path (defaults to attachment filename)
         #[arg(long, short)]
         output: Option<String>,
