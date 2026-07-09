@@ -2966,6 +2966,44 @@ fn slides_object_insert_text_with_flags() {
 }
 
 #[test]
+fn slides_object_delete_text_with_range_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "delete-text",
+        "presentation-123",
+        "shape-1",
+        "--start-index",
+        "3",
+        "--end-index",
+        "12",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::DeleteText {
+                            presentation_id,
+                            object_id,
+                            all,
+                            start_index,
+                            end_index,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "shape-1");
+            assert!(!all);
+            assert_eq!(start_index, Some(3));
+            assert_eq!(end_index, Some(12));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_object_alt_text_with_flags() {
     let cli = parse(&[
         "slides",

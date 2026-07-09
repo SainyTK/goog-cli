@@ -804,6 +804,127 @@ fn object_insert_text_rejects_empty_text() {
 }
 
 #[tokio::test]
+async fn run_object_delete_text_sends_delete_text_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "deleteText": {
+                        "objectId": "shape-1",
+                        "textRange": {
+                            "type": "FIXED_RANGE",
+                            "startIndex": 3,
+                            "endIndex": 12
+                        }
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_object_delete_text_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ObjectDeleteTextRequest {
+            presentation_id: "presentation-123".into(),
+            object_id: "shape-1".into(),
+            all: false,
+            start_index: Some(3),
+            end_index: Some(12),
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[test]
+fn object_delete_text_can_delete_all_text() {
+    let request = build_object_delete_text_batch_update(ObjectDeleteTextRequest {
+        presentation_id: "presentation-123".into(),
+        object_id: "shape-1".into(),
+        all: true,
+        start_index: None,
+        end_index: None,
+    })
+    .unwrap();
+
+    assert_eq!(
+        request,
+        serde_json::json!({
+            "requests": [
+                {
+                    "deleteText": {
+                        "objectId": "shape-1",
+                        "textRange": {
+                            "type": "ALL"
+                        }
+                    }
+                }
+            ]
+        })
+    );
+}
+
+#[test]
+fn object_delete_text_requires_all_or_fixed_range() {
+    let err = build_object_delete_text_batch_update(ObjectDeleteTextRequest {
+        presentation_id: "presentation-123".into(),
+        object_id: "shape-1".into(),
+        all: false,
+        start_index: Some(3),
+        end_index: None,
+    })
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("use either --all or both --start-index and --end-index"));
+}
+
+#[test]
+fn object_delete_text_rejects_empty_or_backwards_range() {
+    let err = build_object_delete_text_batch_update(ObjectDeleteTextRequest {
+        presentation_id: "presentation-123".into(),
+        object_id: "shape-1".into(),
+        all: false,
+        start_index: Some(12),
+        end_index: Some(12),
+    })
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--end-index must be greater than --start-index"));
+}
+
+#[tokio::test]
 async fn run_slide_duplicate_sends_duplicate_object_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

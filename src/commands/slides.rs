@@ -308,6 +308,30 @@ pub fn run<S: AccountStore>(
         )),
         SlidesCommand::Object {
             command:
+                SlidesObjectCommand::DeleteText {
+                    presentation_id,
+                    object_id,
+                    all,
+                    start_index,
+                    end_index,
+                },
+        } => run_with_runtime(run_object_delete_text_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectDeleteTextRequest {
+                presentation_id,
+                object_id,
+                all,
+                start_index,
+                end_index,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Object {
+            command:
                 SlidesObjectCommand::AltText {
                     presentation_id,
                     object_id,
@@ -1303,6 +1327,79 @@ pub(super) fn build_object_insert_text_batch_update(
                     "objectId": request.object_id,
                     "text": request.text,
                     "insertionIndex": request.index
+                }
+            }
+        ]
+    }))
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectDeleteTextRequest {
+    pub presentation_id: String,
+    pub object_id: String,
+    pub all: bool,
+    pub start_index: Option<u32>,
+    pub end_index: Option<u32>,
+}
+
+pub(super) async fn run_object_delete_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectDeleteTextRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_delete_text_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to delete text from Google Slides object")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides object text deletion response",
+    )
+}
+
+pub(super) fn build_object_delete_text_batch_update(
+    request: ObjectDeleteTextRequest,
+) -> Result<serde_json::Value> {
+    let text_range = match (request.all, request.start_index, request.end_index) {
+        (true, None, None) => serde_json::json!({ "type": "ALL" }),
+        (true, _, _) => bail!("--all cannot be combined with --start-index or --end-index"),
+        (false, Some(start_index), Some(end_index)) if start_index < end_index => {
+            serde_json::json!({
+                "type": "FIXED_RANGE",
+                "startIndex": start_index,
+                "endIndex": end_index
+            })
+        }
+        (false, Some(_), Some(_)) => bail!("--end-index must be greater than --start-index"),
+        (false, _, _) => bail!("use either --all or both --start-index and --end-index"),
+    };
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "deleteText": {
+                    "objectId": request.object_id,
+                    "textRange": text_range
                 }
             }
         ]

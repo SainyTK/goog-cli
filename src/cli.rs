@@ -283,6 +283,9 @@ impl SlidesCommand {
                     | SlidesObjectCommand::InsertText {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::DeleteText {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::AltText {
                         presentation_id, ..
                     }
@@ -671,6 +674,22 @@ pub enum SlidesObjectCommand {
         /// Zero-based text insertion index
         #[arg(long, default_value_t = 0)]
         index: u32,
+    },
+    /// Delete text from an existing shape or text box without writing Batch Update JSON
+    DeleteText {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Shape or text box page object ID whose text should be deleted
+        object_id: String,
+        /// Delete all text from the object
+        #[arg(long)]
+        all: bool,
+        /// Zero-based start index for a fixed text range
+        #[arg(long)]
+        start_index: Option<u32>,
+        /// Zero-based end index for a fixed text range
+        #[arg(long)]
+        end_index: Option<u32>,
     },
     /// Set accessibility alt text on a page object without writing Batch Update JSON
     AltText {
