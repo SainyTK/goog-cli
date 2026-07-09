@@ -2567,6 +2567,38 @@ fn slides_slide_delete_with_page_id() {
 }
 
 #[test]
+fn slides_slide_background_with_color() {
+    let cli = parse(&[
+        "slides",
+        "slide",
+        "background",
+        "presentation-123",
+        "slide-2",
+        "--color",
+        "#fbbc04",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Background {
+                            presentation_id,
+                            page_id,
+                            color,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-2");
+            assert_eq!(color, "#fbbc04");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_object_delete_with_object_id() {
     let cli = parse(&["slides", "object", "delete", "presentation-123", "box-1"]).unwrap();
     match cli.command {

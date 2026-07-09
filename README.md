@@ -285,6 +285,7 @@ goog slides create "Quarterly Review"
 goog slides get PRESENTATION_ID --fields 'presentationId,title,slides(objectId)'
 goog slides slide create PRESENTATION_ID --layout title-and-body --object-id agenda-slide
 goog slides slide duplicate PRESENTATION_ID SLIDE_OBJECT_ID --object-id copied-slide --insertion-index 1
+goog slides slide background PRESENTATION_ID SLIDE_OBJECT_ID --color "#fbbc04"
 goog slides slide delete PRESENTATION_ID SLIDE_OBJECT_ID
 goog slides text-box PRESENTATION_ID --page-id SLIDE_OBJECT_ID --text "Executive summary" --x 72 --y 72 --width 360 --height 120
 goog slides image PRESENTATION_ID --page-id SLIDE_OBJECT_ID --url https://example.com/chart.png --x 72 --y 216 --width 360 --height 240

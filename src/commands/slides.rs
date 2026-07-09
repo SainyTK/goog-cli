@@ -146,6 +146,26 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::Slide {
+            command:
+                SlidesSlideCommand::Background {
+                    presentation_id,
+                    page_id,
+                    color,
+                },
+        } => run_with_runtime(run_slide_background_unified_to(
+            config,
+            store,
+            account_override,
+            SlideBackgroundRequest {
+                presentation_id,
+                page_id,
+                color,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::Object {
             command:
                 SlidesObjectCommand::Move {
@@ -656,6 +676,72 @@ pub(super) async fn run_slide_delete_unified_to<S: AccountStore>(
 
 fn build_slide_delete_batch_update(request: SlideDeleteRequest) -> serde_json::Value {
     build_delete_object_batch_update(request.page_id)
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct SlideBackgroundRequest {
+    pub presentation_id: String,
+    pub page_id: String,
+    pub color: String,
+}
+
+pub(super) async fn run_slide_background_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: SlideBackgroundRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_slide_background_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to set Google Slides slide background")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides slide background response",
+    )
+}
+
+pub(super) fn build_slide_background_batch_update(
+    request: SlideBackgroundRequest,
+) -> Result<serde_json::Value> {
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updatePageProperties": {
+                    "objectId": request.page_id,
+                    "pageProperties": {
+                        "pageBackgroundFill": {
+                            "solidFill": {
+                                "color": {
+                                    "rgbColor": parse_hex_rgb_color(&request.color)?
+                                }
+                            }
+                        }
+                    },
+                    "fields": "pageBackgroundFill.solidFill.color"
+                }
+            }
+        ]
+    }))
 }
 
 #[derive(Debug, Clone)]

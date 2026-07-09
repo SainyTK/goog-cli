@@ -859,6 +859,88 @@ async fn run_shape_sends_create_shape_request() {
 }
 
 #[tokio::test]
+async fn run_slide_background_sends_update_page_properties_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updatePageProperties": {
+                        "objectId": "slide-1",
+                        "pageProperties": {
+                            "pageBackgroundFill": {
+                                "solidFill": {
+                                    "color": {
+                                        "rgbColor": {
+                                            "red": 251.0 / 255.0,
+                                            "green": 188.0 / 255.0,
+                                            "blue": 4.0 / 255.0
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "fields": "pageBackgroundFill.solidFill.color"
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_slide_background_unified_to(
+        &test_config(),
+        &store,
+        None,
+        SlideBackgroundRequest {
+            presentation_id: "presentation-123".into(),
+            page_id: "slide-1".into(),
+            color: "#fbbc04".into(),
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[test]
+fn build_slide_background_rejects_non_hex_color() {
+    let err = build_slide_background_batch_update(SlideBackgroundRequest {
+        presentation_id: "presentation-123".into(),
+        page_id: "slide-1".into(),
+        color: "yellow".into(),
+    })
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("color must be a 6-digit hex value like #1a73e8"));
+}
+
+#[tokio::test]
 async fn run_image_sends_create_image_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

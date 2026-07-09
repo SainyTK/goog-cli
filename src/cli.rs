@@ -259,6 +259,9 @@ impl SlidesCommand {
                     | SlidesSlideCommand::Duplicate {
                         presentation_id, ..
                     }
+                    | SlidesSlideCommand::Background {
+                        presentation_id, ..
+                    }
                     | SlidesSlideCommand::Delete {
                         presentation_id, ..
                     },
@@ -500,6 +503,16 @@ pub enum SlidesSlideCommand {
         /// Zero-based insertion index for the duplicated slide. Requires --object-id.
         #[arg(long, requires = "object_id")]
         insertion_index: Option<u32>,
+    },
+    /// Set a slide background color without writing Batch Update JSON
+    Background {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to update
+        page_id: String,
+        /// Background color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        color: String,
     },
     /// Delete a slide without writing Batch Update JSON
     Delete {
