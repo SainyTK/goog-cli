@@ -169,13 +169,15 @@ fn batch_update_values_command(values: impl Into<String>) -> SheetsValuesCommand
 fn clear_values_command() -> SheetsValuesCommand {
     SheetsValuesCommand::Clear {
         spreadsheet_id: "spreadsheet-123".into(),
-        range: "Sheet1!A1:B2".into(),
+        range: Some("Sheet1!A1:B2".into()),
+        ranges: Vec::new(),
     }
 }
 
-fn batch_clear_values_command() -> SheetsValuesCommand {
-    SheetsValuesCommand::BatchClear {
+fn clear_multiple_values_command() -> SheetsValuesCommand {
+    SheetsValuesCommand::Clear {
         spreadsheet_id: "spreadsheet-123".into(),
+        range: None,
         ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
     }
 }
@@ -623,7 +625,7 @@ async fn run_values_write_commands_use_unified_mapping() {
             "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A1:B1:clear",
         ))
         .and(header("authorization", "Bearer bob-access"))
-        .and(body_json(&serde_json::json!({})))
+        .and(body_json(serde_json::json!({})))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "clearedRange": "Sheet1!A1:B1"
         })))
@@ -635,7 +637,7 @@ async fn run_values_write_commands_use_unified_mapping() {
             "/sheets/v4/spreadsheets/spreadsheet-123/values/:batchClear",
         ))
         .and(header("authorization", "Bearer bob-access"))
-        .and(body_json(&serde_json::json!({
+        .and(body_json(serde_json::json!({
             "ranges": ["Sheet1!A2:A2", "Sheet1!B2:B2"]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -716,7 +718,8 @@ async fn run_values_write_commands_use_unified_mapping() {
         None,
         SheetsValuesCommand::Clear {
             spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B1".into(),
+            range: Some("Sheet1!A1:B1".into()),
+            ranges: Vec::new(),
         },
         &mut clear_input,
         &mut clear_out,
@@ -732,8 +735,9 @@ async fn run_values_write_commands_use_unified_mapping() {
         &config,
         &store,
         None,
-        SheetsValuesCommand::BatchClear {
+        SheetsValuesCommand::Clear {
             spreadsheet_id: "spreadsheet-123".into(),
+            range: None,
             ranges: vec!["Sheet1!A2:A2".into(), "Sheet1!B2:B2".into()],
         },
         &mut batch_clear_input,
@@ -1079,14 +1083,14 @@ async fn run_values_append_reads_values_from_stdin() {
 }
 
 #[tokio::test]
-async fn run_values_batch_clear_prints_response_json() {
+async fn run_values_clear_repeated_ranges_prints_response_json() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(
             "/sheets/v4/spreadsheets/spreadsheet-123/values/:batchClear",
         ))
         .and(header("authorization", "Bearer sheets-write-access"))
-        .and(body_json(&serde_json::json!({
+        .and(body_json(serde_json::json!({
             "ranges": ["Sheet1!A1:B2", "Summary!A:A"]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -1104,7 +1108,7 @@ async fn run_values_batch_clear_prints_response_json() {
 
     run_values_to(
         &client,
-        batch_clear_values_command(),
+        clear_multiple_values_command(),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -1126,7 +1130,7 @@ async fn run_values_clear_prints_response_json() {
             "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A1:B2:clear",
         ))
         .and(header("authorization", "Bearer sheets-write-access"))
-        .and(body_json(&serde_json::json!({})))
+        .and(body_json(serde_json::json!({})))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "spreadsheetId": "spreadsheet-123",
             "clearedRange": "Sheet1!A1:B2"
@@ -1659,7 +1663,7 @@ async fn run_values_clear_returns_clear_error_for_api_failure() {
 }
 
 #[tokio::test]
-async fn run_values_batch_clear_returns_clear_error_for_api_failure() {
+async fn run_values_clear_repeated_ranges_returns_clear_error_for_api_failure() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(
@@ -1678,7 +1682,7 @@ async fn run_values_batch_clear_returns_clear_error_for_api_failure() {
 
     let result = run_values_to(
         &client,
-        batch_clear_values_command(),
+        clear_multiple_values_command(),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),

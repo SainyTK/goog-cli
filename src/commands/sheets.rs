@@ -259,32 +259,33 @@ pub(super) async fn run_values_to<S: AccountStore>(
         SheetsValuesCommand::Clear {
             spreadsheet_id,
             range,
-        } => {
-            let options = clear_values_options(spreadsheet_id, range, spreadsheets_url);
-            let response = SheetsOperation::ClearValues(&options)
-                .execute(client)
-                .await
-                .context("failed to clear Google Sheets values")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Clear values response",
-            )
-        }
-        SheetsValuesCommand::BatchClear {
-            spreadsheet_id,
             ranges,
         } => {
-            let options = batch_clear_values_options(spreadsheet_id, ranges, spreadsheets_url);
-            let response = SheetsOperation::BatchClearValues(&options)
-                .execute(client)
-                .await
-                .context("failed to batch clear Google Sheets values")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Batch Clear values response",
-            )
+            if let Some(range) = range {
+                let options = clear_values_options(spreadsheet_id, range, spreadsheets_url);
+                let response = SheetsOperation::ClearValues(&options)
+                    .execute(client)
+                    .await
+                    .context("failed to clear Google Sheets values")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Clear values response",
+                )
+            } else if !ranges.is_empty() {
+                let options = batch_clear_values_options(spreadsheet_id, ranges, spreadsheets_url);
+                let response = SheetsOperation::BatchClearValues(&options)
+                    .execute(client)
+                    .await
+                    .context("failed to batch clear Google Sheets values")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Batch Clear values response",
+                )
+            } else {
+                bail!("sheets values clear requires a positional RANGE or at least one --range")
+            }
         }
     }
 }
@@ -436,43 +437,44 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
         SheetsValuesCommand::Clear {
             spreadsheet_id,
             range,
-        } => {
-            let options = clear_values_options(spreadsheet_id.clone(), range, spreadsheets_url);
-            let response = run_spreadsheet_attempt(
-                config,
-                store,
-                account_override,
-                &SheetsOperation::ClearValues(&options),
-                state_path,
-            )
-            .await
-            .context("failed to clear Google Sheets values")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Clear values response",
-            )
-        }
-        SheetsValuesCommand::BatchClear {
-            spreadsheet_id,
             ranges,
         } => {
-            let options =
-                batch_clear_values_options(spreadsheet_id.clone(), ranges, spreadsheets_url);
-            let response = run_spreadsheet_attempt(
-                config,
-                store,
-                account_override,
-                &SheetsOperation::BatchClearValues(&options),
-                state_path,
-            )
-            .await
-            .context("failed to batch clear Google Sheets values")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Batch Clear values response",
-            )
+            if let Some(range) = range {
+                let options = clear_values_options(spreadsheet_id.clone(), range, spreadsheets_url);
+                let response = run_spreadsheet_attempt(
+                    config,
+                    store,
+                    account_override,
+                    &SheetsOperation::ClearValues(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to clear Google Sheets values")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Clear values response",
+                )
+            } else if !ranges.is_empty() {
+                let options =
+                    batch_clear_values_options(spreadsheet_id.clone(), ranges, spreadsheets_url);
+                let response = run_spreadsheet_attempt(
+                    config,
+                    store,
+                    account_override,
+                    &SheetsOperation::BatchClearValues(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to batch clear Google Sheets values")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Batch Clear values response",
+                )
+            } else {
+                bail!("sheets values clear requires a positional RANGE or at least one --range")
+            }
         }
     }
 }

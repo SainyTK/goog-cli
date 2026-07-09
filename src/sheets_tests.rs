@@ -132,7 +132,7 @@ async fn mount_temporary_sheet_copy(server: &MockServer) {
     Mock::given(method("POST"))
         .and(path("/drive/v3/files/office-file-123/copy"))
         .and(query_param("fields", "id"))
-        .and(body_json(&serde_json::json!({
+        .and(body_json(serde_json::json!({
             "mimeType": "application/vnd.google-apps.spreadsheet",
             "name": "goog temporary Sheets conversion"
         })))
@@ -913,7 +913,7 @@ async fn clear_values_posts_empty_body_to_clear_endpoint() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer sheets-write-access"))
-        .and(body_json(&serde_json::json!({})))
+        .and(body_json(serde_json::json!({})))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "clearedRange": "Sheet1!A1:B2"
         })))

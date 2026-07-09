@@ -1248,19 +1248,15 @@ pub enum SheetsValuesCommand {
         #[arg(long, value_enum, default_value = "insert-rows")]
         insert_data_option: SheetsInsertDataOption,
     },
-    /// Clear values from a Google Sheets Range
+    /// Clear values from one or more Google Sheets Ranges
+    #[command(group(ArgGroup::new("values_clear_range").required(true).args(["range", "ranges"])))]
     Clear {
         /// Google Sheets Spreadsheet ID to clear
         spreadsheet_id: String,
-        /// Google Sheets A1 Range to clear
-        range: String,
-    },
-    /// Clear values from multiple Google Sheets Ranges
-    BatchClear {
-        /// Google Sheets Spreadsheet ID to clear
-        spreadsheet_id: String,
-        /// Google Sheets A1 Range to clear
-        #[arg(long = "range", required = true)]
+        /// Single Google Sheets A1 Range to clear
+        range: Option<String>,
+        /// Google Sheets A1 Range to clear. Repeat for multiple ranges.
+        #[arg(long = "range")]
         ranges: Vec<String>,
     },
 }

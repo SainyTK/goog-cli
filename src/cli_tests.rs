@@ -2414,22 +2414,24 @@ fn sheets_values_clear_with_range() {
                         SheetsValuesCommand::Clear {
                             spreadsheet_id,
                             range,
+                            ranges,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
-            assert_eq!(range, "Sheet1!A1:B2");
+            assert_eq!(range.as_deref(), Some("Sheet1!A1:B2"));
+            assert!(ranges.is_empty());
         }
         _ => panic!("unexpected parse result"),
     }
 }
 
 #[test]
-fn sheets_values_batch_clear_accepts_repeated_ranges() {
+fn sheets_values_clear_accepts_repeated_ranges() {
     let cli = parse(&[
         "sheets",
         "values",
-        "batch-clear",
+        "clear",
         "spreadsheet-123",
         "--range",
         "Sheet1!A1:B2",
@@ -2442,13 +2444,15 @@ fn sheets_values_batch_clear_accepts_repeated_ranges() {
             command:
                 SheetsCommand::Values {
                     command:
-                        SheetsValuesCommand::BatchClear {
+                        SheetsValuesCommand::Clear {
                             spreadsheet_id,
+                            range,
                             ranges,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, None);
             assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
         }
         _ => panic!("unexpected parse result"),
@@ -2456,8 +2460,21 @@ fn sheets_values_batch_clear_accepts_repeated_ranges() {
 }
 
 #[test]
-fn sheets_values_batch_clear_requires_range() {
-    assert!(parse(&["sheets", "values", "batch-clear", "spreadsheet-123"]).is_err());
+fn sheets_values_clear_requires_range() {
+    assert!(parse(&["sheets", "values", "clear", "spreadsheet-123"]).is_err());
+}
+
+#[test]
+fn sheets_values_batch_clear_command_is_removed() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "batch-clear",
+        "spreadsheet-123",
+        "--range",
+        "Sheet1!A1:B2",
+    ])
+    .is_err());
 }
 
 #[test]
