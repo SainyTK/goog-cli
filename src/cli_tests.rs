@@ -1086,6 +1086,35 @@ fn docs_batch_update_help_explains_request_shape() {
 }
 
 #[test]
+fn docs_selector_help_explains_exactly_one_selector_rule() {
+    let get_content_help = help(&["docs", "get-content", "--help"]);
+    assert!(get_content_help.contains("Provide exactly one content selector."));
+    assert!(get_content_help.contains("--page P --line L"));
+    assert!(get_content_help.contains("--heading TEXT"));
+
+    for command in [
+        "insert-text",
+        "insert-image",
+        "insert-page-break",
+        "insert-section-break",
+        "create-footnote",
+        "insert-table",
+    ] {
+        let command_help = help(&["docs", command, "--help"]);
+        assert!(command_help.contains("Provide exactly one insert location selector"));
+        assert!(command_help.contains("--after-heading"));
+        assert!(command_help.contains("--before-text"));
+    }
+
+    for command in ["apply-styles", "apply-list", "create-named-range"] {
+        let command_help = help(&["docs", command, "--help"]);
+        assert!(command_help.contains("Provide exactly one range selector."));
+        assert!(command_help.contains("--from-index START --to-index END"));
+        assert!(command_help.contains("--text TEXT with optional --match N"));
+    }
+}
+
+#[test]
 fn docs_get_does_not_accept_output_flag() {
     assert!(parse(&["docs", "get", "document-123", "--output", "document.json"]).is_err());
 }

@@ -2,6 +2,37 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::auth::config::OAuthAppType;
 
+const DOCS_CONTENT_SELECTOR_HELP: &str = "Selector rules:
+  Provide exactly one content selector.
+  Use --index N, --entry N, --page P --line L, or --heading TEXT.";
+
+const DOCS_INSERT_SELECTOR_HELP: &str = "Selector rules:
+  Provide exactly one insert location selector.
+  Use --index N, --entry N, --page P --line L, --after-heading TEXT, --before-heading TEXT, --after-text TEXT, or --before-text TEXT.
+
+Write safety:
+  Use --dry-run to preview without calling documents.batchUpdate.
+  Use --required-revision-id REVISION_ID to reject writes against a changed document.";
+
+const DOCS_RANGE_SELECTOR_HELP: &str = "Selector rules:
+  Provide exactly one range selector.
+  Use --from-index START --to-index END, --entry N, --page P --line L, or --text TEXT with optional --match N.
+
+Write safety:
+  Use --dry-run to preview without calling documents.batchUpdate.
+  Use --required-revision-id REVISION_ID to reject writes against a changed document.";
+
+const DOCS_CREATE_NAMED_RANGE_HELP: &str = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new namedRangeId under replies[0].createNamedRange.namedRangeId.
+
+Selector rules:
+  Provide exactly one range selector.
+  Use --from-index START --to-index END, --entry N, --page P --line L, or --text TEXT with optional --match N.
+
+Notes:
+  Named ranges do not track edits after creation; a later insert/delete before the range can leave it pointing at the wrong text.
+  Re-create the named range after content in or before it changes.";
+
 #[derive(Debug, Parser)]
 #[command(
     name = "goog",
@@ -257,6 +288,7 @@ Notes:
         json: bool,
     },
     /// Retrieve one content block through a Document Map location selector
+    #[command(after_long_help = DOCS_CONTENT_SELECTOR_HELP)]
     GetContent {
         /// Google Docs Document ID or URL to inspect
         document_id: String,
@@ -280,6 +312,7 @@ Notes:
         json: bool,
     },
     /// Insert text through a high-level Document Map location selector
+    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     InsertText {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -360,6 +393,7 @@ Notes:
         json: bool,
     },
     /// Insert an Inline Image through a high-level Document Map location selector
+    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     InsertImage {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -400,6 +434,7 @@ Notes:
         required_revision_id: Option<String>,
     },
     /// Insert a page break through a high-level Document Map location selector
+    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     InsertPageBreak {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -438,6 +473,7 @@ Notes:
         required_revision_id: Option<String>,
     },
     /// Insert a section break through a high-level Document Map location selector
+    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     InsertSectionBreak {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -523,6 +559,7 @@ Notes:
   Prints the raw documents.batchUpdate response JSON, which includes the new footnoteId under replies[0].createFootnote.footnoteId.
 
 Notes:
+  Provide exactly one insert location selector: --index, --entry, --page with --line, --after-heading, --before-heading, --after-text, or --before-text.
   The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
   Edit the footnote's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
     CreateFootnote {
@@ -563,6 +600,7 @@ Notes:
         required_revision_id: Option<String>,
     },
     /// Insert a table through a high-level Document Map location selector
+    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     InsertTable {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -636,6 +674,7 @@ Notes:
         required_revision_id: Option<String>,
     },
     /// Apply common text styles through a high-level Document Range
+    #[command(after_long_help = DOCS_RANGE_SELECTOR_HELP)]
     ApplyStyles {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -692,6 +731,7 @@ Notes:
         no_auto_style: bool,
     },
     /// Apply a common list preset through a high-level Document Range
+    #[command(after_long_help = DOCS_RANGE_SELECTOR_HELP)]
     ApplyList {
         /// Google Docs Document ID or URL to update
         document_id: String,
@@ -736,12 +776,7 @@ Notes:
         no_auto_style: bool,
     },
     /// Create a named range over a high-level Document Range, returning its namedRangeId
-    #[command(after_long_help = "Output shape:
-  Prints the raw documents.batchUpdate response JSON, which includes the new namedRangeId under replies[0].createNamedRange.namedRangeId.
-
-Notes:
-  Named ranges do not track edits after creation; a later insert/delete before the range can leave it pointing at the wrong text.
-  Re-create the named range after content in or before it changes.")]
+    #[command(after_long_help = DOCS_CREATE_NAMED_RANGE_HELP)]
     CreateNamedRange {
         /// Google Docs Document ID or URL to update
         document_id: String,
