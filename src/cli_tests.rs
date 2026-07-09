@@ -2680,6 +2680,46 @@ fn slides_object_order_requires_object_id() {
 }
 
 #[test]
+fn slides_object_style_with_shape_properties() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "style",
+        "presentation-123",
+        "shape-1",
+        "--fill-color",
+        "#1a73e8",
+        "--outline-color",
+        "202124",
+        "--outline-weight",
+        "2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Style {
+                            presentation_id,
+                            object_id,
+                            fill_color,
+                            outline_color,
+                            outline_weight,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "shape-1");
+            assert_eq!(fill_color.as_deref(), Some("#1a73e8"));
+            assert_eq!(outline_color.as_deref(), Some("202124"));
+            assert_eq!(outline_weight, Some(2.0));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_slide_duplicate_with_flags() {
     let cli = parse(&[
         "slides",

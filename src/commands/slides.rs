@@ -2,7 +2,7 @@ use std::future::Future;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
@@ -205,6 +205,30 @@ pub fn run<S: AccountStore>(
                 presentation_id,
                 object_ids,
                 operation,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Object {
+            command:
+                SlidesObjectCommand::Style {
+                    presentation_id,
+                    object_id,
+                    fill_color,
+                    outline_color,
+                    outline_weight,
+                },
+        } => run_with_runtime(run_object_style_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectStyleRequest {
+                presentation_id,
+                object_id,
+                fill_color,
+                outline_color,
+                outline_weight,
             },
             &mut std::io::stdout(),
             None,
@@ -752,6 +776,137 @@ fn build_object_order_batch_update(request: ObjectOrderRequest) -> serde_json::V
             }
         ]
     })
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectStyleRequest {
+    pub presentation_id: String,
+    pub object_id: String,
+    pub fill_color: Option<String>,
+    pub outline_color: Option<String>,
+    pub outline_weight: Option<f64>,
+}
+
+pub(super) async fn run_object_style_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectStyleRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_style_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to style Google Slides object")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides object style response",
+    )
+}
+
+pub(super) fn build_object_style_batch_update(
+    request: ObjectStyleRequest,
+) -> Result<serde_json::Value> {
+    if request.fill_color.is_none()
+        && request.outline_color.is_none()
+        && request.outline_weight.is_none()
+    {
+        bail!("at least one style flag is required");
+    }
+
+    let mut shape_properties = serde_json::Map::new();
+    let mut fields = Vec::new();
+
+    if let Some(color) = request.fill_color {
+        shape_properties.insert(
+            "shapeBackgroundFill".into(),
+            serde_json::json!({
+                "solidFill": {
+                    "color": {
+                        "rgbColor": parse_hex_rgb_color(&color)?
+                    }
+                }
+            }),
+        );
+        fields.push("shapeBackgroundFill.solidFill.color");
+    }
+
+    let mut outline = serde_json::Map::new();
+    if let Some(color) = request.outline_color {
+        outline.insert(
+            "outlineFill".into(),
+            serde_json::json!({
+                "solidFill": {
+                    "color": {
+                        "rgbColor": parse_hex_rgb_color(&color)?
+                    }
+                }
+            }),
+        );
+        fields.push("outline.outlineFill.solidFill.color");
+    }
+
+    if let Some(weight) = request.outline_weight {
+        outline.insert(
+            "weight".into(),
+            serde_json::json!({
+                "magnitude": weight,
+                "unit": "PT"
+            }),
+        );
+        fields.push("outline.weight");
+    }
+
+    if !outline.is_empty() {
+        shape_properties.insert("outline".into(), serde_json::Value::Object(outline));
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updateShapeProperties": {
+                    "objectId": request.object_id,
+                    "shapeProperties": shape_properties,
+                    "fields": fields.join(",")
+                }
+            }
+        ]
+    }))
+}
+
+fn parse_hex_rgb_color(color: &str) -> Result<serde_json::Value> {
+    let hex = color.strip_prefix('#').unwrap_or(color);
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        bail!("color must be a 6-digit hex value like #1a73e8");
+    }
+
+    let red = u8::from_str_radix(&hex[0..2], 16).context("failed to parse red hex channel")?;
+    let green = u8::from_str_radix(&hex[2..4], 16).context("failed to parse green hex channel")?;
+    let blue = u8::from_str_radix(&hex[4..6], 16).context("failed to parse blue hex channel")?;
+
+    Ok(serde_json::json!({
+        "red": f64::from(red) / 255.0,
+        "green": f64::from(green) / 255.0,
+        "blue": f64::from(blue) / 255.0
+    }))
 }
 
 #[derive(Debug, Clone)]

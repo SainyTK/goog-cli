@@ -271,6 +271,9 @@ impl SlidesCommand {
                     | SlidesObjectCommand::Order {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::Style {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::Delete {
                         presentation_id, ..
                     },
@@ -538,6 +541,22 @@ pub enum SlidesObjectCommand {
         /// Z-order operation to apply
         #[arg(long, value_enum)]
         operation: SlidesZOrderOperation,
+    },
+    /// Style a shape or text box fill and outline without writing Batch Update JSON
+    Style {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Shape or text box page object ID to style
+        object_id: String,
+        /// Fill color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        fill_color: Option<String>,
+        /// Outline color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        outline_color: Option<String>,
+        /// Outline weight in points
+        #[arg(long)]
+        outline_weight: Option<f64>,
     },
     /// Delete a shape, image, table, or other page object without writing Batch Update JSON
     Delete {
