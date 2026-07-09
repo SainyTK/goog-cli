@@ -952,7 +952,7 @@ pub enum MailCommand {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SheetsValueRenderOption {
-    /// Return values formatted as displayed in Google Sheets
+    /// Return values formatted as displayed in the sheet
     FormattedValue,
     /// Return underlying unformatted values
     UnformattedValue,
@@ -992,7 +992,7 @@ pub enum SheetsCommand {
         #[arg(long = "range")]
         ranges: Vec<String>,
     },
-    /// Read and write Google Sheets cell values
+    /// Read and write sheet values
     Values {
         #[command(subcommand)]
         command: SheetsValuesCommand,
