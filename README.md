@@ -214,8 +214,8 @@ goog docs create "Q3 Report"
 goog docs map DOCUMENT_ID
 goog docs map DOCUMENT_ID --type images
 goog docs map DOCUMENT_ID --type tables
+goog docs map DOCUMENT_ID --heading "Summary"
 goog docs search-text DOCUMENT_ID "quarterly plan"
-goog docs get-content DOCUMENT_ID --heading "Summary"
 goog docs insert-page-break DOCUMENT_ID --after-heading "Summary"
 goog docs insert-section-break DOCUMENT_ID --section-type next-page --after-heading "Appendix"
 goog docs create-header DOCUMENT_ID

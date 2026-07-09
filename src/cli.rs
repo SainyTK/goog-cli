@@ -213,7 +213,6 @@ impl DocsCommand {
             DocsCommand::Create { .. } => return,
             DocsCommand::Map { document_id, .. }
             | DocsCommand::SearchText { document_id, .. }
-            | DocsCommand::GetContent { document_id, .. }
             | DocsCommand::InsertText { document_id, .. }
             | DocsCommand::ReplaceText { document_id, .. }
             | DocsCommand::InsertImage { document_id, .. }
@@ -250,32 +249,14 @@ Notes:
         /// Title for the new Google Docs Document
         title: String,
     },
-    /// Print a high-level map of editable Google Docs content
+    /// Print a high-level map of editable Google Docs content, or retrieve one selected block
+    #[command(after_long_help = DOCS_CONTENT_SELECTOR_HELP)]
     Map {
         /// Google Docs Document ID or URL to map
         document_id: String,
         /// Type of map entries to show
         #[arg(long = "type", value_enum, default_value_t = DocsMapType::All)]
         type_: DocsMapType,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Search editable Google Docs content through the Document Map
-    SearchText {
-        /// Google Docs Document ID or URL to search
-        document_id: String,
-        /// Text to find
-        text: String,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Retrieve one content block through a Document Map location selector
-    #[command(after_long_help = DOCS_CONTENT_SELECTOR_HELP)]
-    GetContent {
-        /// Google Docs Document ID or URL to inspect
-        document_id: String,
         /// Raw Google Docs UTF-16 index
         #[arg(long)]
         index: Option<i64>,
@@ -291,6 +272,16 @@ Notes:
         /// Heading text anchor
         #[arg(long)]
         heading: Option<String>,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Search editable Google Docs content through the Document Map
+    SearchText {
+        /// Google Docs Document ID or URL to search
+        document_id: String,
+        /// Text to find
+        text: String,
         /// Emit structured JSON
         #[arg(long)]
         json: bool,

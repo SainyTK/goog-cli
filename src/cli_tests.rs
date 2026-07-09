@@ -371,11 +371,21 @@ fn docs_map_with_document_id_and_json_flag() {
                 DocsCommand::Map {
                     document_id,
                     type_,
+                    index,
+                    entry,
+                    page,
+                    line,
+                    heading,
                     json,
                 },
         } => {
             assert_eq!(document_id, "document-123");
             assert_eq!(type_, DocsMapType::All);
+            assert_eq!(index, None);
+            assert_eq!(entry, None);
+            assert_eq!(page, None);
+            assert_eq!(line, None);
+            assert_eq!(heading, None);
             assert!(json);
         }
         _ => panic!("unexpected parse result"),
@@ -425,13 +435,14 @@ fn docs_search_text_with_document_id_text_and_json_flag() {
 }
 
 #[test]
-fn docs_get_content_accepts_location_selectors() {
-    let by_index = parse(&["docs", "get-content", "document-123", "--index", "44"]).unwrap();
+fn docs_map_accepts_content_location_selectors() {
+    let by_index = parse(&["docs", "map", "document-123", "--index", "44"]).unwrap();
     match by_index.command {
         Command::Docs {
             command:
-                DocsCommand::GetContent {
+                DocsCommand::Map {
                     document_id,
+                    type_,
                     index,
                     entry,
                     page,
@@ -441,6 +452,7 @@ fn docs_get_content_accepts_location_selectors() {
                 },
         } => {
             assert_eq!(document_id, "document-123");
+            assert_eq!(type_, DocsMapType::All);
             assert_eq!(index, Some(44));
             assert_eq!(entry, None);
             assert_eq!(page, None);
@@ -451,10 +463,10 @@ fn docs_get_content_accepts_location_selectors() {
         _ => panic!("unexpected parse result"),
     }
 
-    let by_entry = parse(&["docs", "get-content", "document-123", "--entry", "44"]).unwrap();
+    let by_entry = parse(&["docs", "map", "document-123", "--entry", "44"]).unwrap();
     match by_entry.command {
         Command::Docs {
-            command: DocsCommand::GetContent { index, entry, .. },
+            command: DocsCommand::Map { index, entry, .. },
         } => {
             assert_eq!(index, None);
             assert_eq!(entry, Some(44));
@@ -462,25 +474,17 @@ fn docs_get_content_accepts_location_selectors() {
         _ => panic!("unexpected parse result"),
     }
 
+    assert!(parse(&["docs", "map", "document-123", "--page", "2", "--line", "1",]).is_ok());
     assert!(parse(&[
         "docs",
-        "get-content",
-        "document-123",
-        "--page",
-        "2",
-        "--line",
-        "1",
-    ])
-    .is_ok());
-    assert!(parse(&[
-        "docs",
-        "get-content",
+        "map",
         "document-123",
         "--heading",
         "Appendix",
         "--json",
     ])
     .is_ok());
+    assert!(parse(&["docs", "get-content", "document-123", "--entry", "44"]).is_err());
 }
 
 #[test]
@@ -1089,10 +1093,10 @@ fn docs_batch_update_help_explains_request_shape() {
 
 #[test]
 fn docs_selector_help_explains_exactly_one_selector_rule() {
-    let get_content_help = help(&["docs", "get-content", "--help"]);
-    assert!(get_content_help.contains("Provide exactly one content selector."));
-    assert!(get_content_help.contains("--page P --line L"));
-    assert!(get_content_help.contains("--heading TEXT"));
+    let map_help = help(&["docs", "map", "--help"]);
+    assert!(map_help.contains("Provide exactly one content selector."));
+    assert!(map_help.contains("--page P --line L"));
+    assert!(map_help.contains("--heading TEXT"));
 
     for command in [
         "insert-text",

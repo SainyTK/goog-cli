@@ -57,21 +57,43 @@ pub fn run<S: AccountStore>(
         DocsCommand::Map {
             document_id,
             type_,
+            index,
+            entry,
+            page,
+            line,
+            heading,
             json,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_map_unified_to(
-                config,
-                store,
-                account_override,
-                document_id,
-                type_,
-                json,
-                &mut std::io::stdout(),
-                None,
-                None,
-            ))
+            if let Some(selector) = optional_content_selector(index, entry, page, line, heading)? {
+                if type_ != DocsMapType::All {
+                    bail!("--type cannot be combined with content selectors");
+                }
+                runtime.block_on(run_get_content_unified_to(
+                    config,
+                    store,
+                    account_override,
+                    document_id,
+                    selector,
+                    json,
+                    &mut std::io::stdout(),
+                    None,
+                    None,
+                ))
+            } else {
+                runtime.block_on(run_map_unified_to(
+                    config,
+                    store,
+                    account_override,
+                    document_id,
+                    type_,
+                    json,
+                    &mut std::io::stdout(),
+                    None,
+                    None,
+                ))
+            }
         }
         DocsCommand::SearchText {
             document_id,
@@ -86,30 +108,6 @@ pub fn run<S: AccountStore>(
                 account_override,
                 document_id,
                 text,
-                json,
-                &mut std::io::stdout(),
-                None,
-                None,
-            ))
-        }
-        DocsCommand::GetContent {
-            document_id,
-            index,
-            entry,
-            page,
-            line,
-            heading,
-            json,
-        } => {
-            let selector = content_selector(index, entry, page, line, heading)?;
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_get_content_unified_to(
-                config,
-                store,
-                account_override,
-                document_id,
-                selector,
                 json,
                 &mut std::io::stdout(),
                 None,
@@ -2110,6 +2108,20 @@ pub(super) fn content_selector(
     }
 
     unreachable!("selector count checked above")
+}
+
+fn optional_content_selector(
+    index: Option<i64>,
+    entry: Option<usize>,
+    page: Option<usize>,
+    line: Option<usize>,
+    heading: Option<String>,
+) -> Result<Option<ContentSelector>> {
+    if index.is_none() && entry.is_none() && page.is_none() && line.is_none() && heading.is_none() {
+        return Ok(None);
+    }
+
+    content_selector(index, entry, page, line, heading).map(Some)
 }
 
 fn insert_text_selector(
