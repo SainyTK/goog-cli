@@ -764,7 +764,7 @@ async fn run_read_prints_message_json_to_stdout() {
         .and(header("authorization", "Bearer mail-access"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "message-123",
-            "snippet": "Hello from GoogleMail"
+            "snippet": "Hello from Gmail"
         })))
         .expect(1)
         .mount(&server)
@@ -787,7 +787,7 @@ async fn run_read_prints_message_json_to_stdout() {
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
-        "{\"id\":\"message-123\",\"snippet\":\"Hello from GoogleMail\"}\n"
+        "{\"id\":\"message-123\",\"snippet\":\"Hello from Gmail\"}\n"
     );
 }
 
@@ -1071,8 +1071,8 @@ async fn run_read_unified_does_not_fallback_for_explicit_account_but_maps_succes
     .await;
 
     let message = format!("{:#}", denied.unwrap_err());
-    assert!(message.contains("failed to fetch GoogleMail Message"));
-    assert!(message.contains("GoogleMail Message was not found"));
+    assert!(message.contains("failed to fetch Gmail message"));
+    assert!(message.contains("Gmail message was not found"));
     assert!(denied_out.is_empty());
 
     let mut mapped_out = Vec::new();

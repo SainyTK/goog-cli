@@ -36,7 +36,7 @@ pub enum MessageReference {
     },
 }
 
-/// Accepts either a bare GoogleMail Message ID or a Gmail browser URL.
+/// Accepts either a bare Gmail message ID or a Gmail browser URL.
 /// Browser URLs may identify a thread token instead of a REST Message ID.
 pub fn parse_message_reference(input: &str) -> MessageReference {
     let trimmed = input.trim();
@@ -303,7 +303,7 @@ impl DownloadAttachmentOptions {
     fn attachment_url(&self, attachment_id: &str) -> Result<Url, MailError> {
         let mut url = message_url(&self.messages_url, &self.message_id)?;
         url.path_segments_mut()
-            .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
+            .map_err(|_| MailError::InvalidResponse("Gmail API URL cannot be a base".into()))?
             .push("attachments")
             .push(attachment_id);
         Ok(url)
@@ -501,7 +501,7 @@ impl GetMessageOptions {
 fn message_url(messages_url: &str, message_id: &str) -> Result<Url, MailError> {
     let mut url = Url::parse(messages_url)?;
     url.path_segments_mut()
-        .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
+        .map_err(|_| MailError::InvalidResponse("Gmail API URL cannot be a base".into()))?
         .push(message_id);
     Ok(url)
 }
@@ -509,7 +509,7 @@ fn message_url(messages_url: &str, message_id: &str) -> Result<Url, MailError> {
 fn draft_url(drafts_url: &str, draft_id: &str) -> Result<Url, MailError> {
     let mut url = Url::parse(drafts_url)?;
     url.path_segments_mut()
-        .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
+        .map_err(|_| MailError::InvalidResponse("Gmail API URL cannot be a base".into()))?
         .push(draft_id);
     Ok(url)
 }
@@ -517,9 +517,9 @@ fn draft_url(drafts_url: &str, draft_id: &str) -> Result<Url, MailError> {
 fn thread_url(messages_url: &str, thread_id: &str) -> Result<Url, MailError> {
     let mut url = Url::parse(messages_url)?;
     {
-        let mut segments = url.path_segments_mut().map_err(|_| {
-            MailError::InvalidResponse("GoogleMail API URL cannot be a base".into())
-        })?;
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| MailError::InvalidResponse("Gmail API URL cannot be a base".into()))?;
         segments.pop();
         segments.push("threads").push(thread_id);
     }

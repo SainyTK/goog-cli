@@ -940,7 +940,7 @@ async fn download_attachment_returns_api_error_with_response_body() {
 }
 
 #[tokio::test]
-async fn get_message_fetches_raw_googlemail_message() {
+async fn get_message_fetches_raw_gmail_message() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages/message-123"))

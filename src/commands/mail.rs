@@ -152,9 +152,9 @@ pub(super) async fn run_list_to<S: AccountStore>(
         json,
         out,
         if is_search {
-            "failed to search GoogleMail Messages"
+            "failed to search Gmail messages"
         } else {
-            "failed to list GoogleMail Messages"
+            "failed to list Gmail messages"
         },
         is_search.then_some(SEARCH_EMPTY_TABLE_MESSAGE),
     )
@@ -171,7 +171,7 @@ pub(super) async fn run_draft_create_to<S: AccountStore>(
     let options = create_draft_options(input, drafts_url);
     let draft = create_draft(client, &options)
         .await
-        .context("failed to create GoogleMail Draft")?;
+        .context("failed to create Gmail draft")?;
     write_draft(&draft, json, out)
 }
 
@@ -186,7 +186,7 @@ pub(super) async fn run_draft_edit_to<S: AccountStore>(
     let options = update_draft_options(draft_id, input, drafts_url);
     let draft = update_draft(client, &options)
         .await
-        .context("failed to edit GoogleMail Draft")?;
+        .context("failed to edit Gmail draft")?;
     write_draft(&draft, json, out)
 }
 
@@ -215,12 +215,12 @@ pub(super) async fn run_read_to<S: AccountStore>(
     let reference = parse_message_reference(&message_id);
     let message_id = resolve_message_reference(client, &reference, messages_url)
         .await
-        .context("failed to resolve GoogleMail Message reference")?;
+        .context("failed to resolve Gmail message reference")?;
     let options = get_message_options(message_id, messages_url);
 
     let message = get_message(client, &options)
         .await
-        .context("failed to fetch GoogleMail Message")?;
+        .context("failed to fetch Gmail message")?;
     write_message(&message, json, out)
 }
 
@@ -250,7 +250,7 @@ pub(super) async fn run_read_unified_to<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to fetch GoogleMail Message")?;
+    .context("failed to fetch Gmail message")?;
     let MailAccessResult::Message(message) = result else {
         unreachable!("read access returns a message")
     };
@@ -270,12 +270,12 @@ pub(super) async fn run_attachment_download_to<S: AccountStore>(
     let reference = parse_message_reference(&message_id);
     let message_id = resolve_message_reference(client, &reference, messages_url)
         .await
-        .context("failed to resolve GoogleMail Message reference")?;
+        .context("failed to resolve Gmail message reference")?;
     let options =
         attachment_download_options(message_id, Some(attachment_id), output, messages_url);
     let downloaded = download_attachment(client, &options)
         .await
-        .context("failed to download GoogleMail Attachment")?;
+        .context("failed to download Gmail attachment")?;
 
     write_download_notice(&downloaded, quiet);
 
@@ -310,7 +310,7 @@ pub(super) async fn run_attachment_download_unified_to<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to download GoogleMail Attachment")?;
+    .context("failed to download Gmail attachment")?;
     let MailAccessResult::Downloaded(downloaded) = result else {
         unreachable!("attachment download access returns a download result")
     };
@@ -548,13 +548,13 @@ pub(super) fn resolve_draft_body_from_reader(
         let mut stdin_body = String::new();
         stdin
             .read_to_string(&mut stdin_body)
-            .context("failed to read GoogleMail Draft body from stdin")?;
+            .context("failed to read Gmail draft body from stdin")?;
         return Ok(stdin_body);
     }
 
     if let Some(path) = body.strip_prefix('@') {
         return std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read GoogleMail Draft body file: {path}"));
+            .with_context(|| format!("failed to read Gmail draft body file: {path}"));
     }
 
     Ok(body)
@@ -565,13 +565,13 @@ pub(super) fn resolve_draft_attachments(paths: Vec<String>) -> Result<Vec<DraftA
         .into_iter()
         .map(|path| {
             let data = std::fs::read(&path)
-                .with_context(|| format!("failed to read GoogleMail Draft Attachment: {path}"))?;
+                .with_context(|| format!("failed to read Gmail draft attachment: {path}"))?;
             let path = PathBuf::from(path);
             let filename = path
                 .file_name()
                 .and_then(std::ffi::OsStr::to_str)
                 .filter(|filename| !filename.is_empty())
-                .context("GoogleMail Draft Attachment path has no filename")?
+                .context("Gmail draft attachment path has no filename")?
                 .to_string();
             Ok(DraftAttachmentInput {
                 content_type: content_type_for_path(&path),
@@ -627,7 +627,7 @@ fn write_summaries(
 
 fn write_draft(draft: &serde_json::Value, json: bool, out: &mut impl Write) -> Result<()> {
     if json {
-        return write_json_line(out, draft, "failed to serialize GoogleMail Draft");
+        return write_json_line(out, draft, "failed to serialize Gmail draft");
     }
 
     writeln!(out, "{DRAFT_TABLE_HEADER}").context("failed to write output")?;
@@ -655,7 +655,7 @@ fn write_draft(draft: &serde_json::Value, json: bool, out: &mut impl Write) -> R
 fn write_summary_ndjson(summaries: &[MessageSummary], out: &mut impl Write) -> Result<()> {
     for summary in summaries {
         serde_json::to_writer(&mut *out, summary)
-            .context("failed to serialize GoogleMail Message Summary")?;
+            .context("failed to serialize Gmail message summary")?;
         writeln!(out).context("failed to write output")?;
     }
     Ok(())
@@ -682,7 +682,7 @@ fn write_json_line(out: &mut impl Write, value: &serde_json::Value, context: &st
 
 fn write_message(message: &serde_json::Value, json: bool, out: &mut impl Write) -> Result<()> {
     if json {
-        write_json_line(out, message, "failed to serialize GoogleMail Message")
+        write_json_line(out, message, "failed to serialize Gmail message")
     } else {
         write_message_markdown(message, out)
     }

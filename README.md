@@ -3,7 +3,7 @@
 ![goog CLI wallpaper](./public/goog-cli-wallpaper.png)
 
 `goog` is an Early Open-Source CLI for Google APIs.
-It is built first for power users and AI agents who want terminal-native access to Google Drive, Google Docs, Google Sheets, and GoogleMail without getting forced down a browser UI path.
+It is built first for power users and AI agents who want terminal-native access to Google Drive, Google Docs, Google Sheets, and Gmail without getting forced down a browser UI path.
 
 Human-readable terminal workflows are the default experience.
 JSON is also supported for programmatic use, but it is not the primary product surface.
@@ -17,7 +17,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 - Google Drive file and folder listing, upload, and download commands.
 - Google Docs document creation, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet reads, values reads and writes, appends, clears, and structural batch updates.
-- GoogleMail message listing, search, raw message reads, draft creation, and attachment downloads.
+- Gmail message listing, search, raw message reads, draft creation, and attachment downloads.
 - Multi-account OAuth setup, login, account listing, and active account switching.
 
 ## Installation
@@ -236,7 +236,7 @@ goog sheets values update SPREADSHEET_ID 'Sheet1!A1' --values ./value-range.json
 goog sheets values append SPREADSHEET_ID 'Sheet1!A:D' --values ./rows.json
 ```
 
-### GoogleMail
+### Gmail
 
 ```sh
 goog mail list --limit 10
