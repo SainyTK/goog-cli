@@ -2652,6 +2652,45 @@ fn slides_table_fill_with_rows() {
 }
 
 #[test]
+fn slides_table_insert_rows_with_reference_cell() {
+    let cli = parse(&[
+        "slides",
+        "table-insert-rows",
+        "presentation-123",
+        "table-1",
+        "--reference-row",
+        "2",
+        "--reference-column",
+        "1",
+        "--number",
+        "3",
+        "--below",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableInsertRows {
+                    presentation_id,
+                    table_id,
+                    reference_row,
+                    reference_column,
+                    number,
+                    below,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(reference_row, 2);
+            assert_eq!(reference_column, 1);
+            assert_eq!(number, 3);
+            assert!(below);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_shape_with_flags() {
     let cli = parse(&[
         "slides",

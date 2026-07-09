@@ -323,6 +323,9 @@ impl SlidesCommand {
             | SlidesCommand::TableFill {
                 presentation_id, ..
             }
+            | SlidesCommand::TableInsertRows {
+                presentation_id, ..
+            }
             | SlidesCommand::Shape {
                 presentation_id, ..
             }
@@ -513,6 +516,25 @@ pub enum SlidesCommand {
         /// Zero-based column index for the first provided cell
         #[arg(long, default_value_t = 0)]
         start_column: u32,
+    },
+    /// Insert rows into an existing table without writing Batch Update JSON
+    TableInsertRows {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the reference cell
+        #[arg(long)]
+        reference_row: u32,
+        /// Zero-based column index of the reference cell
+        #[arg(long, default_value_t = 0)]
+        reference_column: u32,
+        /// Number of rows to insert, up to 20 per Slides API request
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=20))]
+        number: u32,
+        /// Insert below the reference row instead of above it
+        #[arg(long)]
+        below: bool,
     },
     /// Add a shape to a slide without writing Batch Update JSON
     Shape {

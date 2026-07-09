@@ -2369,6 +2369,86 @@ fn build_table_fill_rejects_empty_delimiter() {
 }
 
 #[tokio::test]
+async fn run_table_insert_rows_sends_insert_table_rows_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "insertTableRows": {
+                        "tableObjectId": "table-1",
+                        "cellLocation": {
+                            "rowIndex": 2,
+                            "columnIndex": 1
+                        },
+                        "insertBelow": true,
+                        "number": 3
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_table_insert_rows_unified_to(
+        &test_config(),
+        &store,
+        None,
+        TableInsertRowsRequest {
+            presentation_id: "presentation-123".into(),
+            table_id: "table-1".into(),
+            reference_row: 2,
+            reference_column: 1,
+            number: 3,
+            below: true,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[test]
+fn build_table_insert_rows_rejects_api_limit_overflow() {
+    let err = build_table_insert_rows_batch_update(TableInsertRowsRequest {
+        presentation_id: "presentation-123".into(),
+        table_id: "table-1".into(),
+        reference_row: 0,
+        reference_column: 0,
+        number: 21,
+        below: false,
+    })
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("--number must be between 1 and 20"));
+}
+
+#[tokio::test]
 async fn run_replace_text_sends_replace_all_text_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
