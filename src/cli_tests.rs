@@ -2,9 +2,9 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsFootnoteCommand,
-    DocsImageCommand, DocsListType, DocsMapType, DocsNamedRangeCommand, DocsTableCommand,
-    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsCommand,
+    AuthCommand, AuthMappingsCommand, Cli, Command, DocsBreakCommand, DocsCommand,
+    DocsFootnoteCommand, DocsImageCommand, DocsListType, DocsMapType, DocsNamedRangeCommand,
+    DocsTableCommand, DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsCommand,
     SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
@@ -758,6 +758,28 @@ fn docs_flat_footnote_commands_are_removed() {
 }
 
 #[test]
+fn docs_flat_break_commands_are_removed() {
+    assert!(parse(&[
+        "docs",
+        "insert-page-break",
+        "document-123",
+        "--at",
+        "index:1"
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "insert-section-break",
+        "document-123",
+        "--section-type",
+        "next-page",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn docs_new_high_level_editing_commands_parse() {
     let Command::Docs {
         command:
@@ -825,6 +847,59 @@ fn docs_new_high_level_editing_commands_parse() {
     assert_eq!(after_text.as_deref(), Some("quarterly plan"));
     assert!(dry_run);
     assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::Break {
+                command:
+                    DocsBreakCommand::Page {
+                        at, dry_run, json, ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "break",
+        "page",
+        "document-123",
+        "--at",
+        "heading:Summary",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(at.as_deref(), Some("heading:Summary"));
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::Break {
+                command:
+                    DocsBreakCommand::Section {
+                        section_type, at, ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "break",
+        "section",
+        "document-123",
+        "--section-type",
+        "continuous",
+        "--at",
+        "heading:Appendix",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(section_type, crate::cli::DocsSectionBreakType::Continuous);
+    assert_eq!(at.as_deref(), Some("heading:Appendix"));
 
     let Command::Docs {
         command: DocsCommand::ApplyList {
@@ -1285,8 +1360,8 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
     for command in [
         &["docs", "text", "insert", "--help"][..],
         &["docs", "image", "insert", "--help"],
-        &["docs", "insert-page-break", "--help"],
-        &["docs", "insert-section-break", "--help"],
+        &["docs", "break", "page", "--help"],
+        &["docs", "break", "section", "--help"],
         &["docs", "footnote", "insert", "--help"],
         &["docs", "table", "insert", "--help"],
     ] {

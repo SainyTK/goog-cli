@@ -7,8 +7,8 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    DocsCommand, DocsFootnoteCommand, DocsImageCommand, DocsMapType, DocsNamedRangeCommand,
-    DocsTableCommand, DocsTextCommand,
+    DocsBreakCommand, DocsCommand, DocsFootnoteCommand, DocsImageCommand, DocsMapType,
+    DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand,
 };
 use crate::docs::{
     batch_update_document,
@@ -256,21 +256,24 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::InsertPageBreak {
-            document_id,
-            at,
-            index,
-            entry,
-            page,
-            line,
-            heading,
-            after_heading,
-            before_heading,
-            after_text,
-            before_text,
-            dry_run,
-            json,
-            required_revision_id,
+        DocsCommand::Break {
+            command:
+                DocsBreakCommand::Page {
+                    document_id,
+                    at,
+                    index,
+                    entry,
+                    page,
+                    line,
+                    heading,
+                    after_heading,
+                    before_heading,
+                    after_text,
+                    before_text,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
         } => {
             let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
@@ -302,22 +305,25 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::InsertSectionBreak {
-            document_id,
-            section_type,
-            at,
-            index,
-            entry,
-            page,
-            line,
-            heading,
-            after_heading,
-            before_heading,
-            after_text,
-            before_text,
-            dry_run,
-            json,
-            required_revision_id,
+        DocsCommand::Break {
+            command:
+                DocsBreakCommand::Section {
+                    document_id,
+                    section_type,
+                    at,
+                    index,
+                    entry,
+                    page,
+                    line,
+                    heading,
+                    after_heading,
+                    before_heading,
+                    after_text,
+                    before_text,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
         } => {
             let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
