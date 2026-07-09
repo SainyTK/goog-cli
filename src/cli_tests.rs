@@ -2502,6 +2502,16 @@ fn sheets_help_uses_short_spreadsheet_id_wording() {
         assert!(help.contains("Spreadsheet ID"));
         assert!(!help.contains("Google Sheets Spreadsheet ID"));
     }
+
+    let get_help = help(&["sheets", "get", "--help"]);
+    assert!(get_help.contains("Read raw spreadsheet metadata"));
+    assert!(get_help.contains("Spreadsheet ID to read"));
+    assert!(!get_help.contains("Fetch raw Google Sheets Spreadsheet metadata"));
+
+    let values_get_help = help(&["sheets", "values", "get", "--help"]);
+    assert!(values_get_help.contains("Read raw sheet values"));
+    assert!(values_get_help.contains("Spreadsheet ID to read"));
+    assert!(!values_get_help.contains("Fetch raw Google Sheets values"));
 }
 
 #[test]

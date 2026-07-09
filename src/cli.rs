@@ -978,9 +978,9 @@ pub enum SheetsInsertDataOption {
 
 #[derive(Debug, Subcommand)]
 pub enum SheetsCommand {
-    /// Fetch raw Google Sheets Spreadsheet metadata
+    /// Read raw spreadsheet metadata
     Get {
-        /// Spreadsheet ID to fetch
+        /// Spreadsheet ID to read
         spreadsheet_id: String,
         /// Google partial response field selector
         #[arg(long)]
@@ -1035,10 +1035,10 @@ Example:
 
 #[derive(Debug, Subcommand)]
 pub enum SheetsValuesCommand {
-    /// Fetch raw Google Sheets values
+    /// Read raw sheet values
     #[command(group(ArgGroup::new("values_get_range").required(true).args(["range", "ranges"])))]
     Get {
-        /// Spreadsheet ID to fetch
+        /// Spreadsheet ID to read
         spreadsheet_id: String,
         /// Single Google Sheets A1 Range to fetch
         range: Option<String>,
