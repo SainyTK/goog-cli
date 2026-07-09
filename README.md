@@ -212,6 +212,8 @@ goog drive download FILE_ID --output ./report.pdf
 ```sh
 goog docs create "Q3 Report"
 goog docs map DOCUMENT_ID
+goog docs map DOCUMENT_ID --type images
+goog docs map DOCUMENT_ID --type tables
 goog docs search-text DOCUMENT_ID "quarterly plan"
 goog docs get-content DOCUMENT_ID --heading "Summary"
 goog docs insert-page-break DOCUMENT_ID --after-heading "Summary"

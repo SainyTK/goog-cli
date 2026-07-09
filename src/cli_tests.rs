@@ -2,9 +2,9 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
-    DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
-    SheetsValueRenderOption, SheetsValuesCommand,
+    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DocsMapType,
+    DriveCommand, DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -367,13 +367,41 @@ fn docs_map_with_document_id_and_json_flag() {
     let cli = parse(&["docs", "map", "document-123", "--json"]).unwrap();
     match cli.command {
         Command::Docs {
-            command: DocsCommand::Map { document_id, json },
+            command:
+                DocsCommand::Map {
+                    document_id,
+                    type_,
+                    json,
+                },
         } => {
             assert_eq!(document_id, "document-123");
+            assert_eq!(type_, DocsMapType::All);
             assert!(json);
         }
         _ => panic!("unexpected parse result"),
     }
+
+    let cli = parse(&["docs", "map", "document-123", "--type", "images"]).unwrap();
+    match cli.command {
+        Command::Docs {
+            command: DocsCommand::Map { type_, .. },
+        } => assert_eq!(type_, DocsMapType::Images),
+        _ => panic!("unexpected parse result"),
+    }
+
+    let cli = parse(&["docs", "map", "document-123", "--type", "tables"]).unwrap();
+    match cli.command {
+        Command::Docs {
+            command: DocsCommand::Map { type_, .. },
+        } => assert_eq!(type_, DocsMapType::Tables),
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn docs_map_rejects_removed_list_object_verbs() {
+    assert!(parse(&["docs", "list-images", "document-123", "--json"]).is_err());
+    assert!(parse(&["docs", "list-tables", "document-123", "--json"]).is_err());
 }
 
 #[test]
@@ -563,23 +591,6 @@ fn docs_replace_text_rejects_order_sensitive_text_positionals() {
 
 #[test]
 fn docs_new_high_level_editing_commands_parse() {
-    assert!(matches!(
-        parse(&["docs", "list-images", "document-123", "--json"])
-            .unwrap()
-            .command,
-        Command::Docs {
-            command: DocsCommand::ListImages { .. }
-        }
-    ));
-    assert!(matches!(
-        parse(&["docs", "list-tables", "document-123", "--json"])
-            .unwrap()
-            .command,
-        Command::Docs {
-            command: DocsCommand::ListTables { .. }
-        }
-    ));
-
     let Command::Docs {
         command:
             DocsCommand::InsertImage {

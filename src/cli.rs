@@ -216,8 +216,6 @@ impl DocsCommand {
             | DocsCommand::GetContent { document_id, .. }
             | DocsCommand::InsertText { document_id, .. }
             | DocsCommand::ReplaceText { document_id, .. }
-            | DocsCommand::ListImages { document_id, .. }
-            | DocsCommand::ListTables { document_id, .. }
             | DocsCommand::InsertImage { document_id, .. }
             | DocsCommand::InsertPageBreak { document_id, .. }
             | DocsCommand::InsertSectionBreak { document_id, .. }
@@ -256,6 +254,9 @@ Notes:
     Map {
         /// Google Docs Document ID or URL to map
         document_id: String,
+        /// Type of map entries to show
+        #[arg(long = "type", value_enum, default_value_t = DocsMapType::All)]
+        type_: DocsMapType,
         /// Emit structured JSON
         #[arg(long)]
         json: bool,
@@ -360,22 +361,6 @@ Notes:
         /// Require the document to still be at this revision before applying the edit
         #[arg(long)]
         required_revision_id: Option<String>,
-    },
-    /// List image-like objects through the Document Map
-    ListImages {
-        /// Google Docs Document ID or URL to inspect
-        document_id: String,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// List tables through the Document Map
-    ListTables {
-        /// Google Docs Document ID or URL to inspect
-        document_id: String,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
     },
     /// Insert an Inline Image through a high-level Document Map location selector
     #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
@@ -639,7 +624,7 @@ Notes:
     EditTable {
         /// Google Docs Document ID or URL to update
         document_id: String,
-        /// Table handle from list-tables, such as table-3
+        /// Table handle from `docs map --type tables`, such as table-3
         #[arg(long)]
         table_id: String,
         /// CSV or TSV data file with replacement cell text
@@ -917,6 +902,16 @@ pub enum DocsListType {
     Numbered,
     Dash,
     Checkbox,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsMapType {
+    /// All map entries
+    All,
+    /// Inline and positioned images
+    Images,
+    /// Tables
+    Tables,
 }
 
 #[derive(Debug, Subcommand)]

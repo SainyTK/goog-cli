@@ -6,7 +6,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::DocsCommand;
+use crate::cli::{DocsCommand, DocsMapType};
 use crate::docs::{
     batch_update_document,
     change::{
@@ -54,7 +54,11 @@ pub fn run<S: AccountStore>(
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_create_to(&client, title, &mut std::io::stdout(), None))
         }
-        DocsCommand::Map { document_id, json } => {
+        DocsCommand::Map {
+            document_id,
+            type_,
+            json,
+        } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_map_unified_to(
@@ -62,6 +66,7 @@ pub fn run<S: AccountStore>(
                 store,
                 account_override,
                 document_id,
+                type_,
                 json,
                 &mut std::io::stdout(),
                 None,
@@ -181,34 +186,6 @@ pub fn run<S: AccountStore>(
                     json,
                     required_revision_id,
                 },
-                &mut std::io::stdout(),
-                None,
-                None,
-            ))
-        }
-        DocsCommand::ListImages { document_id, json } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_list_images_unified_to(
-                config,
-                store,
-                account_override,
-                document_id,
-                json,
-                &mut std::io::stdout(),
-                None,
-                None,
-            ))
-        }
-        DocsCommand::ListTables { document_id, json } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_list_tables_unified_to(
-                config,
-                store,
-                account_override,
-                document_id,
-                json,
                 &mut std::io::stdout(),
                 None,
                 None,
@@ -711,12 +688,13 @@ pub fn run<S: AccountStore>(
 pub(super) async fn run_map_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
+    map_type: DocsMapType,
     json: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
-    write_document_map(out, &document_map, json)
+    write_document_map(out, &document_map, map_type, json)
 }
 
 pub(super) async fn run_map_unified_to<S: AccountStore>(
@@ -724,6 +702,7 @@ pub(super) async fn run_map_unified_to<S: AccountStore>(
     store: &S,
     account_override: Option<&str>,
     document_id: String,
+    map_type: DocsMapType,
     json: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
@@ -738,7 +717,7 @@ pub(super) async fn run_map_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
-    write_document_map(out, &document_map, json)
+    write_document_map(out, &document_map, map_type, json)
 }
 
 #[cfg(test)]
@@ -925,90 +904,6 @@ pub(super) async fn run_replace_text_unified_to<S: AccountStore>(
         state_path,
     )
     .await
-}
-
-#[cfg(test)]
-pub(super) async fn run_list_images_to<S: AccountStore>(
-    client: &AuthClient<'_, S>,
-    document_id: String,
-    json: bool,
-    out: &mut impl Write,
-    documents_url: Option<&str>,
-) -> Result<()> {
-    let document_map = get_document_map(client, document_id, documents_url).await?;
-    write_filtered_entries(
-        out,
-        &document_map,
-        &[
-            DocumentMapEntryKind::InlineImage,
-            DocumentMapEntryKind::PositionedImage,
-        ],
-        json,
-    )
-}
-
-pub(super) async fn run_list_images_unified_to<S: AccountStore>(
-    config: &Config,
-    store: &S,
-    account_override: Option<&str>,
-    document_id: String,
-    json: bool,
-    out: &mut impl Write,
-    documents_url: Option<&str>,
-    state_path: Option<&Path>,
-) -> Result<()> {
-    let document_map = get_document_map_unified(
-        config,
-        store,
-        account_override,
-        document_id,
-        documents_url,
-        state_path,
-    )
-    .await?;
-    write_filtered_entries(
-        out,
-        &document_map,
-        &[
-            DocumentMapEntryKind::InlineImage,
-            DocumentMapEntryKind::PositionedImage,
-        ],
-        json,
-    )
-}
-
-#[cfg(test)]
-pub(super) async fn run_list_tables_to<S: AccountStore>(
-    client: &AuthClient<'_, S>,
-    document_id: String,
-    json: bool,
-    out: &mut impl Write,
-    documents_url: Option<&str>,
-) -> Result<()> {
-    let document_map = get_document_map(client, document_id, documents_url).await?;
-    write_filtered_entries(out, &document_map, &[DocumentMapEntryKind::Table], json)
-}
-
-pub(super) async fn run_list_tables_unified_to<S: AccountStore>(
-    config: &Config,
-    store: &S,
-    account_override: Option<&str>,
-    document_id: String,
-    json: bool,
-    out: &mut impl Write,
-    documents_url: Option<&str>,
-    state_path: Option<&Path>,
-) -> Result<()> {
-    let document_map = get_document_map_unified(
-        config,
-        store,
-        account_override,
-        document_id,
-        documents_url,
-        state_path,
-    )
-    .await?;
-    write_filtered_entries(out, &document_map, &[DocumentMapEntryKind::Table], json)
 }
 
 #[cfg(test)]
@@ -2457,11 +2352,29 @@ fn batch_update_document_options(
     options
 }
 
-fn write_document_map(out: &mut impl Write, document_map: &DocumentMap, json: bool) -> Result<()> {
-    if json {
+fn write_document_map(
+    out: &mut impl Write,
+    document_map: &DocumentMap,
+    map_type: DocsMapType,
+    json: bool,
+) -> Result<()> {
+    if let Some(kinds) = map_type_entry_kinds(map_type) {
+        write_filtered_entries(out, document_map, kinds, json)
+    } else if json {
         write_json_line(out, document_map, "failed to serialize Docs Document Map")
     } else {
         write_document_map_table(out, document_map)
+    }
+}
+
+fn map_type_entry_kinds(map_type: DocsMapType) -> Option<&'static [DocumentMapEntryKind]> {
+    match map_type {
+        DocsMapType::All => None,
+        DocsMapType::Images => Some(&[
+            DocumentMapEntryKind::InlineImage,
+            DocumentMapEntryKind::PositionedImage,
+        ]),
+        DocsMapType::Tables => Some(&[DocumentMapEntryKind::Table]),
     }
 }
 

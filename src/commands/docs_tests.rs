@@ -9,7 +9,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::cli::{DocsListType, DocsSectionBreakType};
+use crate::cli::{DocsListType, DocsMapType, DocsSectionBreakType};
 use crate::docs::change::{
     ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
     CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
@@ -293,6 +293,7 @@ async fn run_map_prints_human_document_map_for_manual_page_breaks() {
     run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::All,
         false,
         &mut out,
         Some(&documents_url),
@@ -331,6 +332,7 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
     run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::All,
         true,
         &mut out,
         Some(&documents_url),
@@ -382,6 +384,7 @@ async fn run_map_json_emits_each_inline_image_in_a_paragraph() {
     run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::All,
         true,
         &mut out,
         Some(&documents_url),
@@ -1096,7 +1099,7 @@ async fn run_replace_text_rejects_ambiguous_match_with_candidates() {
 }
 
 #[tokio::test]
-async fn run_list_images_and_tables_emit_document_map_metadata() {
+async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/docs/v1/documents/document-123"))
@@ -1112,9 +1115,10 @@ async fn run_list_images_and_tables_emit_document_map_metadata() {
     let documents_url = format!("{}/docs/v1/documents", server.uri());
 
     let mut images = Vec::new();
-    run_list_images_to(
+    run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::Images,
         true,
         &mut images,
         Some(&documents_url),
@@ -1145,9 +1149,10 @@ async fn run_list_images_and_tables_emit_document_map_metadata() {
     );
 
     let mut human_images = Vec::new();
-    run_list_images_to(
+    run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::Images,
         false,
         &mut human_images,
         Some(&documents_url),
@@ -1162,9 +1167,10 @@ async fn run_list_images_and_tables_emit_document_map_metadata() {
     assert!(human_images.contains("positioned-image-1"));
 
     let mut tables = Vec::new();
-    run_list_tables_to(
+    run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::Tables,
         true,
         &mut tables,
         Some(&documents_url),
@@ -2888,6 +2894,7 @@ async fn run_map_unified_falls_back_and_maps_successful_account() {
         &store,
         None,
         "document-123".into(),
+        DocsMapType::All,
         false,
         &mut out,
         Some(&documents_url),
@@ -3038,6 +3045,7 @@ async fn high_level_docs_unified_commands_do_not_fallback_for_explicit_account()
         &store,
         Some("alice@example.com"),
         "map-document".into(),
+        DocsMapType::All,
         false,
         &mut Vec::new(),
         Some(&documents_url),
