@@ -272,7 +272,7 @@ Notes:
     /// Print a high-level map of editable Google Docs content, or retrieve one selected block
     #[command(after_long_help = DOCS_CONTENT_SELECTOR_HELP)]
     Map {
-        /// Google Docs Document ID or URL to map
+        /// Document ID or URL to map
         document_id: String,
         /// Type of map entries to show
         #[arg(long = "type", value_enum, default_value_t = DocsMapType::All)]
@@ -363,7 +363,7 @@ Tips:
   Use jq to inspect text runs:
     goog docs get DOCUMENT_ID | jq -r '.body.content[]?.paragraph?.elements[]?.textRun?.content // empty'")]
     Get {
-        /// Google Docs Document ID or URL to read
+        /// Document ID or URL to read
         document_id: String,
         /// Google partial response field selector
         #[arg(long)]
@@ -403,7 +403,7 @@ Example:
   }
   JSON")]
     BatchUpdate {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Path to a full documents.batchUpdate JSON request body, or - for stdin
         #[arg(long)]
@@ -416,7 +416,7 @@ pub enum DocsStyleCommand {
     /// Apply common text styles through a high-level Document Range
     #[command(after_long_help = DOCS_RANGE_SELECTOR_HELP)]
     Apply {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Raw Google Docs UTF-16 range start
         #[arg(long)]
@@ -472,7 +472,7 @@ pub enum DocsStyleCommand {
     },
     /// Read the locally cached style template for a Google Doc
     Template {
-        /// Google Docs Document ID whose cached style template to read
+        /// Document ID whose cached style template to read
         document_id: String,
         /// Emit structured JSON
         #[arg(long)]
@@ -484,7 +484,7 @@ pub enum DocsStyleCommand {
 pub enum DocsTextCommand {
     /// Search editable Google Docs content through the Document Map
     Search {
-        /// Google Docs Document ID or URL to search
+        /// Document ID or URL to search
         document_id: String,
         /// Text to find
         text: String,
@@ -495,7 +495,7 @@ pub enum DocsTextCommand {
     /// Insert text through a high-level Document Map location selector
     #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     Insert {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Text to insert
         text: String,
@@ -514,7 +514,7 @@ pub enum DocsTextCommand {
     },
     /// Replace text through a high-level Document Map text match
     Replace {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Existing text to replace
         #[arg(long = "find")]
@@ -550,7 +550,7 @@ Notes:
   Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
   Edit the header's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
     Create {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
@@ -574,7 +574,7 @@ Notes:
   Always creates the DEFAULT footer for the document's first section; there is no per-section footer support today.
   Edit the footer's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footerId segment.")]
     Create {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
@@ -593,7 +593,7 @@ pub enum DocsBreakCommand {
     /// Insert a page break through a high-level Document Map location selector
     #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     Page {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
@@ -611,7 +611,7 @@ pub enum DocsBreakCommand {
     /// Insert a section break through a high-level Document Map location selector
     #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     Section {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Section break type
         #[arg(long, value_enum, default_value_t = DocsSectionBreakType::NextPage)]
@@ -636,7 +636,7 @@ pub enum DocsImageCommand {
     /// Insert an Inline Image through a high-level Document Map location selector
     #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     Insert {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
         image_uri: String,
@@ -667,7 +667,7 @@ Notes:
   The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
   Edit the footnote's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
     Insert {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
@@ -689,7 +689,7 @@ pub enum DocsTableCommand {
     /// Insert a table through a high-level Document Map location selector
     #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
     Insert {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// CSV or TSV data file to populate the inserted table
         #[arg(long)]
@@ -718,7 +718,7 @@ pub enum DocsTableCommand {
     },
     /// Replace table cell text from CSV or TSV data
     Edit {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Table handle from `docs map --type tables`, such as table-3
         #[arg(long)]
@@ -746,7 +746,7 @@ pub enum DocsNamedRangeCommand {
     /// Create a named range over a high-level Document Range, returning its namedRangeId
     #[command(after_long_help = DOCS_CREATE_NAMED_RANGE_HELP)]
     Create {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Name for the new named range (need not be unique)
         name: String,
@@ -788,7 +788,7 @@ pub enum DocsNamedRangeCommand {
 Notes:
   Provide exactly one of --named-range-id or --name; --name deletes every named range sharing that name.")]
     Delete {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Exact namedRangeId returned by named-range create
         #[arg(long)]
@@ -813,7 +813,7 @@ pub enum DocsListCommand {
     /// Apply a common list preset through a high-level Document Range
     #[command(after_long_help = DOCS_RANGE_SELECTOR_HELP)]
     Apply {
-        /// Google Docs Document ID or URL to update
+        /// Document ID or URL to update
         document_id: String,
         /// Raw Google Docs UTF-16 range start
         #[arg(long)]
