@@ -452,6 +452,103 @@ async fn run_acl_list_prints_ndjson_when_json_requested() {
 }
 
 #[tokio::test]
+async fn run_acl_get_prints_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(
+            r"^/calendar/v3/calendars/team-launches(%40|@)example\.com/acl/user(:|%3A)teammate(%40|@)example\.com$",
+        ))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "user:teammate@example.com",
+            "scope": {
+                "type": "user",
+                "value": "teammate@example.com"
+            },
+            "role": "writer"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Get {
+            calendar_id: "team-launches@example.com".into(),
+            rule_id: "user:teammate@example.com".into(),
+            json: false,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SCOPE TYPE\tSCOPE VALUE\tROLE\tRULE ID\nuser\tteammate@example.com\twriter\tuser:teammate@example.com\n"
+    );
+}
+
+#[tokio::test]
+async fn run_acl_get_prints_json_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/calendar/v3/calendars/primary/acl/default$"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "default",
+            "scope": {
+                "type": "default"
+            },
+            "role": "reader"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Get {
+            calendar_id: "primary".into(),
+            rule_id: "default".into(),
+            json: true,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"default\",\"role\":\"reader\",\"scope\":{\"type\":\"default\"}}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

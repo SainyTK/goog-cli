@@ -10,10 +10,10 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
-    delete_calendar, delete_event, get_calendar, get_event, insert_calendar, insert_event,
+    delete_calendar, delete_event, get_acl, get_calendar, get_event, insert_calendar, insert_event,
     list_acl, list_calendars, list_events, move_event, patch_calendar, patch_event, query_freebusy,
     quick_add_event, update_calendar, update_event, CalendarError, DeleteCalendarOptions,
-    DeleteEventOptions, FreeBusyOptions, GetCalendarOptions, GetEventOptions,
+    DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarOptions, GetEventOptions,
     InsertCalendarOptions, ListAclOptions, ListCalendarsOptions, ListEventsOptions,
     MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateCalendarOptions, WriteEventOptions,
 };
@@ -269,6 +269,30 @@ pub(super) async fn run_acl_command_to<S: AccountStore>(
                 write_ndjson(out, &rules)
             } else {
                 write_acl_table(out, &rules)
+            }
+        }
+        CalendarAclCommand::Get {
+            calendar_id,
+            rule_id,
+            json,
+        } => {
+            let json = json || output_json_by_default;
+            let target_resource_key = resource_key("calendar-acl", &calendar_id);
+            let options = get_acl_options(calendar_id, rule_id, base_url);
+            let rule = run_with_calendar_unified_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                CalendarAccessAttempt::GetAcl(&options),
+                state_path,
+            )
+            .await
+            .context("failed to get Google Calendar ACL rule")?;
+            if json {
+                write_json_line(out, &rule, "failed to serialize Calendar ACL rule")
+            } else {
+                write_acl_rule_table(out, &rule)
             }
         }
     }
@@ -772,6 +796,7 @@ enum CalendarAccessAttempt<'a> {
     UpdateCalendar(&'a UpdateCalendarOptions),
     PatchCalendar(&'a UpdateCalendarOptions),
     ListAcl(&'a ListAclOptions),
+    GetAcl(&'a GetAclOptions),
     ListEvents(&'a ListEventsOptions),
     GetEvent(&'a GetEventOptions),
     InsertEvent(&'a WriteEventOptions),
@@ -818,6 +843,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::UpdateCalendar(options) => update_calendar(&client, options).await,
         CalendarAccessAttempt::PatchCalendar(options) => patch_calendar(&client, options).await,
         CalendarAccessAttempt::ListAcl(options) => list_acl(&client, options).await,
+        CalendarAccessAttempt::GetAcl(options) => get_acl(&client, options).await,
         CalendarAccessAttempt::ListEvents(options) => list_events(&client, options).await,
         CalendarAccessAttempt::GetEvent(options) => get_event(&client, options).await,
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
@@ -981,6 +1007,14 @@ fn list_acl_options(
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);
     }
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn get_acl_options(calendar_id: String, rule_id: String, base_url: Option<&str>) -> GetAclOptions {
+    let mut options = GetAclOptions::new(calendar_id, rule_id);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
@@ -1497,6 +1531,10 @@ fn write_acl_table(out: &mut impl Write, rules: &[serde_json::Value]) -> Result<
         .context("failed to write output")?;
     }
     Ok(())
+}
+
+fn write_acl_rule_table(out: &mut impl Write, rule: &serde_json::Value) -> Result<()> {
+    write_acl_table(out, std::slice::from_ref(rule))
 }
 
 fn write_events_table(out: &mut impl Write, events: &[serde_json::Value]) -> Result<()> {

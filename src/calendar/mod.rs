@@ -15,6 +15,7 @@ const CALENDAR_BASE_URL: &str = "https://www.googleapis.com/calendar/v3";
 
 pub type Calendar = Value;
 pub type Acl = Value;
+pub type AclRule = Value;
 pub type CalendarList = Value;
 pub type Event = Value;
 pub type Events = Value;
@@ -212,6 +213,35 @@ impl ListAclOptions {
             }
         }
         Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GetAclOptions {
+    pub calendar_id: String,
+    pub rule_id: String,
+    base_url: String,
+}
+
+impl GetAclOptions {
+    pub fn new(calendar_id: impl Into<String>, rule_id: impl Into<String>) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            rule_id: rule_id.into(),
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "acl", &self.rule_id],
+        )
     }
 }
 
@@ -641,6 +671,13 @@ pub async fn list_acl<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ListAclOptions,
 ) -> Result<Acl, CalendarError> {
+    send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn get_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &GetAclOptions,
+) -> Result<AclRule, CalendarError> {
     send_json_request(client, client.get(options.request_url()?)).await
 }
 

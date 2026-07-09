@@ -811,6 +811,16 @@ pub enum CalendarAclCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Read one access control rule by rule ID
+    Get {
+        /// Calendar ID to inspect. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// ACL rule ID, such as user:teammate@example.com or default.
+        rule_id: String,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

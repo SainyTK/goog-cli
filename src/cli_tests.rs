@@ -3575,6 +3575,37 @@ fn calendar_acl_list_with_flags() {
 }
 
 #[test]
+fn calendar_acl_get_with_json_flag() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "get",
+        "team-launches@example.com",
+        "user:teammate@example.com",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::Get {
+                            calendar_id,
+                            rule_id,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(rule_id, "user:teammate@example.com");
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn sheets_get_with_google_query_flags() {
     let cli = parse(&[
         "sheets",
