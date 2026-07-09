@@ -2,7 +2,7 @@ use std::future::Future;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
@@ -151,40 +151,40 @@ pub(super) async fn run_values_to<S: AccountStore>(
         SheetsValuesCommand::Get {
             spreadsheet_id,
             range,
-            value_render_option,
-        } => {
-            let options = get_values_options(
-                spreadsheet_id,
-                range,
-                value_render_option.into(),
-                spreadsheets_url,
-            );
-            let response = SheetsOperation::GetValues(&options)
-                .execute(client)
-                .await
-                .context("failed to fetch Google Sheets ValueRange")?;
-            write_json_line(out, &response, "failed to serialize Sheets ValueRange")
-        }
-        SheetsValuesCommand::BatchGet {
-            spreadsheet_id,
             ranges,
             value_render_option,
         } => {
-            let options = batch_get_values_options(
-                spreadsheet_id,
-                ranges,
-                value_render_option.into(),
-                spreadsheets_url,
-            );
-            let response = SheetsOperation::BatchGetValues(&options)
-                .execute(client)
-                .await
-                .context("failed to fetch Google Sheets ValueRanges")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Batch Get values response",
-            )
+            if let Some(range) = range {
+                let options = get_values_options(
+                    spreadsheet_id,
+                    range,
+                    value_render_option.into(),
+                    spreadsheets_url,
+                );
+                let response = SheetsOperation::GetValues(&options)
+                    .execute(client)
+                    .await
+                    .context("failed to fetch Google Sheets ValueRange")?;
+                write_json_line(out, &response, "failed to serialize Sheets ValueRange")
+            } else if !ranges.is_empty() {
+                let options = batch_get_values_options(
+                    spreadsheet_id,
+                    ranges,
+                    value_render_option.into(),
+                    spreadsheets_url,
+                );
+                let response = SheetsOperation::BatchGetValues(&options)
+                    .execute(client)
+                    .await
+                    .context("failed to fetch Google Sheets ValueRanges")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Batch Get values response",
+                )
+            } else {
+                bail!("sheets values get requires a positional RANGE or at least one --range")
+            }
         }
         SheetsValuesCommand::Update {
             spreadsheet_id,
@@ -303,50 +303,50 @@ pub(super) async fn run_values_unified_to<S: AccountStore>(
         SheetsValuesCommand::Get {
             spreadsheet_id,
             range,
-            value_render_option,
-        } => {
-            let options = get_values_options(
-                spreadsheet_id.clone(),
-                range,
-                value_render_option.into(),
-                spreadsheets_url,
-            );
-            let response = run_spreadsheet_attempt(
-                config,
-                store,
-                account_override,
-                &SheetsOperation::GetValues(&options),
-                state_path,
-            )
-            .await
-            .context("failed to fetch Google Sheets ValueRange")?;
-            write_json_line(out, &response, "failed to serialize Sheets ValueRange")
-        }
-        SheetsValuesCommand::BatchGet {
-            spreadsheet_id,
             ranges,
             value_render_option,
         } => {
-            let options = batch_get_values_options(
-                spreadsheet_id.clone(),
-                ranges,
-                value_render_option.into(),
-                spreadsheets_url,
-            );
-            let response = run_spreadsheet_attempt(
-                config,
-                store,
-                account_override,
-                &SheetsOperation::BatchGetValues(&options),
-                state_path,
-            )
-            .await
-            .context("failed to fetch Google Sheets ValueRanges")?;
-            write_json_line(
-                out,
-                &response,
-                "failed to serialize Sheets Batch Get values response",
-            )
+            if let Some(range) = range {
+                let options = get_values_options(
+                    spreadsheet_id.clone(),
+                    range,
+                    value_render_option.into(),
+                    spreadsheets_url,
+                );
+                let response = run_spreadsheet_attempt(
+                    config,
+                    store,
+                    account_override,
+                    &SheetsOperation::GetValues(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to fetch Google Sheets ValueRange")?;
+                write_json_line(out, &response, "failed to serialize Sheets ValueRange")
+            } else if !ranges.is_empty() {
+                let options = batch_get_values_options(
+                    spreadsheet_id.clone(),
+                    ranges,
+                    value_render_option.into(),
+                    spreadsheets_url,
+                );
+                let response = run_spreadsheet_attempt(
+                    config,
+                    store,
+                    account_override,
+                    &SheetsOperation::BatchGetValues(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to fetch Google Sheets ValueRanges")?;
+                write_json_line(
+                    out,
+                    &response,
+                    "failed to serialize Sheets Batch Get values response",
+                )
+            } else {
+                bail!("sheets values get requires a positional RANGE or at least one --range")
+            }
         }
         SheetsValuesCommand::Update {
             spreadsheet_id,

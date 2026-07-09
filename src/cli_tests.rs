@@ -2122,12 +2122,14 @@ fn sheets_values_get_defaults_to_formatted_values() {
                         SheetsValuesCommand::Get {
                             spreadsheet_id,
                             range,
+                            ranges,
                             value_render_option,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
-            assert_eq!(range, "Sheet1!A1:B2");
+            assert_eq!(range.as_deref(), Some("Sheet1!A1:B2"));
+            assert!(ranges.is_empty());
             assert_eq!(value_render_option, SheetsValueRenderOption::FormattedValue);
         }
         _ => panic!("unexpected parse result"),
@@ -2154,12 +2156,14 @@ fn sheets_values_get_accepts_formula_render_option() {
                         SheetsValuesCommand::Get {
                             spreadsheet_id,
                             range,
+                            ranges,
                             value_render_option,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
-            assert_eq!(range, "Sheet1!C1:C3");
+            assert_eq!(range.as_deref(), Some("Sheet1!C1:C3"));
+            assert!(ranges.is_empty());
             assert_eq!(value_render_option, SheetsValueRenderOption::Formula);
         }
         _ => panic!("unexpected parse result"),
@@ -2167,11 +2171,11 @@ fn sheets_values_get_accepts_formula_render_option() {
 }
 
 #[test]
-fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
+fn sheets_values_get_accepts_repeated_ranges_and_render_option() {
     let cli = parse(&[
         "sheets",
         "values",
-        "batch-get",
+        "get",
         "spreadsheet-123",
         "--range",
         "Sheet1!A1:B2",
@@ -2186,14 +2190,16 @@ fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
             command:
                 SheetsCommand::Values {
                     command:
-                        SheetsValuesCommand::BatchGet {
+                        SheetsValuesCommand::Get {
                             spreadsheet_id,
+                            range,
                             ranges,
                             value_render_option,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert!(range.is_none());
             assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
             assert_eq!(
                 value_render_option,
@@ -2205,8 +2211,21 @@ fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
 }
 
 #[test]
-fn sheets_values_batch_get_requires_range() {
-    assert!(parse(&["sheets", "values", "batch-get", "spreadsheet-123"]).is_err());
+fn sheets_values_get_requires_range() {
+    assert!(parse(&["sheets", "values", "get", "spreadsheet-123"]).is_err());
+}
+
+#[test]
+fn sheets_values_batch_get_command_is_removed() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "batch-get",
+        "spreadsheet-123",
+        "--range",
+        "Sheet1!A1:B2",
+    ])
+    .is_err());
 }
 
 #[test]

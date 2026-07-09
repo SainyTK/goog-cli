@@ -415,7 +415,8 @@ async fn run_values_get_prints_value_range_json_to_stdout() {
         &client,
         SheetsValuesCommand::Get {
             spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B2".into(),
+            range: Some("Sheet1!A1:B2".into()),
+            ranges: Vec::new(),
             value_render_option: SheetsValueRenderOption::FormattedValue,
         },
         &mut input,
@@ -461,8 +462,9 @@ async fn run_values_batch_get_prints_batch_response_json_to_stdout() {
 
     run_values_to(
         &client,
-        SheetsValuesCommand::BatchGet {
+        SheetsValuesCommand::Get {
             spreadsheet_id: "spreadsheet-123".into(),
+            range: None,
             ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
             value_render_option: SheetsValueRenderOption::Formula,
         },
@@ -537,7 +539,8 @@ async fn run_values_get_unified_uses_fallback_and_updates_mapping() {
         None,
         SheetsValuesCommand::Get {
             spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B2".into(),
+            range: Some("Sheet1!A1:B2".into()),
+            ranges: Vec::new(),
             value_render_option: SheetsValueRenderOption::FormattedValue,
         },
         &mut input,

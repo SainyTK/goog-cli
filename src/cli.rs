@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 
 use crate::auth::config::OAuthAppType;
 
@@ -1197,22 +1197,15 @@ Example:
 
 #[derive(Debug, Subcommand)]
 pub enum SheetsValuesCommand {
-    /// Fetch a raw Google Sheets ValueRange
+    /// Fetch raw Google Sheets values
+    #[command(group(ArgGroup::new("values_get_range").required(true).args(["range", "ranges"])))]
     Get {
         /// Google Sheets Spreadsheet ID to fetch
         spreadsheet_id: String,
-        /// Google Sheets A1 Range to fetch
-        range: String,
-        /// How values should be represented in the response
-        #[arg(long, value_enum, default_value = "formatted-value")]
-        value_render_option: SheetsValueRenderOption,
-    },
-    /// Fetch raw Google Sheets values from multiple ranges
-    BatchGet {
-        /// Google Sheets Spreadsheet ID to fetch
-        spreadsheet_id: String,
-        /// Google Sheets A1 Range to fetch
-        #[arg(long = "range", required = true)]
+        /// Single Google Sheets A1 Range to fetch
+        range: Option<String>,
+        /// Google Sheets A1 Range to fetch. Repeat for multiple ranges.
+        #[arg(long = "range")]
         ranges: Vec<String>,
         /// How values should be represented in the response
         #[arg(long, value_enum, default_value = "formatted-value")]
