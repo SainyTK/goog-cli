@@ -349,7 +349,7 @@ goog calendar events list primary --event-type out-of-office --event-type workin
 goog calendar events get primary EVENT_ID
 goog calendar events get primary EVENT_ID --json
 goog calendar events instances primary RECURRING_EVENT_ID --time-min 2026-07-09T00:00:00Z --time-max 2026-07-30T00:00:00Z
-goog calendar events create primary --summary "Planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok --attendee teammate@example.com --recurrence "RRULE:FREQ=WEEKLY;COUNT=4" --reminder popup:10 --color-id 5 --send-updates all
+goog calendar events create primary --summary "Planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok --attendee teammate@example.com --recurrence "RRULE:FREQ=WEEKLY;COUNT=4" --reminder popup:10 --color-id 5 --google-meet --send-updates all
 goog calendar events create primary --summary "Out of office" --start 2026-07-09 --end 2026-07-10 --all-day
 goog calendar events create primary --event ./event.json
 goog calendar events import primary --summary "Imported planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok
@@ -357,7 +357,7 @@ goog calendar events import primary --event ./event.json
 goog calendar events quick-add primary "Lunch with Sam tomorrow at noon" --send-updates none
 goog calendar events update primary EVENT_ID --summary "Planning moved" --start 2026-07-09T10:00:00+07:00 --end 2026-07-09T10:30:00+07:00 --time-zone Asia/Bangkok --send-updates external-only
 goog calendar events update primary EVENT_ID --event ./event.json
-goog calendar events patch primary EVENT_ID --summary "Planning renamed" --location "Office" --color-id 7 --no-reminders --send-updates none
+goog calendar events patch primary EVENT_ID --summary "Planning renamed" --location "Office" --color-id 7 --google-meet --meet-request-id planning-meet-1 --no-reminders --send-updates none
 goog calendar events move primary EVENT_ID --destination team@example.com
 goog calendar events delete primary EVENT_ID --send-updates all
 ```

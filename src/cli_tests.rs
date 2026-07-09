@@ -3792,6 +3792,9 @@ fn calendar_event_create_with_flags() {
         "popup:10",
         "--reminder",
         "email:60",
+        "--google-meet",
+        "--meet-request-id",
+        "meet-request-1",
         "--send-updates",
         "all",
     ])
@@ -3814,6 +3817,8 @@ fn calendar_event_create_with_flags() {
                             recurrence,
                             reminder,
                             no_reminders,
+                            google_meet,
+                            meet_request_id,
                             send_updates,
                             ..
                         },
@@ -3840,6 +3845,8 @@ fn calendar_event_create_with_flags() {
                 vec!["popup:10".to_string(), "email:60".to_string()]
             );
             assert!(!no_reminders);
+            assert!(google_meet);
+            assert_eq!(meet_request_id.as_deref(), Some("meet-request-1"));
             assert!(matches!(send_updates, Some(CalendarSendUpdates::All)));
         }
         _ => panic!("unexpected parse result"),
@@ -3861,6 +3868,25 @@ fn calendar_event_create_rejects_mixed_json_body_and_flags() {
     .unwrap_err();
 
     assert!(err.to_string().contains("cannot be used with"));
+}
+
+#[test]
+fn calendar_event_create_rejects_meet_request_id_without_google_meet() {
+    assert!(parse(&[
+        "calendar",
+        "events",
+        "create",
+        "primary",
+        "--summary",
+        "Planning",
+        "--start",
+        "2026-07-09T09:00:00+07:00",
+        "--end",
+        "2026-07-09T09:30:00+07:00",
+        "--meet-request-id",
+        "meet-request-1",
+    ])
+    .is_err());
 }
 
 #[test]

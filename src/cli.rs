@@ -1570,6 +1570,12 @@ pub enum CalendarEventsCommand {
         /// Disable default reminders for this event.
         #[arg(long, conflicts_with = "event")]
         no_reminders: bool,
+        /// Add a Google Meet conference link to the event.
+        #[arg(long, conflicts_with = "event")]
+        google_meet: bool,
+        /// Stable conference create request ID. Generated when --google-meet is used without this flag.
+        #[arg(long, conflicts_with = "event", requires = "google_meet")]
+        meet_request_id: Option<String>,
         /// Guests who should receive creation notifications: all, external-only, or none.
         #[arg(long, value_enum)]
         send_updates: Option<CalendarSendUpdates>,
@@ -1663,6 +1669,12 @@ pub enum CalendarEventsCommand {
         /// Disable default reminders for this event.
         #[arg(long, conflicts_with = "event")]
         no_reminders: bool,
+        /// Add a Google Meet conference link to the event.
+        #[arg(long, conflicts_with = "event")]
+        google_meet: bool,
+        /// Stable conference create request ID. Generated when --google-meet is used without this flag.
+        #[arg(long, conflicts_with = "event", requires = "google_meet")]
+        meet_request_id: Option<String>,
         /// Guests who should receive update notifications: all, external-only, or none.
         #[arg(long, value_enum)]
         send_updates: Option<CalendarSendUpdates>,
@@ -1712,6 +1724,12 @@ pub enum CalendarEventsCommand {
         /// Disable default reminders for this event.
         #[arg(long, conflicts_with = "event")]
         no_reminders: bool,
+        /// Add a Google Meet conference link to the event.
+        #[arg(long, conflicts_with = "event")]
+        google_meet: bool,
+        /// Stable conference create request ID. Generated when --google-meet is used without this flag.
+        #[arg(long, conflicts_with = "event", requires = "google_meet")]
+        meet_request_id: Option<String>,
         /// Guests who should receive update notifications: all, external-only, or none.
         #[arg(long, value_enum)]
         send_updates: Option<CalendarSendUpdates>,

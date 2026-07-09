@@ -761,6 +761,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             recurrence,
             reminder,
             no_reminders,
+            google_meet,
+            meet_request_id,
             send_updates,
         } => {
             let request_body = match event {
@@ -778,12 +780,15 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     recurrence,
                     reminder,
                     no_reminders,
+                    google_meet,
+                    meet_request_id,
                 )?,
             };
             let options = write_event_options_insert(
                 calendar_id.clone(),
                 request_body,
                 send_updates.map(SendUpdates::from),
+                google_meet,
                 base_url,
             );
             let target_resource_key = resource_key("calendar", &calendar_id);
@@ -830,6 +835,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     recurrence,
                     reminder,
                     no_reminders,
+                    false,
+                    None,
                 )?,
             };
             let options = write_event_options_import(calendar_id.clone(), request_body, base_url);
@@ -862,6 +869,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             recurrence,
             reminder,
             no_reminders,
+            google_meet,
+            meet_request_id,
             send_updates,
         } => {
             let request_body = match event {
@@ -879,6 +888,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     recurrence,
                     reminder,
                     no_reminders,
+                    google_meet,
+                    meet_request_id,
                 )?,
             };
             let options = write_event_options_update(
@@ -886,6 +897,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                 event_id.clone(),
                 request_body,
                 send_updates.map(SendUpdates::from),
+                google_meet,
                 base_url,
             );
             let target_resource_key = calendar_event_resource_key(&calendar_id, &event_id);
@@ -917,6 +929,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             recurrence,
             reminder,
             no_reminders,
+            google_meet,
+            meet_request_id,
             send_updates,
         } => {
             let request_body = match event {
@@ -934,6 +948,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     recurrence,
                     reminder,
                     no_reminders,
+                    google_meet,
+                    meet_request_id,
                 )?,
             };
             let options = write_event_options_patch(
@@ -941,6 +957,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                 event_id.clone(),
                 request_body,
                 send_updates.map(SendUpdates::from),
+                google_meet,
                 base_url,
             );
             let target_resource_key = calendar_event_resource_key(&calendar_id, &event_id);
@@ -1834,11 +1851,15 @@ fn write_event_options_insert(
     calendar_id: String,
     request_body: serde_json::Value,
     send_updates: Option<SendUpdates>,
+    conference_data: bool,
     base_url: Option<&str>,
 ) -> WriteEventOptions {
     let mut options = WriteEventOptions::insert(calendar_id, request_body);
     if let Some(send_updates) = send_updates {
         options = options.with_send_updates(send_updates);
+    }
+    if conference_data {
+        options = options.with_conference_data_version(1);
     }
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
@@ -1863,11 +1884,15 @@ fn write_event_options_update(
     event_id: String,
     request_body: serde_json::Value,
     send_updates: Option<SendUpdates>,
+    conference_data: bool,
     base_url: Option<&str>,
 ) -> WriteEventOptions {
     let mut options = WriteEventOptions::update(calendar_id, event_id, request_body);
     if let Some(send_updates) = send_updates {
         options = options.with_send_updates(send_updates);
+    }
+    if conference_data {
+        options = options.with_conference_data_version(1);
     }
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
@@ -1880,11 +1905,15 @@ fn write_event_options_patch(
     event_id: String,
     request_body: serde_json::Value,
     send_updates: Option<SendUpdates>,
+    conference_data: bool,
     base_url: Option<&str>,
 ) -> WriteEventOptions {
     let mut options = WriteEventOptions::patch(calendar_id, event_id, request_body);
     if let Some(send_updates) = send_updates {
         options = options.with_send_updates(send_updates);
+    }
+    if conference_data {
+        options = options.with_conference_data_version(1);
     }
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
@@ -2223,6 +2252,8 @@ fn build_event_request_body(
     recurrence: Vec<String>,
     reminders: Vec<String>,
     no_reminders: bool,
+    google_meet: bool,
+    meet_request_id: Option<String>,
 ) -> Result<serde_json::Value> {
     let summary = summary.context("--summary is required unless --event is used")?;
     let start = start.context("--start is required unless --event is used")?;
@@ -2274,6 +2305,12 @@ fn build_event_request_body(
     if no_reminders || !reminders.is_empty() {
         body.insert("reminders".into(), reminder_body(reminders, no_reminders)?);
     }
+    if google_meet {
+        body.insert(
+            "conferenceData".into(),
+            google_meet_conference_body(meet_request_id)?,
+        );
+    }
 
     Ok(serde_json::Value::Object(body))
 }
@@ -2292,6 +2329,8 @@ fn build_event_patch_body(
     recurrence: Vec<String>,
     reminders: Vec<String>,
     no_reminders: bool,
+    google_meet: bool,
+    meet_request_id: Option<String>,
 ) -> Result<serde_json::Value> {
     if all_day && start.is_none() && end.is_none() {
         anyhow::bail!("--all-day requires --start or --end when patching");
@@ -2350,11 +2389,43 @@ fn build_event_patch_body(
     if no_reminders || !reminders.is_empty() {
         body.insert("reminders".into(), reminder_body(reminders, no_reminders)?);
     }
+    if google_meet {
+        body.insert(
+            "conferenceData".into(),
+            google_meet_conference_body(meet_request_id)?,
+        );
+    }
     if body.is_empty() {
         anyhow::bail!("patch requires --event or at least one event field flag");
     }
 
     Ok(serde_json::Value::Object(body))
+}
+
+fn google_meet_conference_body(meet_request_id: Option<String>) -> Result<serde_json::Value> {
+    let request_id = match meet_request_id {
+        Some(request_id) if !request_id.trim().is_empty() => request_id,
+        Some(_) => anyhow::bail!("--meet-request-id cannot be empty"),
+        None => generated_meet_request_id(),
+    };
+
+    Ok(serde_json::json!({
+        "createRequest": {
+            "requestId": request_id,
+            "conferenceSolutionKey": {
+                "type": "hangoutsMeet"
+            }
+        }
+    }))
+}
+
+fn generated_meet_request_id() -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let process_id = std::process::id();
+    format!("goog-meet-{process_id}-{millis}")
 }
 
 fn event_time_body(

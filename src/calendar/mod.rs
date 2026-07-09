@@ -821,6 +821,7 @@ pub struct WriteEventOptions {
     pub event_id: Option<String>,
     pub request_body: Value,
     pub send_updates: Option<SendUpdates>,
+    pub conference_data_version: Option<u32>,
     base_url: String,
 }
 
@@ -831,6 +832,7 @@ impl WriteEventOptions {
             event_id: None,
             request_body,
             send_updates: None,
+            conference_data_version: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
@@ -845,6 +847,7 @@ impl WriteEventOptions {
             event_id: Some(event_id.into()),
             request_body,
             send_updates: None,
+            conference_data_version: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
@@ -859,6 +862,7 @@ impl WriteEventOptions {
             event_id: Some(event_id.into()),
             request_body,
             send_updates: None,
+            conference_data_version: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
@@ -869,12 +873,18 @@ impl WriteEventOptions {
             event_id: None,
             request_body,
             send_updates: None,
+            conference_data_version: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
 
     pub fn with_send_updates(mut self, send_updates: SendUpdates) -> Self {
         self.send_updates = Some(send_updates);
+        self
+    }
+
+    pub fn with_conference_data_version(mut self, conference_data_version: u32) -> Self {
+        self.conference_data_version = Some(conference_data_version);
         self
     }
 
@@ -886,6 +896,7 @@ impl WriteEventOptions {
     fn insert_url(&self) -> Result<Url, CalendarError> {
         let mut url = calendar_url(&self.base_url, &["calendars", &self.calendar_id, "events"])?;
         append_send_updates(&mut url, self.send_updates);
+        append_conference_data_version(&mut url, self.conference_data_version);
         Ok(url)
     }
 
@@ -906,6 +917,7 @@ impl WriteEventOptions {
             &["calendars", &self.calendar_id, "events", event_id],
         )?;
         append_send_updates(&mut url, self.send_updates);
+        append_conference_data_version(&mut url, self.conference_data_version);
         Ok(url)
     }
 }
@@ -1077,6 +1089,15 @@ fn append_send_updates(url: &mut Url, send_updates: Option<SendUpdates>) {
     if let Some(send_updates) = send_updates {
         url.query_pairs_mut()
             .append_pair("sendUpdates", send_updates.api_value());
+    }
+}
+
+fn append_conference_data_version(url: &mut Url, conference_data_version: Option<u32>) {
+    if let Some(conference_data_version) = conference_data_version {
+        url.query_pairs_mut().append_pair(
+            "conferenceDataVersion",
+            &conference_data_version.to_string(),
+        );
     }
 }
 

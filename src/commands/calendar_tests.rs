@@ -1985,6 +1985,8 @@ async fn run_events_create_sends_event_body() {
             recurrence: vec![],
             reminder: vec![],
             no_reminders: false,
+            google_meet: false,
+            meet_request_id: None,
             send_updates: None,
         },
         &mut input,
@@ -2008,6 +2010,7 @@ async fn run_events_create_builds_event_body_from_flags() {
     Mock::given(method("POST"))
         .and(path("/calendar/v3/calendars/primary/events"))
         .and(query_param("sendUpdates", "all"))
+        .and(query_param("conferenceDataVersion", "1"))
         .and(header("authorization", "Bearer calendar-access"))
         .and(body_json(serde_json::json!({
             "summary": "Planning",
@@ -2035,6 +2038,14 @@ async fn run_events_create_builds_event_body_from_flags() {
                     { "method": "popup", "minutes": 10 },
                     { "method": "email", "minutes": 60 }
                 ]
+            },
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": "meet-request-1",
+                    "conferenceSolutionKey": {
+                        "type": "hangoutsMeet"
+                    }
+                }
             }
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -2072,6 +2083,8 @@ async fn run_events_create_builds_event_body_from_flags() {
             recurrence: vec!["RRULE:FREQ=WEEKLY;COUNT=4".into()],
             reminder: vec!["popup:10".into(), "email:60".into()],
             no_reminders: false,
+            google_meet: true,
+            meet_request_id: Some("meet-request-1".into()),
             send_updates: Some(crate::cli::CalendarSendUpdates::All),
         },
         &mut input,
@@ -2215,6 +2228,8 @@ async fn run_events_create_builds_all_day_event_body_from_flags() {
             recurrence: vec![],
             reminder: vec![],
             no_reminders: false,
+            google_meet: false,
+            meet_request_id: None,
             send_updates: None,
         },
         &mut input,
@@ -2279,6 +2294,8 @@ async fn run_events_update_sends_event_body() {
             recurrence: vec![],
             reminder: vec![],
             no_reminders: false,
+            google_meet: false,
+            meet_request_id: None,
             send_updates: None,
         },
         &mut input,
@@ -2362,6 +2379,8 @@ async fn run_events_update_builds_event_body_from_flags() {
             recurrence: vec!["RRULE:FREQ=DAILY;COUNT=3".into()],
             reminder: vec![],
             no_reminders: true,
+            google_meet: false,
+            meet_request_id: None,
             send_updates: Some(crate::cli::CalendarSendUpdates::ExternalOnly),
         },
         &mut input,
@@ -2385,6 +2404,7 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
     Mock::given(method("PATCH"))
         .and(path("/calendar/v3/calendars/primary/events/event-789"))
         .and(query_param("sendUpdates", "none"))
+        .and(query_param("conferenceDataVersion", "1"))
         .and(header("authorization", "Bearer calendar-access"))
         .and(body_json(serde_json::json!({
             "summary": "Planning renamed",
@@ -2398,6 +2418,14 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
                 "overrides": [
                     { "method": "popup", "minutes": 5 }
                 ]
+            },
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": "meet-patch-1",
+                    "conferenceSolutionKey": {
+                        "type": "hangoutsMeet"
+                    }
+                }
             }
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -2436,6 +2464,8 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
             recurrence: vec!["RRULE:FREQ=MONTHLY;COUNT=2".into()],
             reminder: vec!["popup:5".into()],
             no_reminders: false,
+            google_meet: true,
+            meet_request_id: Some("meet-patch-1".into()),
             send_updates: Some(crate::cli::CalendarSendUpdates::None),
         },
         &mut input,
@@ -2480,6 +2510,8 @@ async fn run_events_patch_rejects_empty_flag_body() {
             recurrence: vec![],
             reminder: vec![],
             no_reminders: false,
+            google_meet: false,
+            meet_request_id: None,
             send_updates: None,
         },
         &mut input,
