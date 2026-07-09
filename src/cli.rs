@@ -259,6 +259,9 @@ impl SlidesCommand {
             }
             | SlidesCommand::TextBox {
                 presentation_id, ..
+            }
+            | SlidesCommand::Image {
+                presentation_id, ..
             } => presentation_id,
         };
         *presentation_id = crate::slides::extract_presentation_id(presentation_id);
@@ -332,6 +335,32 @@ pub enum SlidesCommand {
         width: f64,
         /// Text box height in points
         #[arg(long, default_value_t = 120.0)]
+        height: f64,
+    },
+    /// Add an image to a slide without writing Batch Update JSON
+    Image {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the image on
+        #[arg(long)]
+        page_id: String,
+        /// Publicly reachable image URL
+        #[arg(long)]
+        url: String,
+        /// Stable object ID for the new image. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Image width in points
+        #[arg(long, default_value_t = 360.0)]
+        width: f64,
+        /// Image height in points
+        #[arg(long, default_value_t = 240.0)]
         height: f64,
     },
 }

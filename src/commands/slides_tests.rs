@@ -359,3 +359,89 @@ async fn run_text_box_sends_create_shape_and_insert_text_requests() {
         "{\"presentationId\":\"presentation-123\",\"replies\":[{},{}]}\n"
     );
 }
+
+#[tokio::test]
+async fn run_image_sends_create_image_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "createImage": {
+                        "objectId": "image-1",
+                        "url": "https://example.com/chart.png",
+                        "elementProperties": {
+                            "pageObjectId": "slide-1",
+                            "size": {
+                                "width": {
+                                    "magnitude": 300.0,
+                                    "unit": "PT"
+                                },
+                                "height": {
+                                    "magnitude": 180.0,
+                                    "unit": "PT"
+                                }
+                            },
+                            "transform": {
+                                "scaleX": 1.0,
+                                "scaleY": 1.0,
+                                "translateX": 48.0,
+                                "translateY": 96.0,
+                                "unit": "PT"
+                            }
+                        }
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {
+                    "createImage": {
+                        "objectId": "image-1"
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_image_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ImageRequest {
+            presentation_id: "presentation-123".into(),
+            page_id: "slide-1".into(),
+            url: "https://example.com/chart.png".into(),
+            object_id: Some("image-1".into()),
+            x: 48.0,
+            y: 96.0,
+            width: 300.0,
+            height: 180.0,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{\"createImage\":{\"objectId\":\"image-1\"}}]}\n"
+    );
+}

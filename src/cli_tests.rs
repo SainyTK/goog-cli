@@ -2319,6 +2319,55 @@ fn slides_text_box_with_flags() {
 }
 
 #[test]
+fn slides_image_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "image",
+        "presentation-123",
+        "--page-id",
+        "slide-1",
+        "--url",
+        "https://example.com/chart.png",
+        "--object-id",
+        "image-1",
+        "--x",
+        "48",
+        "--y",
+        "96",
+        "--width",
+        "300",
+        "--height",
+        "180",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Image {
+                    presentation_id,
+                    page_id,
+                    url,
+                    object_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(url, "https://example.com/chart.png");
+            assert_eq!(object_id.as_deref(), Some("image-1"));
+            assert_eq!(x, 48.0);
+            assert_eq!(y, 96.0);
+            assert_eq!(width, 300.0);
+            assert_eq!(height, 180.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_slide_create_with_flags() {
     let cli = parse(&[
         "slides",
