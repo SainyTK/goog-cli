@@ -895,19 +895,10 @@ pub enum DocsListType {
 
 #[derive(Debug, Subcommand)]
 pub enum MailCommand {
-    /// List recent Inbox GoogleMail Messages
+    /// List recent Inbox messages, or search Gmail when a query is provided
     List {
-        /// Maximum number of messages to return (default: 10)
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Emit newline-delimited JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Search GoogleMail Messages with a Gmail Mailbox Query
-    Search {
-        /// Gmail Mailbox Query to pass through to GoogleMail
-        query: String,
+        /// Gmail search query. Omit to list recent Inbox messages.
+        query: Option<String>,
         /// Maximum number of messages to return (default: 10)
         #[arg(long)]
         limit: Option<u32>,

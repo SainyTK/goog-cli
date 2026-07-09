@@ -29,23 +29,11 @@ pub fn run<S: AccountStore>(
     quiet: bool,
 ) -> Result<()> {
     match cmd {
-        MailCommand::List { limit, json } => {
+        MailCommand::List { query, limit, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             runtime.block_on(run_list_to(
-                &client,
-                limit,
-                json,
-                &mut std::io::stdout(),
-                None,
-            ))
-        }
-        MailCommand::Search { query, limit, json } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            let client = AuthClient::from_config(config.clone(), store, account_override)?;
-            runtime.block_on(run_search_to(
                 &client,
                 query,
                 limit,
@@ -175,39 +163,25 @@ pub(super) struct DraftAttachmentInput {
 
 pub(super) async fn run_list_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
+    query: Option<String>,
     limit: Option<u32>,
     json: bool,
     out: &mut impl Write,
     messages_url: Option<&str>,
 ) -> Result<()> {
-    let options = list_options(limit, messages_url);
+    let is_search = query.is_some();
+    let options = list_options(query, limit, messages_url);
     run_summary_to(
         client,
         &options,
         json,
         out,
-        "failed to list GoogleMail Messages",
-        None,
-    )
-    .await
-}
-
-pub(super) async fn run_search_to<S: AccountStore>(
-    client: &AuthClient<'_, S>,
-    query: String,
-    limit: Option<u32>,
-    json: bool,
-    out: &mut impl Write,
-    messages_url: Option<&str>,
-) -> Result<()> {
-    let options = search_options(query, limit, messages_url);
-    run_summary_to(
-        client,
-        &options,
-        json,
-        out,
-        "failed to search GoogleMail Messages",
-        Some(SEARCH_EMPTY_TABLE_MESSAGE),
+        if is_search {
+            "failed to search GoogleMail Messages"
+        } else {
+            "failed to list GoogleMail Messages"
+        },
+        is_search.then_some(SEARCH_EMPTY_TABLE_MESSAGE),
     )
     .await
 }
@@ -489,20 +463,16 @@ fn is_target_access_failure(err: &MailError) -> bool {
     matches!(err, MailError::NotFound | MailError::PermissionDenied)
 }
 
-fn list_options(limit: Option<u32>, messages_url: Option<&str>) -> ListMessagesOptions {
-    let mut options = ListMessagesOptions::inbox(limit.unwrap_or(DEFAULT_LIST_LIMIT));
-    if let Some(messages_url) = messages_url {
-        options = options.with_messages_url(messages_url);
-    }
-    options
-}
-
-fn search_options(
-    query: String,
+fn list_options(
+    query: Option<String>,
     limit: Option<u32>,
     messages_url: Option<&str>,
 ) -> ListMessagesOptions {
-    let mut options = ListMessagesOptions::search(query, limit.unwrap_or(DEFAULT_LIST_LIMIT));
+    let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
+    let mut options = match query {
+        Some(query) => ListMessagesOptions::search(query, limit),
+        None => ListMessagesOptions::inbox(limit),
+    };
     if let Some(messages_url) = messages_url {
         options = options.with_messages_url(messages_url);
     }

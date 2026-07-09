@@ -153,7 +153,7 @@ async fn run_list_defaults_to_inbox_limit_10_and_renders_summary_table() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_list_to(&client, None, false, &mut out, Some(&messages_url))
+    run_list_to(&client, None, None, false, &mut out, Some(&messages_url))
         .await
         .unwrap();
 
@@ -183,9 +183,16 @@ async fn run_list_uses_explicit_limit_for_inbox_messages() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_list_to(&client, Some(25), false, &mut out, Some(&messages_url))
-        .await
-        .unwrap();
+    run_list_to(
+        &client,
+        None,
+        Some(25),
+        false,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
@@ -194,7 +201,7 @@ async fn run_list_uses_explicit_limit_for_inbox_messages() {
 }
 
 #[tokio::test]
-async fn run_search_emits_ndjson_summary_rows() {
+async fn run_list_with_query_emits_ndjson_summary_rows() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages"))
@@ -230,9 +237,9 @@ async fn run_search_emits_ndjson_summary_rows() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_search_to(
+    run_list_to(
         &client,
-        "has:attachment".into(),
+        Some("has:attachment".into()),
         Some(25),
         true,
         &mut out,
@@ -248,7 +255,7 @@ async fn run_search_emits_ndjson_summary_rows() {
 }
 
 #[tokio::test]
-async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table() {
+async fn run_list_with_query_defaults_to_limit_10_without_forcing_inbox_and_renders_table() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages"))
@@ -291,9 +298,9 @@ async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_search_to(
+    run_list_to(
         &client,
-        "from:alice@example.com".into(),
+        Some("from:alice@example.com".into()),
         None,
         false,
         &mut out,
@@ -309,7 +316,7 @@ async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table
 }
 
 #[tokio::test]
-async fn run_search_prints_no_matches_message_for_empty_table_results() {
+async fn run_list_with_query_prints_no_matches_message_for_empty_table_results() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages"))
@@ -328,9 +335,9 @@ async fn run_search_prints_no_matches_message_for_empty_table_results() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_search_to(
+    run_list_to(
         &client,
-        "zzzzxyqqqnotexist12345".into(),
+        Some("zzzzxyqqqnotexist12345".into()),
         None,
         false,
         &mut out,
@@ -346,7 +353,7 @@ async fn run_search_prints_no_matches_message_for_empty_table_results() {
 }
 
 #[tokio::test]
-async fn run_search_prints_empty_json_array_for_empty_json_results() {
+async fn run_list_with_query_prints_empty_json_array_for_empty_json_results() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages"))
@@ -365,9 +372,9 @@ async fn run_search_prints_empty_json_array_for_empty_json_results() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_search_to(
+    run_list_to(
         &client,
-        "zzzzxyqqqnotexist12345".into(),
+        Some("zzzzxyqqqnotexist12345".into()),
         None,
         true,
         &mut out,

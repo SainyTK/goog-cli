@@ -1080,8 +1080,9 @@ fn mail_list_defaults_to_table_with_no_explicit_limit() {
     let cli = parse(&["mail", "list"]).unwrap();
     match cli.command {
         Command::Mail {
-            command: MailCommand::List { limit, json },
+            command: MailCommand::List { query, limit, json },
         } => {
+            assert!(query.is_none());
             assert!(limit.is_none());
             assert!(!json);
         }
@@ -1094,8 +1095,9 @@ fn mail_list_accepts_limit_and_json() {
     let cli = parse(&["mail", "list", "--limit", "25", "--json"]).unwrap();
     match cli.command {
         Command::Mail {
-            command: MailCommand::List { limit, json },
+            command: MailCommand::List { query, limit, json },
         } => {
+            assert!(query.is_none());
             assert_eq!(limit, Some(25));
             assert!(json);
         }
@@ -1109,10 +1111,10 @@ fn mail_list_does_not_accept_all() {
 }
 
 #[test]
-fn mail_search_with_query_limit_and_json() {
+fn mail_list_accepts_query_limit_and_json() {
     let cli = parse(&[
         "mail",
-        "search",
+        "list",
         "from:alice@example.com",
         "--limit",
         "25",
@@ -1121,9 +1123,9 @@ fn mail_search_with_query_limit_and_json() {
     .unwrap();
     match cli.command {
         Command::Mail {
-            command: MailCommand::Search { query, limit, json },
+            command: MailCommand::List { query, limit, json },
         } => {
-            assert_eq!(query, "from:alice@example.com");
+            assert_eq!(query.as_deref(), Some("from:alice@example.com"));
             assert_eq!(limit, Some(25));
             assert!(json);
         }
@@ -1132,13 +1134,13 @@ fn mail_search_with_query_limit_and_json() {
 }
 
 #[test]
-fn mail_search_requires_query() {
+fn mail_search_is_not_a_command() {
     assert!(parse(&["mail", "search"]).is_err());
 }
 
 #[test]
-fn mail_search_does_not_accept_all() {
-    assert!(parse(&["mail", "search", "has:attachment", "--all"]).is_err());
+fn mail_list_with_query_does_not_accept_all() {
+    assert!(parse(&["mail", "list", "has:attachment", "--all"]).is_err());
 }
 
 #[test]
