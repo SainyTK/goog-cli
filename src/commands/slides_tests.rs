@@ -1755,6 +1755,112 @@ async fn run_image_sends_create_image_request() {
 }
 
 #[tokio::test]
+async fn run_video_sends_create_video_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "createVideo": {
+                        "objectId": "video-1",
+                        "source": "YOUTUBE",
+                        "id": "dQw4w9WgXcQ",
+                        "elementProperties": {
+                            "pageObjectId": "slide-1",
+                            "size": {
+                                "width": {
+                                    "magnitude": 300.0,
+                                    "unit": "PT"
+                                },
+                                "height": {
+                                    "magnitude": 180.0,
+                                    "unit": "PT"
+                                }
+                            },
+                            "transform": {
+                                "scaleX": 1.0,
+                                "scaleY": 1.0,
+                                "translateX": 48.0,
+                                "translateY": 96.0,
+                                "unit": "PT"
+                            }
+                        }
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {
+                    "createVideo": {
+                        "objectId": "video-1"
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_video_unified_to(
+        &test_config(),
+        &store,
+        None,
+        VideoRequest {
+            presentation_id: "presentation-123".into(),
+            page_id: "slide-1".into(),
+            video_id: "dQw4w9WgXcQ".into(),
+            object_id: Some("video-1".into()),
+            x: 48.0,
+            y: 96.0,
+            width: 300.0,
+            height: 180.0,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{\"createVideo\":{\"objectId\":\"video-1\"}}]}\n"
+    );
+}
+
+#[test]
+fn build_video_rejects_empty_video_id() {
+    let err = build_video_batch_update(VideoRequest {
+        presentation_id: "presentation-123".into(),
+        page_id: "slide-1".into(),
+        video_id: " ".into(),
+        object_id: Some("video-1".into()),
+        x: 48.0,
+        y: 96.0,
+        width: 300.0,
+        height: 180.0,
+    })
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("slides video --video-id must not be empty"));
+}
+
+#[tokio::test]
 async fn run_table_sends_create_table_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

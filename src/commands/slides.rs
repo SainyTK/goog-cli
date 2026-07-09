@@ -492,6 +492,33 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::Video {
+            presentation_id,
+            page_id,
+            video_id,
+            object_id,
+            x,
+            y,
+            width,
+            height,
+        } => run_with_runtime(run_video_unified_to(
+            config,
+            store,
+            account_override,
+            VideoRequest {
+                presentation_id,
+                page_id,
+                video_id,
+                object_id,
+                x,
+                y,
+                width,
+                height,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::Table {
             presentation_id,
             page_id,
@@ -2079,6 +2106,92 @@ fn build_image_batch_update(request: ImageRequest) -> serde_json::Value {
 
 fn generated_image_object_id() -> String {
     format!("goog_image_{}", chrono::Utc::now().timestamp_millis())
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct VideoRequest {
+    pub presentation_id: String,
+    pub page_id: String,
+    pub video_id: String,
+    pub object_id: Option<String>,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+pub(super) async fn run_video_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: VideoRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_video_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to add Google Slides video")?;
+
+    write_json_line(out, &response, "failed to serialize Slides video response")
+}
+
+pub(super) fn build_video_batch_update(request: VideoRequest) -> Result<serde_json::Value> {
+    if request.video_id.trim().is_empty() {
+        bail!("slides video --video-id must not be empty");
+    }
+
+    let object_id = request.object_id.unwrap_or_else(generated_video_object_id);
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "createVideo": {
+                    "objectId": object_id,
+                    "source": "YOUTUBE",
+                    "id": request.video_id,
+                    "elementProperties": {
+                        "pageObjectId": request.page_id,
+                        "size": {
+                            "width": {
+                                "magnitude": request.width,
+                                "unit": "PT"
+                            },
+                            "height": {
+                                "magnitude": request.height,
+                                "unit": "PT"
+                            }
+                        },
+                        "transform": {
+                            "scaleX": 1.0,
+                            "scaleY": 1.0,
+                            "translateX": request.x,
+                            "translateY": request.y,
+                            "unit": "PT"
+                        }
+                    }
+                }
+            }
+        ]
+    }))
+}
+
+fn generated_video_object_id() -> String {
+    format!("goog_video_{}", chrono::Utc::now().timestamp_millis())
 }
 
 #[derive(Debug, Clone)]

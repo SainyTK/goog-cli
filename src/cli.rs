@@ -311,6 +311,9 @@ impl SlidesCommand {
             | SlidesCommand::Image {
                 presentation_id, ..
             }
+            | SlidesCommand::Video {
+                presentation_id, ..
+            }
             | SlidesCommand::Table {
                 presentation_id, ..
             }
@@ -428,6 +431,32 @@ pub enum SlidesCommand {
         #[arg(long, default_value_t = 360.0)]
         width: f64,
         /// Image height in points
+        #[arg(long, default_value_t = 240.0)]
+        height: f64,
+    },
+    /// Add a YouTube video to a slide without writing Batch Update JSON
+    Video {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the video on
+        #[arg(long)]
+        page_id: String,
+        /// YouTube video ID, such as dQw4w9WgXcQ
+        #[arg(long)]
+        video_id: String,
+        /// Stable object ID for the new video. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Video width in points
+        #[arg(long, default_value_t = 360.0)]
+        width: f64,
+        /// Video height in points
         #[arg(long, default_value_t = 240.0)]
         height: f64,
     },
