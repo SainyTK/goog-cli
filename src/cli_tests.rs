@@ -3,8 +3,8 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DocsMapType,
-    DriveCommand, DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    DocsNamedRangeCommand, DriveCommand, DriveListType, MailCommand, SheetsCommand,
+    SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -1194,16 +1194,141 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
         assert!(!command_help.contains("--after-heading <AFTER_HEADING>"));
     }
 
-    for command in ["apply-styles", "apply-list", "create-named-range"] {
+    for command in ["apply-styles", "apply-list"] {
         let command_help = help(&["docs", command, "--help"]);
         assert!(command_help.contains("Provide exactly one range selector."));
         assert!(command_help.contains("--from-index START --to-index END"));
         assert!(command_help.contains("--text TEXT with optional --match N"));
     }
 
+    let create_named_range_help = help(&["docs", "named-range", "create", "--help"]);
+    assert!(create_named_range_help.contains("Provide exactly one range selector."));
+    assert!(create_named_range_help.contains("--from-index START --to-index END"));
+    assert!(create_named_range_help.contains("--text TEXT with optional --match N"));
+
     let apply_styles_help = help(&["docs", "apply-styles", "--help"]);
     assert!(apply_styles_help.contains("--paragraph-style <PARAGRAPH_STYLE>"));
     assert!(!apply_styles_help.contains("--heading <HEADING>"));
+}
+
+#[test]
+fn docs_named_range_create_accepts_range_selector() {
+    let cli = parse(&[
+        "docs",
+        "named-range",
+        "create",
+        "document-123",
+        "highlights",
+        "--text",
+        "quarterly plan",
+        "--match",
+        "2",
+        "--dry-run",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::NamedRange {
+                    command:
+                        DocsNamedRangeCommand::Create {
+                            document_id,
+                            name,
+                            text,
+                            match_number,
+                            dry_run,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert_eq!(name, "highlights");
+            assert_eq!(text.as_deref(), Some("quarterly plan"));
+            assert_eq!(match_number, Some(2));
+            assert!(dry_run);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn docs_named_range_delete_accepts_name_or_id_selector() {
+    let cli = parse(&[
+        "docs",
+        "named-range",
+        "delete",
+        "document-123",
+        "--name",
+        "highlights",
+        "--json",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::NamedRange {
+                    command:
+                        DocsNamedRangeCommand::Delete {
+                            document_id,
+                            name,
+                            named_range_id,
+                            json,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert_eq!(name.as_deref(), Some("highlights"));
+            assert!(named_range_id.is_none());
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    let cli = parse(&[
+        "docs",
+        "named-range",
+        "delete",
+        "document-123",
+        "--named-range-id",
+        "named-range-123",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::NamedRange {
+                    command: DocsNamedRangeCommand::Delete { named_range_id, .. },
+                },
+        } => {
+            assert_eq!(named_range_id.as_deref(), Some("named-range-123"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn docs_flat_named_range_commands_are_removed() {
+    assert!(parse(&[
+        "docs",
+        "create-named-range",
+        "document-123",
+        "highlights",
+        "--text",
+        "quarterly plan",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "delete-named-range",
+        "document-123",
+        "--name",
+        "highlights",
+    ])
+    .is_err());
 }
 
 #[test]

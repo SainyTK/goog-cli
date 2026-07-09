@@ -221,8 +221,8 @@ goog docs insert-section-break DOCUMENT_ID --section-type next-page --at 'headin
 goog docs create-header DOCUMENT_ID
 goog docs create-footer DOCUMENT_ID
 goog docs insert-footnote DOCUMENT_ID --at 'after-text:quarterly plan'
-goog docs create-named-range DOCUMENT_ID "highlights" --text "quarterly plan"
-goog docs delete-named-range DOCUMENT_ID --name "highlights"
+goog docs named-range create DOCUMENT_ID "highlights" --text "quarterly plan"
+goog docs named-range delete DOCUMENT_ID --name "highlights"
 goog docs batch-update DOCUMENT_ID --requests ./requests.json
 ```
 

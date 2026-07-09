@@ -6,7 +6,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{DocsCommand, DocsMapType};
+use crate::cli::{DocsCommand, DocsMapType, DocsNamedRangeCommand};
 use crate::docs::{
     batch_update_document,
     change::{
@@ -599,68 +599,13 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::CreateNamedRange {
-            document_id,
-            name,
-            from_index,
-            to_index,
-            entry,
-            page,
-            line,
-            text,
-            match_number,
-            dry_run,
-            json,
-            required_revision_id,
-        } => {
-            let selector =
-                range_selector(from_index, to_index, entry, page, line, text, match_number)?;
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_create_named_range_unified_to(
-                config,
-                store,
-                account_override,
-                CreateNamedRangeCommand {
-                    document_id,
-                    name,
-                    selector,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
-                &mut std::io::stdout(),
-                None,
-                None,
-            ))
-        }
-        DocsCommand::DeleteNamedRange {
-            document_id,
-            named_range_id,
-            name,
-            dry_run,
-            json,
-            required_revision_id,
-        } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_delete_named_range_unified_to(
-                config,
-                store,
-                account_override,
-                DeleteNamedRangeCommand {
-                    document_id,
-                    named_range_id,
-                    name,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
-                &mut std::io::stdout(),
-                None,
-                None,
-            ))
-        }
+        DocsCommand::NamedRange { command } => run_named_range_command(
+            command,
+            config,
+            store,
+            account_override,
+            &mut std::io::stdout(),
+        ),
         DocsCommand::Get {
             document_id,
             fields,
@@ -702,6 +647,79 @@ pub fn run<S: AccountStore>(
         }
         DocsCommand::StyleTemplate { document_id, json } => {
             run_show_style_template(&document_id, json, &mut std::io::stdout(), None)
+        }
+    }
+}
+
+fn run_named_range_command<S: AccountStore>(
+    command: DocsNamedRangeCommand,
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    out: &mut impl Write,
+) -> Result<()> {
+    match command {
+        DocsNamedRangeCommand::Create {
+            document_id,
+            name,
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            text,
+            match_number,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector =
+                range_selector(from_index, to_index, entry, page, line, text, match_number)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_named_range_unified_to(
+                config,
+                store,
+                account_override,
+                CreateNamedRangeCommand {
+                    document_id,
+                    name,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                out,
+                None,
+                None,
+            ))
+        }
+        DocsNamedRangeCommand::Delete {
+            document_id,
+            named_range_id,
+            name,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_delete_named_range_unified_to(
+                config,
+                store,
+                account_override,
+                DeleteNamedRangeCommand {
+                    document_id,
+                    named_range_id,
+                    name,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                out,
+                None,
+                None,
+            ))
         }
     }
 }
