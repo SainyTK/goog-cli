@@ -277,6 +277,9 @@ impl SlidesCommand {
                     | SlidesObjectCommand::Style {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::TextStyle {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::Delete {
                         presentation_id, ..
                     },
@@ -592,6 +595,31 @@ pub enum SlidesObjectCommand {
         /// Outline weight in points
         #[arg(long)]
         outline_weight: Option<f64>,
+    },
+    /// Style text inside a shape or text box without writing Batch Update JSON
+    TextStyle {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Shape or text box page object ID whose text should be styled
+        object_id: String,
+        /// Text color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        color: Option<String>,
+        /// Font family, such as Arial or Georgia
+        #[arg(long)]
+        font_family: Option<String>,
+        /// Font size in points
+        #[arg(long)]
+        font_size: Option<f64>,
+        /// Set or clear bold. Omit the value to set true.
+        #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+        bold: Option<bool>,
+        /// Set or clear italic. Omit the value to set true.
+        #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+        italic: Option<bool>,
+        /// Set or clear underline. Omit the value to set true.
+        #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+        underline: Option<bool>,
     },
     /// Delete a shape, image, table, or other page object without writing Batch Update JSON
     Delete {

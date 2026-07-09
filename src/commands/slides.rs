@@ -254,6 +254,36 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::Object {
+            command:
+                SlidesObjectCommand::TextStyle {
+                    presentation_id,
+                    object_id,
+                    color,
+                    font_family,
+                    font_size,
+                    bold,
+                    italic,
+                    underline,
+                },
+        } => run_with_runtime(run_object_text_style_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectTextStyleRequest {
+                presentation_id,
+                object_id,
+                color,
+                font_family,
+                font_size,
+                bold,
+                italic,
+                underline,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::TextBox {
             presentation_id,
             page_id,
@@ -994,6 +1024,128 @@ pub(super) fn build_object_style_batch_update(
                 "updateShapeProperties": {
                     "objectId": request.object_id,
                     "shapeProperties": shape_properties,
+                    "fields": fields.join(",")
+                }
+            }
+        ]
+    }))
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectTextStyleRequest {
+    pub presentation_id: String,
+    pub object_id: String,
+    pub color: Option<String>,
+    pub font_family: Option<String>,
+    pub font_size: Option<f64>,
+    pub bold: Option<bool>,
+    pub italic: Option<bool>,
+    pub underline: Option<bool>,
+}
+
+pub(super) async fn run_object_text_style_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectTextStyleRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_text_style_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to style Google Slides object text")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides object text style response",
+    )
+}
+
+pub(super) fn build_object_text_style_batch_update(
+    request: ObjectTextStyleRequest,
+) -> Result<serde_json::Value> {
+    if request.color.is_none()
+        && request.font_family.is_none()
+        && request.font_size.is_none()
+        && request.bold.is_none()
+        && request.italic.is_none()
+        && request.underline.is_none()
+    {
+        bail!("at least one text style flag is required");
+    }
+
+    let mut style = serde_json::Map::new();
+    let mut fields = Vec::new();
+
+    if let Some(color) = request.color {
+        style.insert(
+            "foregroundColor".into(),
+            serde_json::json!({
+                "opaqueColor": {
+                    "rgbColor": parse_hex_rgb_color(&color)?
+                }
+            }),
+        );
+        fields.push("foregroundColor");
+    }
+
+    if let Some(font_family) = request.font_family {
+        style.insert("fontFamily".into(), serde_json::Value::String(font_family));
+        fields.push("fontFamily");
+    }
+
+    if let Some(font_size) = request.font_size {
+        style.insert(
+            "fontSize".into(),
+            serde_json::json!({
+                "magnitude": font_size,
+                "unit": "PT"
+            }),
+        );
+        fields.push("fontSize");
+    }
+
+    if let Some(bold) = request.bold {
+        style.insert("bold".into(), serde_json::Value::Bool(bold));
+        fields.push("bold");
+    }
+
+    if let Some(italic) = request.italic {
+        style.insert("italic".into(), serde_json::Value::Bool(italic));
+        fields.push("italic");
+    }
+
+    if let Some(underline) = request.underline {
+        style.insert("underline".into(), serde_json::Value::Bool(underline));
+        fields.push("underline");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updateTextStyle": {
+                    "objectId": request.object_id,
+                    "style": style,
+                    "textRange": {
+                        "type": "ALL"
+                    },
                     "fields": fields.join(",")
                 }
             }

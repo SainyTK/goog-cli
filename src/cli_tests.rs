@@ -2794,6 +2794,56 @@ fn slides_object_style_with_shape_properties() {
 }
 
 #[test]
+fn slides_object_text_style_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "text-style",
+        "presentation-123",
+        "shape-1",
+        "--color",
+        "#1a73e8",
+        "--font-family",
+        "Georgia",
+        "--font-size",
+        "18",
+        "--bold",
+        "--italic",
+        "false",
+        "--underline",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::TextStyle {
+                            presentation_id,
+                            object_id,
+                            color,
+                            font_family,
+                            font_size,
+                            bold,
+                            italic,
+                            underline,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "shape-1");
+            assert_eq!(color.as_deref(), Some("#1a73e8"));
+            assert_eq!(font_family.as_deref(), Some("Georgia"));
+            assert_eq!(font_size, Some(18.0));
+            assert_eq!(bold, Some(true));
+            assert_eq!(italic, Some(false));
+            assert_eq!(underline, Some(true));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_slide_duplicate_with_flags() {
     let cli = parse(&[
         "slides",

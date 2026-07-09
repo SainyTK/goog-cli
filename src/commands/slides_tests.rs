@@ -615,6 +615,122 @@ fn object_style_rejects_malformed_hex_color() {
 }
 
 #[tokio::test]
+async fn run_object_text_style_sends_update_text_style_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updateTextStyle": {
+                        "objectId": "shape-1",
+                        "style": {
+                            "foregroundColor": {
+                                "opaqueColor": {
+                                    "rgbColor": {
+                                        "red": 26.0 / 255.0,
+                                        "green": 115.0 / 255.0,
+                                        "blue": 232.0 / 255.0
+                                    }
+                                }
+                            },
+                            "fontFamily": "Georgia",
+                            "fontSize": {
+                                "magnitude": 18.0,
+                                "unit": "PT"
+                            },
+                            "bold": true,
+                            "italic": false,
+                            "underline": true
+                        },
+                        "textRange": {
+                            "type": "ALL"
+                        },
+                        "fields": "foregroundColor,fontFamily,fontSize,bold,italic,underline"
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_object_text_style_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ObjectTextStyleRequest {
+            presentation_id: "presentation-123".into(),
+            object_id: "shape-1".into(),
+            color: Some("#1a73e8".into()),
+            font_family: Some("Georgia".into()),
+            font_size: Some(18.0),
+            bold: Some(true),
+            italic: Some(false),
+            underline: Some(true),
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[test]
+fn object_text_style_requires_at_least_one_style_flag() {
+    let err = build_object_text_style_batch_update(ObjectTextStyleRequest {
+        presentation_id: "presentation-123".into(),
+        object_id: "shape-1".into(),
+        color: None,
+        font_family: None,
+        font_size: None,
+        bold: None,
+        italic: None,
+        underline: None,
+    })
+    .unwrap_err();
+
+    assert!(err.to_string().contains("at least one text style flag"));
+}
+
+#[test]
+fn object_text_style_rejects_malformed_hex_color() {
+    let err = build_object_text_style_batch_update(ObjectTextStyleRequest {
+        presentation_id: "presentation-123".into(),
+        object_id: "shape-1".into(),
+        color: Some("blue".into()),
+        font_family: None,
+        font_size: None,
+        bold: None,
+        italic: None,
+        underline: None,
+    })
+    .unwrap_err();
+
+    assert!(err.to_string().contains("6-digit hex"));
+}
+
+#[tokio::test]
 async fn run_slide_duplicate_sends_duplicate_object_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
