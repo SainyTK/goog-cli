@@ -326,6 +326,9 @@ impl SlidesCommand {
             | SlidesCommand::TableInsertRows {
                 presentation_id, ..
             }
+            | SlidesCommand::TableDeleteRow {
+                presentation_id, ..
+            }
             | SlidesCommand::TableInsertColumns {
                 presentation_id, ..
             }
@@ -538,6 +541,19 @@ pub enum SlidesCommand {
         /// Insert below the reference row instead of above it
         #[arg(long)]
         below: bool,
+    },
+    /// Delete a row from an existing table without writing Batch Update JSON
+    TableDeleteRow {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the reference cell
+        #[arg(long)]
+        reference_row: u32,
+        /// Zero-based column index of the reference cell
+        #[arg(long, default_value_t = 0)]
+        reference_column: u32,
     },
     /// Insert columns into an existing table without writing Batch Update JSON
     TableInsertColumns {
