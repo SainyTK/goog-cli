@@ -303,6 +303,7 @@ goog calendar events create primary --summary "Out of office" --start 2026-07-09
 goog calendar events create primary --event ./event.json
 goog calendar events update primary EVENT_ID --summary "Planning moved" --start 2026-07-09T10:00:00+07:00 --end 2026-07-09T10:30:00+07:00 --time-zone Asia/Bangkok
 goog calendar events update primary EVENT_ID --event ./event.json
+goog calendar events patch primary EVENT_ID --summary "Planning renamed" --location "Office"
 goog calendar events delete primary EVENT_ID
 ```
 

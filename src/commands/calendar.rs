@@ -10,9 +10,9 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
-    delete_event, get_calendar, get_event, insert_event, list_calendars, list_events, update_event,
-    CalendarError, DeleteEventOptions, GetCalendarOptions, GetEventOptions, ListCalendarsOptions,
-    ListEventsOptions, WriteEventOptions,
+    delete_event, get_calendar, get_event, insert_event, list_calendars, list_events, patch_event,
+    update_event, CalendarError, DeleteEventOptions, GetCalendarOptions, GetEventOptions,
+    ListCalendarsOptions, ListEventsOptions, WriteEventOptions,
 };
 use crate::cli::{CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand};
 
@@ -256,6 +256,51 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             .context("failed to update Google Calendar event")?;
             write_json_line(out, &event, "failed to serialize Calendar event")
         }
+        CalendarEventsCommand::Patch {
+            calendar_id,
+            event_id,
+            event,
+            summary,
+            start,
+            end,
+            time_zone,
+            all_day,
+            location,
+            description,
+            attendee,
+        } => {
+            let request_body = match event {
+                Some(event) => read_request_body(&event, input, "Google Calendar event patch")?,
+                None => build_event_patch_body(
+                    summary,
+                    start,
+                    end,
+                    time_zone,
+                    all_day,
+                    location,
+                    description,
+                    attendee,
+                )?,
+            };
+            let options = write_event_options_patch(
+                calendar_id.clone(),
+                event_id.clone(),
+                request_body,
+                base_url,
+            );
+            let target_resource_key = calendar_event_resource_key(&calendar_id, &event_id);
+            let event = run_with_calendar_unified_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                CalendarAccessAttempt::PatchEvent(&options),
+                state_path,
+            )
+            .await
+            .context("failed to patch Google Calendar event")?;
+            write_json_line(out, &event, "failed to serialize Calendar event")
+        }
         CalendarEventsCommand::Delete {
             calendar_id,
             event_id,
@@ -386,6 +431,7 @@ enum CalendarAccessAttempt<'a> {
     GetEvent(&'a GetEventOptions),
     InsertEvent(&'a WriteEventOptions),
     UpdateEvent(&'a WriteEventOptions),
+    PatchEvent(&'a WriteEventOptions),
 }
 
 async fn run_with_calendar_unified_access<S: AccountStore>(
@@ -425,6 +471,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::GetEvent(options) => get_event(&client, options).await,
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
         CalendarAccessAttempt::UpdateEvent(options) => update_event(&client, options).await,
+        CalendarAccessAttempt::PatchEvent(options) => patch_event(&client, options).await,
     }
 }
 
@@ -575,6 +622,19 @@ fn write_event_options_update(
     options
 }
 
+fn write_event_options_patch(
+    calendar_id: String,
+    event_id: String,
+    request_body: serde_json::Value,
+    base_url: Option<&str>,
+) -> WriteEventOptions {
+    let mut options = WriteEventOptions::patch(calendar_id, event_id, request_body);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
 fn delete_event_options(
     calendar_id: String,
     event_id: String,
@@ -655,6 +715,64 @@ fn build_event_request_body(
                     .collect(),
             ),
         );
+    }
+
+    Ok(serde_json::Value::Object(body))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_event_patch_body(
+    summary: Option<String>,
+    start: Option<String>,
+    end: Option<String>,
+    time_zone: Option<String>,
+    all_day: bool,
+    location: Option<String>,
+    description: Option<String>,
+    attendees: Vec<String>,
+) -> Result<serde_json::Value> {
+    if all_day && start.is_none() && end.is_none() {
+        anyhow::bail!("--all-day requires --start or --end when patching");
+    }
+    if time_zone.is_some() && start.is_none() && end.is_none() {
+        anyhow::bail!("--time-zone requires --start or --end when patching");
+    }
+
+    let mut body = serde_json::Map::new();
+    if let Some(summary) = summary {
+        body.insert("summary".into(), serde_json::Value::String(summary));
+    }
+    if let Some(start) = start {
+        body.insert(
+            "start".into(),
+            event_time_body("start", start, time_zone.as_deref(), all_day)?,
+        );
+    }
+    if let Some(end) = end {
+        body.insert(
+            "end".into(),
+            event_time_body("end", end, time_zone.as_deref(), all_day)?,
+        );
+    }
+    if let Some(location) = location {
+        body.insert("location".into(), serde_json::Value::String(location));
+    }
+    if let Some(description) = description {
+        body.insert("description".into(), serde_json::Value::String(description));
+    }
+    if !attendees.is_empty() {
+        body.insert(
+            "attendees".into(),
+            serde_json::Value::Array(
+                attendees
+                    .into_iter()
+                    .map(|email| serde_json::json!({ "email": email }))
+                    .collect(),
+            ),
+        );
+    }
+    if body.is_empty() {
+        anyhow::bail!("patch requires --event or at least one event field flag");
     }
 
     Ok(serde_json::Value::Object(body))

@@ -2,7 +2,7 @@ pub mod error;
 
 pub use error::CalendarError;
 
-use reqwest::{Response, StatusCode};
+use reqwest::{Method, Response, StatusCode};
 use serde_json::Value;
 use url::Url;
 
@@ -222,6 +222,19 @@ impl WriteEventOptions {
         }
     }
 
+    pub fn patch(
+        calendar_id: impl Into<String>,
+        event_id: impl Into<String>,
+        request_body: Value,
+    ) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            event_id: Some(event_id.into()),
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
     pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self
@@ -334,6 +347,19 @@ pub async fn update_event<S: AccountStore>(
         client,
         client
             .put(options.update_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn patch_event<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &WriteEventOptions,
+) -> Result<Event, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .request(Method::PATCH, options.update_url()?)
             .json(&options.request_body),
     )
     .await

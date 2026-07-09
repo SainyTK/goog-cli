@@ -498,3 +498,99 @@ async fn run_events_update_builds_event_body_from_flags() {
         "{\"id\":\"event-789\",\"summary\":\"Planning moved\"}\n"
     );
 }
+
+#[tokio::test]
+async fn run_events_patch_sends_partial_event_body_from_flags() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/calendar/v3/calendars/primary/events/event-789"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "summary": "Planning renamed",
+            "location": "Office"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "event-789",
+            "summary": "Planning renamed"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Patch {
+            calendar_id: "primary".into(),
+            event_id: "event-789".into(),
+            event: None,
+            summary: Some("Planning renamed".into()),
+            start: None,
+            end: None,
+            time_zone: None,
+            all_day: false,
+            location: Some("Office".into()),
+            description: None,
+            attendee: vec![],
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"event-789\",\"summary\":\"Planning renamed\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_events_patch_rejects_empty_flag_body() {
+    let store = MemoryStore::default();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    let err = run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Patch {
+            calendar_id: "primary".into(),
+            event_id: "event-789".into(),
+            event: None,
+            summary: None,
+            start: None,
+            end: None,
+            time_zone: None,
+            all_day: false,
+            location: None,
+            description: None,
+            attendee: vec![],
+        },
+        &mut input,
+        false,
+        &mut out,
+        None,
+        Some(&state_path),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("patch requires --event or at least one event field flag"));
+}

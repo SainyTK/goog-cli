@@ -2667,6 +2667,63 @@ fn calendar_event_update_rejects_mixed_json_body_and_flags() {
 }
 
 #[test]
+fn calendar_event_patch_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "patch",
+        "primary",
+        "event-123",
+        "--summary",
+        "Planning renamed",
+        "--location",
+        "Office",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Patch {
+                            calendar_id,
+                            event_id,
+                            event,
+                            summary,
+                            location,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert_eq!(event, None);
+            assert_eq!(summary.as_deref(), Some("Planning renamed"));
+            assert_eq!(location.as_deref(), Some("Office"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_patch_rejects_mixed_json_body_and_flags() {
+    let err = parse(&[
+        "calendar",
+        "events",
+        "patch",
+        "primary",
+        "event-123",
+        "--event",
+        "event.json",
+        "--summary",
+        "Planning",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("cannot be used with"));
+}
+
+#[test]
 fn calendar_calendars_list_with_flags() {
     let cli = parse(&[
         "calendar",
