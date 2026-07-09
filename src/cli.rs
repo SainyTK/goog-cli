@@ -332,6 +332,9 @@ impl SlidesCommand {
             | SlidesCommand::TableInsertColumns {
                 presentation_id, ..
             }
+            | SlidesCommand::TableDeleteColumn {
+                presentation_id, ..
+            }
             | SlidesCommand::Shape {
                 presentation_id, ..
             }
@@ -573,6 +576,19 @@ pub enum SlidesCommand {
         /// Insert to the right of the reference column instead of to the left
         #[arg(long)]
         right: bool,
+    },
+    /// Delete a column from an existing table without writing Batch Update JSON
+    TableDeleteColumn {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the reference cell
+        #[arg(long, default_value_t = 0)]
+        reference_row: u32,
+        /// Zero-based column index of the reference cell
+        #[arg(long)]
+        reference_column: u32,
     },
     /// Add a shape to a slide without writing Batch Update JSON
     Shape {

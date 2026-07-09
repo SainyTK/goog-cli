@@ -2762,6 +2762,38 @@ fn slides_table_insert_columns_with_reference_cell() {
 }
 
 #[test]
+fn slides_table_delete_column_with_reference_cell() {
+    let cli = parse(&[
+        "slides",
+        "table-delete-column",
+        "presentation-123",
+        "table-1",
+        "--reference-row",
+        "2",
+        "--reference-column",
+        "1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableDeleteColumn {
+                    presentation_id,
+                    table_id,
+                    reference_row,
+                    reference_column,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(reference_row, 2);
+            assert_eq!(reference_column, 1);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_shape_with_flags() {
     let cli = parse(&[
         "slides",

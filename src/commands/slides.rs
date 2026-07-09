@@ -658,6 +658,25 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::TableDeleteColumn {
+            presentation_id,
+            table_id,
+            reference_row,
+            reference_column,
+        } => run_with_runtime(run_table_delete_column_unified_to(
+            config,
+            store,
+            account_override,
+            TableDeleteColumnRequest {
+                presentation_id,
+                table_id,
+                reference_row,
+                reference_column,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::Shape {
             presentation_id,
             page_id,
@@ -2745,6 +2764,67 @@ pub(super) fn build_table_insert_columns_batch_update(
             }
         ]
     }))
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TableDeleteColumnRequest {
+    pub presentation_id: String,
+    pub table_id: String,
+    pub reference_row: u32,
+    pub reference_column: u32,
+}
+
+pub(super) async fn run_table_delete_column_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: TableDeleteColumnRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_table_delete_column_batch_update(request);
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to delete Google Slides table column")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides table column deletion response",
+    )
+}
+
+pub(super) fn build_table_delete_column_batch_update(
+    request: TableDeleteColumnRequest,
+) -> serde_json::Value {
+    serde_json::json!({
+        "requests": [
+            {
+                "deleteTableColumn": {
+                    "tableObjectId": request.table_id,
+                    "cellLocation": {
+                        "rowIndex": request.reference_row,
+                        "columnIndex": request.reference_column
+                    }
+                }
+            }
+        ]
+    })
 }
 
 #[derive(Debug, Clone)]

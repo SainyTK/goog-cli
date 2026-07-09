@@ -2588,6 +2588,65 @@ fn build_table_insert_columns_rejects_api_limit_overflow() {
 }
 
 #[tokio::test]
+async fn run_table_delete_column_sends_delete_table_column_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "deleteTableColumn": {
+                        "tableObjectId": "table-1",
+                        "cellLocation": {
+                            "rowIndex": 2,
+                            "columnIndex": 1
+                        }
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_table_delete_column_unified_to(
+        &test_config(),
+        &store,
+        None,
+        TableDeleteColumnRequest {
+            presentation_id: "presentation-123".into(),
+            table_id: "table-1".into(),
+            reference_row: 2,
+            reference_column: 1,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_replace_text_sends_replace_all_text_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

@@ -298,6 +298,7 @@ goog slides table-fill PRESENTATION_ID TABLE_OBJECT_ID --row "Metric|Value" --ro
 goog slides table-insert-rows PRESENTATION_ID TABLE_OBJECT_ID --reference-row 1 --number 2 --below
 goog slides table-delete-row PRESENTATION_ID TABLE_OBJECT_ID --reference-row 1
 goog slides table-insert-columns PRESENTATION_ID TABLE_OBJECT_ID --reference-column 1 --number 2 --right
+goog slides table-delete-column PRESENTATION_ID TABLE_OBJECT_ID --reference-column 1
 goog slides shape PRESENTATION_ID --page-id SLIDE_OBJECT_ID --type round-rectangle --x 72 --y 72 --width 240 --height 96
 goog slides line PRESENTATION_ID --page-id SLIDE_OBJECT_ID --category straight --x 72 --y 72 --width 240 --height 0
 goog slides object style PRESENTATION_ID PAGE_OBJECT_ID --fill-color "#1a73e8" --outline-color "#202124" --outline-weight 2
