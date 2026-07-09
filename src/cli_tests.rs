@@ -2956,6 +2956,42 @@ fn slides_object_style_with_shape_properties() {
 }
 
 #[test]
+fn slides_object_line_style_with_line_properties() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "line-style",
+        "presentation-123",
+        "line-1",
+        "--color",
+        "#1a73e8",
+        "--weight",
+        "3",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::LineStyle {
+                            presentation_id,
+                            object_id,
+                            color,
+                            weight,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "line-1");
+            assert_eq!(color.as_deref(), Some("#1a73e8"));
+            assert_eq!(weight, Some(3.0));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_object_text_style_with_flags() {
     let cli = parse(&[
         "slides",

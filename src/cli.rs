@@ -283,6 +283,9 @@ impl SlidesCommand {
                     | SlidesObjectCommand::Style {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::LineStyle {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::TextStyle {
                         presentation_id, ..
                     }
@@ -661,6 +664,19 @@ pub enum SlidesObjectCommand {
         /// Outline weight in points
         #[arg(long)]
         outline_weight: Option<f64>,
+    },
+    /// Style a line color and weight without writing Batch Update JSON
+    LineStyle {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Line page object ID to style
+        object_id: String,
+        /// Line color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        color: Option<String>,
+        /// Line weight in points
+        #[arg(long)]
+        weight: Option<f64>,
     },
     /// Style text inside a shape or text box without writing Batch Update JSON
     TextStyle {

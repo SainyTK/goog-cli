@@ -647,6 +647,110 @@ async fn run_object_ungroup_sends_ungroup_objects_request() {
 }
 
 #[tokio::test]
+async fn run_object_line_style_sends_update_line_properties_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updateLineProperties": {
+                        "objectId": "line-1",
+                        "lineProperties": {
+                            "lineFill": {
+                                "solidFill": {
+                                    "color": {
+                                        "rgbColor": {
+                                            "red": 26.0 / 255.0,
+                                            "green": 115.0 / 255.0,
+                                            "blue": 232.0 / 255.0
+                                        }
+                                    }
+                                }
+                            },
+                            "weight": {
+                                "magnitude": 3.0,
+                                "unit": "PT"
+                            }
+                        },
+                        "fields": "lineFill.solidFill.color,weight"
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {}
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_object_line_style_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ObjectLineStyleRequest {
+            presentation_id: "presentation-123".into(),
+            object_id: "line-1".into(),
+            color: Some("#1a73e8".into()),
+            weight: Some(3.0),
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_object_line_style_rejects_empty_style_update() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    let err = run_object_line_style_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ObjectLineStyleRequest {
+            presentation_id: "presentation-123".into(),
+            object_id: "line-1".into(),
+            color: None,
+            weight: None,
+        },
+        &mut out,
+        Some("https://example.invalid/slides/v1/presentations"),
+        Some(&state_path),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains("at least one line style flag"));
+}
+
+#[tokio::test]
 async fn run_object_style_sends_update_shape_properties_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

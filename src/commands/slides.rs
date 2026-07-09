@@ -294,6 +294,28 @@ pub fn run<S: AccountStore>(
         )),
         SlidesCommand::Object {
             command:
+                SlidesObjectCommand::LineStyle {
+                    presentation_id,
+                    object_id,
+                    color,
+                    weight,
+                },
+        } => run_with_runtime(run_object_line_style_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectLineStyleRequest {
+                presentation_id,
+                object_id,
+                color,
+                weight,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Object {
+            command:
                 SlidesObjectCommand::TextStyle {
                     presentation_id,
                     object_id,
@@ -1304,6 +1326,97 @@ pub(super) fn build_object_style_batch_update(
                 "updateShapeProperties": {
                     "objectId": request.object_id,
                     "shapeProperties": shape_properties,
+                    "fields": fields.join(",")
+                }
+            }
+        ]
+    }))
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectLineStyleRequest {
+    pub presentation_id: String,
+    pub object_id: String,
+    pub color: Option<String>,
+    pub weight: Option<f64>,
+}
+
+pub(super) async fn run_object_line_style_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectLineStyleRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_line_style_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to style Google Slides line")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides line style response",
+    )
+}
+
+pub(super) fn build_object_line_style_batch_update(
+    request: ObjectLineStyleRequest,
+) -> Result<serde_json::Value> {
+    if request.color.is_none() && request.weight.is_none() {
+        bail!("at least one line style flag is required");
+    }
+
+    let mut line_properties = serde_json::Map::new();
+    let mut fields = Vec::new();
+
+    if let Some(color) = request.color {
+        line_properties.insert(
+            "lineFill".into(),
+            serde_json::json!({
+                "solidFill": {
+                    "color": {
+                        "rgbColor": parse_hex_rgb_color(&color)?
+                    }
+                }
+            }),
+        );
+        fields.push("lineFill.solidFill.color");
+    }
+
+    if let Some(weight) = request.weight {
+        line_properties.insert(
+            "weight".into(),
+            serde_json::json!({
+                "magnitude": weight,
+                "unit": "PT"
+            }),
+        );
+        fields.push("weight");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "updateLineProperties": {
+                    "objectId": request.object_id,
+                    "lineProperties": line_properties,
                     "fields": fields.join(",")
                 }
             }
