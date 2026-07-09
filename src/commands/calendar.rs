@@ -11,14 +11,15 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_calendar, delete_event, get_calendar, get_event, insert_calendar, insert_event,
-    list_calendars, list_events, move_event, patch_calendar, patch_event, query_freebusy,
+    list_acl, list_calendars, list_events, move_event, patch_calendar, patch_event, query_freebusy,
     quick_add_event, update_calendar, update_event, CalendarError, DeleteCalendarOptions,
     DeleteEventOptions, FreeBusyOptions, GetCalendarOptions, GetEventOptions,
-    InsertCalendarOptions, ListCalendarsOptions, ListEventsOptions, MoveEventOptions,
-    QuickAddEventOptions, SendUpdates, UpdateCalendarOptions, WriteEventOptions,
+    InsertCalendarOptions, ListAclOptions, ListCalendarsOptions, ListEventsOptions,
+    MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateCalendarOptions, WriteEventOptions,
 };
 use crate::cli::{
-    CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand, CalendarSendUpdates,
+    CalendarAclCommand, CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand,
+    CalendarSendUpdates,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -33,6 +34,16 @@ pub fn run<S: AccountStore>(
 ) -> Result<()> {
     match cmd {
         CalendarCommand::Calendars { command } => run_with_runtime(run_calendars_command_to(
+            config,
+            store,
+            account_override,
+            command,
+            output_json_by_default,
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        CalendarCommand::Acl { command } => run_with_runtime(run_acl_command_to(
             config,
             store,
             account_override,
@@ -218,6 +229,47 @@ pub(super) async fn run_calendars_command_to<S: AccountStore>(
             .await
             .context("failed to delete Google Calendar")?;
             writeln!(out, "deleted\t{calendar_id}").context("failed to write output")
+        }
+    }
+}
+
+pub(super) async fn run_acl_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CalendarAclCommand,
+    output_json_by_default: bool,
+    out: &mut impl Write,
+    base_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    match command {
+        CalendarAclCommand::List {
+            calendar_id,
+            limit,
+            all,
+            json,
+        } => {
+            let json = json || output_json_by_default;
+            let target_resource_key = resource_key("calendar-acl", &calendar_id);
+            let rules = collect_acl(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                calendar_id,
+                limit,
+                all,
+                base_url,
+                state_path,
+            )
+            .await
+            .context("failed to list Google Calendar ACL rules")?;
+            if json {
+                write_ndjson(out, &rules)
+            } else {
+                write_acl_table(out, &rules)
+            }
         }
     }
 }
@@ -664,10 +716,62 @@ async fn collect_events_unified<S: AccountStore>(
     Ok(items)
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn collect_acl<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    calendar_id: String,
+    limit: Option<u32>,
+    all: bool,
+    base_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<Vec<serde_json::Value>, CalendarError> {
+    let mut items = Vec::new();
+    let mut remaining = requested_result_count(limit, all);
+    let mut page_token = None;
+
+    while let Some(page_size) = next_page_size(remaining) {
+        let options = list_acl_options(calendar_id.clone(), page_size, page_token.take(), base_url);
+        let page = run_with_calendar_unified_access(
+            config,
+            store,
+            account_override,
+            target_resource_key,
+            CalendarAccessAttempt::ListAcl(&options),
+            state_path,
+        )
+        .await?;
+        let page_items = page
+            .get("items")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let page_count = page_items.len() as u32;
+        if let Some(left) = remaining.as_mut() {
+            *left = left.saturating_sub(page_count);
+        }
+        items.extend(page_items);
+
+        match page
+            .get("nextPageToken")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+        {
+            Some(token) if should_fetch_next_page(remaining, all) => page_token = Some(token),
+            _ => break,
+        }
+    }
+
+    Ok(items)
+}
+
 enum CalendarAccessAttempt<'a> {
     GetCalendar(&'a GetCalendarOptions),
     UpdateCalendar(&'a UpdateCalendarOptions),
     PatchCalendar(&'a UpdateCalendarOptions),
+    ListAcl(&'a ListAclOptions),
     ListEvents(&'a ListEventsOptions),
     GetEvent(&'a GetEventOptions),
     InsertEvent(&'a WriteEventOptions),
@@ -713,6 +817,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::GetCalendar(options) => get_calendar(&client, options).await,
         CalendarAccessAttempt::UpdateCalendar(options) => update_calendar(&client, options).await,
         CalendarAccessAttempt::PatchCalendar(options) => patch_calendar(&client, options).await,
+        CalendarAccessAttempt::ListAcl(options) => list_acl(&client, options).await,
         CalendarAccessAttempt::ListEvents(options) => list_events(&client, options).await,
         CalendarAccessAttempt::GetEvent(options) => get_event(&client, options).await,
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
@@ -860,6 +965,22 @@ fn update_calendar_options(
 
 fn delete_calendar_options(calendar_id: String, base_url: Option<&str>) -> DeleteCalendarOptions {
     let mut options = DeleteCalendarOptions::new(calendar_id);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn list_acl_options(
+    calendar_id: String,
+    page_size: u32,
+    page_token: Option<String>,
+    base_url: Option<&str>,
+) -> ListAclOptions {
+    let mut options = ListAclOptions::new(calendar_id, page_size);
+    if let Some(page_token) = page_token {
+        options = options.with_page_token(page_token);
+    }
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
@@ -1362,6 +1483,22 @@ fn write_calendars_table(out: &mut impl Write, calendars: &[serde_json::Value]) 
     Ok(())
 }
 
+fn write_acl_table(out: &mut impl Write, rules: &[serde_json::Value]) -> Result<()> {
+    writeln!(out, "SCOPE TYPE\tSCOPE VALUE\tROLE\tRULE ID").context("failed to write output")?;
+    for rule in rules {
+        writeln!(
+            out,
+            "{}\t{}\t{}\t{}",
+            nested_string_field(rule, "scope", "type"),
+            nested_string_field(rule, "scope", "value"),
+            string_field(rule, "role"),
+            string_field(rule, "id"),
+        )
+        .context("failed to write output")?;
+    }
+    Ok(())
+}
+
 fn write_events_table(out: &mut impl Write, events: &[serde_json::Value]) -> Result<()> {
     writeln!(out, "SUMMARY\tEVENT ID\tSTART\tEND\tSTATUS").context("failed to write output")?;
     for event in events {
@@ -1422,6 +1559,16 @@ fn event_time(event: &serde_json::Value, field: &str) -> String {
 fn string_field(value: &serde_json::Value, field: &str) -> String {
     value
         .get(field)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .replace('\t', " ")
+        .replace('\n', " ")
+}
+
+fn nested_string_field(value: &serde_json::Value, object_field: &str, field: &str) -> String {
+    value
+        .get(object_field)
+        .and_then(|object| object.get(field))
         .and_then(serde_json::Value::as_str)
         .unwrap_or("")
         .replace('\t', " ")

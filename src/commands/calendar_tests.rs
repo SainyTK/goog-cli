@@ -9,7 +9,7 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::calendar::CALENDAR_SCOPE;
-use crate::cli::{CalendarCalendarsCommand, CalendarEventsCommand};
+use crate::cli::{CalendarAclCommand, CalendarCalendarsCommand, CalendarEventsCommand};
 
 use super::calendar::*;
 
@@ -331,6 +331,123 @@ async fn run_calendars_delete_sends_delete_request() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "deleted\tteam-launches@example.com\n"
+    );
+}
+
+#[tokio::test]
+async fn run_acl_list_prints_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/calendar/v3/calendars/primary/acl$"))
+        .and(query_param("maxResults", "2"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {
+                    "id": "user:teammate@example.com",
+                    "scope": {
+                        "type": "user",
+                        "value": "teammate@example.com"
+                    },
+                    "role": "reader"
+                },
+                {
+                    "id": "default",
+                    "scope": {
+                        "type": "default"
+                    },
+                    "role": "none"
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::List {
+            calendar_id: "primary".into(),
+            limit: Some(2),
+            all: false,
+            json: false,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SCOPE TYPE\tSCOPE VALUE\tROLE\tRULE ID\nuser\tteammate@example.com\treader\tuser:teammate@example.com\ndefault\t\tnone\tdefault\n"
+    );
+}
+
+#[tokio::test]
+async fn run_acl_list_prints_ndjson_when_json_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(
+            r"^/calendar/v3/calendars/team-launches(%40|@)example\.com/acl$",
+        ))
+        .and(query_param("maxResults", "1"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {
+                    "id": "user:teammate@example.com",
+                    "scope": {
+                        "type": "user",
+                        "value": "teammate@example.com"
+                    },
+                    "role": "writer"
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::List {
+            calendar_id: "team-launches@example.com".into(),
+            limit: Some(1),
+            all: false,
+            json: true,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"user:teammate@example.com\",\"role\":\"writer\",\"scope\":{\"type\":\"user\",\"value\":\"teammate@example.com\"}}\n"
     );
 }
 

@@ -14,6 +14,7 @@ pub const CALENDAR_SCOPES: &[&str] = &[CALENDAR_SCOPE];
 const CALENDAR_BASE_URL: &str = "https://www.googleapis.com/calendar/v3";
 
 pub type Calendar = Value;
+pub type Acl = Value;
 pub type CalendarList = Value;
 pub type Event = Value;
 pub type Events = Value;
@@ -170,6 +171,47 @@ impl DeleteCalendarOptions {
 
     fn request_url(&self) -> Result<Url, CalendarError> {
         calendar_url(&self.base_url, &["calendars", &self.calendar_id])
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ListAclOptions {
+    pub calendar_id: String,
+    pub max_results: u32,
+    pub page_token: Option<String>,
+    base_url: String,
+}
+
+impl ListAclOptions {
+    pub fn new(calendar_id: impl Into<String>, max_results: u32) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            max_results,
+            page_token: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_page_token(mut self, page_token: impl Into<String>) -> Self {
+        self.page_token = Some(page_token.into());
+        self
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(&self.base_url, &["calendars", &self.calendar_id, "acl"])?;
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("maxResults", &self.max_results.to_string());
+            if let Some(page_token) = &self.page_token {
+                query.append_pair("pageToken", page_token);
+            }
+        }
+        Ok(url)
     }
 }
 
@@ -593,6 +635,13 @@ pub async fn delete_calendar<S: AccountStore>(
         .await
         .map_err(CalendarError::Auth)?;
     parse_empty_response(response).await
+}
+
+pub async fn list_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ListAclOptions,
+) -> Result<Acl, CalendarError> {
+    send_json_request(client, client.get(options.request_url()?)).await
 }
 
 pub async fn list_events<S: AccountStore>(

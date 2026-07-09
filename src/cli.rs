@@ -759,6 +759,11 @@ pub enum CalendarCommand {
         #[command(subcommand)]
         command: CalendarCalendarsCommand,
     },
+    /// Inspect calendar sharing and access rules
+    Acl {
+        #[command(subcommand)]
+        command: CalendarAclCommand,
+    },
     /// List, create, update, move, quick-add, or delete Google Calendar events
     Events {
         #[command(subcommand)]
@@ -785,6 +790,24 @@ pub enum CalendarCommand {
         #[arg(long)]
         calendar_expansion_max: Option<u32>,
         /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CalendarAclCommand {
+    /// List access control rules for a calendar
+    List {
+        /// Calendar ID to inspect. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Maximum number of ACL rules to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all ACL rules across all pages
+        #[arg(long)]
+        all: bool,
+        /// Emit newline-delimited JSON
         #[arg(long)]
         json: bool,
     },

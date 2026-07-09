@@ -311,6 +311,7 @@ goog calendar calendars create --summary "Team Launches" --time-zone Asia/Bangko
 goog calendar calendars update team-launches@example.com --summary "Team Launches Updated" --time-zone Asia/Bangkok --description "Launch planning and retros"
 goog calendar calendars patch team-launches@example.com --description "Launch planning, retros, and launch notes"
 goog calendar calendars delete team-launches@example.com
+goog calendar acl list team-launches@example.com --limit 20
 goog calendar freebusy --time-min 2026-07-09T09:00:00Z --time-max 2026-07-09T17:00:00Z --calendar primary --calendar teammate@example.com
 goog calendar events list primary --time-min 2026-07-09T00:00:00Z --time-max 2026-07-10T00:00:00Z --single-events
 goog calendar events get primary EVENT_ID
