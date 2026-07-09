@@ -4,17 +4,18 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, CalendarAclCommand, CalendarAclRole, CalendarAclScope,
     CalendarCalendarsCommand, CalendarColorsCommand, CalendarCommand, CalendarEventsCommand,
-    CalendarListEntryCommand, CalendarSendUpdates, Cli, Command, DocsBreakCommand, DocsCommand,
-    DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand,
-    DocsListType, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
-    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle,
-    SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
-    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
-    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
-    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
-    SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout,
-    SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
+    CalendarEventsOrderBy, CalendarListEntryCommand, CalendarSendUpdates, Cli, Command,
+    DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand,
+    DocsImageCommand, DocsListCommand, DocsListType, DocsMapType, DocsNamedRangeCommand,
+    DocsStyleCommand, DocsTableCommand, DocsTextCommand, DriveCommand, DriveListType, MailCommand,
+    SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition,
+    SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
+    SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
+    SheetsSortOrder, SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
+    SheetsWrapStrategy, SlidesCommand, SlidesImageReplaceMethod, SlidesLineCategory,
+    SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand,
+    SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -313,6 +314,10 @@ fn calendar_events_list_with_flags() {
         "--query",
         "planning",
         "--single-events",
+        "--show-deleted",
+        "--show-hidden-invitations",
+        "--order-by",
+        "start-time",
         "--json",
     ])
     .unwrap();
@@ -329,6 +334,9 @@ fn calendar_events_list_with_flags() {
                             time_max,
                             query,
                             single_events,
+                            show_deleted,
+                            show_hidden_invitations,
+                            order_by,
                             json,
                         },
                 },
@@ -340,6 +348,9 @@ fn calendar_events_list_with_flags() {
             assert_eq!(time_max.as_deref(), Some("2026-07-10T09:00:00Z"));
             assert_eq!(query.as_deref(), Some("planning"));
             assert!(single_events);
+            assert!(show_deleted);
+            assert!(show_hidden_invitations);
+            assert_eq!(order_by, Some(CalendarEventsOrderBy::StartTime));
             assert!(json);
         }
         _ => panic!("unexpected parse result"),

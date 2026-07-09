@@ -25,7 +25,8 @@ use crate::calendar::{
 };
 use crate::cli::{
     CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarColorsCommand,
-    CalendarCommand, CalendarEventsCommand, CalendarListEntryCommand, CalendarSendUpdates,
+    CalendarCommand, CalendarEventsCommand, CalendarEventsOrderBy, CalendarListEntryCommand,
+    CalendarSendUpdates,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -620,9 +621,15 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             time_max,
             query,
             single_events,
+            show_deleted,
+            show_hidden_invitations,
+            order_by,
             json,
         } => {
             let json = json || output_json_by_default;
+            if order_by == Some(CalendarEventsOrderBy::StartTime) && !single_events {
+                anyhow::bail!("--order-by start-time requires --single-events");
+            }
             let options = list_events_options(
                 calendar_id.clone(),
                 requested_result_count(limit, all).unwrap_or(DEFAULT_LIST_LIMIT),
@@ -630,6 +637,9 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                 time_max,
                 query,
                 single_events,
+                show_deleted,
+                show_hidden_invitations,
+                order_by,
                 None,
                 base_url,
             );
@@ -1103,6 +1113,12 @@ async fn collect_events_unified<S: AccountStore>(
             first_options.time_max.clone(),
             first_options.query.clone(),
             first_options.single_events,
+            first_options.show_deleted,
+            first_options.show_hidden_invitations,
+            first_options
+                .order_by
+                .as_deref()
+                .and_then(CalendarEventsOrderBy::from_api_value),
             page_token.take(),
             base_url,
         );
@@ -1690,11 +1706,17 @@ fn list_events_options(
     time_max: Option<String>,
     query: Option<String>,
     single_events: bool,
+    show_deleted: bool,
+    show_hidden_invitations: bool,
+    order_by: Option<CalendarEventsOrderBy>,
     page_token: Option<String>,
     base_url: Option<&str>,
 ) -> ListEventsOptions {
     let mut options =
         ListEventsOptions::new(calendar_id, page_size).with_single_events(single_events);
+    options = options
+        .with_show_deleted(show_deleted)
+        .with_show_hidden_invitations(show_hidden_invitations);
     if let Some(time_min) = time_min {
         options = options.with_time_min(time_min);
     }
@@ -1703,6 +1725,9 @@ fn list_events_options(
     }
     if let Some(query) = query {
         options = options.with_query(query);
+    }
+    if let Some(order_by) = order_by {
+        options = options.with_order_by(order_by.api_value());
     }
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);

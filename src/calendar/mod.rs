@@ -522,6 +522,9 @@ pub struct ListEventsOptions {
     pub time_max: Option<String>,
     pub query: Option<String>,
     pub single_events: bool,
+    pub show_deleted: bool,
+    pub show_hidden_invitations: bool,
+    pub order_by: Option<String>,
     base_url: String,
 }
 
@@ -535,6 +538,9 @@ impl ListEventsOptions {
             time_max: None,
             query: None,
             single_events: false,
+            show_deleted: false,
+            show_hidden_invitations: false,
+            order_by: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
@@ -564,6 +570,21 @@ impl ListEventsOptions {
         self
     }
 
+    pub fn with_show_deleted(mut self, show_deleted: bool) -> Self {
+        self.show_deleted = show_deleted;
+        self
+    }
+
+    pub fn with_show_hidden_invitations(mut self, show_hidden_invitations: bool) -> Self {
+        self.show_hidden_invitations = show_hidden_invitations;
+        self
+    }
+
+    pub fn with_order_by(mut self, order_by: impl Into<String>) -> Self {
+        self.order_by = Some(order_by.into());
+        self
+    }
+
     pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self
@@ -588,6 +609,15 @@ impl ListEventsOptions {
             }
             if self.single_events {
                 query.append_pair("singleEvents", "true");
+            }
+            if self.show_deleted {
+                query.append_pair("showDeleted", "true");
+            }
+            if self.show_hidden_invitations {
+                query.append_pair("showHiddenInvitations", "true");
+            }
+            if let Some(order_by) = &self.order_by {
+                query.append_pair("orderBy", order_by);
             }
         }
         Ok(url)

@@ -1338,6 +1338,15 @@ pub enum CalendarEventsCommand {
         /// Expand recurring events into instances
         #[arg(long)]
         single_events: bool,
+        /// Include deleted events with cancelled status
+        #[arg(long)]
+        show_deleted: bool,
+        /// Include hidden invitations
+        #[arg(long)]
+        show_hidden_invitations: bool,
+        /// Order events by start time or last update time
+        #[arg(long, value_enum)]
+        order_by: Option<CalendarEventsOrderBy>,
         /// Emit newline-delimited JSON
         #[arg(long)]
         json: bool,
@@ -1600,6 +1609,29 @@ pub enum CalendarSendUpdates {
     All,
     ExternalOnly,
     None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum CalendarEventsOrderBy {
+    StartTime,
+    Updated,
+}
+
+impl CalendarEventsOrderBy {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            CalendarEventsOrderBy::StartTime => "startTime",
+            CalendarEventsOrderBy::Updated => "updated",
+        }
+    }
+
+    pub fn from_api_value(value: &str) -> Option<Self> {
+        match value {
+            "startTime" => Some(CalendarEventsOrderBy::StartTime),
+            "updated" => Some(CalendarEventsOrderBy::Updated),
+            _ => None,
+        }
+    }
 }
 
 impl DocsCommand {

@@ -11,7 +11,7 @@ use crate::auth::testing::MemoryStore;
 use crate::calendar::CALENDAR_SCOPE;
 use crate::cli::{
     CalendarAclCommand, CalendarAclRole, CalendarAclScope, CalendarCalendarsCommand,
-    CalendarColorsCommand, CalendarEventsCommand, CalendarListEntryCommand,
+    CalendarColorsCommand, CalendarEventsCommand, CalendarEventsOrderBy, CalendarListEntryCommand,
 };
 
 use super::calendar::*;
@@ -1593,6 +1593,10 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/calendar/v3/calendars/primary/events"))
+        .and(query_param("maxResults", "1"))
+        .and(query_param("showDeleted", "true"))
+        .and(query_param("showHiddenInvitations", "true"))
+        .and(query_param("orderBy", "updated"))
         .and(header("authorization", "Bearer alice-access"))
         .respond_with(ResponseTemplate::new(403).set_body_string("denied"))
         .expect(1)
@@ -1600,6 +1604,10 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
         .await;
     Mock::given(method("GET"))
         .and(path("/calendar/v3/calendars/primary/events"))
+        .and(query_param("maxResults", "1"))
+        .and(query_param("showDeleted", "true"))
+        .and(query_param("showHiddenInvitations", "true"))
+        .and(query_param("orderBy", "updated"))
         .and(header("authorization", "Bearer bob-access"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "items": [
@@ -1644,6 +1652,9 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
             time_max: None,
             query: None,
             single_events: false,
+            show_deleted: true,
+            show_hidden_invitations: true,
+            order_by: Some(CalendarEventsOrderBy::Updated),
             json: false,
         },
         &mut input,
