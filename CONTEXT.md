@@ -232,24 +232,28 @@ _Avoid_: Stable product, prototype, demo
 
 **Canonical Release**:
 A tagged GitHub Release created from `main` that owns the downloadable `goog` binaries and checksums for a published version.
-_Avoid_: Branch head, installer version, Homebrew version
+_Avoid_: Branch head, installer version
+
+**Preview Release**:
+A GitHub pre-release created from the `preview` branch for opt-in validation before Stable LTS promotion.
+Preview releases use tags such as `v0.2.4-preview.1`.
+_Avoid_: Beta, unstable, branch-head binary
 
 **Release Asset**:
 A downloadable binary archive or checksum file attached to a Canonical Release for one supported platform.
 _Avoid_: Build artifact, package
 
 **Distribution Channel**:
-A user-facing installation path that resolves to a Canonical Release, such as the GitHub-hosted installer script, Homebrew tap, or Rust-native install command.
+A user-facing installation path that resolves to a GitHub Release.
+The only supported distribution channel is the GitHub-hosted installer script.
+Stable resolves to Canonical Releases by default.
+Preview resolves to preview pre-releases only when explicitly requested.
 _Avoid_: Release source, package source
 
 **Release Automation**:
-The GitHub Actions workflow that turns a version tag on `main` into Canonical Release assets and updates distribution metadata.
+The GitHub Actions workflow that turns a stable version tag on `main` or preview version tag on `preview` into Release Assets and distribution metadata.
 _Avoid_: Publish script, deploy script
 
 **Installer Script**:
-The GitHub-hosted shell entrypoint that detects the user's platform, downloads a Canonical Release asset, verifies it, and installs the `goog` binary.
+The GitHub-hosted shell entrypoint that detects the user's platform, downloads a stable or preview Release Asset, verifies it, and installs the `goog` binary.
 _Avoid_: Bash release, install command
-
-**Homebrew Tap**:
-The Homebrew formula repository that lets Homebrew users install `goog` from Canonical Release assets through `SainyTK/tap/goog`.
-_Avoid_: Brew package, Homebrew release

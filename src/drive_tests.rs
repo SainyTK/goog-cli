@@ -56,6 +56,18 @@ const DRIVE_BROWSE_PAGE_RESPONSE: &str = r#"{
     }
   ]
 }"#;
+const SHEETS_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "sheet-1",
+      "name": "Budget",
+      "parents": ["folder-123"],
+      "mimeType": "application/vnd.google-apps.spreadsheet",
+      "modifiedTime": "2026-06-24T12:15:00.000Z"
+    }
+  ]
+}"#;
 
 fn test_config() -> Config {
     Config {
@@ -228,6 +240,63 @@ async fn list_folders_can_filter_to_child_folders_inside_a_parent() {
     let page = list_files(&client, &options).await.unwrap();
 
     assert_eq!(page.files[0].id, "folder-456");
+}
+
+#[tokio::test]
+async fn list_docs_filters_to_native_google_docs() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "mimeType = 'application/vnd.google-apps.document'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ListFilesOptions::docs(50).with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "file-1");
+}
+
+#[tokio::test]
+async fn list_sheets_can_filter_to_native_google_sheets_inside_a_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.spreadsheet'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SHEETS_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::sheets(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "sheet-1");
 }
 
 #[tokio::test]

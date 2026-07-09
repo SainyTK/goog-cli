@@ -26,7 +26,7 @@ If neither file has been set up, `goog` commands inside the sandbox fail with "a
 
 ## Read vs. mutate
 
-- **Reads are unrestricted.** `mail list/read`, `drive ls/download`, `docs map/get`, `sheets get`, and `sheets values get` may target any existing file, message, or thread in the account.
+- **Reads are unrestricted.** `mail list/read`, `drive ls/download`, `docs list/map/get`, `sheets list/get`, and `sheets values get` may target any existing file, message, or thread in the account.
 - **Mutations must only ever touch a resource this same test run created.** `drive upload`, `docs batch-update`, `sheets values update/append/clear`, `sheets batch-update` take a Document/Spreadsheet/File ID directly and will happily overwrite whatever ID you give them -- the CLI has no built-in safety net here.
   - Never pass an ID you discovered via a read/list/search command to a mutating command.
   - Only pass an ID that came back from a `drive upload` (or similar creating call) earlier in the same test run.
