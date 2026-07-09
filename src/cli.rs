@@ -212,7 +212,6 @@ impl DocsCommand {
         let document_id = match self {
             DocsCommand::Create { .. } => return,
             DocsCommand::Map { document_id, .. }
-            | DocsCommand::CreateFooter { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
             | DocsCommand::ApplyList { document_id, .. }
             | DocsCommand::Get { document_id, .. }
@@ -220,6 +219,9 @@ impl DocsCommand {
             | DocsCommand::StyleTemplate { document_id, .. } => document_id,
             DocsCommand::Header { command } => match command {
                 DocsHeaderCommand::Create { document_id, .. } => document_id,
+            },
+            DocsCommand::Footer { command } => match command {
+                DocsFooterCommand::Create { document_id, .. } => document_id,
             },
             DocsCommand::Break { command } => match command {
                 DocsBreakCommand::Page { document_id, .. }
@@ -315,25 +317,10 @@ Notes:
         #[command(subcommand)]
         command: DocsHeaderCommand,
     },
-    /// Create the document's default footer, returning its footerId
-    #[command(after_long_help = "Output shape:
-  Prints the raw documents.batchUpdate response JSON, which includes the new footerId under replies[0].createFooter.footerId.
-
-Notes:
-  Always creates the DEFAULT footer for the document's first section; there is no per-section footer support today.
-  Edit the footer's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footerId segment.")]
-    CreateFooter {
-        /// Google Docs Document ID or URL to update
-        document_id: String,
-        /// Preview the edit without calling documents.batchUpdate
-        #[arg(long)]
-        dry_run: bool,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-        /// Require the document to still be at this revision before applying the edit
-        #[arg(long)]
-        required_revision_id: Option<String>,
+    /// Create document footers
+    Footer {
+        #[command(subcommand)]
+        command: DocsFooterCommand,
     },
     /// Insert or edit tables
     Table {
@@ -616,6 +603,30 @@ pub enum DocsHeaderCommand {
 Notes:
   Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
   Edit the header's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
+    Create {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsFooterCommand {
+    /// Create the document's default footer, returning its footerId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new footerId under replies[0].createFooter.footerId.
+
+Notes:
+  Always creates the DEFAULT footer for the document's first section; there is no per-section footer support today.
+  Edit the footer's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footerId segment.")]
     Create {
         /// Google Docs Document ID or URL to update
         document_id: String,

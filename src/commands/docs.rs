@@ -7,8 +7,8 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    DocsBreakCommand, DocsCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand,
-    DocsMapType, DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand,
+    DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand,
+    DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand,
 };
 use crate::docs::{
     batch_update_document,
@@ -382,11 +382,14 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::CreateFooter {
-            document_id,
-            dry_run,
-            json,
-            required_revision_id,
+        DocsCommand::Footer {
+            command:
+                DocsFooterCommand::Create {
+                    document_id,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;

@@ -3,9 +3,9 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsBreakCommand, DocsCommand,
-    DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListType, DocsMapType,
-    DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand, DriveCommand, DriveListType,
-    MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
+    DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListType,
+    DocsMapType, DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
+    DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
     SheetsValueRenderOption, SheetsValuesCommand,
 };
 
@@ -786,6 +786,11 @@ fn docs_flat_header_command_is_removed() {
 }
 
 #[test]
+fn docs_flat_footer_command_is_removed() {
+    assert!(parse(&["docs", "create-footer", "document-123"]).is_err());
+}
+
+#[test]
 fn docs_new_high_level_editing_commands_parse() {
     let Command::Docs {
         command:
@@ -921,6 +926,34 @@ fn docs_new_high_level_editing_commands_parse() {
     } = parse(&[
         "docs",
         "header",
+        "create",
+        "document-123",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(document_id, "document-123");
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::Footer {
+                command:
+                    DocsFooterCommand::Create {
+                        document_id,
+                        dry_run,
+                        json,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "footer",
         "create",
         "document-123",
         "--dry-run",
