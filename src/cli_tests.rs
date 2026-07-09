@@ -3,9 +3,10 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsBreakCommand, DocsCommand,
-    DocsFootnoteCommand, DocsImageCommand, DocsListType, DocsMapType, DocsNamedRangeCommand,
-    DocsTableCommand, DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsCommand,
-    SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListType, DocsMapType,
+    DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand, DriveCommand, DriveListType,
+    MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -780,6 +781,11 @@ fn docs_flat_break_commands_are_removed() {
 }
 
 #[test]
+fn docs_flat_header_command_is_removed() {
+    assert!(parse(&["docs", "create-header", "document-123"]).is_err());
+}
+
+#[test]
 fn docs_new_high_level_editing_commands_parse() {
     let Command::Docs {
         command:
@@ -900,6 +906,34 @@ fn docs_new_high_level_editing_commands_parse() {
     };
     assert_eq!(section_type, crate::cli::DocsSectionBreakType::Continuous);
     assert_eq!(at.as_deref(), Some("heading:Appendix"));
+
+    let Command::Docs {
+        command:
+            DocsCommand::Header {
+                command:
+                    DocsHeaderCommand::Create {
+                        document_id,
+                        dry_run,
+                        json,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "header",
+        "create",
+        "document-123",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(document_id, "document-123");
+    assert!(dry_run);
+    assert!(json);
 
     let Command::Docs {
         command: DocsCommand::ApplyList {

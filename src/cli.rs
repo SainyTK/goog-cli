@@ -212,13 +212,15 @@ impl DocsCommand {
         let document_id = match self {
             DocsCommand::Create { .. } => return,
             DocsCommand::Map { document_id, .. }
-            | DocsCommand::CreateHeader { document_id, .. }
             | DocsCommand::CreateFooter { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
             | DocsCommand::ApplyList { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. }
             | DocsCommand::StyleTemplate { document_id, .. } => document_id,
+            DocsCommand::Header { command } => match command {
+                DocsHeaderCommand::Create { document_id, .. } => document_id,
+            },
             DocsCommand::Break { command } => match command {
                 DocsBreakCommand::Page { document_id, .. }
                 | DocsBreakCommand::Section { document_id, .. } => document_id,
@@ -308,25 +310,10 @@ Notes:
         #[command(subcommand)]
         command: DocsFootnoteCommand,
     },
-    /// Create the document's default header, returning its headerId
-    #[command(after_long_help = "Output shape:
-  Prints the raw documents.batchUpdate response JSON, which includes the new headerId under replies[0].createHeader.headerId.
-
-Notes:
-  Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
-  Edit the header's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
-    CreateHeader {
-        /// Google Docs Document ID or URL to update
-        document_id: String,
-        /// Preview the edit without calling documents.batchUpdate
-        #[arg(long)]
-        dry_run: bool,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-        /// Require the document to still be at this revision before applying the edit
-        #[arg(long)]
-        required_revision_id: Option<String>,
+    /// Create document headers
+    Header {
+        #[command(subcommand)]
+        command: DocsHeaderCommand,
     },
     /// Create the document's default footer, returning its footerId
     #[command(after_long_help = "Output shape:
@@ -608,6 +595,30 @@ pub enum DocsTextCommand {
         /// Replace every text match
         #[arg(long)]
         all: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsHeaderCommand {
+    /// Create the document's default header, returning its headerId
+    #[command(after_long_help = "Output shape:
+  Prints the raw documents.batchUpdate response JSON, which includes the new headerId under replies[0].createHeader.headerId.
+
+Notes:
+  Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
+  Edit the header's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
+    Create {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,

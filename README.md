@@ -219,7 +219,7 @@ goog docs text search DOCUMENT_ID "quarterly plan"
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
 goog docs break page DOCUMENT_ID --at 'heading:Summary'
 goog docs break section DOCUMENT_ID --section-type next-page --at 'heading:Appendix'
-goog docs create-header DOCUMENT_ID
+goog docs header create DOCUMENT_ID
 goog docs create-footer DOCUMENT_ID
 goog docs footnote insert DOCUMENT_ID --at 'after-text:quarterly plan'
 goog docs named-range create DOCUMENT_ID "highlights" --text "quarterly plan"
