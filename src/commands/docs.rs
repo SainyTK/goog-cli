@@ -567,6 +567,8 @@ pub fn run<S: AccountStore>(
             entry,
             page,
             line,
+            text,
+            match_number,
             list_type,
             preset,
             dry_run,
@@ -574,7 +576,8 @@ pub fn run<S: AccountStore>(
             required_revision_id,
             no_auto_style,
         } => {
-            let selector = range_selector(from_index, to_index, entry, page, line, None, None)?;
+            let selector =
+                range_selector(from_index, to_index, entry, page, line, text, match_number)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_apply_list_unified_to(

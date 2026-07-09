@@ -812,6 +812,34 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
+            DocsCommand::ApplyList {
+                text,
+                match_number,
+                list_type,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "apply-list",
+        "document-123",
+        "--text",
+        "Plan",
+        "--match",
+        "2",
+        "--type",
+        "numbered",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(text.as_deref(), Some("Plan"));
+    assert_eq!(match_number, Some(2));
+    assert_eq!(list_type, Some(DocsListType::Numbered));
+
+    let Command::Docs {
+        command:
             DocsCommand::ApplyStyles {
                 style_json,
                 from_index,

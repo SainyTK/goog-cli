@@ -710,6 +710,12 @@ Notes:
         /// Content line within the derived page
         #[arg(long)]
         line: Option<usize>,
+        /// Matched text span to list
+        #[arg(long)]
+        text: Option<String>,
+        /// List the Nth text match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
         /// List type shorthand
         #[arg(long = "type", value_enum)]
         list_type: Option<DocsListType>,
