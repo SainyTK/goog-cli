@@ -157,6 +157,59 @@ async fn run_calendars_create_sends_calendar_body() {
 }
 
 #[tokio::test]
+async fn run_calendars_update_sends_calendar_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path_regex(
+            r"^/calendar/v3/calendars/team-launches(%40|@)example\.com$",
+        ))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "summary": "Team Launches Updated",
+            "description": "Launch planning and retros",
+            "location": "Bangkok",
+            "timeZone": "Asia/Bangkok"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "team-launches@example.com",
+            "summary": "Team Launches Updated"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::Update {
+            calendar_id: "team-launches@example.com".into(),
+            summary: "Team Launches Updated".into(),
+            description: Some("Launch planning and retros".into()),
+            location: Some("Bangkok".into()),
+            time_zone: Some("Asia/Bangkok".into()),
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"team-launches@example.com\",\"summary\":\"Team Launches Updated\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_calendars_delete_sends_delete_request() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))

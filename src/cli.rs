@@ -824,6 +824,23 @@ pub enum CalendarCalendarsCommand {
         #[arg(long)]
         time_zone: Option<String>,
     },
+    /// Replace one calendar's editable metadata
+    Update {
+        /// Calendar ID to update. Primary calendars can be updated.
+        calendar_id: String,
+        /// Calendar title
+        #[arg(long)]
+        summary: String,
+        /// Calendar description
+        #[arg(long)]
+        description: Option<String>,
+        /// Calendar location
+        #[arg(long)]
+        location: Option<String>,
+        /// Calendar time zone, such as Asia/Bangkok
+        #[arg(long)]
+        time_zone: Option<String>,
+    },
     /// Delete a secondary calendar
     Delete {
         /// Calendar ID to delete. Primary calendars cannot be deleted.

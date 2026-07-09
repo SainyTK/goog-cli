@@ -12,9 +12,10 @@ use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_calendar, delete_event, get_calendar, get_event, insert_calendar, insert_event,
     list_calendars, list_events, move_event, patch_event, query_freebusy, quick_add_event,
-    update_event, CalendarError, DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions,
-    GetCalendarOptions, GetEventOptions, InsertCalendarOptions, ListCalendarsOptions,
-    ListEventsOptions, MoveEventOptions, QuickAddEventOptions, SendUpdates, WriteEventOptions,
+    update_calendar, update_event, CalendarError, DeleteCalendarOptions, DeleteEventOptions,
+    FreeBusyOptions, GetCalendarOptions, GetEventOptions, InsertCalendarOptions,
+    ListCalendarsOptions, ListEventsOptions, MoveEventOptions, QuickAddEventOptions, SendUpdates,
+    UpdateCalendarOptions, WriteEventOptions,
 };
 use crate::cli::{
     CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand, CalendarSendUpdates,
@@ -151,6 +152,31 @@ pub(super) async fn run_calendars_command_to<S: AccountStore>(
             let calendar = insert_calendar(&client, &options)
                 .await
                 .context("failed to create Google Calendar")?;
+            write_json_line(out, &calendar, "failed to serialize Calendar")
+        }
+        CalendarCalendarsCommand::Update {
+            calendar_id,
+            summary,
+            description,
+            location,
+            time_zone,
+        } => {
+            let options = update_calendar_options(
+                calendar_id.clone(),
+                build_calendar_request_body(summary, description, location, time_zone),
+                base_url,
+            );
+            let target_resource_key = resource_key("calendar", &calendar_id);
+            let calendar = run_with_calendar_unified_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                CalendarAccessAttempt::UpdateCalendar(&options),
+                state_path,
+            )
+            .await
+            .context("failed to update Google Calendar")?;
             write_json_line(out, &calendar, "failed to serialize Calendar")
         }
         CalendarCalendarsCommand::Delete { calendar_id } => {
@@ -615,6 +641,7 @@ async fn collect_events_unified<S: AccountStore>(
 
 enum CalendarAccessAttempt<'a> {
     GetCalendar(&'a GetCalendarOptions),
+    UpdateCalendar(&'a UpdateCalendarOptions),
     ListEvents(&'a ListEventsOptions),
     GetEvent(&'a GetEventOptions),
     InsertEvent(&'a WriteEventOptions),
@@ -658,6 +685,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         .map_err(CalendarError::Auth)?;
     match attempt {
         CalendarAccessAttempt::GetCalendar(options) => get_calendar(&client, options).await,
+        CalendarAccessAttempt::UpdateCalendar(options) => update_calendar(&client, options).await,
         CalendarAccessAttempt::ListEvents(options) => list_events(&client, options).await,
         CalendarAccessAttempt::GetEvent(options) => get_event(&client, options).await,
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
@@ -785,6 +813,18 @@ fn insert_calendar_options(
     base_url: Option<&str>,
 ) -> InsertCalendarOptions {
     let mut options = InsertCalendarOptions::new(request_body);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn update_calendar_options(
+    calendar_id: String,
+    request_body: serde_json::Value,
+    base_url: Option<&str>,
+) -> UpdateCalendarOptions {
+    let mut options = UpdateCalendarOptions::new(calendar_id, request_body);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
