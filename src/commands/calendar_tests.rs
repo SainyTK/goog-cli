@@ -753,6 +753,48 @@ async fn run_acl_patch_prints_json_when_requested() {
 }
 
 #[tokio::test]
+async fn run_acl_delete_removes_rule_and_prints_confirmation() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path_regex(
+            r"^/calendar/v3/calendars/team-launches(%40|@)example\.com/acl/user(:|%3A)teammate(%40|@)example\.com$",
+        ))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Delete {
+            calendar_id: "team-launches@example.com".into(),
+            rule_id: "user:teammate@example.com".into(),
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "deleted\tteam-launches@example.com\tuser:teammate@example.com\n"
+    );
+}
+
+#[tokio::test]
 async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

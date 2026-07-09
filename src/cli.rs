@@ -841,6 +841,13 @@ pub enum CalendarAclCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Delete one access control rule
+    Delete {
+        /// Calendar ID containing the rule. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// ACL rule ID, such as user:teammate@example.com or default.
+        rule_id: String,
+    },
     /// Partially update one access control rule
     Patch {
         /// Calendar ID containing the rule. Use primary for the account's primary calendar.

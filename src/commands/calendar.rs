@@ -10,13 +10,13 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
-    delete_calendar, delete_event, get_acl, get_calendar, get_event, insert_acl, insert_calendar,
-    insert_event, list_acl, list_calendars, list_events, move_event, patch_acl, patch_calendar,
-    patch_event, query_freebusy, quick_add_event, update_calendar, update_event, CalendarError,
-    DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarOptions,
-    GetEventOptions, InsertAclOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
-    ListEventsOptions, MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateAclOptions,
-    UpdateCalendarOptions, WriteEventOptions,
+    delete_acl, delete_calendar, delete_event, get_acl, get_calendar, get_event, insert_acl,
+    insert_calendar, insert_event, list_acl, list_calendars, list_events, move_event, patch_acl,
+    patch_calendar, patch_event, query_freebusy, quick_add_event, update_calendar, update_event,
+    CalendarError, DeleteAclOptions, DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions,
+    GetAclOptions, GetCalendarOptions, GetEventOptions, InsertAclOptions, InsertCalendarOptions,
+    ListAclOptions, ListCalendarsOptions, ListEventsOptions, MoveEventOptions,
+    QuickAddEventOptions, SendUpdates, UpdateAclOptions, UpdateCalendarOptions, WriteEventOptions,
 };
 use crate::cli::{
     CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarCommand,
@@ -323,6 +323,24 @@ pub(super) async fn run_acl_command_to<S: AccountStore>(
             } else {
                 write_acl_rule_table(out, &rule)
             }
+        }
+        CalendarAclCommand::Delete {
+            calendar_id,
+            rule_id,
+        } => {
+            let options = delete_acl_options(calendar_id.clone(), rule_id.clone(), base_url);
+            let target_resource_key = resource_key("calendar-acl", &calendar_id);
+            run_with_calendar_delete_acl_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                &options,
+                state_path,
+            )
+            .await
+            .context("failed to delete Google Calendar ACL rule")?;
+            writeln!(out, "deleted\t{calendar_id}\t{rule_id}").context("failed to write output")
         }
         CalendarAclCommand::Patch {
             calendar_id,
@@ -960,6 +978,27 @@ async fn run_with_calendar_delete_calendar_access<S: AccountStore>(
     .await
 }
 
+async fn run_with_calendar_delete_acl_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &DeleteAclOptions,
+    state_path: Option<&Path>,
+) -> Result<(), CalendarError> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, (), CalendarError> {
+            Box::pin(delete_acl_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
 async fn delete_calendar_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
@@ -969,6 +1008,17 @@ async fn delete_calendar_as_account<S: AccountStore>(
     let client = AuthClient::from_config(config.clone(), store, Some(&account))
         .map_err(CalendarError::Auth)?;
     delete_calendar(&client, options).await
+}
+
+async fn delete_acl_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &DeleteAclOptions,
+    account: String,
+) -> Result<(), CalendarError> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))
+        .map_err(CalendarError::Auth)?;
+    delete_acl(&client, options).await
 }
 
 async fn delete_event_as_account<S: AccountStore>(
@@ -1078,6 +1128,18 @@ fn list_acl_options(
 
 fn get_acl_options(calendar_id: String, rule_id: String, base_url: Option<&str>) -> GetAclOptions {
     let mut options = GetAclOptions::new(calendar_id, rule_id);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn delete_acl_options(
+    calendar_id: String,
+    rule_id: String,
+    base_url: Option<&str>,
+) -> DeleteAclOptions {
+    let mut options = DeleteAclOptions::new(calendar_id, rule_id);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }

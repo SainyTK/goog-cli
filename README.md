@@ -315,6 +315,7 @@ goog calendar acl list team-launches@example.com --limit 20
 goog calendar acl get team-launches@example.com user:teammate@example.com
 goog calendar acl add team-launches@example.com --scope user --value teammate@example.com --role writer --no-send-notifications
 goog calendar acl patch team-launches@example.com user:teammate@example.com --role reader
+goog calendar acl delete team-launches@example.com user:teammate@example.com
 goog calendar freebusy --time-min 2026-07-09T09:00:00Z --time-max 2026-07-09T17:00:00Z --calendar primary --calendar teammate@example.com
 goog calendar events list primary --time-min 2026-07-09T00:00:00Z --time-max 2026-07-10T00:00:00Z --single-events
 goog calendar events get primary EVENT_ID
