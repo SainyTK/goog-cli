@@ -797,6 +797,26 @@ pub enum CalendarCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CalendarAclCommand {
+    /// Add an access control rule to a calendar
+    Add {
+        /// Calendar ID to share. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Scope type for the rule.
+        #[arg(long)]
+        scope: CalendarAclScope,
+        /// Scope value, such as a user email, group email, or domain. Omit for default scope.
+        #[arg(long)]
+        value: Option<String>,
+        /// Access role to grant.
+        #[arg(long)]
+        role: CalendarAclRole,
+        /// Suppress Google Calendar sharing notification emails.
+        #[arg(long)]
+        no_send_notifications: bool,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
     /// List access control rules for a calendar
     List {
         /// Calendar ID to inspect. Use primary for the account's primary calendar.
@@ -821,6 +841,46 @@ pub enum CalendarAclCommand {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CalendarAclScope {
+    Default,
+    User,
+    Group,
+    Domain,
+}
+
+impl CalendarAclScope {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            CalendarAclScope::Default => "default",
+            CalendarAclScope::User => "user",
+            CalendarAclScope::Group => "group",
+            CalendarAclScope::Domain => "domain",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CalendarAclRole {
+    None,
+    FreeBusyReader,
+    Reader,
+    Writer,
+    Owner,
+}
+
+impl CalendarAclRole {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            CalendarAclRole::None => "none",
+            CalendarAclRole::FreeBusyReader => "freeBusyReader",
+            CalendarAclRole::Reader => "reader",
+            CalendarAclRole::Writer => "writer",
+            CalendarAclRole::Owner => "owner",
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]

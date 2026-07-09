@@ -9,7 +9,10 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::calendar::CALENDAR_SCOPE;
-use crate::cli::{CalendarAclCommand, CalendarCalendarsCommand, CalendarEventsCommand};
+use crate::cli::{
+    CalendarAclCommand, CalendarAclRole, CalendarAclScope, CalendarCalendarsCommand,
+    CalendarEventsCommand,
+};
 
 use super::calendar::*;
 
@@ -545,6 +548,102 @@ async fn run_acl_get_prints_json_when_requested() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"id\":\"default\",\"role\":\"reader\",\"scope\":{\"type\":\"default\"}}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_acl_add_posts_rule_and_prints_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path_regex(
+            r"^/calendar/v3/calendars/team-launches(%40|@)example\.com/acl$",
+        ))
+        .and(query_param("sendNotifications", "false"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "role": "writer",
+            "scope": {
+                "type": "user",
+                "value": "teammate@example.com"
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "user:teammate@example.com",
+            "scope": {
+                "type": "user",
+                "value": "teammate@example.com"
+            },
+            "role": "writer"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Add {
+            calendar_id: "team-launches@example.com".into(),
+            scope: CalendarAclScope::User,
+            value: Some("teammate@example.com".into()),
+            role: CalendarAclRole::Writer,
+            no_send_notifications: true,
+            json: false,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SCOPE TYPE\tSCOPE VALUE\tROLE\tRULE ID\nuser\tteammate@example.com\twriter\tuser:teammate@example.com\n"
+    );
+}
+
+#[tokio::test]
+async fn run_acl_add_requires_value_for_non_default_scope() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    let err = run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Add {
+            calendar_id: "primary".into(),
+            scope: CalendarAclScope::Group,
+            value: None,
+            role: CalendarAclRole::Reader,
+            no_send_notifications: false,
+            json: false,
+        },
+        false,
+        &mut out,
+        None,
+        Some(&state_path),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "--value is required unless --scope default"
     );
 }
 

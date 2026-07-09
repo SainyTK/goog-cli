@@ -2,18 +2,19 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, CalendarAclCommand, CalendarCalendarsCommand,
-    CalendarCommand, CalendarEventsCommand, CalendarSendUpdates, Cli, Command, DocsBreakCommand,
-    DocsCommand, DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand,
-    DocsListCommand, DocsListType, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand,
-    DocsTableCommand, DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsBorderEdge,
-    SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension,
-    SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType,
-    SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption,
-    SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
-    SlidesCommand, SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType,
-    SlidesSlideCommand, SlidesZOrderOperation,
+    AuthCommand, AuthMappingsCommand, CalendarAclCommand, CalendarAclRole, CalendarAclScope,
+    CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand, CalendarSendUpdates, Cli,
+    Command, DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand,
+    DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType, DocsMapType,
+    DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
+    DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
+    SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
+    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
+    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
+    SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand,
+    SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -3568,6 +3569,49 @@ fn calendar_acl_list_with_flags() {
             assert_eq!(calendar_id, "team-launches@example.com");
             assert_eq!(limit, Some(10));
             assert!(all);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_acl_add_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "add",
+        "team-launches@example.com",
+        "--scope",
+        "user",
+        "--value",
+        "teammate@example.com",
+        "--role",
+        "writer",
+        "--no-send-notifications",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::Add {
+                            calendar_id,
+                            scope,
+                            value,
+                            role,
+                            no_send_notifications,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(scope, CalendarAclScope::User);
+            assert_eq!(value.as_deref(), Some("teammate@example.com"));
+            assert_eq!(role, CalendarAclRole::Writer);
+            assert!(no_send_notifications);
             assert!(json);
         }
         _ => panic!("unexpected parse result"),

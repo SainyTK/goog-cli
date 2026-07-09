@@ -246,6 +246,44 @@ impl GetAclOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct InsertAclOptions {
+    pub calendar_id: String,
+    pub request_body: Value,
+    pub send_notifications: Option<bool>,
+    base_url: String,
+}
+
+impl InsertAclOptions {
+    pub fn new(calendar_id: impl Into<String>, request_body: Value) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            request_body,
+            send_notifications: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_send_notifications(mut self, send_notifications: bool) -> Self {
+        self.send_notifications = Some(send_notifications);
+        self
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(&self.base_url, &["calendars", &self.calendar_id, "acl"])?;
+        if let Some(send_notifications) = self.send_notifications {
+            url.query_pairs_mut()
+                .append_pair("sendNotifications", &send_notifications.to_string());
+        }
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ListEventsOptions {
     pub calendar_id: String,
     pub max_results: u32,
@@ -679,6 +717,19 @@ pub async fn get_acl<S: AccountStore>(
     options: &GetAclOptions,
 ) -> Result<AclRule, CalendarError> {
     send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn insert_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &InsertAclOptions,
+) -> Result<AclRule, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
 }
 
 pub async fn list_events<S: AccountStore>(

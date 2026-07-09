@@ -10,16 +10,17 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
-    delete_calendar, delete_event, get_acl, get_calendar, get_event, insert_calendar, insert_event,
-    list_acl, list_calendars, list_events, move_event, patch_calendar, patch_event, query_freebusy,
-    quick_add_event, update_calendar, update_event, CalendarError, DeleteCalendarOptions,
-    DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarOptions, GetEventOptions,
-    InsertCalendarOptions, ListAclOptions, ListCalendarsOptions, ListEventsOptions,
-    MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateCalendarOptions, WriteEventOptions,
+    delete_calendar, delete_event, get_acl, get_calendar, get_event, insert_acl, insert_calendar,
+    insert_event, list_acl, list_calendars, list_events, move_event, patch_calendar, patch_event,
+    query_freebusy, quick_add_event, update_calendar, update_event, CalendarError,
+    DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarOptions,
+    GetEventOptions, InsertAclOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
+    ListEventsOptions, MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateCalendarOptions,
+    WriteEventOptions,
 };
 use crate::cli::{
-    CalendarAclCommand, CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand,
-    CalendarSendUpdates,
+    CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarCommand,
+    CalendarEventsCommand, CalendarSendUpdates,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -244,6 +245,34 @@ pub(super) async fn run_acl_command_to<S: AccountStore>(
     state_path: Option<&Path>,
 ) -> Result<()> {
     match command {
+        CalendarAclCommand::Add {
+            calendar_id,
+            scope,
+            value,
+            role,
+            no_send_notifications,
+            json,
+        } => {
+            let json = json || output_json_by_default;
+            let target_resource_key = resource_key("calendar-acl", &calendar_id);
+            let body = acl_rule_body(scope, value, role)?;
+            let options = insert_acl_options(calendar_id, body, no_send_notifications, base_url);
+            let rule = run_with_calendar_unified_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                CalendarAccessAttempt::InsertAcl(&options),
+                state_path,
+            )
+            .await
+            .context("failed to add Google Calendar ACL rule")?;
+            if json {
+                write_json_line(out, &rule, "failed to serialize Calendar ACL rule")
+            } else {
+                write_acl_rule_table(out, &rule)
+            }
+        }
         CalendarAclCommand::List {
             calendar_id,
             limit,
@@ -797,6 +826,7 @@ enum CalendarAccessAttempt<'a> {
     PatchCalendar(&'a UpdateCalendarOptions),
     ListAcl(&'a ListAclOptions),
     GetAcl(&'a GetAclOptions),
+    InsertAcl(&'a InsertAclOptions),
     ListEvents(&'a ListEventsOptions),
     GetEvent(&'a GetEventOptions),
     InsertEvent(&'a WriteEventOptions),
@@ -844,6 +874,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::PatchCalendar(options) => patch_calendar(&client, options).await,
         CalendarAccessAttempt::ListAcl(options) => list_acl(&client, options).await,
         CalendarAccessAttempt::GetAcl(options) => get_acl(&client, options).await,
+        CalendarAccessAttempt::InsertAcl(options) => insert_acl(&client, options).await,
         CalendarAccessAttempt::ListEvents(options) => list_events(&client, options).await,
         CalendarAccessAttempt::GetEvent(options) => get_event(&client, options).await,
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
@@ -1015,6 +1046,22 @@ fn list_acl_options(
 
 fn get_acl_options(calendar_id: String, rule_id: String, base_url: Option<&str>) -> GetAclOptions {
     let mut options = GetAclOptions::new(calendar_id, rule_id);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn insert_acl_options(
+    calendar_id: String,
+    body: serde_json::Value,
+    no_send_notifications: bool,
+    base_url: Option<&str>,
+) -> InsertAclOptions {
+    let mut options = InsertAclOptions::new(calendar_id, body);
+    if no_send_notifications {
+        options = options.with_send_notifications(false);
+    }
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
@@ -1293,6 +1340,35 @@ fn build_calendar_patch_request_body(
         "at least one calendar metadata flag is required"
     );
     Ok(serde_json::Value::Object(body))
+}
+
+fn acl_rule_body(
+    scope: CalendarAclScope,
+    value: Option<String>,
+    role: crate::cli::CalendarAclRole,
+) -> Result<serde_json::Value> {
+    match (scope, value.as_deref()) {
+        (CalendarAclScope::Default, Some(_)) => {
+            anyhow::bail!("--value cannot be used with --scope default")
+        }
+        (CalendarAclScope::Default, None) => {}
+        (_, Some(value)) if value.trim().is_empty() => {
+            anyhow::bail!("--value cannot be empty")
+        }
+        (_, Some(_)) => {}
+        (_, None) => anyhow::bail!("--value is required unless --scope default"),
+    }
+
+    let mut scope_body =
+        serde_json::Map::from_iter([("type".to_string(), scope.api_value().into())]);
+    if let Some(value) = value {
+        scope_body.insert("value".to_string(), value.into());
+    }
+
+    Ok(serde_json::json!({
+        "role": role.api_value(),
+        "scope": scope_body
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
