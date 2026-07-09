@@ -265,7 +265,10 @@ impl SlidesCommand {
             }
             | SlidesCommand::Object {
                 command:
-                    SlidesObjectCommand::Delete {
+                    SlidesObjectCommand::Move {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::Delete {
                         presentation_id, ..
                     },
             }
@@ -474,6 +477,25 @@ pub enum SlidesSlideCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum SlidesObjectCommand {
+    /// Move or scale a shape, image, table, or other page object without writing Batch Update JSON
+    Move {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID to move or scale
+        object_id: String,
+        /// Left offset in points
+        #[arg(long)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long)]
+        y: f64,
+        /// Horizontal scale to apply
+        #[arg(long, default_value_t = 1.0)]
+        scale_x: f64,
+        /// Vertical scale to apply
+        #[arg(long, default_value_t = 1.0)]
+        scale_y: f64,
+    },
     /// Delete a shape, image, table, or other page object without writing Batch Update JSON
     Delete {
         /// Presentation ID or URL to update

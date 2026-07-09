@@ -2538,6 +2538,50 @@ fn slides_object_delete_with_object_id() {
 }
 
 #[test]
+fn slides_object_move_with_transform_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "move",
+        "presentation-123",
+        "box-1",
+        "--x",
+        "120",
+        "--y",
+        "240",
+        "--scale-x",
+        "1.5",
+        "--scale-y",
+        "0.75",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Move {
+                            presentation_id,
+                            object_id,
+                            x,
+                            y,
+                            scale_x,
+                            scale_y,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "box-1");
+            assert_eq!(x, 120.0);
+            assert_eq!(y, 240.0);
+            assert_eq!(scale_x, 1.5);
+            assert_eq!(scale_y, 0.75);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_slide_duplicate_with_flags() {
     let cli = parse(&[
         "slides",

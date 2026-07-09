@@ -145,6 +145,32 @@ pub fn run<S: AccountStore>(
         )),
         SlidesCommand::Object {
             command:
+                SlidesObjectCommand::Move {
+                    presentation_id,
+                    object_id,
+                    x,
+                    y,
+                    scale_x,
+                    scale_y,
+                },
+        } => run_with_runtime(run_object_move_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectMoveRequest {
+                presentation_id,
+                object_id,
+                x,
+                y,
+                scale_x,
+                scale_y,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Object {
+            command:
                 SlidesObjectCommand::Delete {
                     presentation_id,
                     object_id,
@@ -556,6 +582,71 @@ pub(super) async fn run_slide_delete_unified_to<S: AccountStore>(
 
 fn build_slide_delete_batch_update(request: SlideDeleteRequest) -> serde_json::Value {
     build_delete_object_batch_update(request.page_id)
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectMoveRequest {
+    pub presentation_id: String,
+    pub object_id: String,
+    pub x: f64,
+    pub y: f64,
+    pub scale_x: f64,
+    pub scale_y: f64,
+}
+
+pub(super) async fn run_object_move_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectMoveRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_move_batch_update(request);
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to move Google Slides object")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides object move response",
+    )
+}
+
+fn build_object_move_batch_update(request: ObjectMoveRequest) -> serde_json::Value {
+    serde_json::json!({
+        "requests": [
+            {
+                "updatePageElementTransform": {
+                    "objectId": request.object_id,
+                    "applyMode": "ABSOLUTE",
+                    "transform": {
+                        "scaleX": request.scale_x,
+                        "scaleY": request.scale_y,
+                        "translateX": request.x,
+                        "translateY": request.y,
+                        "unit": "PT"
+                    }
+                }
+            }
+        ]
+    })
 }
 
 #[derive(Debug, Clone)]
