@@ -299,6 +299,7 @@ goog slides table-insert-rows PRESENTATION_ID TABLE_OBJECT_ID --reference-row 1 
 goog slides table-delete-row PRESENTATION_ID TABLE_OBJECT_ID --reference-row 1
 goog slides table-insert-columns PRESENTATION_ID TABLE_OBJECT_ID --reference-column 1 --number 2 --right
 goog slides table-delete-column PRESENTATION_ID TABLE_OBJECT_ID --reference-column 1
+goog slides table-merge-cells PRESENTATION_ID TABLE_OBJECT_ID --start-row 0 --start-column 0 --row-span 1 --column-span 2
 goog slides shape PRESENTATION_ID --page-id SLIDE_OBJECT_ID --type round-rectangle --x 72 --y 72 --width 240 --height 96
 goog slides line PRESENTATION_ID --page-id SLIDE_OBJECT_ID --category straight --x 72 --y 72 --width 240 --height 0
 goog slides object style PRESENTATION_ID PAGE_OBJECT_ID --fill-color "#1a73e8" --outline-color "#202124" --outline-weight 2

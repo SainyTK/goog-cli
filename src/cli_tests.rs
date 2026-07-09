@@ -2794,6 +2794,65 @@ fn slides_table_delete_column_with_reference_cell() {
 }
 
 #[test]
+fn slides_table_merge_cells_with_table_range() {
+    let cli = parse(&[
+        "slides",
+        "table-merge-cells",
+        "presentation-123",
+        "table-1",
+        "--start-row",
+        "1",
+        "--start-column",
+        "2",
+        "--row-span",
+        "2",
+        "--column-span",
+        "3",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableMergeCells {
+                    presentation_id,
+                    table_id,
+                    start_row,
+                    start_column,
+                    row_span,
+                    column_span,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(start_row, 1);
+            assert_eq!(start_column, 2);
+            assert_eq!(row_span, 2);
+            assert_eq!(column_span, 3);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_merge_cells_rejects_zero_span() {
+    assert!(parse(&[
+        "slides",
+        "table-merge-cells",
+        "presentation-123",
+        "table-1",
+        "--start-row",
+        "0",
+        "--start-column",
+        "0",
+        "--row-span",
+        "0",
+        "--column-span",
+        "2",
+    ])
+    .is_err());
+}
+
+#[test]
 fn slides_shape_with_flags() {
     let cli = parse(&[
         "slides",

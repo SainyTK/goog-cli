@@ -677,6 +677,29 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::TableMergeCells {
+            presentation_id,
+            table_id,
+            start_row,
+            start_column,
+            row_span,
+            column_span,
+        } => run_with_runtime(run_table_merge_cells_unified_to(
+            config,
+            store,
+            account_override,
+            TableMergeCellsRequest {
+                presentation_id,
+                table_id,
+                start_row,
+                start_column,
+                row_span,
+                column_span,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::Shape {
             presentation_id,
             page_id,
@@ -2825,6 +2848,77 @@ pub(super) fn build_table_delete_column_batch_update(
             }
         ]
     })
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TableMergeCellsRequest {
+    pub presentation_id: String,
+    pub table_id: String,
+    pub start_row: u32,
+    pub start_column: u32,
+    pub row_span: u32,
+    pub column_span: u32,
+}
+
+pub(super) async fn run_table_merge_cells_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: TableMergeCellsRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_table_merge_cells_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to merge Google Slides table cells")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides table cell merge response",
+    )
+}
+
+pub(super) fn build_table_merge_cells_batch_update(
+    request: TableMergeCellsRequest,
+) -> Result<serde_json::Value> {
+    if request.row_span == 0 || request.column_span == 0 {
+        bail!("slides table-merge-cells spans must be greater than zero");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "mergeTableCells": {
+                    "objectId": request.table_id,
+                    "tableRange": {
+                        "location": {
+                            "rowIndex": request.start_row,
+                            "columnIndex": request.start_column
+                        },
+                        "rowSpan": request.row_span,
+                        "columnSpan": request.column_span
+                    }
+                }
+            }
+        ]
+    }))
 }
 
 #[derive(Debug, Clone)]

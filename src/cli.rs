@@ -335,6 +335,9 @@ impl SlidesCommand {
             | SlidesCommand::TableDeleteColumn {
                 presentation_id, ..
             }
+            | SlidesCommand::TableMergeCells {
+                presentation_id, ..
+            }
             | SlidesCommand::Shape {
                 presentation_id, ..
             }
@@ -589,6 +592,25 @@ pub enum SlidesCommand {
         /// Zero-based column index of the reference cell
         #[arg(long)]
         reference_column: u32,
+    },
+    /// Merge a range of table cells without writing Batch Update JSON
+    TableMergeCells {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the first cell in the range
+        #[arg(long)]
+        start_row: u32,
+        /// Zero-based column index of the first cell in the range
+        #[arg(long)]
+        start_column: u32,
+        /// Number of rows in the merge range
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        row_span: u32,
+        /// Number of columns in the merge range
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        column_span: u32,
     },
     /// Add a shape to a slide without writing Batch Update JSON
     Shape {
