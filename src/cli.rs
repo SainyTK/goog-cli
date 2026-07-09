@@ -256,6 +256,9 @@ impl SlidesCommand {
                     SlidesSlideCommand::Create {
                         presentation_id, ..
                     }
+                    | SlidesSlideCommand::Duplicate {
+                        presentation_id, ..
+                    }
                     | SlidesSlideCommand::Delete {
                         presentation_id, ..
                     },
@@ -383,6 +386,19 @@ pub enum SlidesSlideCommand {
         /// Google Slides predefined layout to use
         #[arg(long, value_enum, default_value_t = SlidesPredefinedLayout::Blank)]
         layout: SlidesPredefinedLayout,
+    },
+    /// Duplicate a slide without writing Batch Update JSON
+    Duplicate {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to duplicate
+        page_id: String,
+        /// Stable object ID for the duplicated slide. Google generates one when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Zero-based insertion index for the duplicated slide. Requires --object-id.
+        #[arg(long, requires = "object_id")]
+        insertion_index: Option<u32>,
     },
     /// Delete a slide without writing Batch Update JSON
     Delete {

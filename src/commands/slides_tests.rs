@@ -327,6 +327,77 @@ async fn run_slide_delete_sends_delete_object_request() {
 }
 
 #[tokio::test]
+async fn run_slide_duplicate_sends_duplicate_object_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "duplicateObject": {
+                        "objectId": "slide-1",
+                        "objectIds": {
+                            "slide-1": "slide-2"
+                        }
+                    }
+                },
+                {
+                    "updateSlidesPosition": {
+                        "slideObjectIds": ["slide-2"],
+                        "insertionIndex": 1
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {
+                    "duplicateObject": {
+                        "objectId": "slide-2"
+                    }
+                },
+                {}
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_slide_duplicate_unified_to(
+        &test_config(),
+        &store,
+        None,
+        SlideDuplicateRequest {
+            presentation_id: "presentation-123".into(),
+            page_id: "slide-1".into(),
+            object_id: Some("slide-2".into()),
+            insertion_index: Some(1),
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{\"duplicateObject\":{\"objectId\":\"slide-2\"}},{}]}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_text_box_sends_create_shape_and_insert_text_requests() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

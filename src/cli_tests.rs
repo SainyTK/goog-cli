@@ -2426,6 +2426,56 @@ fn slides_slide_delete_with_page_id() {
 }
 
 #[test]
+fn slides_slide_duplicate_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "slide",
+        "duplicate",
+        "presentation-123",
+        "slide-1",
+        "--object-id",
+        "slide-2",
+        "--insertion-index",
+        "1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Duplicate {
+                            presentation_id,
+                            page_id,
+                            object_id,
+                            insertion_index,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(object_id.as_deref(), Some("slide-2"));
+            assert_eq!(insertion_index, Some(1));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_duplicate_requires_object_id_for_insertion_index() {
+    assert!(parse(&[
+        "slides",
+        "slide",
+        "duplicate",
+        "presentation-123",
+        "slide-1",
+        "--insertion-index",
+        "1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn slides_slide_create_rejects_negative_insertion_index() {
     assert!(parse(&[
         "slides",

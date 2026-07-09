@@ -105,6 +105,28 @@ pub fn run<S: AccountStore>(
         )),
         SlidesCommand::Slide {
             command:
+                SlidesSlideCommand::Duplicate {
+                    presentation_id,
+                    page_id,
+                    object_id,
+                    insertion_index,
+                },
+        } => run_with_runtime(run_slide_duplicate_unified_to(
+            config,
+            store,
+            account_override,
+            SlideDuplicateRequest {
+                presentation_id,
+                page_id,
+                object_id,
+                insertion_index,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Slide {
+            command:
                 SlidesSlideCommand::Delete {
                     presentation_id,
                     page_id,
@@ -345,6 +367,81 @@ fn build_slide_create_batch_update(request: SlideCreateRequest) -> serde_json::V
                 "createSlide": create_slide
             }
         ]
+    })
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct SlideDuplicateRequest {
+    pub presentation_id: String,
+    pub page_id: String,
+    pub object_id: Option<String>,
+    pub insertion_index: Option<u32>,
+}
+
+pub(super) async fn run_slide_duplicate_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: SlideDuplicateRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_slide_duplicate_batch_update(request);
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to duplicate Google Slides slide")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides slide duplicate response",
+    )
+}
+
+fn build_slide_duplicate_batch_update(request: SlideDuplicateRequest) -> serde_json::Value {
+    let mut requests = vec![{
+        let mut duplicate_object = serde_json::json!({
+            "objectId": request.page_id
+        });
+
+        if let Some(object_id) = &request.object_id {
+            duplicate_object["objectIds"] = serde_json::json!({
+                request.page_id.clone(): object_id
+            });
+        }
+
+        serde_json::json!({
+            "duplicateObject": duplicate_object
+        })
+    }];
+
+    if let (Some(object_id), Some(insertion_index)) = (&request.object_id, request.insertion_index)
+    {
+        requests.push(serde_json::json!({
+            "updateSlidesPosition": {
+                "slideObjectIds": [object_id],
+                "insertionIndex": insertion_index
+            }
+        }));
+    }
+
+    serde_json::json!({
+        "requests": requests
     })
 }
 
