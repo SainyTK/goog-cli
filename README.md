@@ -202,7 +202,7 @@ goog --account bob@example.com drive ls
 
 ```sh
 goog drive ls --limit 20
-goog drive folder list --parent FOLDER_ID --json
+goog drive ls --type folders --folder FOLDER_ID --json
 goog drive upload ./report.pdf --folder FOLDER_ID
 goog drive download FILE_ID --output ./report.pdf
 ```

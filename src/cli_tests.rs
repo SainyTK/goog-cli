@@ -3,7 +3,7 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
-    DriveFolderCommand, MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
+    DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
     SheetsValueRenderOption, SheetsValuesCommand,
 };
 
@@ -191,84 +191,6 @@ fn auth_mappings_help_uses_glossary_terms() {
 }
 
 #[test]
-fn drive_list_defaults() {
-    let cli = parse(&["drive", "list"]).unwrap();
-    assert!(matches!(
-        cli.command,
-        Command::Drive {
-            command: DriveCommand::List {
-                limit: None,
-                all: false,
-                folder: None,
-                json: false
-            }
-        }
-    ));
-}
-
-#[test]
-fn drive_list_with_folder() {
-    let cli = parse(&["drive", "list", "--folder", "folder123"]).unwrap();
-    let Command::Drive {
-        command:
-            DriveCommand::List {
-                limit,
-                all,
-                folder,
-                json,
-            },
-    } = cli.command
-    else {
-        panic!("unexpected parse result");
-    };
-
-    assert_eq!(limit, None);
-    assert!(!all);
-    assert_eq!(folder.as_deref(), Some("folder123"));
-    assert!(!json);
-}
-
-#[test]
-fn drive_list_with_flags() {
-    let cli = parse(&[
-        "drive",
-        "list",
-        "--limit",
-        "100",
-        "--all",
-        "--folder",
-        "folder123",
-        "--json",
-    ])
-    .unwrap();
-    match cli.command {
-        Command::Drive {
-            command:
-                DriveCommand::List {
-                    limit,
-                    all,
-                    folder,
-                    json,
-                },
-        } => {
-            assert_eq!(limit, Some(100));
-            assert!(all);
-            assert_eq!(folder.as_deref(), Some("folder123"));
-            assert!(json);
-        }
-        _ => panic!("unexpected parse result"),
-    }
-}
-
-#[test]
-fn drive_list_help_describes_limit_cap_and_json_shape() {
-    let text = help(&["drive", "list", "--help"]);
-
-    assert!(text.contains("Caps at --limit when both are given"));
-    assert!(text.contains("Emit one full Drive file JSON object per row"));
-}
-
-#[test]
 fn drive_ls_with_flags() {
     let cli = parse(&[
         "drive",
@@ -276,6 +198,8 @@ fn drive_ls_with_flags() {
         "--limit",
         "100",
         "--all",
+        "--type",
+        "files",
         "--folder",
         "folder123",
         "--json",
@@ -287,12 +211,14 @@ fn drive_ls_with_flags() {
                 DriveCommand::Ls {
                     limit,
                     all,
+                    type_,
                     folder,
                     json,
                 },
         } => {
             assert_eq!(limit, Some(100));
             assert!(all);
+            assert_eq!(type_, DriveListType::Files);
             assert_eq!(folder.as_deref(), Some("folder123"));
             assert!(json);
         }
@@ -301,80 +227,36 @@ fn drive_ls_with_flags() {
 }
 
 #[test]
-fn drive_ls_help_describes_browse_json_shape() {
+fn drive_ls_defaults_to_items() {
+    let cli = parse(&["drive", "ls"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::Drive {
+            command: DriveCommand::Ls {
+                limit: None,
+                all: false,
+                type_: DriveListType::Items,
+                folder: None,
+                json: false
+            }
+        }
+    ));
+}
+
+#[test]
+fn drive_ls_help_describes_limit_cap_and_type() {
     let text = help(&["drive", "ls", "--help"]);
 
     assert!(text.contains("Caps at --limit when both are given"));
-    assert!(text.contains("name, id, parents, mimeType, and modifiedTime"));
+    assert!(text.contains("--type <TYPE>"));
+    assert!(text.contains("[default: items]"));
+    assert!(text.contains("Items use browse row fields"));
 }
 
 #[test]
-fn drive_folder_list_defaults() {
-    let cli = parse(&["drive", "folder", "list"]).unwrap();
-    let Command::Drive {
-        command:
-            DriveCommand::Folder {
-                command:
-                    DriveFolderCommand::List {
-                        limit,
-                        all,
-                        parent,
-                        json,
-                    },
-            },
-    } = cli.command
-    else {
-        panic!("unexpected parse result");
-    };
-
-    assert_eq!(limit, None);
-    assert!(!all);
-    assert_eq!(parent, None);
-    assert!(!json);
-}
-
-#[test]
-fn drive_folder_list_help_describes_limit_cap_and_json_shape() {
-    let text = help(&["drive", "folder", "list", "--help"]);
-
-    assert!(text.contains("Caps at --limit when both are given"));
-    assert!(text.contains("Emit one full Drive folder JSON object per row"));
-}
-
-#[test]
-fn drive_folder_list_with_flags() {
-    let cli = parse(&[
-        "drive",
-        "folder",
-        "list",
-        "--limit",
-        "100",
-        "--all",
-        "--parent",
-        "folder123",
-        "--json",
-    ])
-    .unwrap();
-    match cli.command {
-        Command::Drive {
-            command:
-                DriveCommand::Folder {
-                    command:
-                        DriveFolderCommand::List {
-                            limit,
-                            all,
-                            parent,
-                            json,
-                        },
-                },
-        } => {
-            assert_eq!(limit, Some(100));
-            assert!(all);
-            assert_eq!(parent.as_deref(), Some("folder123"));
-            assert!(json);
-        }
-        _ => panic!("unexpected parse result"),
-    }
+fn drive_rejects_removed_listing_commands() {
+    assert!(parse(&["drive", "list"]).is_err());
+    assert!(parse(&["drive", "folder", "list"]).is_err());
 }
 
 #[test]
@@ -2093,7 +1975,7 @@ fn global_account_flag() {
 
 #[test]
 fn global_account_flag_after_subcommand() {
-    let cli = parse(&["drive", "list", "--account", "me@example.com"]).unwrap();
+    let cli = parse(&["drive", "ls", "--account", "me@example.com"]).unwrap();
     assert_eq!(cli.account.as_deref(), Some("me@example.com"));
 }
 

@@ -159,7 +159,7 @@ pub enum AuthMappingsCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DriveCommand {
-    /// Browse files and folders in Google Drive
+    /// List files and folders in Google Drive
     Ls {
         /// Maximum number of items to return (default: 50)
         #[arg(long)]
@@ -167,32 +167,15 @@ pub enum DriveCommand {
         /// Fetch all items across all pages. Caps at --limit when both are given
         #[arg(long)]
         all: bool,
+        /// Type of Drive items to list
+        #[arg(long = "type", value_enum, default_value_t = DriveListType::Items)]
+        type_: DriveListType,
         /// Drive folder ID to browse
         #[arg(long)]
         folder: Option<String>,
-        /// Emit one JSON object per row with name, id, parents, mimeType, and modifiedTime
+        /// Emit one JSON object per row. Items use browse row fields; files and folders use full Drive file JSON
         #[arg(long)]
         json: bool,
-    },
-    /// List files in Google Drive
-    List {
-        /// Maximum number of files to return (default: 50)
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Fetch all files across all pages. Caps at --limit when both are given
-        #[arg(long)]
-        all: bool,
-        /// Drive folder ID to list files from
-        #[arg(long)]
-        folder: Option<String>,
-        /// Emit one full Drive file JSON object per row
-        #[arg(long)]
-        json: bool,
-    },
-    /// Manage Google Drive folders
-    Folder {
-        #[command(subcommand)]
-        command: DriveFolderCommand,
     },
     /// Download a file from Google Drive
     Download {
@@ -212,23 +195,14 @@ pub enum DriveCommand {
     },
 }
 
-#[derive(Debug, Subcommand)]
-pub enum DriveFolderCommand {
-    /// List folders in Google Drive
-    List {
-        /// Maximum number of folders to return (default: 50)
-        #[arg(long)]
-        limit: Option<u32>,
-        /// Fetch all folders across all pages. Caps at --limit when both are given
-        #[arg(long)]
-        all: bool,
-        /// Drive parent folder ID to list folders from
-        #[arg(long)]
-        parent: Option<String>,
-        /// Emit one full Drive folder JSON object per row
-        #[arg(long)]
-        json: bool,
-    },
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DriveListType {
+    /// Files and folders
+    Items,
+    /// Files only
+    Files,
+    /// Folders only
+    Folders,
 }
 
 impl DocsCommand {

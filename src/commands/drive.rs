@@ -12,7 +12,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{DriveCommand, DriveFolderCommand};
+use crate::cli::{DriveCommand, DriveListType};
 use crate::drive::{
     download, list_files, upload, DownloadFileOptions, DownloadedFile, DriveError, DriveFile,
     ListFilesOptions, UploadFileOptions, UploadedFile, DRIVE_FOLDER_MIME_TYPE,
@@ -55,6 +55,7 @@ pub fn run<S: AccountStore>(
         DriveCommand::Ls {
             limit,
             all,
+            type_,
             folder,
             json,
         } => {
@@ -65,6 +66,7 @@ pub fn run<S: AccountStore>(
                 config,
                 store,
                 account_override,
+                type_.into(),
                 limit,
                 all,
                 folder,
@@ -75,54 +77,6 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DriveCommand::List {
-            limit,
-            all,
-            folder,
-            json,
-        } => {
-            let json = should_emit_json(json, output_json_by_default);
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_list_command_to(
-                config,
-                store,
-                account_override,
-                limit,
-                all,
-                folder,
-                json,
-                quiet,
-                &mut std::io::stdout(),
-                &mut std::io::stderr(),
-                None,
-            ))
-        }
-        DriveCommand::Folder { command } => match command {
-            DriveFolderCommand::List {
-                limit,
-                all,
-                parent,
-                json,
-            } => {
-                let json = should_emit_json(json, output_json_by_default);
-                let runtime =
-                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                runtime.block_on(run_folder_list_command_to(
-                    config,
-                    store,
-                    account_override,
-                    limit,
-                    all,
-                    parent,
-                    json,
-                    quiet,
-                    &mut std::io::stdout(),
-                    &mut std::io::stderr(),
-                    None,
-                ))
-            }
-        },
         DriveCommand::Download { file_id, output } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -167,39 +121,13 @@ pub fn run<S: AccountStore>(
     }
 }
 
-pub(super) async fn run_list_command_to<S: AccountStore>(
-    config: &Config,
-    store: &S,
-    account_override: Option<&str>,
-    limit: Option<u32>,
-    all: bool,
-    folder: Option<String>,
-    json: bool,
-    quiet: bool,
-    out: &mut impl Write,
-    err: &mut impl Write,
-    files_url: Option<&str>,
-) -> Result<()> {
-    if folder.is_some() {
-        run_list_unified_to(
-            config,
-            store,
-            account_override,
-            DriveListKind::Files,
-            limit,
-            all,
-            folder,
-            json,
-            quiet,
-            out,
-            err,
-            files_url,
-            None,
-        )
-        .await
-    } else {
-        let client = AuthClient::from_config(config.clone(), store, account_override)?;
-        run_list_to(&client, limit, all, None, json, quiet, out, err, files_url).await
+impl From<DriveListType> for DriveListKind {
+    fn from(value: DriveListType) -> Self {
+        match value {
+            DriveListType::Items => Self::Browse,
+            DriveListType::Files => Self::Files,
+            DriveListType::Folders => Self::Folders,
+        }
     }
 }
 
@@ -207,6 +135,7 @@ pub(super) async fn run_ls_command_to<S: AccountStore>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
+    kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
     folder: Option<String>,
@@ -221,7 +150,7 @@ pub(super) async fn run_ls_command_to<S: AccountStore>(
             config,
             store,
             account_override,
-            DriveListKind::Browse,
+            kind,
             limit,
             all,
             folder,
@@ -235,43 +164,19 @@ pub(super) async fn run_ls_command_to<S: AccountStore>(
         .await
     } else {
         let client = AuthClient::from_config(config.clone(), store, account_override)?;
-        run_ls_to(&client, limit, all, None, json, quiet, out, err, files_url).await
-    }
-}
-
-pub(super) async fn run_folder_list_command_to<S: AccountStore>(
-    config: &Config,
-    store: &S,
-    account_override: Option<&str>,
-    limit: Option<u32>,
-    all: bool,
-    parent: Option<String>,
-    json: bool,
-    quiet: bool,
-    out: &mut impl Write,
-    err: &mut impl Write,
-    files_url: Option<&str>,
-) -> Result<()> {
-    if parent.is_some() {
-        run_list_unified_to(
-            config,
-            store,
-            account_override,
-            DriveListKind::Folders,
+        run_list_items_to(
+            &client,
+            kind,
             limit,
             all,
-            parent,
+            Some("root".into()),
             json,
             quiet,
             out,
             err,
             files_url,
-            None,
         )
         .await
-    } else {
-        let client = AuthClient::from_config(config.clone(), store, account_override)?;
-        run_folder_list_to(&client, limit, all, None, json, quiet, out, err, files_url).await
     }
 }
 
@@ -445,6 +350,7 @@ pub(super) fn should_emit_json(json_flag: bool, output_json_by_default: bool) ->
     json_flag || output_json_by_default
 }
 
+#[cfg(test)]
 pub(super) async fn run_list_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     limit: Option<u32>,
@@ -532,6 +438,7 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) async fn run_folder_list_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     limit: Option<u32>,
@@ -558,6 +465,7 @@ pub(super) async fn run_folder_list_to<S: AccountStore>(
     .await
 }
 
+#[cfg(test)]
 pub(super) async fn run_ls_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     limit: Option<u32>,

@@ -1054,14 +1054,14 @@ async fn run_download_unified_falls_back_on_target_access_failure_and_maps_succe
 }
 
 #[tokio::test]
-async fn run_list_command_without_target_stays_on_active_account() {
+async fn run_ls_files_without_target_stays_on_active_account_and_defaults_to_root() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType != 'application/vnd.google-apps.folder'",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -1074,10 +1074,11 @@ async fn run_list_command_without_target_stays_on_active_account() {
     let mut err = Vec::new();
     let files_url = format!("{}/drive/v3/files", server.uri());
 
-    run_list_command_to(
+    run_ls_command_to(
         &config,
         &store,
         None,
+        DriveListKind::Files,
         None,
         false,
         None,
