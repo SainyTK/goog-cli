@@ -286,6 +286,28 @@ pub fn run<S: AccountStore>(
         )),
         SlidesCommand::Object {
             command:
+                SlidesObjectCommand::InsertText {
+                    presentation_id,
+                    object_id,
+                    text,
+                    index,
+                },
+        } => run_with_runtime(run_object_insert_text_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectInsertTextRequest {
+                presentation_id,
+                object_id,
+                text,
+                index,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Object {
+            command:
                 SlidesObjectCommand::AltText {
                     presentation_id,
                     object_id,
@@ -1218,6 +1240,69 @@ pub(super) fn build_object_text_style_batch_update(
                         "type": "ALL"
                     },
                     "fields": fields.join(",")
+                }
+            }
+        ]
+    }))
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectInsertTextRequest {
+    pub presentation_id: String,
+    pub object_id: String,
+    pub text: String,
+    pub index: u32,
+}
+
+pub(super) async fn run_object_insert_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectInsertTextRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_insert_text_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to insert text into Google Slides object")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides object text insertion response",
+    )
+}
+
+pub(super) fn build_object_insert_text_batch_update(
+    request: ObjectInsertTextRequest,
+) -> Result<serde_json::Value> {
+    if request.text.is_empty() {
+        bail!("--text must not be empty");
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "insertText": {
+                    "objectId": request.object_id,
+                    "text": request.text,
+                    "insertionIndex": request.index
                 }
             }
         ]

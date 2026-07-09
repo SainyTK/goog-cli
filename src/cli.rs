@@ -280,6 +280,9 @@ impl SlidesCommand {
                     | SlidesObjectCommand::TextStyle {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::InsertText {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::AltText {
                         presentation_id, ..
                     }
@@ -655,6 +658,19 @@ pub enum SlidesObjectCommand {
         /// Set or clear underline. Omit the value to set true.
         #[arg(long, num_args = 0..=1, default_missing_value = "true")]
         underline: Option<bool>,
+    },
+    /// Insert text into an existing shape or text box without writing Batch Update JSON
+    InsertText {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Shape or text box page object ID to receive the text
+        object_id: String,
+        /// Text to insert
+        #[arg(long)]
+        text: String,
+        /// Zero-based text insertion index
+        #[arg(long, default_value_t = 0)]
+        index: u32,
     },
     /// Set accessibility alt text on a page object without writing Batch Update JSON
     AltText {

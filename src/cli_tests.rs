@@ -2930,6 +2930,42 @@ fn slides_object_text_style_with_flags() {
 }
 
 #[test]
+fn slides_object_insert_text_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "insert-text",
+        "presentation-123",
+        "shape-1",
+        "--text",
+        "Quarterly plan",
+        "--index",
+        "3",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::InsertText {
+                            presentation_id,
+                            object_id,
+                            text,
+                            index,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "shape-1");
+            assert_eq!(text, "Quarterly plan");
+            assert_eq!(index, 3);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_object_alt_text_with_flags() {
     let cli = parse(&[
         "slides",
