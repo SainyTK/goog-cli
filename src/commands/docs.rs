@@ -701,7 +701,7 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::ShowStyleTemplate { document_id, json } => {
+        DocsCommand::StyleTemplate { document_id, json } => {
             run_show_style_template(&document_id, json, &mut std::io::stdout(), None)
         }
     }

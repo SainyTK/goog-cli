@@ -249,7 +249,7 @@ impl DocsCommand {
             | DocsCommand::DeleteNamedRange { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. }
-            | DocsCommand::ShowStyleTemplate { document_id, .. } => document_id,
+            | DocsCommand::StyleTemplate { document_id, .. } => document_id,
         };
         *document_id = crate::docs::extract_document_id(document_id);
     }
@@ -903,9 +903,9 @@ Example:
         #[arg(long)]
         requests: String,
     },
-    /// Show the locally cached style template for a Google Doc
-    ShowStyleTemplate {
-        /// Google Docs Document ID whose cached style template to show
+    /// Read the locally cached style template for a Google Doc
+    StyleTemplate {
+        /// Google Docs Document ID whose cached style template to read
         document_id: String,
         /// Emit structured JSON
         #[arg(long)]

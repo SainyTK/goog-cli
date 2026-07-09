@@ -1085,18 +1085,23 @@ fn docs_style_template_bypass_help_uses_distinct_flags() {
 }
 
 #[test]
-fn docs_show_style_template_parse() {
-    let cli = parse(&["docs", "show-style-template", "document-123", "--json"]).unwrap();
+fn docs_style_template_parse() {
+    let cli = parse(&["docs", "style-template", "document-123", "--json"]).unwrap();
 
     match cli.command {
         Command::Docs {
-            command: DocsCommand::ShowStyleTemplate { document_id, json },
+            command: DocsCommand::StyleTemplate { document_id, json },
         } => {
             assert_eq!(document_id, "document-123");
             assert!(json);
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn docs_show_style_template_is_removed() {
+    assert!(parse(&["docs", "show-style-template", "document-123"]).is_err());
 }
 
 #[test]
