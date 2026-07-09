@@ -3356,6 +3356,26 @@ fn slides_slide_duplicate_requires_object_id_for_insertion_index() {
 }
 
 #[test]
+fn slides_get_with_json_flag() {
+    let cli = parse(&["slides", "get", "presentation-123", "--json"]).unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Get {
+                    presentation_id,
+                    fields,
+                    json,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert!(fields.is_none());
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_slide_create_rejects_negative_insertion_index() {
     assert!(parse(&[
         "slides",

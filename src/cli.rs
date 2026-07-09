@@ -359,13 +359,16 @@ pub enum SlidesCommand {
         /// Title for the new Google Slides presentation
         title: String,
     },
-    /// Read a raw Google Slides presentation
+    /// Read a Google Slides presentation
     Get {
         /// Presentation ID or URL to read
         presentation_id: String,
         /// Google partial response field selector
         #[arg(long)]
         fields: Option<String>,
+        /// Emit raw JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Apply a raw Google Slides Batch Update request body
     BatchUpdate {

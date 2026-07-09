@@ -117,7 +117,11 @@ async fn run_get_unified_falls_back_and_maps_successful_account() {
         .and(header("authorization", "Bearer bob-access"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "presentationId": "presentation-123",
-            "title": "Deck"
+            "title": "Deck",
+            "slides": [
+                { "objectId": "slide-1" },
+                { "objectId": "slide-2" }
+            ]
         })))
         .expect(1)
         .mount(&server)
@@ -144,6 +148,53 @@ async fn run_get_unified_falls_back_and_maps_successful_account() {
         None,
         "presentation-123".into(),
         None,
+        false,
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "TITLE\tPRESENTATION ID\tSLIDES\nDeck\tpresentation-123\t2\n"
+    );
+    let state = load_runtime_state_from_path(&state_path).unwrap();
+    assert_eq!(
+        state.account_for_resource(&resource_key("slides", "presentation-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_get_unified_prints_json_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/slides/v1/presentations/presentation-123"))
+        .and(header("authorization", "Bearer slides-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "title": "Deck"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_get_unified_to(
+        &test_config(),
+        &store,
+        None,
+        "presentation-123".into(),
+        None,
+        true,
         &mut out,
         Some(&presentations_url(&server)),
         Some(&state_path),
@@ -154,11 +205,6 @@ async fn run_get_unified_falls_back_and_maps_successful_account() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"presentationId\":\"presentation-123\",\"title\":\"Deck\"}\n"
-    );
-    let state = load_runtime_state_from_path(&state_path).unwrap();
-    assert_eq!(
-        state.account_for_resource(&resource_key("slides", "presentation-123")),
-        Some("bob@example.com")
     );
 }
 

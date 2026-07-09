@@ -57,12 +57,14 @@ pub fn run<S: AccountStore>(
         SlidesCommand::Get {
             presentation_id,
             fields,
+            json,
         } => run_with_runtime(run_get_unified_to(
             config,
             store,
             account_override,
             presentation_id,
             fields,
+            super::drive::should_emit_json(json, output_json_by_default),
             &mut std::io::stdout(),
             None,
             None,
@@ -705,6 +707,7 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
     account_override: Option<&str>,
     presentation_id: String,
     fields: Option<String>,
+    json: bool,
     out: &mut impl Write,
     presentations_url: Option<&str>,
     state_path: Option<&Path>,
@@ -729,11 +732,42 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
     .await
     .context("failed to read Google Slides presentation")?;
 
-    write_json_line(
+    if json {
+        write_json_line(
+            out,
+            &presentation,
+            "failed to serialize Slides presentation",
+        )
+    } else {
+        write_presentation_table(out, &presentation)
+    }
+}
+
+fn write_presentation_table(out: &mut impl Write, presentation: &serde_json::Value) -> Result<()> {
+    writeln!(out, "TITLE\tPRESENTATION ID\tSLIDES").context("failed to write output")?;
+    writeln!(
         out,
-        &presentation,
-        "failed to serialize Slides presentation",
+        "{}\t{}\t{}",
+        string_field(presentation, "title"),
+        string_field(presentation, "presentationId"),
+        array_len_field(presentation, "slides"),
     )
+    .context("failed to write output")
+}
+
+fn string_field(value: &serde_json::Value, key: &str) -> String {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .replace(['\t', '\n'], " ")
+}
+
+fn array_len_field(value: &serde_json::Value, key: &str) -> usize {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_array)
+        .map_or(0, Vec::len)
 }
 
 pub(super) async fn run_batch_update_unified_to<S: AccountStore>(

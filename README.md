@@ -282,7 +282,8 @@ cat rows.tsv | goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --dat
 ```sh
 goog slides list --limit 20
 goog slides create "Quarterly Review"
-goog slides get PRESENTATION_ID --fields 'presentationId,title,slides(objectId)'
+goog slides get PRESENTATION_ID
+goog slides get PRESENTATION_ID --fields 'presentationId,title,slides(objectId)' --json
 goog slides slide create PRESENTATION_ID --layout title-and-body --object-id agenda-slide
 goog slides slide duplicate PRESENTATION_ID SLIDE_OBJECT_ID --object-id copied-slide --insertion-index 1
 goog slides slide move PRESENTATION_ID --page-id SLIDE_OBJECT_ID --insertion-index 1
