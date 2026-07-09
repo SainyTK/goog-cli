@@ -33,6 +33,15 @@ Notes:
   Named ranges do not track edits after creation; a later insert/delete before the range can leave it pointing at the wrong text.
   Re-create the named range after content in or before it changes.";
 
+fn parse_mail_draft_id(value: &str) -> Result<String, String> {
+    match value {
+        "create" | "edit" => Err(format!(
+            "`mail draft {value}` was removed; use `mail draft [DRAFT_ID]` instead"
+        )),
+        _ => Ok(value.to_owned()),
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "goog",
@@ -967,43 +976,11 @@ pub enum MailCommand {
         #[arg(long, short)]
         output: Option<String>,
     },
-    /// Work with Gmail drafts
+    /// Create or edit a Gmail draft message
     Draft {
-        #[command(subcommand)]
-        command: MailDraftCommand,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub enum MailDraftCommand {
-    /// Create a Gmail draft message
-    Create {
-        /// Recipient email address. Repeat for multiple To recipients.
-        #[arg(long, required = true)]
-        to: Vec<String>,
-        /// Cc recipient email address. Repeat for multiple Cc recipients.
-        #[arg(long)]
-        cc: Vec<String>,
-        /// Bcc recipient email address. Repeat for multiple Bcc recipients.
-        #[arg(long)]
-        bcc: Vec<String>,
-        /// Draft subject
-        #[arg(long)]
-        subject: String,
-        /// Plain text draft body, @path for a body file, or - for stdin
-        #[arg(long)]
-        body: Option<String>,
-        /// Local file to attach to the draft. Repeat for multiple attachments.
-        #[arg(long)]
-        attachment: Vec<String>,
-        /// Emit JSON instead of human-readable output
-        #[arg(long)]
-        json: bool,
-    },
-    /// Edit a Gmail draft message
-    Edit {
-        /// Gmail draft ID to update
-        draft_id: String,
+        /// Gmail draft ID or URL to update. Omit to create a new draft.
+        #[arg(value_parser = parse_mail_draft_id)]
+        draft_id: Option<String>,
         /// Recipient email address. Repeat for multiple To recipients.
         #[arg(long, required = true)]
         to: Vec<String>,

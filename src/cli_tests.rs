@@ -3,8 +3,8 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
-    DriveFolderCommand, MailCommand, MailDraftCommand, SheetsCommand, SheetsInsertDataOption,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    DriveFolderCommand, MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -1286,26 +1286,18 @@ fn mail_help_uses_plain_gmail_language() {
     let mail_help = help(&["mail", "--help"]);
     let read_help = help(&["mail", "read", "--help"]);
     let download_help = help(&["mail", "download", "--help"]);
-    let draft_create_help = help(&["mail", "draft", "create", "--help"]);
-    let draft_edit_help = help(&["mail", "draft", "edit", "--help"]);
+    let draft_help = help(&["mail", "draft", "--help"]);
 
     assert!(mail_help.contains("Interact with Gmail"));
     assert!(read_help.contains("Read a Gmail message"));
     assert!(read_help.contains("Gmail message ID or URL to read"));
     assert!(download_help.contains("Download a Gmail attachment"));
     assert!(download_help.contains("Destination path (defaults to attachment filename)"));
-    assert!(draft_create_help.contains("Create a Gmail draft message"));
-    assert!(draft_edit_help.contains("Edit a Gmail draft message"));
-    assert!(draft_edit_help.contains("Gmail draft ID to update"));
-    assert!(draft_create_help.contains("Emit JSON instead of human-readable output"));
+    assert!(draft_help.contains("Create or edit a Gmail draft message"));
+    assert!(draft_help.contains("Gmail draft ID or URL to update"));
+    assert!(draft_help.contains("Emit JSON instead of human-readable output"));
 
-    for rendered in [
-        mail_help,
-        read_help,
-        download_help,
-        draft_create_help,
-        draft_edit_help,
-    ] {
+    for rendered in [mail_help, read_help, download_help, draft_help] {
         assert!(!rendered.contains("GoogleMail"));
         assert!(!rendered.contains("Fetch a"));
         assert!(!rendered.contains("Manage GoogleMail"));
@@ -1437,7 +1429,6 @@ fn mail_draft_create_with_body_flags() {
     let cli = parse(&[
         "mail",
         "draft",
-        "create",
         "--to",
         "alice@example.com",
         "--to",
@@ -1457,18 +1448,17 @@ fn mail_draft_create_with_body_flags() {
         Command::Mail {
             command:
                 MailCommand::Draft {
-                    command:
-                        MailDraftCommand::Create {
-                            to,
-                            cc,
-                            bcc,
-                            subject,
-                            body,
-                            attachment,
-                            json,
-                        },
+                    draft_id,
+                    to,
+                    cc,
+                    bcc,
+                    subject,
+                    body,
+                    attachment,
+                    json,
                 },
         } => {
+            assert!(draft_id.is_none());
             assert_eq!(to, ["alice@example.com", "bob@example.com"]);
             assert_eq!(cc, ["carol@example.com"]);
             assert_eq!(bcc, ["dave@example.com"]);
@@ -1486,7 +1476,6 @@ fn mail_draft_create_with_attachment_paths() {
     let cli = parse(&[
         "mail",
         "draft",
-        "create",
         "--to",
         "alice@example.com",
         "--subject",
@@ -1503,12 +1492,13 @@ fn mail_draft_create_with_attachment_paths() {
         Command::Mail {
             command:
                 MailCommand::Draft {
-                    command:
-                        MailDraftCommand::Create {
-                            attachment, json, ..
-                        },
+                    draft_id,
+                    attachment,
+                    json,
+                    ..
                 },
         } => {
+            assert!(draft_id.is_none());
             assert_eq!(attachment, ["./invoice.pdf", "./terms.txt"]);
             assert!(!json);
         }
@@ -1521,7 +1511,6 @@ fn mail_draft_create_requires_to_recipient() {
     let err = parse(&[
         "mail",
         "draft",
-        "create",
         "--subject",
         "Draft subject",
         "--body",
@@ -1537,7 +1526,6 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
     let cli = parse(&[
         "mail",
         "draft",
-        "edit",
         "draft-123",
         "--to",
         "alice@example.com",
@@ -1554,20 +1542,17 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
         Command::Mail {
             command:
                 MailCommand::Draft {
-                    command:
-                        MailDraftCommand::Edit {
-                            draft_id,
-                            to,
-                            cc,
-                            bcc,
-                            subject,
-                            body,
-                            attachment,
-                            json,
-                        },
+                    draft_id,
+                    to,
+                    cc,
+                    bcc,
+                    subject,
+                    body,
+                    attachment,
+                    json,
                 },
         } => {
-            assert_eq!(draft_id, "draft-123");
+            assert_eq!(draft_id.as_deref(), Some("draft-123"));
             assert_eq!(to, ["alice@example.com"]);
             assert!(cc.is_empty());
             assert!(bcc.is_empty());
@@ -1585,7 +1570,6 @@ fn mail_draft_edit_requires_to_recipient() {
     let err = parse(&[
         "mail",
         "draft",
-        "edit",
         "draft-123",
         "--subject",
         "Updated draft",
@@ -1598,11 +1582,35 @@ fn mail_draft_edit_requires_to_recipient() {
 }
 
 #[test]
-fn mail_draft_body_file_flag_is_removed() {
+fn mail_draft_create_and_edit_subcommands_are_removed() {
     assert!(parse(&[
         "mail",
         "draft",
         "create",
+        "--to",
+        "alice@example.com",
+        "--subject",
+        "Draft subject",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "mail",
+        "draft",
+        "edit",
+        "draft-123",
+        "--to",
+        "alice@example.com",
+        "--subject",
+        "Draft subject",
+    ])
+    .is_err());
+}
+
+#[test]
+fn mail_draft_body_file_flag_is_removed() {
+    assert!(parse(&[
+        "mail",
+        "draft",
         "--to",
         "alice@example.com",
         "--subject",

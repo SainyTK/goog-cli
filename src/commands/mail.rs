@@ -8,7 +8,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{MailCommand, MailDraftCommand};
+use crate::cli::MailCommand;
 use crate::mail::{
     create_draft, decode_base64url, download_attachment, get_message, list_messages,
     parse_message_reference, resolve_message_reference, update_draft, CreateDraftOptions,
@@ -75,68 +75,47 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        MailCommand::Draft { command } => match command {
-            MailDraftCommand::Create {
+        MailCommand::Draft {
+            draft_id,
+            to,
+            cc,
+            bcc,
+            subject,
+            body,
+            attachment,
+            json,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            let body = resolve_draft_body(body)?;
+            let attachments = resolve_draft_attachments(attachment)?;
+            let input = CreateDraftInput {
                 to,
                 cc,
                 bcc,
                 subject,
                 body,
-                attachment,
-                json,
-            } => {
-                let runtime =
-                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                let client = AuthClient::from_config(config.clone(), store, account_override)?;
-                let body = resolve_draft_body(body)?;
-                let attachments = resolve_draft_attachments(attachment)?;
-                runtime.block_on(run_draft_create_to(
-                    &client,
-                    CreateDraftInput {
-                        to,
-                        cc,
-                        bcc,
-                        subject,
-                        body,
-                        attachments,
-                    },
-                    json,
-                    &mut std::io::stdout(),
-                    None,
-                ))
-            }
-            MailDraftCommand::Edit {
-                draft_id,
-                to,
-                cc,
-                bcc,
-                subject,
-                body,
-                attachment,
-                json,
-            } => {
-                let runtime =
-                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                let client = AuthClient::from_config(config.clone(), store, account_override)?;
-                let body = resolve_draft_body(body)?;
-                let attachments = resolve_draft_attachments(attachment)?;
-                runtime.block_on(run_draft_edit_to(
+                attachments,
+            };
+            match draft_id {
+                Some(draft_id) => runtime.block_on(run_draft_edit_to(
                     &client,
                     draft_id,
-                    CreateDraftInput {
-                        to,
-                        cc,
-                        bcc,
-                        subject,
-                        body,
-                        attachments,
-                    },
+                    input,
                     json,
                     &mut std::io::stdout(),
                     None,
-                ))
+                )),
+                None => runtime.block_on(run_draft_create_to(
+                    &client,
+                    input,
+                    json,
+                    &mut std::io::stdout(),
+                    None,
+                )),
             }
-        },
+        }
     }
 }
 
