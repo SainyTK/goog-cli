@@ -14,13 +14,14 @@ use crate::calendar::{
     get_calendar_list_entry, get_colors, get_event, insert_acl, insert_calendar,
     insert_calendar_list_entry, insert_event, list_acl, list_calendars, list_events, move_event,
     patch_acl, patch_calendar, patch_calendar_list_entry, patch_event, query_freebusy,
-    quick_add_event, update_acl, update_calendar, update_event, CalendarError, DeleteAclOptions,
-    DeleteCalendarListEntryOptions, DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions,
-    GetAclOptions, GetCalendarListEntryOptions, GetCalendarOptions, GetColorsOptions,
-    GetEventOptions, InsertAclOptions, InsertCalendarListEntryOptions, InsertCalendarOptions,
-    ListAclOptions, ListCalendarsOptions, ListEventsOptions, MoveEventOptions,
-    PatchCalendarListEntryOptions, QuickAddEventOptions, SendUpdates, UpdateAclOptions,
-    UpdateCalendarOptions, WriteEventOptions,
+    quick_add_event, update_acl, update_calendar, update_calendar_list_entry, update_event,
+    CalendarError, DeleteAclOptions, DeleteCalendarListEntryOptions, DeleteCalendarOptions,
+    DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarListEntryOptions,
+    GetCalendarOptions, GetColorsOptions, GetEventOptions, InsertAclOptions,
+    InsertCalendarListEntryOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
+    ListEventsOptions, MoveEventOptions, PatchCalendarListEntryOptions, QuickAddEventOptions,
+    SendUpdates, UpdateAclOptions, UpdateCalendarListEntryOptions, UpdateCalendarOptions,
+    WriteEventOptions,
 };
 use crate::cli::{
     CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarColorsCommand,
@@ -323,6 +324,47 @@ pub(super) async fn run_calendars_command_to<S: AccountStore>(
                 )
                 .await
                 .context("failed to read Google Calendar list entry")?;
+                if json {
+                    write_json_line(out, &entry, "failed to serialize Calendar list entry")
+                } else {
+                    write_calendar_list_entry_table(out, &entry)
+                }
+            }
+            CalendarListEntryCommand::Update {
+                calendar_id,
+                summary_override,
+                color_id,
+                hidden,
+                selected,
+                default_reminder,
+                clear_default_reminders,
+                json,
+            } => {
+                let json = json || output_json_by_default;
+                let options = update_calendar_list_entry_options(
+                    calendar_id.clone(),
+                    build_calendar_list_entry_update_body(
+                        calendar_id.clone(),
+                        summary_override,
+                        color_id,
+                        hidden,
+                        selected,
+                        default_reminder,
+                        clear_default_reminders,
+                    )?,
+                    base_url,
+                );
+                let target_resource_key = resource_key("calendar-list", &calendar_id);
+                let entry = run_with_calendar_unified_access(
+                    config,
+                    store,
+                    account_override,
+                    &target_resource_key,
+                    CalendarAccessAttempt::UpdateCalendarListEntry(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to update Google Calendar list entry")?;
                 if json {
                     write_json_line(out, &entry, "failed to serialize Calendar list entry")
                 } else {
@@ -1062,6 +1104,7 @@ enum CalendarAccessAttempt<'a> {
     PatchCalendar(&'a UpdateCalendarOptions),
     InsertCalendarListEntry(&'a InsertCalendarListEntryOptions),
     GetCalendarListEntry(&'a GetCalendarListEntryOptions),
+    UpdateCalendarListEntry(&'a UpdateCalendarListEntryOptions),
     PatchCalendarListEntry(&'a PatchCalendarListEntryOptions),
     ListAcl(&'a ListAclOptions),
     GetAcl(&'a GetAclOptions),
@@ -1118,6 +1161,9 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         }
         CalendarAccessAttempt::GetCalendarListEntry(options) => {
             get_calendar_list_entry(&client, options).await
+        }
+        CalendarAccessAttempt::UpdateCalendarListEntry(options) => {
+            update_calendar_list_entry(&client, options).await
         }
         CalendarAccessAttempt::PatchCalendarListEntry(options) => {
             patch_calendar_list_entry(&client, options).await
@@ -1374,6 +1420,18 @@ fn patch_calendar_list_entry_options(
     base_url: Option<&str>,
 ) -> PatchCalendarListEntryOptions {
     let mut options = PatchCalendarListEntryOptions::new(calendar_id, request_body);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn update_calendar_list_entry_options(
+    calendar_id: String,
+    request_body: serde_json::Value,
+    base_url: Option<&str>,
+) -> UpdateCalendarListEntryOptions {
+    let mut options = UpdateCalendarListEntryOptions::new(calendar_id, request_body);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
@@ -1774,6 +1832,30 @@ fn build_calendar_list_entry_insert_body(
             ),
         );
     }
+    Ok(serde_json::Value::Object(body))
+}
+
+fn build_calendar_list_entry_update_body(
+    calendar_id: String,
+    summary_override: Option<String>,
+    color_id: Option<String>,
+    hidden: Option<bool>,
+    selected: Option<bool>,
+    default_reminders: Vec<String>,
+    clear_default_reminders: bool,
+) -> Result<serde_json::Value> {
+    let mut body = match build_calendar_list_entry_patch_body(
+        summary_override,
+        color_id,
+        hidden,
+        selected,
+        default_reminders,
+        clear_default_reminders,
+    )? {
+        serde_json::Value::Object(body) => body,
+        _ => unreachable!("calendar list entry patch body is always an object"),
+    };
+    body.insert("id".into(), serde_json::Value::String(calendar_id));
     Ok(serde_json::Value::Object(body))
 }
 

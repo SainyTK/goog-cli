@@ -319,6 +319,7 @@ goog calendar calendars update team-launches@example.com --summary "Team Launche
 goog calendar calendars patch team-launches@example.com --description "Launch planning, retros, and launch notes"
 goog calendar calendars list-entry add team-launches@example.com --summary-override "Launches" --selected true --color-id 2
 goog calendar calendars list-entry get team-launches@example.com
+goog calendar calendars list-entry update team-launches@example.com --summary-override "Launches" --selected true --color-id 2 --default-reminder popup:10
 goog calendar calendars list-entry patch team-launches@example.com --summary-override "Launches" --selected true --color-id 2 --default-reminder popup:10
 goog calendar calendars list-entry delete team-launches@example.com
 goog calendar calendars delete team-launches@example.com

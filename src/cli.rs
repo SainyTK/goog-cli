@@ -1209,6 +1209,32 @@ pub enum CalendarListEntryCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Replace per-user settings for one calendar list entry
+    Update {
+        /// Calendar ID to replace. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Display name override for this calendar in the authenticated user's list.
+        #[arg(long)]
+        summary_override: Option<String>,
+        /// Calendar color ID from `goog calendar colors get`.
+        #[arg(long)]
+        color_id: Option<String>,
+        /// Hide or unhide this calendar in the authenticated user's calendar list.
+        #[arg(long)]
+        hidden: Option<bool>,
+        /// Show or hide this calendar's events in the Google Calendar UI.
+        #[arg(long)]
+        selected: Option<bool>,
+        /// Default reminder as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long)]
+        default_reminder: Vec<String>,
+        /// Clear default reminders for this calendar list entry.
+        #[arg(long, conflicts_with = "default_reminder")]
+        clear_default_reminders: bool,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
     /// Remove one calendar from the authenticated user's calendar list
     Delete {
         /// Calendar ID to remove from the authenticated user's calendar list.

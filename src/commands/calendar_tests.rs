@@ -558,6 +558,119 @@ async fn run_calendar_list_entry_add_json_outputs_resource() {
 }
 
 #[tokio::test]
+async fn run_calendar_list_entry_update_sends_replacement_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path_regex(
+            r"^/calendar/v3/users/me/calendarList/team-launches(%40|@)example\.com$",
+        ))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "id": "team-launches@example.com",
+            "summaryOverride": "Launches",
+            "colorId": "2",
+            "hidden": false,
+            "selected": true,
+            "defaultReminders": [
+                {
+                    "method": "popup",
+                    "minutes": 10
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "team-launches@example.com",
+            "summary": "Team Launches",
+            "summaryOverride": "Launches",
+            "colorId": "2",
+            "hidden": false,
+            "selected": true,
+            "defaultReminders": [
+                {
+                    "method": "popup",
+                    "minutes": 10
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::ListEntry {
+            command: CalendarListEntryCommand::Update {
+                calendar_id: "team-launches@example.com".into(),
+                summary_override: Some("Launches".into()),
+                color_id: Some("2".into()),
+                hidden: Some(false),
+                selected: Some(true),
+                default_reminder: vec!["popup:10".into()],
+                clear_default_reminders: false,
+                json: false,
+            },
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SUMMARY\tCALENDAR ID\tCOLOR ID\tHIDDEN\tSELECTED\tDEFAULT REMINDERS\nTeam Launches\tteam-launches@example.com\t2\tfalse\ttrue\tpopup:10\n"
+    );
+}
+
+#[tokio::test]
+async fn run_calendar_list_entry_update_rejects_empty_replacement_body() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    let err = run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::ListEntry {
+            command: CalendarListEntryCommand::Update {
+                calendar_id: "primary".into(),
+                summary_override: None,
+                color_id: None,
+                hidden: None,
+                selected: None,
+                default_reminder: vec![],
+                clear_default_reminders: false,
+                json: false,
+            },
+        },
+        false,
+        &mut out,
+        None,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "at least one calendar list entry flag is required"
+    );
+}
+
+#[tokio::test]
 async fn run_calendar_list_entry_patch_sends_partial_body() {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))

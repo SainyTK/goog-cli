@@ -3938,6 +3938,60 @@ fn calendar_calendars_list_entry_patch_with_flags() {
 }
 
 #[test]
+fn calendar_calendars_list_entry_update_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list-entry",
+        "update",
+        "primary",
+        "--summary-override",
+        "Focus",
+        "--color-id",
+        "2",
+        "--hidden",
+        "false",
+        "--selected",
+        "true",
+        "--default-reminder",
+        "popup:10",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::ListEntry {
+                            command:
+                                CalendarListEntryCommand::Update {
+                                    calendar_id,
+                                    summary_override,
+                                    color_id,
+                                    hidden,
+                                    selected,
+                                    default_reminder,
+                                    clear_default_reminders,
+                                    json,
+                                },
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(summary_override.as_deref(), Some("Focus"));
+            assert_eq!(color_id.as_deref(), Some("2"));
+            assert_eq!(hidden, Some(false));
+            assert_eq!(selected, Some(true));
+            assert_eq!(default_reminder, vec!["popup:10"]);
+            assert!(!clear_default_reminders);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_calendars_list_entry_get_with_json() {
     let cli = parse(&[
         "calendar",
