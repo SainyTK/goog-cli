@@ -275,6 +275,9 @@ impl SlidesCommand {
             | SlidesCommand::Image {
                 presentation_id, ..
             }
+            | SlidesCommand::Table {
+                presentation_id, ..
+            }
             | SlidesCommand::ReplaceText {
                 presentation_id, ..
             } => presentation_id,
@@ -381,6 +384,35 @@ pub enum SlidesCommand {
         width: f64,
         /// Image height in points
         #[arg(long, default_value_t = 240.0)]
+        height: f64,
+    },
+    /// Add a table to a slide without writing Batch Update JSON
+    Table {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the table on
+        #[arg(long)]
+        page_id: String,
+        /// Number of table rows
+        #[arg(long)]
+        rows: u32,
+        /// Number of table columns
+        #[arg(long)]
+        columns: u32,
+        /// Stable object ID for the new table. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Table width in points
+        #[arg(long, default_value_t = 360.0)]
+        width: f64,
+        /// Table height in points
+        #[arg(long, default_value_t = 180.0)]
         height: f64,
     },
     /// Replace text across a presentation or selected slides without writing Batch Update JSON

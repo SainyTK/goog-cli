@@ -624,6 +624,128 @@ async fn run_image_sends_create_image_request() {
 }
 
 #[tokio::test]
+async fn run_table_sends_create_table_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "createTable": {
+                        "objectId": "table-1",
+                        "rows": 3,
+                        "columns": 4,
+                        "elementProperties": {
+                            "pageObjectId": "slide-1",
+                            "size": {
+                                "width": {
+                                    "magnitude": 300.0,
+                                    "unit": "PT"
+                                },
+                                "height": {
+                                    "magnitude": 180.0,
+                                    "unit": "PT"
+                                }
+                            },
+                            "transform": {
+                                "scaleX": 1.0,
+                                "scaleY": 1.0,
+                                "translateX": 48.0,
+                                "translateY": 96.0,
+                                "unit": "PT"
+                            }
+                        }
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {
+                    "createTable": {
+                        "objectId": "table-1"
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_table_unified_to(
+        &test_config(),
+        &store,
+        None,
+        TableRequest {
+            presentation_id: "presentation-123".into(),
+            page_id: "slide-1".into(),
+            rows: 3,
+            columns: 4,
+            object_id: Some("table-1".into()),
+            x: 48.0,
+            y: 96.0,
+            width: 300.0,
+            height: 180.0,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{\"createTable\":{\"objectId\":\"table-1\"}}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_table_rejects_zero_dimensions() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    let err = run_table_unified_to(
+        &test_config(),
+        &store,
+        None,
+        TableRequest {
+            presentation_id: "presentation-123".into(),
+            page_id: "slide-1".into(),
+            rows: 0,
+            columns: 4,
+            object_id: Some("table-1".into()),
+            x: 48.0,
+            y: 96.0,
+            width: 300.0,
+            height: 180.0,
+        },
+        &mut out,
+        Some("https://example.invalid/slides/v1/presentations"),
+        Some(&state_path),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains("--rows must be greater than zero"));
+}
+
+#[tokio::test]
 async fn run_replace_text_sends_replace_all_text_request() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

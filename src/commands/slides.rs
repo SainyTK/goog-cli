@@ -215,6 +215,35 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::Table {
+            presentation_id,
+            page_id,
+            rows,
+            columns,
+            object_id,
+            x,
+            y,
+            width,
+            height,
+        } => run_with_runtime(run_table_unified_to(
+            config,
+            store,
+            account_override,
+            TableRequest {
+                presentation_id,
+                page_id,
+                rows,
+                columns,
+                object_id,
+                x,
+                y,
+                width,
+                height,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
         SlidesCommand::ReplaceText {
             presentation_id,
             find,
@@ -759,6 +788,96 @@ fn build_image_batch_update(request: ImageRequest) -> serde_json::Value {
 
 fn generated_image_object_id() -> String {
     format!("goog_image_{}", chrono::Utc::now().timestamp_millis())
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TableRequest {
+    pub presentation_id: String,
+    pub page_id: String,
+    pub rows: u32,
+    pub columns: u32,
+    pub object_id: Option<String>,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+pub(super) async fn run_table_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: TableRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_table_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to add Google Slides table")?;
+
+    write_json_line(out, &response, "failed to serialize Slides table response")
+}
+
+fn build_table_batch_update(request: TableRequest) -> Result<serde_json::Value> {
+    if request.rows == 0 {
+        anyhow::bail!("slides table --rows must be greater than zero");
+    }
+    if request.columns == 0 {
+        anyhow::bail!("slides table --columns must be greater than zero");
+    }
+
+    let object_id = request.object_id.unwrap_or_else(generated_table_object_id);
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "createTable": {
+                    "objectId": object_id,
+                    "rows": request.rows,
+                    "columns": request.columns,
+                    "elementProperties": {
+                        "pageObjectId": request.page_id,
+                        "size": {
+                            "width": {
+                                "magnitude": request.width,
+                                "unit": "PT"
+                            },
+                            "height": {
+                                "magnitude": request.height,
+                                "unit": "PT"
+                            }
+                        },
+                        "transform": {
+                            "scaleX": 1.0,
+                            "scaleY": 1.0,
+                            "translateX": request.x,
+                            "translateY": request.y,
+                            "unit": "PT"
+                        }
+                    }
+                }
+            }
+        ]
+    }))
+}
+
+fn generated_table_object_id() -> String {
+    format!("goog_table_{}", chrono::Utc::now().timestamp_millis())
 }
 
 #[derive(Debug, Clone)]
