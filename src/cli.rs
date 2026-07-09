@@ -124,13 +124,13 @@ pub enum DriveCommand {
         /// Maximum number of items to return (default: 50)
         #[arg(long)]
         limit: Option<u32>,
-        /// Fetch all items across all pages
+        /// Fetch all items across all pages. Caps at --limit when both are given
         #[arg(long)]
         all: bool,
         /// Drive folder ID to browse
         #[arg(long)]
         folder: Option<String>,
-        /// Emit newline-delimited JSON
+        /// Emit one JSON object per row with name, id, parents, mimeType, and modifiedTime
         #[arg(long)]
         json: bool,
     },
@@ -139,13 +139,13 @@ pub enum DriveCommand {
         /// Maximum number of files to return (default: 50)
         #[arg(long)]
         limit: Option<u32>,
-        /// Fetch all files across all pages
+        /// Fetch all files across all pages. Caps at --limit when both are given
         #[arg(long)]
         all: bool,
         /// Drive folder ID to list files from
         #[arg(long)]
         folder: Option<String>,
-        /// Emit newline-delimited JSON
+        /// Emit one full Drive file JSON object per row
         #[arg(long)]
         json: bool,
     },
@@ -179,13 +179,13 @@ pub enum DriveFolderCommand {
         /// Maximum number of folders to return (default: 50)
         #[arg(long)]
         limit: Option<u32>,
-        /// Fetch all folders across all pages
+        /// Fetch all folders across all pages. Caps at --limit when both are given
         #[arg(long)]
         all: bool,
         /// Drive parent folder ID to list folders from
         #[arg(long)]
         parent: Option<String>,
-        /// Emit newline-delimited JSON
+        /// Emit one full Drive folder JSON object per row
         #[arg(long)]
         json: bool,
     },

@@ -261,6 +261,14 @@ fn drive_list_with_flags() {
 }
 
 #[test]
+fn drive_list_help_describes_limit_cap_and_json_shape() {
+    let text = help(&["drive", "list", "--help"]);
+
+    assert!(text.contains("Caps at --limit when both are given"));
+    assert!(text.contains("Emit one full Drive file JSON object per row"));
+}
+
+#[test]
 fn drive_ls_with_flags() {
     let cli = parse(&[
         "drive",
@@ -293,6 +301,14 @@ fn drive_ls_with_flags() {
 }
 
 #[test]
+fn drive_ls_help_describes_browse_json_shape() {
+    let text = help(&["drive", "ls", "--help"]);
+
+    assert!(text.contains("Caps at --limit when both are given"));
+    assert!(text.contains("name, id, parents, mimeType, and modifiedTime"));
+}
+
+#[test]
 fn drive_folder_list_defaults() {
     let cli = parse(&["drive", "folder", "list"]).unwrap();
     let Command::Drive {
@@ -315,6 +331,14 @@ fn drive_folder_list_defaults() {
     assert!(!all);
     assert_eq!(parent, None);
     assert!(!json);
+}
+
+#[test]
+fn drive_folder_list_help_describes_limit_cap_and_json_shape() {
+    let text = help(&["drive", "folder", "list", "--help"]);
+
+    assert!(text.contains("Caps at --limit when both are given"));
+    assert!(text.contains("Emit one full Drive folder JSON object per row"));
 }
 
 #[test]
