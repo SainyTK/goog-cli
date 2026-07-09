@@ -69,7 +69,7 @@ pub enum Command {
         #[command(subcommand)]
         command: DocsCommand,
     },
-    /// Interact with GoogleMail
+    /// Interact with Gmail
     Mail {
         #[command(subcommand)]
         command: MailCommand,
@@ -943,24 +943,24 @@ pub enum MailCommand {
         /// Maximum number of messages to return (default: 10)
         #[arg(long)]
         limit: Option<u32>,
-        /// Emit newline-delimited JSON
+        /// Emit JSON instead of human-readable output
         #[arg(long)]
         json: bool,
     },
-    /// Fetch a GoogleMail Message
+    /// Read a Gmail message
     Read {
-        /// GoogleMail Message ID to fetch
+        /// Gmail message ID or URL to read
         message_id: String,
-        /// Emit the raw GoogleMail Message as JSON instead of Markdown
+        /// Emit JSON instead of human-readable output
         #[arg(long)]
         json: bool,
     },
-    /// Manage GoogleMail Attachments
+    /// Work with Gmail attachments
     Attachment {
         #[command(subcommand)]
         command: MailAttachmentCommand,
     },
-    /// Manage GoogleMail Drafts
+    /// Work with Gmail drafts
     Draft {
         #[command(subcommand)]
         command: MailDraftCommand,
@@ -969,13 +969,13 @@ pub enum MailCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum MailAttachmentCommand {
-    /// Download a GoogleMail Attachment
+    /// Download a Gmail attachment
     Download {
-        /// GoogleMail Message ID containing the Attachment
+        /// Gmail message ID or URL containing the attachment
         message_id: String,
-        /// GoogleMail Attachment ID to download
+        /// Gmail attachment ID to download
         attachment_id: String,
-        /// Destination path (defaults to Attachment filename)
+        /// Destination path (defaults to attachment filename)
         #[arg(long, short)]
         output: Option<String>,
     },
@@ -983,7 +983,7 @@ pub enum MailAttachmentCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum MailDraftCommand {
-    /// Create a GoogleMail Draft Message
+    /// Create a Gmail draft message
     Create {
         /// Recipient email address. Repeat for multiple To recipients.
         #[arg(long, required = true)]
@@ -1003,16 +1003,16 @@ pub enum MailDraftCommand {
         /// Path to a plain text draft body file
         #[arg(long, conflicts_with = "body")]
         body_file: Option<String>,
-        /// Local file to attach to the Draft. Repeat for multiple Attachments.
+        /// Local file to attach to the draft. Repeat for multiple attachments.
         #[arg(long)]
         attachment: Vec<String>,
-        /// Emit the raw GoogleMail Draft as JSON
+        /// Emit JSON instead of human-readable output
         #[arg(long)]
         json: bool,
     },
-    /// Edit a GoogleMail Draft Message
+    /// Edit a Gmail draft message
     Edit {
-        /// GoogleMail Draft ID to update
+        /// Gmail draft ID to update
         draft_id: String,
         /// Recipient email address. Repeat for multiple To recipients.
         #[arg(long, required = true)]
@@ -1032,10 +1032,10 @@ pub enum MailDraftCommand {
         /// Path to a plain text draft body file
         #[arg(long, conflicts_with = "body")]
         body_file: Option<String>,
-        /// Local file to attach to the Draft. Repeat for multiple Attachments.
+        /// Local file to attach to the draft. Repeat for multiple attachments.
         #[arg(long)]
         attachment: Vec<String>,
-        /// Emit the raw GoogleMail Draft as JSON
+        /// Emit JSON instead of human-readable output
         #[arg(long)]
         json: bool,
     },

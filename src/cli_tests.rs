@@ -1232,6 +1232,37 @@ fn mail_list_with_query_does_not_accept_all() {
 }
 
 #[test]
+fn mail_help_uses_plain_gmail_language() {
+    let mail_help = help(&["mail", "--help"]);
+    let read_help = help(&["mail", "read", "--help"]);
+    let attachment_help = help(&["mail", "attachment", "download", "--help"]);
+    let draft_create_help = help(&["mail", "draft", "create", "--help"]);
+    let draft_edit_help = help(&["mail", "draft", "edit", "--help"]);
+
+    assert!(mail_help.contains("Interact with Gmail"));
+    assert!(read_help.contains("Read a Gmail message"));
+    assert!(read_help.contains("Gmail message ID or URL to read"));
+    assert!(attachment_help.contains("Download a Gmail attachment"));
+    assert!(attachment_help.contains("Destination path (defaults to attachment filename)"));
+    assert!(draft_create_help.contains("Create a Gmail draft message"));
+    assert!(draft_edit_help.contains("Edit a Gmail draft message"));
+    assert!(draft_edit_help.contains("Gmail draft ID to update"));
+    assert!(draft_create_help.contains("Emit JSON instead of human-readable output"));
+
+    for rendered in [
+        mail_help,
+        read_help,
+        attachment_help,
+        draft_create_help,
+        draft_edit_help,
+    ] {
+        assert!(!rendered.contains("GoogleMail"));
+        assert!(!rendered.contains("Fetch a"));
+        assert!(!rendered.contains("Manage GoogleMail"));
+    }
+}
+
+#[test]
 fn mail_read_with_message_id() {
     let cli = parse(&["mail", "read", "message-123"]).unwrap();
     match cli.command {
