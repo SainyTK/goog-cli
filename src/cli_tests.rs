@@ -500,10 +500,8 @@ fn docs_insert_text_parses_location_and_write_options() {
         "insert",
         "document-123",
         "Hello",
-        "--page",
-        "2",
-        "--line",
-        "1",
+        "--at",
+        "page:2,line:1",
         "--dry-run",
         "--json",
         "--required-revision-id",
@@ -520,15 +518,6 @@ fn docs_insert_text_parses_location_and_write_options() {
                 document_id,
                 text,
                 at,
-                index,
-                entry,
-                page,
-                line,
-                heading,
-                after_heading,
-                before_heading,
-                after_text,
-                before_text,
                 dry_run,
                 json,
                 required_revision_id,
@@ -540,16 +529,7 @@ fn docs_insert_text_parses_location_and_write_options() {
 
     assert_eq!(document_id, "document-123");
     assert_eq!(text, "Hello");
-    assert_eq!(at, None);
-    assert_eq!(index, None);
-    assert_eq!(entry, None);
-    assert_eq!(page, Some(2));
-    assert_eq!(line, Some(1));
-    assert_eq!(heading, None);
-    assert_eq!(after_heading, None);
-    assert_eq!(before_heading, None);
-    assert_eq!(after_text, None);
-    assert_eq!(before_text, None);
+    assert_eq!(at, "page:2,line:1");
     assert!(dry_run);
     assert!(json);
     assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
@@ -560,13 +540,7 @@ fn docs_insert_commands_accept_at_selector() {
     let Command::Docs {
         command:
             DocsCommand::Text {
-                command:
-                    DocsTextCommand::Insert {
-                        at,
-                        index,
-                        after_text,
-                        ..
-                    },
+                command: DocsTextCommand::Insert { at, .. },
             },
     } = parse(&[
         "docs",
@@ -582,9 +556,7 @@ fn docs_insert_commands_accept_at_selector() {
     else {
         panic!("unexpected parse result");
     };
-    assert_eq!(at.as_deref(), Some("after-text:quarterly plan"));
-    assert_eq!(index, None);
-    assert_eq!(after_text, None);
+    assert_eq!(at, "after-text:quarterly plan");
 
     let Command::Docs {
         command:
@@ -608,12 +580,12 @@ fn docs_insert_commands_accept_at_selector() {
     else {
         panic!("unexpected parse result");
     };
-    assert_eq!(at.as_deref(), Some("page:1,line:3"));
+    assert_eq!(at, "page:1,line:3");
 }
 
 #[test]
-fn docs_insert_text_accepts_heading_selector() {
-    let cli = parse(&[
+fn docs_insert_text_rejects_legacy_heading_selector() {
+    assert!(parse(&[
         "docs",
         "text",
         "insert",
@@ -622,25 +594,32 @@ fn docs_insert_text_accepts_heading_selector() {
         "--heading",
         "Summary",
     ])
-    .unwrap();
+    .is_err());
+}
 
-    let Command::Docs {
-        command:
-            DocsCommand::Text {
-                command:
-                    DocsTextCommand::Insert {
-                        heading,
-                        after_heading,
-                        ..
-                    },
-            },
-    } = cli.command
-    else {
-        panic!("unexpected parse result");
-    };
-
-    assert_eq!(heading.as_deref(), Some("Summary"));
-    assert_eq!(after_heading, None);
+#[test]
+fn docs_insert_commands_reject_legacy_selector_flags() {
+    assert!(parse(&[
+        "docs",
+        "text",
+        "insert",
+        "document-123",
+        "Hello",
+        "--page",
+        "2",
+        "--line",
+        "1",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "footnote",
+        "insert",
+        "document-123",
+        "--after-text",
+        "quarterly plan",
+    ])
+    .is_err());
 }
 
 #[test]
@@ -798,8 +777,7 @@ fn docs_new_high_level_editing_commands_parse() {
                 command:
                     DocsImageCommand::Insert {
                         image_uri,
-                        page,
-                        line,
+                        at,
                         dry_run,
                         json,
                         ..
@@ -811,10 +789,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "insert",
         "document-123",
         "https://example.test/image.png",
-        "--page",
-        "2",
-        "--line",
-        "1",
+        "--at",
+        "page:2,line:1",
         "--dry-run",
         "--json",
     ])
@@ -824,8 +800,7 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(image_uri, "https://example.test/image.png");
-    assert_eq!(page, Some(2));
-    assert_eq!(line, Some(1));
+    assert_eq!(at, "page:2,line:1");
     assert!(dry_run);
     assert!(json);
 
@@ -834,10 +809,7 @@ fn docs_new_high_level_editing_commands_parse() {
             DocsCommand::Footnote {
                 command:
                     DocsFootnoteCommand::Insert {
-                        after_text,
-                        dry_run,
-                        json,
-                        ..
+                        at, dry_run, json, ..
                     },
             },
     } = parse(&[
@@ -845,8 +817,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "footnote",
         "insert",
         "document-123",
-        "--after-text",
-        "quarterly plan",
+        "--at",
+        "after-text:quarterly plan",
         "--dry-run",
         "--json",
     ])
@@ -855,7 +827,7 @@ fn docs_new_high_level_editing_commands_parse() {
     else {
         panic!("unexpected parse result");
     };
-    assert_eq!(after_text.as_deref(), Some("quarterly plan"));
+    assert_eq!(at, "after-text:quarterly plan");
     assert!(dry_run);
     assert!(json);
 
@@ -882,7 +854,7 @@ fn docs_new_high_level_editing_commands_parse() {
     else {
         panic!("unexpected parse result");
     };
-    assert_eq!(at.as_deref(), Some("heading:Summary"));
+    assert_eq!(at, "heading:Summary");
     assert!(dry_run);
     assert!(json);
 
@@ -910,7 +882,7 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(section_type, crate::cli::DocsSectionBreakType::Continuous);
-    assert_eq!(at.as_deref(), Some("heading:Appendix"));
+    assert_eq!(at, "heading:Appendix");
 
     let Command::Docs {
         command:
@@ -1140,8 +1112,7 @@ fn docs_new_high_level_editing_commands_parse() {
                 command:
                     DocsTableCommand::Insert {
                         data,
-                        page,
-                        line,
+                        at,
                         dry_run,
                         json,
                         ..
@@ -1154,10 +1125,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "document-123",
         "--data",
         "table.csv",
-        "--page",
-        "2",
-        "--line",
-        "1",
+        "--at",
+        "page:2,line:1",
         "--dry-run",
         "--json",
     ])
@@ -1167,8 +1136,7 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(data.as_deref(), Some("table.csv"));
-    assert_eq!(page, Some(2));
-    assert_eq!(line, Some(1));
+    assert_eq!(at, "page:2,line:1");
     assert!(dry_run);
     assert!(json);
 
@@ -1226,8 +1194,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "2",
         "--columns",
         "3",
-        "--index",
-        "44",
+        "--at",
+        "index:44",
         "--no-auto-style",
     ])
     .unwrap()
