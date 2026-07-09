@@ -2368,6 +2368,44 @@ fn slides_image_with_flags() {
 }
 
 #[test]
+fn slides_replace_text_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "replace-text",
+        "presentation-123",
+        "--find",
+        "{{title}}",
+        "--replace",
+        "Quarterly plan",
+        "--match-case",
+        "--page-id",
+        "slide-1",
+        "--page-id",
+        "slide-2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::ReplaceText {
+                    presentation_id,
+                    find,
+                    replacement,
+                    match_case,
+                    page_ids,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(find, "{{title}}");
+            assert_eq!(replacement, "Quarterly plan");
+            assert!(match_case);
+            assert_eq!(page_ids, vec!["slide-1", "slide-2"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn slides_slide_create_with_flags() {
     let cli = parse(&[
         "slides",

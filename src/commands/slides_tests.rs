@@ -569,3 +569,166 @@ async fn run_image_sends_create_image_request() {
         "{\"presentationId\":\"presentation-123\",\"replies\":[{\"createImage\":{\"objectId\":\"image-1\"}}]}\n"
     );
 }
+
+#[tokio::test]
+async fn run_replace_text_sends_replace_all_text_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "replaceAllText": {
+                        "containsText": {
+                            "text": "{{title}}",
+                            "matchCase": true
+                        },
+                        "replaceText": "Quarterly plan",
+                        "pageObjectIds": ["slide-1", "slide-2"]
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {
+                    "replaceAllText": {
+                        "occurrencesChanged": 3
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_replace_text_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ReplaceTextRequest {
+            presentation_id: "presentation-123".into(),
+            find: "{{title}}".into(),
+            replacement: "Quarterly plan".into(),
+            match_case: true,
+            page_ids: vec!["slide-1".into(), "slide-2".into()],
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{\"replaceAllText\":{\"occurrencesChanged\":3}}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_replace_text_omits_page_object_ids_without_page_scope() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "replaceAllText": {
+                        "containsText": {
+                            "text": "draft",
+                            "matchCase": false
+                        },
+                        "replaceText": "final"
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {
+                    "replaceAllText": {
+                        "occurrencesChanged": 1
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_replace_text_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ReplaceTextRequest {
+            presentation_id: "presentation-123".into(),
+            find: "draft".into(),
+            replacement: "final".into(),
+            match_case: false,
+            page_ids: vec![],
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{\"replaceAllText\":{\"occurrencesChanged\":1}}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_replace_text_rejects_empty_find_text() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    let err = run_replace_text_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ReplaceTextRequest {
+            presentation_id: "presentation-123".into(),
+            find: String::new(),
+            replacement: "final".into(),
+            match_case: false,
+            page_ids: vec![],
+        },
+        &mut out,
+        Some("https://example.invalid/slides/v1/presentations"),
+        Some(&state_path),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().contains("--find must not be empty"));
+}

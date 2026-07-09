@@ -197,6 +197,27 @@ pub fn run<S: AccountStore>(
             None,
             None,
         )),
+        SlidesCommand::ReplaceText {
+            presentation_id,
+            find,
+            replacement,
+            match_case,
+            page_ids,
+        } => run_with_runtime(run_replace_text_unified_to(
+            config,
+            store,
+            account_override,
+            ReplaceTextRequest {
+                presentation_id,
+                find,
+                replacement,
+                match_case,
+                page_ids,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
     }
 }
 
@@ -671,6 +692,76 @@ fn build_image_batch_update(request: ImageRequest) -> serde_json::Value {
 
 fn generated_image_object_id() -> String {
     format!("goog_image_{}", chrono::Utc::now().timestamp_millis())
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ReplaceTextRequest {
+    pub presentation_id: String,
+    pub find: String,
+    pub replacement: String,
+    pub match_case: bool,
+    pub page_ids: Vec<String>,
+}
+
+pub(super) async fn run_replace_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ReplaceTextRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_replace_text_batch_update(request)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to replace Google Slides text")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides replace text response",
+    )
+}
+
+fn build_replace_text_batch_update(request: ReplaceTextRequest) -> Result<serde_json::Value> {
+    if request.find.is_empty() {
+        anyhow::bail!("slides replace-text --find must not be empty");
+    }
+
+    let mut replace_all_text = serde_json::json!({
+        "containsText": {
+            "text": request.find,
+            "matchCase": request.match_case
+        },
+        "replaceText": request.replacement
+    });
+
+    if !request.page_ids.is_empty() {
+        replace_all_text["pageObjectIds"] = serde_json::json!(request.page_ids);
+    }
+
+    Ok(serde_json::json!({
+        "requests": [
+            {
+                "replaceAllText": replace_all_text
+            }
+        ]
+    }))
 }
 
 enum SlidesAccessAttempt<'a> {

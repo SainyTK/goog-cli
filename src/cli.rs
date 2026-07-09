@@ -268,6 +268,9 @@ impl SlidesCommand {
             }
             | SlidesCommand::Image {
                 presentation_id, ..
+            }
+            | SlidesCommand::ReplaceText {
+                presentation_id, ..
             } => presentation_id,
         };
         *presentation_id = crate::slides::extract_presentation_id(presentation_id);
@@ -368,6 +371,23 @@ pub enum SlidesCommand {
         /// Image height in points
         #[arg(long, default_value_t = 240.0)]
         height: f64,
+    },
+    /// Replace text across a presentation or selected slides without writing Batch Update JSON
+    ReplaceText {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Text to find
+        #[arg(long)]
+        find: String,
+        /// Replacement text
+        #[arg(long = "replace")]
+        replacement: String,
+        /// Match case when searching for text
+        #[arg(long)]
+        match_case: bool,
+        /// Slide page object ID to limit replacement to. Repeat for multiple slides.
+        #[arg(long = "page-id")]
+        page_ids: Vec<String>,
     },
 }
 
