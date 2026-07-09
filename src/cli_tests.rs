@@ -2283,14 +2283,94 @@ fn calendar_event_create_with_json_body_path() {
         Command::Calendar {
             command:
                 CalendarCommand::Events {
-                    command: CalendarEventsCommand::Create { calendar_id, event },
+                    command:
+                        CalendarEventsCommand::Create {
+                            calendar_id, event, ..
+                        },
                 },
         } => {
             assert_eq!(calendar_id, "primary");
-            assert_eq!(event, "event.json");
+            assert_eq!(event.as_deref(), Some("event.json"));
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn calendar_event_create_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "create",
+        "primary",
+        "--summary",
+        "Planning",
+        "--start",
+        "2026-07-09T09:00:00+07:00",
+        "--end",
+        "2026-07-09T09:30:00+07:00",
+        "--time-zone",
+        "Asia/Bangkok",
+        "--location",
+        "Office",
+        "--attendee",
+        "teammate@example.com",
+        "--attendee",
+        "lead@example.com",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Create {
+                            calendar_id,
+                            event,
+                            summary,
+                            start,
+                            end,
+                            time_zone,
+                            location,
+                            attendee,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event, None);
+            assert_eq!(summary.as_deref(), Some("Planning"));
+            assert_eq!(start.as_deref(), Some("2026-07-09T09:00:00+07:00"));
+            assert_eq!(end.as_deref(), Some("2026-07-09T09:30:00+07:00"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+            assert_eq!(location.as_deref(), Some("Office"));
+            assert_eq!(
+                attendee,
+                vec![
+                    "teammate@example.com".to_string(),
+                    "lead@example.com".to_string()
+                ]
+            );
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_create_rejects_mixed_json_body_and_flags() {
+    let err = parse(&[
+        "calendar",
+        "events",
+        "create",
+        "primary",
+        "--event",
+        "event.json",
+        "--summary",
+        "Planning",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("cannot be used with"));
 }
 
 #[test]

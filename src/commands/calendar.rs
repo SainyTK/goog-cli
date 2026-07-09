@@ -172,8 +172,31 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             .context("failed to read Google Calendar event")?;
             write_json_line(out, &event, "failed to serialize Calendar event")
         }
-        CalendarEventsCommand::Create { calendar_id, event } => {
-            let request_body = read_request_body(&event, input, "Google Calendar event")?;
+        CalendarEventsCommand::Create {
+            calendar_id,
+            event,
+            summary,
+            start,
+            end,
+            time_zone,
+            all_day,
+            location,
+            description,
+            attendee,
+        } => {
+            let request_body = match event {
+                Some(event) => read_request_body(&event, input, "Google Calendar event")?,
+                None => build_event_request_body(
+                    summary,
+                    start,
+                    end,
+                    time_zone,
+                    all_day,
+                    location,
+                    description,
+                    attendee,
+                )?,
+            };
             let options = write_event_options_insert(calendar_id.clone(), request_body, base_url);
             let target_resource_key = resource_key("calendar", &calendar_id);
             let event = run_with_calendar_unified_access(
@@ -567,6 +590,88 @@ fn read_request_body(
 
     serde_json::from_str(&body)
         .with_context(|| format!("failed to parse {request_name} from {request_source}"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_event_request_body(
+    summary: Option<String>,
+    start: Option<String>,
+    end: Option<String>,
+    time_zone: Option<String>,
+    all_day: bool,
+    location: Option<String>,
+    description: Option<String>,
+    attendees: Vec<String>,
+) -> Result<serde_json::Value> {
+    let summary = summary.context("--summary is required unless --event is used")?;
+    let start = start.context("--start is required unless --event is used")?;
+    let end = end.context("--end is required unless --event is used")?;
+
+    let mut body = serde_json::Map::from_iter([
+        ("summary".to_string(), serde_json::Value::String(summary)),
+        (
+            "start".to_string(),
+            event_time_body("start", start, time_zone.as_deref(), all_day)?,
+        ),
+        (
+            "end".to_string(),
+            event_time_body("end", end, time_zone.as_deref(), all_day)?,
+        ),
+    ]);
+
+    if let Some(location) = location {
+        body.insert("location".into(), serde_json::Value::String(location));
+    }
+    if let Some(description) = description {
+        body.insert("description".into(), serde_json::Value::String(description));
+    }
+    if !attendees.is_empty() {
+        body.insert(
+            "attendees".into(),
+            serde_json::Value::Array(
+                attendees
+                    .into_iter()
+                    .map(|email| serde_json::json!({ "email": email }))
+                    .collect(),
+            ),
+        );
+    }
+
+    Ok(serde_json::Value::Object(body))
+}
+
+fn event_time_body(
+    field_name: &str,
+    value: String,
+    time_zone: Option<&str>,
+    all_day: bool,
+) -> Result<serde_json::Value> {
+    if all_day {
+        if time_zone.is_some() {
+            anyhow::bail!("--time-zone cannot be used with --all-day");
+        }
+        validate_calendar_date(field_name, &value)?;
+        return Ok(serde_json::json!({ "date": value }));
+    }
+
+    validate_calendar_date_time(field_name, &value)?;
+    let mut body = serde_json::json!({ "dateTime": value });
+    if let Some(time_zone) = time_zone {
+        body["timeZone"] = serde_json::Value::String(time_zone.to_string());
+    }
+    Ok(body)
+}
+
+fn validate_calendar_date(field_name: &str, value: &str) -> Result<()> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .with_context(|| format!("--{field_name} must be YYYY-MM-DD when --all-day is used"))?;
+    Ok(())
+}
+
+fn validate_calendar_date_time(field_name: &str, value: &str) -> Result<()> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .with_context(|| format!("--{field_name} must be an RFC3339 date-time"))?;
+    Ok(())
 }
 
 fn write_calendars_table(out: &mut impl Write, calendars: &[serde_json::Value]) -> Result<()> {

@@ -366,13 +366,37 @@ pub enum CalendarEventsCommand {
         /// Event ID to read
         event_id: String,
     },
-    /// Create an event from an Events resource JSON body
+    /// Create an event from flags or an Events resource JSON body
     Create {
         /// Calendar ID to update. Use primary for the account's primary calendar.
         calendar_id: String,
         /// Path to an Event JSON request body, or - for stdin
         #[arg(long)]
-        event: String,
+        event: Option<String>,
+        /// Event summary. Required unless --event is used.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        summary: Option<String>,
+        /// Event start as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        start: Option<String>,
+        /// Event end as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        end: Option<String>,
+        /// IANA time zone for date-time events, such as Asia/Bangkok.
+        #[arg(long, conflicts_with = "event")]
+        time_zone: Option<String>,
+        /// Treat --start and --end as all-day dates.
+        #[arg(long, conflicts_with = "event")]
+        all_day: bool,
+        /// Event location.
+        #[arg(long, conflicts_with = "event")]
+        location: Option<String>,
+        /// Event description.
+        #[arg(long, conflicts_with = "event")]
+        description: Option<String>,
+        /// Attendee email address. Repeat for multiple attendees.
+        #[arg(long, conflicts_with = "event")]
+        attendee: Vec<String>,
     },
     /// Replace an event from an Events resource JSON body
     Update {

@@ -217,7 +217,15 @@ async fn run_events_create_sends_event_body() {
         None,
         CalendarEventsCommand::Create {
             calendar_id: "primary".into(),
-            event: "-".into(),
+            event: Some("-".into()),
+            summary: None,
+            start: None,
+            end: None,
+            time_zone: None,
+            all_day: false,
+            location: None,
+            description: None,
+            attendee: vec![],
         },
         &mut input,
         false,
@@ -231,5 +239,133 @@ async fn run_events_create_sends_event_body() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"id\":\"event-456\",\"summary\":\"goog-e2e-calendar\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_events_create_builds_event_body_from_flags() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/calendars/primary/events"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "summary": "Planning",
+            "start": {
+                "dateTime": "2026-07-09T09:00:00+07:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "end": {
+                "dateTime": "2026-07-09T09:30:00+07:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "location": "Office",
+            "description": "Weekly planning",
+            "attendees": [
+                { "email": "teammate@example.com" },
+                { "email": "lead@example.com" }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "event-789",
+            "summary": "Planning"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Create {
+            calendar_id: "primary".into(),
+            event: None,
+            summary: Some("Planning".into()),
+            start: Some("2026-07-09T09:00:00+07:00".into()),
+            end: Some("2026-07-09T09:30:00+07:00".into()),
+            time_zone: Some("Asia/Bangkok".into()),
+            all_day: false,
+            location: Some("Office".into()),
+            description: Some("Weekly planning".into()),
+            attendee: vec!["teammate@example.com".into(), "lead@example.com".into()],
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"event-789\",\"summary\":\"Planning\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_events_create_builds_all_day_event_body_from_flags() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/calendars/primary/events"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "summary": "Out of office",
+            "start": { "date": "2026-07-09" },
+            "end": { "date": "2026-07-10" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "event-all-day",
+            "summary": "Out of office"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Create {
+            calendar_id: "primary".into(),
+            event: None,
+            summary: Some("Out of office".into()),
+            start: Some("2026-07-09".into()),
+            end: Some("2026-07-10".into()),
+            time_zone: None,
+            all_day: true,
+            location: None,
+            description: None,
+            attendee: vec![],
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"event-all-day\",\"summary\":\"Out of office\"}\n"
     );
 }
