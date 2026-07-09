@@ -1406,10 +1406,14 @@ fn docs_batch_update_requires_requests() {
 fn docs_get_help_explains_raw_document_shape() {
     let help = help(&["docs", "get", "--help"]);
 
+    assert!(help.contains("Read a raw Google Docs Document"));
+    assert!(help.contains("Google Docs Document ID or URL to read"));
     assert!(help.contains("Emits the Google Docs API Document JSON unchanged."));
     assert!(help.contains("body.content as ordered structural elements"));
     assert!(help.contains("paragraph.elements[].textRun.content"));
     assert!(help.contains("--include-tabs-content"));
+    assert!(!help.contains("Fetch a raw Google Docs Document"));
+    assert!(!help.contains("Google Docs Document ID or URL to fetch"));
 }
 
 #[test]

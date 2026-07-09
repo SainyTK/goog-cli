@@ -346,7 +346,7 @@ Notes:
         #[command(subcommand)]
         command: DocsNamedRangeCommand,
     },
-    /// Fetch a raw Google Docs Document
+    /// Read a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.
   Top-level metadata includes documentId, title, revisionId, and documentStyle.
@@ -358,12 +358,12 @@ Notes:
   Word (.docx) files stored on Drive are read too: they are converted to a temporary native Google Doc, read, and the temporary copy is deleted, all transparently.
 
 Tips:
-  Use --fields to fetch only the paths you need, for example:
+  Use --fields to return only the paths you need, for example:
     goog docs get DOCUMENT_ID --fields 'title,body(content(paragraph(elements(textRun(content)))))'
   Use jq to inspect text runs:
     goog docs get DOCUMENT_ID | jq -r '.body.content[]?.paragraph?.elements[]?.textRun?.content // empty'")]
     Get {
-        /// Google Docs Document ID or URL to fetch
+        /// Google Docs Document ID or URL to read
         document_id: String,
         /// Google partial response field selector
         #[arg(long)]
