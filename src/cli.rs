@@ -1040,9 +1040,9 @@ pub enum SheetsValuesCommand {
     Get {
         /// Spreadsheet ID to read
         spreadsheet_id: String,
-        /// Single Google Sheets A1 Range to fetch
+        /// Single Google Sheets A1 range to read
         range: Option<String>,
-        /// Google Sheets A1 Range to fetch. Repeat for multiple ranges.
+        /// Google Sheets A1 range to read. Repeat for multiple ranges.
         #[arg(long = "range")]
         ranges: Vec<String>,
         /// How values should be represented in the response

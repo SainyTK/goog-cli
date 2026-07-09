@@ -2515,7 +2515,11 @@ fn sheets_help_uses_short_spreadsheet_id_wording() {
     let values_get_help = help(&["sheets", "values", "get", "--help"]);
     assert!(values_get_help.contains("Read raw sheet values"));
     assert!(values_get_help.contains("Spreadsheet ID to read"));
+    assert!(values_get_help.contains("Single Google Sheets A1 range to read"));
+    assert!(values_get_help.contains("Google Sheets A1 range to read. Repeat for multiple ranges"));
     assert!(!values_get_help.contains("Fetch raw Google Sheets values"));
+    assert!(!values_get_help.contains("Single Google Sheets A1 Range to fetch"));
+    assert!(!values_get_help.contains("Google Sheets A1 Range to fetch"));
 }
 
 #[test]
