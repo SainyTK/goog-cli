@@ -13,8 +13,8 @@ use crate::cli::{
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
-    SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand,
-    SlidesZOrderOperation,
+    SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType,
+    SlidesSlideCommand, SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -2508,6 +2508,55 @@ fn slides_shape_with_flags() {
             assert_eq!(y, 96.0);
             assert_eq!(width, 300.0);
             assert_eq!(height, 180.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_line_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "line",
+        "presentation-123",
+        "--page-id",
+        "slide-1",
+        "--category",
+        "curved",
+        "--object-id",
+        "line-1",
+        "--x",
+        "48",
+        "--y",
+        "96",
+        "--width",
+        "300",
+        "--height",
+        "120",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Line {
+                    presentation_id,
+                    page_id,
+                    category,
+                    object_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(category, SlidesLineCategory::Curved);
+            assert_eq!(object_id.as_deref(), Some("line-1"));
+            assert_eq!(x, 48.0);
+            assert_eq!(y, 96.0);
+            assert_eq!(width, 300.0);
+            assert_eq!(height, 120.0);
         }
         _ => panic!("unexpected parse result"),
     }

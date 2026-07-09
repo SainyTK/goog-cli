@@ -292,6 +292,7 @@ goog slides image PRESENTATION_ID --page-id SLIDE_OBJECT_ID --url https://exampl
 goog slides table PRESENTATION_ID --page-id SLIDE_OBJECT_ID --rows 4 --columns 3 --x 72 --y 72 --width 360 --height 180
 goog slides table-fill PRESENTATION_ID TABLE_OBJECT_ID --row "Metric|Value" --row 'ARR|$1.2M'
 goog slides shape PRESENTATION_ID --page-id SLIDE_OBJECT_ID --type round-rectangle --x 72 --y 72 --width 240 --height 96
+goog slides line PRESENTATION_ID --page-id SLIDE_OBJECT_ID --category straight --x 72 --y 72 --width 240 --height 0
 goog slides object style PRESENTATION_ID PAGE_OBJECT_ID --fill-color "#1a73e8" --outline-color "#202124" --outline-weight 2
 goog slides object text-style PRESENTATION_ID PAGE_OBJECT_ID --color "#202124" --font-family Georgia --font-size 18 --bold --italic false
 goog slides object alt-text PRESENTATION_ID PAGE_OBJECT_ID --title "Pipeline chart" --description "Bar chart showing qualified pipeline by stage"

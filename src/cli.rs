@@ -302,6 +302,9 @@ impl SlidesCommand {
             | SlidesCommand::Shape {
                 presentation_id, ..
             }
+            | SlidesCommand::Line {
+                presentation_id, ..
+            }
             | SlidesCommand::ReplaceText {
                 presentation_id, ..
             } => presentation_id,
@@ -482,6 +485,32 @@ pub enum SlidesCommand {
         width: f64,
         /// Shape height in points
         #[arg(long, default_value_t = 120.0)]
+        height: f64,
+    },
+    /// Add a line or connector to a slide without writing Batch Update JSON
+    Line {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the line on
+        #[arg(long)]
+        page_id: String,
+        /// Line category to create
+        #[arg(long, value_enum, default_value_t = SlidesLineCategory::Straight)]
+        category: SlidesLineCategory,
+        /// Stable object ID for the new line. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Line bounding-box width in points
+        #[arg(long, default_value_t = 240.0)]
+        width: f64,
+        /// Line bounding-box height in points
+        #[arg(long, default_value_t = 0.0)]
         height: f64,
     },
     /// Replace text across a presentation or selected slides without writing Batch Update JSON
@@ -696,6 +725,23 @@ impl SlidesShapeType {
             SlidesShapeType::UpArrow => "UP_ARROW",
             SlidesShapeType::DownArrow => "DOWN_ARROW",
             SlidesShapeType::Plus => "PLUS",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesLineCategory {
+    Straight,
+    Bent,
+    Curved,
+}
+
+impl SlidesLineCategory {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            SlidesLineCategory::Straight => "STRAIGHT",
+            SlidesLineCategory::Bent => "BENT",
+            SlidesLineCategory::Curved => "CURVED",
         }
     }
 }

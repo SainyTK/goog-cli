@@ -9,7 +9,9 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::cli::{SlidesPredefinedLayout, SlidesShapeType, SlidesZOrderOperation};
+use crate::cli::{
+    SlidesLineCategory, SlidesPredefinedLayout, SlidesShapeType, SlidesZOrderOperation,
+};
 use crate::slides::SLIDES_SCOPE;
 
 use super::slides::*;
@@ -971,6 +973,92 @@ async fn run_shape_sends_create_shape_request() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"presentationId\":\"presentation-123\",\"replies\":[{\"createShape\":{\"objectId\":\"shape-1\"}}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_line_sends_create_line_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "createLine": {
+                        "objectId": "line-1",
+                        "category": "CURVED",
+                        "elementProperties": {
+                            "pageObjectId": "slide-1",
+                            "size": {
+                                "width": {
+                                    "magnitude": 300.0,
+                                    "unit": "PT"
+                                },
+                                "height": {
+                                    "magnitude": 120.0,
+                                    "unit": "PT"
+                                }
+                            },
+                            "transform": {
+                                "scaleX": 1.0,
+                                "scaleY": 1.0,
+                                "translateX": 48.0,
+                                "translateY": 96.0,
+                                "unit": "PT"
+                            }
+                        }
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [
+                {
+                    "createLine": {
+                        "objectId": "line-1"
+                    }
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_line_unified_to(
+        &test_config(),
+        &store,
+        None,
+        LineRequest {
+            presentation_id: "presentation-123".into(),
+            page_id: "slide-1".into(),
+            category: SlidesLineCategory::Curved,
+            object_id: Some("line-1".into()),
+            x: 48.0,
+            y: 96.0,
+            width: 300.0,
+            height: 120.0,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{\"createLine\":{\"objectId\":\"line-1\"}}]}\n"
     );
 }
 
