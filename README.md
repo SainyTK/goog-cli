@@ -240,7 +240,7 @@ goog mail list --limit 10
 goog mail list 'from:alerts@example.com newer_than:7d'
 goog mail read MESSAGE_ID
 goog mail draft create --to teammate@example.com --subject 'Status update' --body-file ./message.txt --attachment ./report.pdf
-goog mail attachment download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
+goog mail download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
 ```
 
 Use `goog help`, `goog <command> --help`, and nested command help for the full command reference.

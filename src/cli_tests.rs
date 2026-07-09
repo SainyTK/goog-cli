@@ -3,8 +3,8 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
-    DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsCommand,
-    SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    DriveFolderCommand, MailCommand, MailDraftCommand, SheetsCommand, SheetsInsertDataOption,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -1273,15 +1273,15 @@ fn mail_list_with_query_does_not_accept_all() {
 fn mail_help_uses_plain_gmail_language() {
     let mail_help = help(&["mail", "--help"]);
     let read_help = help(&["mail", "read", "--help"]);
-    let attachment_help = help(&["mail", "attachment", "download", "--help"]);
+    let download_help = help(&["mail", "download", "--help"]);
     let draft_create_help = help(&["mail", "draft", "create", "--help"]);
     let draft_edit_help = help(&["mail", "draft", "edit", "--help"]);
 
     assert!(mail_help.contains("Interact with Gmail"));
     assert!(read_help.contains("Read a Gmail message"));
     assert!(read_help.contains("Gmail message ID or URL to read"));
-    assert!(attachment_help.contains("Download a Gmail attachment"));
-    assert!(attachment_help.contains("Destination path (defaults to attachment filename)"));
+    assert!(download_help.contains("Download a Gmail attachment"));
+    assert!(download_help.contains("Destination path (defaults to attachment filename)"));
     assert!(draft_create_help.contains("Create a Gmail draft message"));
     assert!(draft_edit_help.contains("Edit a Gmail draft message"));
     assert!(draft_edit_help.contains("Gmail draft ID to update"));
@@ -1290,7 +1290,7 @@ fn mail_help_uses_plain_gmail_language() {
     for rendered in [
         mail_help,
         read_help,
-        attachment_help,
+        download_help,
         draft_create_help,
         draft_edit_help,
     ] {
@@ -1347,7 +1347,6 @@ fn mail_read_accepts_global_account_flag() {
 fn mail_attachment_download_with_explicit_output() {
     let cli = parse(&[
         "mail",
-        "attachment",
         "download",
         "message-123",
         "attachment-456",
@@ -1358,13 +1357,10 @@ fn mail_attachment_download_with_explicit_output() {
     match cli.command {
         Command::Mail {
             command:
-                MailCommand::Attachment {
-                    command:
-                        MailAttachmentCommand::Download {
-                            message_id,
-                            attachment_id,
-                            output,
-                        },
+                MailCommand::Download {
+                    message_id,
+                    attachment_id,
+                    output,
                 },
         } => {
             assert_eq!(message_id, "message-123");
@@ -1377,24 +1373,14 @@ fn mail_attachment_download_with_explicit_output() {
 
 #[test]
 fn mail_attachment_download_output_is_optional() {
-    let cli = parse(&[
-        "mail",
-        "attachment",
-        "download",
-        "message-123",
-        "attachment-456",
-    ])
-    .unwrap();
+    let cli = parse(&["mail", "download", "message-123", "attachment-456"]).unwrap();
     match cli.command {
         Command::Mail {
             command:
-                MailCommand::Attachment {
-                    command:
-                        MailAttachmentCommand::Download {
-                            message_id,
-                            attachment_id,
-                            output,
-                        },
+                MailCommand::Download {
+                    message_id,
+                    attachment_id,
+                    output,
                 },
         } => {
             assert_eq!(message_id, "message-123");
@@ -1403,6 +1389,18 @@ fn mail_attachment_download_output_is_optional() {
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn mail_attachment_group_is_not_a_command() {
+    assert!(parse(&[
+        "mail",
+        "attachment",
+        "download",
+        "message-123",
+        "attachment-456"
+    ])
+    .is_err());
 }
 
 #[test]

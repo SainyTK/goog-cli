@@ -955,20 +955,6 @@ pub enum MailCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Work with Gmail attachments
-    Attachment {
-        #[command(subcommand)]
-        command: MailAttachmentCommand,
-    },
-    /// Work with Gmail drafts
-    Draft {
-        #[command(subcommand)]
-        command: MailDraftCommand,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub enum MailAttachmentCommand {
     /// Download a Gmail attachment
     Download {
         /// Gmail message ID or URL containing the attachment
@@ -978,6 +964,11 @@ pub enum MailAttachmentCommand {
         /// Destination path (defaults to attachment filename)
         #[arg(long, short)]
         output: Option<String>,
+    },
+    /// Work with Gmail drafts
+    Draft {
+        #[command(subcommand)]
+        command: MailDraftCommand,
     },
 }
 

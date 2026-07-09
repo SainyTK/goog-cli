@@ -8,7 +8,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{MailAttachmentCommand, MailCommand, MailDraftCommand};
+use crate::cli::{MailCommand, MailDraftCommand};
 use crate::mail::{
     create_draft, decode_base64url, download_attachment, get_message, list_messages,
     parse_message_reference, resolve_message_reference, update_draft, CreateDraftOptions,
@@ -56,27 +56,25 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        MailCommand::Attachment { command } => match command {
-            MailAttachmentCommand::Download {
+        MailCommand::Download {
+            message_id,
+            attachment_id,
+            output,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_attachment_download_unified_to(
+                config,
+                store,
+                account_override,
                 message_id,
                 attachment_id,
-                output,
-            } => {
-                let runtime =
-                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                runtime.block_on(run_attachment_download_unified_to(
-                    config,
-                    store,
-                    account_override,
-                    message_id,
-                    attachment_id,
-                    output.map(PathBuf::from),
-                    quiet,
-                    None,
-                    None,
-                ))
-            }
-        },
+                output.map(PathBuf::from),
+                quiet,
+                None,
+                None,
+            ))
+        }
         MailCommand::Draft { command } => match command {
             MailDraftCommand::Create {
                 to,
