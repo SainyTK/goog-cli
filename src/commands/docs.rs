@@ -7,7 +7,8 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    DocsCommand, DocsMapType, DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand,
+    DocsCommand, DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsTableCommand,
+    DocsTextCommand,
 };
 use crate::docs::{
     batch_update_document,
@@ -204,22 +205,25 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::InsertImage {
-            document_id,
-            image_uri,
-            at,
-            index,
-            entry,
-            page,
-            line,
-            heading,
-            after_heading,
-            before_heading,
-            after_text,
-            before_text,
-            dry_run,
-            json,
-            required_revision_id,
+        DocsCommand::Image {
+            command:
+                DocsImageCommand::Insert {
+                    document_id,
+                    image_uri,
+                    at,
+                    index,
+                    entry,
+                    page,
+                    line,
+                    heading,
+                    after_heading,
+                    before_heading,
+                    after_text,
+                    before_text,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
         } => {
             let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,

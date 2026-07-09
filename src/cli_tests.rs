@@ -2,9 +2,9 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DocsMapType,
-    DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand, DriveCommand, DriveListType,
-    MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
+    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsImageCommand, DocsListType,
+    DocsMapType, DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
+    DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
     SheetsValueRenderOption, SheetsValuesCommand,
 };
 
@@ -740,20 +740,37 @@ fn docs_flat_table_commands_are_removed() {
 }
 
 #[test]
+fn docs_flat_image_commands_are_removed() {
+    assert!(parse(&[
+        "docs",
+        "insert-image",
+        "document-123",
+        "https://example.test/image.png",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn docs_new_high_level_editing_commands_parse() {
     let Command::Docs {
         command:
-            DocsCommand::InsertImage {
-                image_uri,
-                page,
-                line,
-                dry_run,
-                json,
-                ..
+            DocsCommand::Image {
+                command:
+                    DocsImageCommand::Insert {
+                        image_uri,
+                        page,
+                        line,
+                        dry_run,
+                        json,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "insert-image",
+        "image",
+        "insert",
         "document-123",
         "https://example.test/image.png",
         "--page",
@@ -1258,7 +1275,7 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
 
     for command in [
         &["docs", "text", "insert", "--help"][..],
-        &["docs", "insert-image", "--help"],
+        &["docs", "image", "insert", "--help"],
         &["docs", "insert-page-break", "--help"],
         &["docs", "insert-section-break", "--help"],
         &["docs", "insert-footnote", "--help"],

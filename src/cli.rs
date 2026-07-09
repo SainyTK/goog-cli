@@ -212,7 +212,6 @@ impl DocsCommand {
         let document_id = match self {
             DocsCommand::Create { .. } => return,
             DocsCommand::Map { document_id, .. }
-            | DocsCommand::InsertImage { document_id, .. }
             | DocsCommand::InsertPageBreak { document_id, .. }
             | DocsCommand::InsertSectionBreak { document_id, .. }
             | DocsCommand::CreateHeader { document_id, .. }
@@ -223,6 +222,9 @@ impl DocsCommand {
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. }
             | DocsCommand::StyleTemplate { document_id, .. } => document_id,
+            DocsCommand::Image { command } => match command {
+                DocsImageCommand::Insert { document_id, .. } => document_id,
+            },
             DocsCommand::Table { command } => match command {
                 DocsTableCommand::Insert { document_id, .. }
                 | DocsTableCommand::Edit { document_id, .. } => document_id,
@@ -287,52 +289,10 @@ Notes:
         #[command(subcommand)]
         command: DocsTextCommand,
     },
-    /// Insert an Inline Image through a high-level Document Map location selector
-    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
-    InsertImage {
-        /// Google Docs Document ID or URL to update
-        document_id: String,
-        /// Publicly reachable image URI for Google Docs insertInlineImage
-        image_uri: String,
-        /// Insert location selector
-        #[arg(long, value_name = "SELECTOR")]
-        at: Option<String>,
-        /// Raw Google Docs UTF-16 index
-        #[arg(long, hide = true)]
-        index: Option<i64>,
-        /// Document Map Entry number
-        #[arg(long, hide = true)]
-        entry: Option<usize>,
-        /// Derived page label
-        #[arg(long, hide = true)]
-        page: Option<usize>,
-        /// Content line within the derived page
-        #[arg(long, hide = true)]
-        line: Option<usize>,
-        /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT", hide = true)]
-        heading: Option<String>,
-        /// Insert after the matching heading text
-        #[arg(long, hide = true)]
-        after_heading: Option<String>,
-        /// Insert before the matching heading text
-        #[arg(long, hide = true)]
-        before_heading: Option<String>,
-        /// Insert after the matching text span
-        #[arg(long, hide = true)]
-        after_text: Option<String>,
-        /// Insert before the matching text span
-        #[arg(long, hide = true)]
-        before_text: Option<String>,
-        /// Preview the edit without calling documents.batchUpdate
-        #[arg(long)]
-        dry_run: bool,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-        /// Require the document to still be at this revision before applying the edit
-        #[arg(long)]
-        required_revision_id: Option<String>,
+    /// Insert document images
+    Image {
+        #[command(subcommand)]
+        command: DocsImageCommand,
     },
     /// Insert a page break through a high-level Document Map location selector
     #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
@@ -779,6 +739,57 @@ pub enum DocsTextCommand {
         /// Replace every text match
         #[arg(long)]
         all: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsImageCommand {
+    /// Insert an Inline Image through a high-level Document Map location selector
+    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
+    Insert {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Publicly reachable image URI for Google Docs insertInlineImage
+        image_uri: String,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long, hide = true)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long, hide = true)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long, hide = true)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long, hide = true)]
+        line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT", hide = true)]
+        heading: Option<String>,
+        /// Insert after the matching heading text
+        #[arg(long, hide = true)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long, hide = true)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long, hide = true)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long, hide = true)]
+        before_text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,

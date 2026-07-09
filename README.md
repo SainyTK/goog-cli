@@ -216,6 +216,7 @@ goog docs map DOCUMENT_ID --type images
 goog docs map DOCUMENT_ID --type tables
 goog docs map DOCUMENT_ID --heading "Summary"
 goog docs text search DOCUMENT_ID "quarterly plan"
+goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
 goog docs insert-page-break DOCUMENT_ID --at 'heading:Summary'
 goog docs insert-section-break DOCUMENT_ID --section-type next-page --at 'heading:Appendix'
 goog docs create-header DOCUMENT_ID
