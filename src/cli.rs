@@ -1353,6 +1353,9 @@ pub enum CalendarEventsCommand {
         /// Filter by event type. Repeat for multiple types.
         #[arg(long, value_enum)]
         event_type: Vec<CalendarEventType>,
+        /// Maximum attendees to include per event in the response
+        #[arg(long)]
+        max_attendees: Option<u32>,
         /// Expand recurring events into instances
         #[arg(long)]
         single_events: bool,

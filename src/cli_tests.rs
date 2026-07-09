@@ -329,6 +329,8 @@ fn calendar_events_list_with_flags() {
         "out-of-office",
         "--event-type",
         "working-location",
+        "--max-attendees",
+        "3",
         "--single-events",
         "--show-deleted",
         "--show-hidden-invitations",
@@ -355,6 +357,7 @@ fn calendar_events_list_with_flags() {
                             private_extended_property,
                             shared_extended_property,
                             event_type,
+                            max_attendees,
                             single_events,
                             show_deleted,
                             show_hidden_invitations,
@@ -384,6 +387,7 @@ fn calendar_events_list_with_flags() {
                     CalendarEventType::WorkingLocation
                 ]
             );
+            assert_eq!(max_attendees, Some(3));
             assert!(single_events);
             assert!(show_deleted);
             assert!(show_hidden_invitations);

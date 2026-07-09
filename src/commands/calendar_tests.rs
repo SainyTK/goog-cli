@@ -1604,6 +1604,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
         .and(query_param("sharedExtendedProperty", "project=alpha"))
         .and(query_param("eventTypes", "outOfOffice"))
         .and(query_param("eventTypes", "workingLocation"))
+        .and(query_param("maxAttendees", "3"))
         .and(header("authorization", "Bearer alice-access"))
         .respond_with(ResponseTemplate::new(403).set_body_string("denied"))
         .expect(1)
@@ -1622,6 +1623,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
         .and(query_param("sharedExtendedProperty", "project=alpha"))
         .and(query_param("eventTypes", "outOfOffice"))
         .and(query_param("eventTypes", "workingLocation"))
+        .and(query_param("maxAttendees", "3"))
         .and(header("authorization", "Bearer bob-access"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "items": [
@@ -1674,6 +1676,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
                 crate::cli::CalendarEventType::OutOfOffice,
                 crate::cli::CalendarEventType::WorkingLocation,
             ],
+            max_attendees: Some(3),
             single_events: false,
             show_deleted: true,
             show_hidden_invitations: true,

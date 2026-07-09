@@ -527,6 +527,7 @@ pub struct ListEventsOptions {
     pub private_extended_properties: Vec<String>,
     pub shared_extended_properties: Vec<String>,
     pub event_types: Vec<String>,
+    pub max_attendees: Option<u32>,
     pub single_events: bool,
     pub show_deleted: bool,
     pub show_hidden_invitations: bool,
@@ -549,6 +550,7 @@ impl ListEventsOptions {
             private_extended_properties: Vec::new(),
             shared_extended_properties: Vec::new(),
             event_types: Vec::new(),
+            max_attendees: None,
             single_events: false,
             show_deleted: false,
             show_hidden_invitations: false,
@@ -613,6 +615,11 @@ impl ListEventsOptions {
         self
     }
 
+    pub fn with_max_attendees(mut self, max_attendees: u32) -> Self {
+        self.max_attendees = Some(max_attendees);
+        self
+    }
+
     pub fn with_single_events(mut self, single_events: bool) -> Self {
         self.single_events = single_events;
         self
@@ -672,6 +679,9 @@ impl ListEventsOptions {
             }
             for event_type in &self.event_types {
                 query.append_pair("eventTypes", event_type);
+            }
+            if let Some(max_attendees) = self.max_attendees {
+                query.append_pair("maxAttendees", &max_attendees.to_string());
             }
             if self.single_events {
                 query.append_pair("singleEvents", "true");

@@ -626,6 +626,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             private_extended_property,
             shared_extended_property,
             event_type,
+            max_attendees,
             single_events,
             show_deleted,
             show_hidden_invitations,
@@ -652,6 +653,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     .map(CalendarEventType::api_value)
                     .map(str::to_string)
                     .collect(),
+                max_attendees,
                 single_events,
                 show_deleted,
                 show_hidden_invitations,
@@ -1134,6 +1136,7 @@ async fn collect_events_unified<S: AccountStore>(
             first_options.private_extended_properties.clone(),
             first_options.shared_extended_properties.clone(),
             first_options.event_types.clone(),
+            first_options.max_attendees,
             first_options.single_events,
             first_options.show_deleted,
             first_options.show_hidden_invitations,
@@ -1733,6 +1736,7 @@ fn list_events_options(
     private_extended_properties: Vec<String>,
     shared_extended_properties: Vec<String>,
     event_types: Vec<String>,
+    max_attendees: Option<u32>,
     single_events: bool,
     show_deleted: bool,
     show_hidden_invitations: bool,
@@ -1767,6 +1771,9 @@ fn list_events_options(
         .with_private_extended_properties(private_extended_properties)
         .with_shared_extended_properties(shared_extended_properties)
         .with_event_types(event_types);
+    if let Some(max_attendees) = max_attendees {
+        options = options.with_max_attendees(max_attendees);
+    }
     if let Some(order_by) = order_by {
         options = options.with_order_by(order_by.api_value());
     }
