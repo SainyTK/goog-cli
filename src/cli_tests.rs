@@ -347,6 +347,52 @@ fn calendar_events_list_with_flags() {
 }
 
 #[test]
+fn calendar_event_instances_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "instances",
+        "primary",
+        "recurring-event-123",
+        "--limit",
+        "25",
+        "--all",
+        "--time-min",
+        "2026-07-09T09:00:00Z",
+        "--time-max",
+        "2026-07-30T09:00:00Z",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Instances {
+                            calendar_id,
+                            event_id,
+                            limit,
+                            all,
+                            time_min,
+                            time_max,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "recurring-event-123");
+            assert_eq!(limit, Some(25));
+            assert!(all);
+            assert_eq!(time_min.as_deref(), Some("2026-07-09T09:00:00Z"));
+            assert_eq!(time_max.as_deref(), Some("2026-07-30T09:00:00Z"));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn drive_ls_with_flags() {
     let cli = parse(&[
         "drive",

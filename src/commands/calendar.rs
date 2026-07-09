@@ -12,16 +12,16 @@ use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_acl, delete_calendar, delete_calendar_list_entry, delete_event, get_acl, get_calendar,
     get_calendar_list_entry, get_colors, get_event, insert_acl, insert_calendar,
-    insert_calendar_list_entry, insert_event, list_acl, list_calendars, list_events, move_event,
-    patch_acl, patch_calendar, patch_calendar_list_entry, patch_event, query_freebusy,
-    quick_add_event, update_acl, update_calendar, update_calendar_list_entry, update_event,
-    CalendarError, DeleteAclOptions, DeleteCalendarListEntryOptions, DeleteCalendarOptions,
-    DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarListEntryOptions,
-    GetCalendarOptions, GetColorsOptions, GetEventOptions, InsertAclOptions,
-    InsertCalendarListEntryOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
-    ListEventsOptions, MoveEventOptions, PatchCalendarListEntryOptions, QuickAddEventOptions,
-    SendUpdates, UpdateAclOptions, UpdateCalendarListEntryOptions, UpdateCalendarOptions,
-    WriteEventOptions,
+    insert_calendar_list_entry, insert_event, list_acl, list_calendars, list_event_instances,
+    list_events, move_event, patch_acl, patch_calendar, patch_calendar_list_entry, patch_event,
+    query_freebusy, quick_add_event, update_acl, update_calendar, update_calendar_list_entry,
+    update_event, CalendarError, DeleteAclOptions, DeleteCalendarListEntryOptions,
+    DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions, GetAclOptions,
+    GetCalendarListEntryOptions, GetCalendarOptions, GetColorsOptions, GetEventOptions,
+    InsertAclOptions, InsertCalendarListEntryOptions, InsertCalendarOptions, ListAclOptions,
+    ListCalendarsOptions, ListEventInstancesOptions, ListEventsOptions, MoveEventOptions,
+    PatchCalendarListEntryOptions, QuickAddEventOptions, SendUpdates, UpdateAclOptions,
+    UpdateCalendarListEntryOptions, UpdateCalendarOptions, WriteEventOptions,
 };
 use crate::cli::{
     CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarColorsCommand,
@@ -671,6 +671,45 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             .context("failed to read Google Calendar event")?;
             write_json_line(out, &event, "failed to serialize Calendar event")
         }
+        CalendarEventsCommand::Instances {
+            calendar_id,
+            event_id,
+            limit,
+            all,
+            time_min,
+            time_max,
+            json,
+        } => {
+            let json = json || output_json_by_default;
+            let first_options = list_event_instances_options(
+                calendar_id.clone(),
+                event_id.clone(),
+                requested_result_count(limit, all).unwrap_or(DEFAULT_LIST_LIMIT),
+                time_min,
+                time_max,
+                None,
+                base_url,
+            );
+            let target_resource_key = calendar_event_resource_key(&calendar_id, &event_id);
+            let events = collect_event_instances_unified(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                first_options,
+                limit,
+                all,
+                base_url,
+                state_path,
+            )
+            .await
+            .context("failed to list Google Calendar event instances")?;
+            if json {
+                write_ndjson(out, &events)
+            } else {
+                write_events_table(out, &events)
+            }
+        }
         CalendarEventsCommand::Create {
             calendar_id,
             event,
@@ -1048,6 +1087,68 @@ async fn collect_events_unified<S: AccountStore>(
 }
 
 #[allow(clippy::too_many_arguments)]
+async fn collect_event_instances_unified<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    first_options: ListEventInstancesOptions,
+    limit: Option<u32>,
+    all: bool,
+    base_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<Vec<serde_json::Value>, CalendarError> {
+    let mut remaining = requested_result_count(limit, all);
+    let mut page_token = None;
+    let mut items = Vec::new();
+
+    loop {
+        let Some(page_size) = next_page_size(remaining) else {
+            break;
+        };
+        let options = list_event_instances_options(
+            first_options.calendar_id.clone(),
+            first_options.event_id.clone(),
+            page_size,
+            first_options.time_min.clone(),
+            first_options.time_max.clone(),
+            page_token.take(),
+            base_url,
+        );
+        let page = run_with_calendar_unified_access(
+            config,
+            store,
+            account_override,
+            target_resource_key,
+            CalendarAccessAttempt::ListEventInstances(&options),
+            state_path,
+        )
+        .await?;
+        let page_items = page
+            .get("items")
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let page_count = page_items.len() as u32;
+        if let Some(left) = remaining.as_mut() {
+            *left = left.saturating_sub(page_count);
+        }
+        items.extend(page_items);
+
+        match page
+            .get("nextPageToken")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+        {
+            Some(token) if should_fetch_next_page(remaining, all) => page_token = Some(token),
+            _ => break,
+        }
+    }
+
+    Ok(items)
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn collect_acl<S: AccountStore>(
     config: &Config,
     store: &S,
@@ -1112,6 +1213,7 @@ enum CalendarAccessAttempt<'a> {
     UpdateAcl(&'a UpdateAclOptions),
     PatchAcl(&'a UpdateAclOptions),
     ListEvents(&'a ListEventsOptions),
+    ListEventInstances(&'a ListEventInstancesOptions),
     GetEvent(&'a GetEventOptions),
     InsertEvent(&'a WriteEventOptions),
     UpdateEvent(&'a WriteEventOptions),
@@ -1174,6 +1276,9 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::UpdateAcl(options) => update_acl(&client, options).await,
         CalendarAccessAttempt::PatchAcl(options) => patch_acl(&client, options).await,
         CalendarAccessAttempt::ListEvents(options) => list_events(&client, options).await,
+        CalendarAccessAttempt::ListEventInstances(options) => {
+            list_event_instances(&client, options).await
+        }
         CalendarAccessAttempt::GetEvent(options) => get_event(&client, options).await,
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
         CalendarAccessAttempt::UpdateEvent(options) => update_event(&client, options).await,
@@ -1543,6 +1648,31 @@ fn list_events_options(
     }
     if let Some(query) = query {
         options = options.with_query(query);
+    }
+    if let Some(page_token) = page_token {
+        options = options.with_page_token(page_token);
+    }
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn list_event_instances_options(
+    calendar_id: String,
+    event_id: String,
+    page_size: u32,
+    time_min: Option<String>,
+    time_max: Option<String>,
+    page_token: Option<String>,
+    base_url: Option<&str>,
+) -> ListEventInstancesOptions {
+    let mut options = ListEventInstancesOptions::new(calendar_id, event_id, page_size);
+    if let Some(time_min) = time_min {
+        options = options.with_time_min(time_min);
+    }
+    if let Some(time_max) = time_max {
+        options = options.with_time_max(time_max);
     }
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);

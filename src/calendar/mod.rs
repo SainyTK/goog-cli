@@ -595,6 +595,82 @@ impl ListEventsOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct ListEventInstancesOptions {
+    pub calendar_id: String,
+    pub event_id: String,
+    pub max_results: u32,
+    pub page_token: Option<String>,
+    pub time_min: Option<String>,
+    pub time_max: Option<String>,
+    base_url: String,
+}
+
+impl ListEventInstancesOptions {
+    pub fn new(
+        calendar_id: impl Into<String>,
+        event_id: impl Into<String>,
+        max_results: u32,
+    ) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            event_id: event_id.into(),
+            max_results,
+            page_token: None,
+            time_min: None,
+            time_max: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_page_token(mut self, page_token: impl Into<String>) -> Self {
+        self.page_token = Some(page_token.into());
+        self
+    }
+
+    pub fn with_time_min(mut self, time_min: impl Into<String>) -> Self {
+        self.time_min = Some(time_min.into());
+        self
+    }
+
+    pub fn with_time_max(mut self, time_max: impl Into<String>) -> Self {
+        self.time_max = Some(time_max.into());
+        self
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(
+            &self.base_url,
+            &[
+                "calendars",
+                &self.calendar_id,
+                "events",
+                &self.event_id,
+                "instances",
+            ],
+        )?;
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("maxResults", &self.max_results.to_string());
+            if let Some(page_token) = &self.page_token {
+                query.append_pair("pageToken", page_token);
+            }
+            if let Some(time_min) = &self.time_min {
+                query.append_pair("timeMin", time_min);
+            }
+            if let Some(time_max) = &self.time_max {
+                query.append_pair("timeMax", time_max);
+            }
+        }
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct GetEventOptions {
     pub calendar_id: String,
     pub event_id: String,
@@ -1066,6 +1142,13 @@ pub async fn delete_acl<S: AccountStore>(
 pub async fn list_events<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ListEventsOptions,
+) -> Result<Events, CalendarError> {
+    send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn list_event_instances<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ListEventInstancesOptions,
 ) -> Result<Events, CalendarError> {
     send_json_request(client, client.get(options.request_url()?)).await
 }

@@ -1667,6 +1667,75 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
 }
 
 #[tokio::test]
+async fn run_event_instances_lists_recurring_event_occurrences() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/calendar/v3/calendars/primary/events/recurring-event-123/instances",
+        ))
+        .and(query_param("maxResults", "2"))
+        .and(query_param("timeMin", "2026-07-09T00:00:00Z"))
+        .and(query_param("timeMax", "2026-07-30T00:00:00Z"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {
+                    "id": "recurring-event-123_20260709T020000Z",
+                    "summary": "Planning",
+                    "start": { "dateTime": "2026-07-09T09:00:00+07:00" },
+                    "end": { "dateTime": "2026-07-09T09:30:00+07:00" },
+                    "status": "confirmed"
+                },
+                {
+                    "id": "recurring-event-123_20260716T020000Z",
+                    "summary": "Planning",
+                    "start": { "dateTime": "2026-07-16T09:00:00+07:00" },
+                    "end": { "dateTime": "2026-07-16T09:30:00+07:00" },
+                    "status": "confirmed"
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Instances {
+            calendar_id: "primary".into(),
+            event_id: "recurring-event-123".into(),
+            limit: Some(2),
+            all: false,
+            time_min: Some("2026-07-09T00:00:00Z".into()),
+            time_max: Some("2026-07-30T00:00:00Z".into()),
+            json: false,
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SUMMARY\tEVENT ID\tSTART\tEND\tSTATUS\nPlanning\trecurring-event-123_20260709T020000Z\t2026-07-09T09:00:00+07:00\t2026-07-09T09:30:00+07:00\tconfirmed\nPlanning\trecurring-event-123_20260716T020000Z\t2026-07-16T09:00:00+07:00\t2026-07-16T09:30:00+07:00\tconfirmed\n"
+    );
+}
+
+#[tokio::test]
 async fn run_events_create_sends_event_body() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

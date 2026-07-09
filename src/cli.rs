@@ -1303,6 +1303,28 @@ pub enum CalendarEventsCommand {
         /// Event ID to read
         event_id: String,
     },
+    /// List generated instances for a recurring event
+    Instances {
+        /// Calendar ID to read. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Recurring event ID to expand
+        event_id: String,
+        /// Maximum number of instances to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all instances across all pages
+        #[arg(long)]
+        all: bool,
+        /// Lower bound for instance start time as RFC3339, such as 2026-07-09T09:00:00Z
+        #[arg(long)]
+        time_min: Option<String>,
+        /// Upper bound for instance start time as RFC3339, such as 2026-07-10T09:00:00Z
+        #[arg(long)]
+        time_max: Option<String>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Create an event from flags or an Events resource JSON body
     Create {
         /// Calendar ID to update. Use primary for the account's primary calendar.
