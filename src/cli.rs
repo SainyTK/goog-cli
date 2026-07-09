@@ -523,7 +523,7 @@ pub enum CalendarCommand {
         #[command(subcommand)]
         command: CalendarCalendarsCommand,
     },
-    /// List, create, update, or delete Google Calendar events
+    /// List, create, update, move, quick-add, or delete Google Calendar events
     Events {
         #[command(subcommand)]
         command: CalendarEventsCommand,
@@ -720,6 +720,16 @@ pub enum CalendarEventsCommand {
         #[arg(long)]
         destination: String,
     },
+    /// Create an event from natural language text
+    QuickAdd {
+        /// Calendar ID to update. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Natural language event text, such as "Lunch with Sam tomorrow at noon"
+        text: String,
+        /// Guests who should receive creation notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
+    },
     /// Delete an event from a calendar
     Delete {
         /// Calendar ID to update. Use primary for the account's primary calendar.
@@ -727,6 +737,13 @@ pub enum CalendarEventsCommand {
         /// Event ID to delete
         event_id: String,
     },
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub enum CalendarSendUpdates {
+    All,
+    ExternalOnly,
+    None,
 }
 
 impl DocsCommand {

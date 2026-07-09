@@ -11,11 +11,13 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_event, get_calendar, get_event, insert_event, list_calendars, list_events, move_event,
-    patch_event, query_freebusy, update_event, CalendarError, DeleteEventOptions, FreeBusyOptions,
-    GetCalendarOptions, GetEventOptions, ListCalendarsOptions, ListEventsOptions, MoveEventOptions,
-    WriteEventOptions,
+    patch_event, query_freebusy, quick_add_event, update_event, CalendarError, DeleteEventOptions,
+    FreeBusyOptions, GetCalendarOptions, GetEventOptions, ListCalendarsOptions, ListEventsOptions,
+    MoveEventOptions, QuickAddEventOptions, SendUpdates, WriteEventOptions,
 };
-use crate::cli::{CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand};
+use crate::cli::{
+    CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand, CalendarSendUpdates,
+};
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
 const ALL_PAGE_SIZE: u32 = 250;
@@ -362,6 +364,30 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             .context("failed to move Google Calendar event")?;
             write_json_line(out, &event, "failed to serialize Calendar event")
         }
+        CalendarEventsCommand::QuickAdd {
+            calendar_id,
+            text,
+            send_updates,
+        } => {
+            let options = quick_add_event_options(
+                calendar_id.clone(),
+                text,
+                send_updates.map(SendUpdates::from),
+                base_url,
+            );
+            let target_resource_key = resource_key("calendar", &calendar_id);
+            let event = run_with_calendar_unified_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                CalendarAccessAttempt::QuickAddEvent(&options),
+                state_path,
+            )
+            .await
+            .context("failed to quick-add Google Calendar event")?;
+            write_json_line(out, &event, "failed to serialize Calendar event")
+        }
         CalendarEventsCommand::Delete {
             calendar_id,
             event_id,
@@ -529,6 +555,7 @@ enum CalendarAccessAttempt<'a> {
     UpdateEvent(&'a WriteEventOptions),
     PatchEvent(&'a WriteEventOptions),
     MoveEvent(&'a MoveEventOptions),
+    QuickAddEvent(&'a QuickAddEventOptions),
     FreeBusy(&'a FreeBusyOptions),
 }
 
@@ -571,6 +598,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::UpdateEvent(options) => update_event(&client, options).await,
         CalendarAccessAttempt::PatchEvent(options) => patch_event(&client, options).await,
         CalendarAccessAttempt::MoveEvent(options) => move_event(&client, options).await,
+        CalendarAccessAttempt::QuickAddEvent(options) => quick_add_event(&client, options).await,
         CalendarAccessAttempt::FreeBusy(options) => query_freebusy(&client, options).await,
     }
 }
@@ -760,6 +788,22 @@ fn move_event_options(
     options
 }
 
+fn quick_add_event_options(
+    calendar_id: String,
+    text: String,
+    send_updates: Option<SendUpdates>,
+    base_url: Option<&str>,
+) -> QuickAddEventOptions {
+    let mut options = QuickAddEventOptions::new(calendar_id, text);
+    if let Some(send_updates) = send_updates {
+        options = options.with_send_updates(send_updates);
+    }
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
 fn freebusy_options(command: &FreeBusyCommand, base_url: Option<&str>) -> Result<FreeBusyOptions> {
     validate_calendar_date_time("time-min", &command.time_min)?;
     validate_calendar_date_time("time-max", &command.time_max)?;
@@ -817,6 +861,16 @@ fn calendar_event_resource_key(calendar_id: &str, event_id: &str) -> String {
 
 fn freebusy_resource_key(calendars: &[String]) -> String {
     resource_key("calendar-freebusy", &calendars.join(","))
+}
+
+impl From<CalendarSendUpdates> for SendUpdates {
+    fn from(value: CalendarSendUpdates) -> Self {
+        match value {
+            CalendarSendUpdates::All => SendUpdates::All,
+            CalendarSendUpdates::ExternalOnly => SendUpdates::ExternalOnly,
+            CalendarSendUpdates::None => SendUpdates::None,
+        }
+    }
 }
 
 fn read_request_body(

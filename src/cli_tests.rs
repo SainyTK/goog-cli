@@ -3,11 +3,11 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, CalendarCalendarsCommand, CalendarCommand,
-    CalendarEventsCommand, Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand,
-    DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType,
-    DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand,
-    DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
-    SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
+    CalendarEventsCommand, CalendarSendUpdates, Cli, Command, DocsBreakCommand, DocsCommand,
+    DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand,
+    DocsListType, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
+    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle,
+    SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
     SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
@@ -2862,6 +2862,41 @@ fn calendar_event_move_with_destination() {
             assert_eq!(source_calendar_id, "primary");
             assert_eq!(event_id, "event-123");
             assert_eq!(destination, "team@example.com");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_quick_add_with_text_and_send_updates() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "quick-add",
+        "primary",
+        "Lunch with Sam tomorrow at noon",
+        "--send-updates",
+        "external-only",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::QuickAdd {
+                            calendar_id,
+                            text,
+                            send_updates,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(text, "Lunch with Sam tomorrow at noon");
+            assert!(matches!(
+                send_updates,
+                Some(CalendarSendUpdates::ExternalOnly)
+            ));
         }
         _ => panic!("unexpected parse result"),
     }

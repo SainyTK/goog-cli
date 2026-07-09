@@ -602,6 +602,7 @@ async fn run_events_move_posts_destination_and_prints_event() {
         .and(path("/calendar/v3/calendars/primary/events/event-789/move"))
         .and(query_param("destination", "team@example.com"))
         .and(header("authorization", "Bearer calendar-access"))
+        .and(header("content-length", "0"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "event-789",
             "summary": "Planning"
@@ -639,6 +640,55 @@ async fn run_events_move_posts_destination_and_prints_event() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"id\":\"event-789\",\"summary\":\"Planning\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_events_quick_add_posts_text_and_send_updates() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/calendars/primary/events/quickAdd"))
+        .and(query_param("text", "Lunch with Sam tomorrow at noon"))
+        .and(query_param("sendUpdates", "externalOnly"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(header("content-length", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "quick-event-1",
+            "summary": "Lunch with Sam"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::QuickAdd {
+            calendar_id: "primary".into(),
+            text: "Lunch with Sam tomorrow at noon".into(),
+            send_updates: Some(crate::cli::CalendarSendUpdates::ExternalOnly),
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"quick-event-1\",\"summary\":\"Lunch with Sam\"}\n"
     );
 }
 

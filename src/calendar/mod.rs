@@ -2,7 +2,7 @@ pub mod error;
 
 pub use error::CalendarError;
 
-use reqwest::{Method, Response, StatusCode};
+use reqwest::{header::CONTENT_LENGTH, Method, Response, StatusCode};
 use serde_json::Value;
 use url::Url;
 
@@ -18,6 +18,23 @@ pub type CalendarList = Value;
 pub type Event = Value;
 pub type Events = Value;
 pub type FreeBusy = Value;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendUpdates {
+    All,
+    ExternalOnly,
+    None,
+}
+
+impl SendUpdates {
+    fn api_value(self) -> &'static str {
+        match self {
+            SendUpdates::All => "all",
+            SendUpdates::ExternalOnly => "externalOnly",
+            SendUpdates::None => "none",
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ListCalendarsOptions {
@@ -331,6 +348,50 @@ impl MoveEventOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct QuickAddEventOptions {
+    pub calendar_id: String,
+    pub text: String,
+    pub send_updates: Option<SendUpdates>,
+    base_url: String,
+}
+
+impl QuickAddEventOptions {
+    pub fn new(calendar_id: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            text: text.into(),
+            send_updates: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_send_updates(mut self, send_updates: SendUpdates) -> Self {
+        self.send_updates = Some(send_updates);
+        self
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "events", "quickAdd"],
+        )?;
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("text", &self.text);
+            if let Some(send_updates) = self.send_updates {
+                query.append_pair("sendUpdates", send_updates.api_value());
+            }
+        }
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct FreeBusyOptions {
     pub request_body: Value,
     base_url: String,
@@ -449,7 +510,28 @@ pub async fn move_event<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &MoveEventOptions,
 ) -> Result<Event, CalendarError> {
-    send_json_request(client, client.post(options.request_url()?)).await
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .header(CONTENT_LENGTH, "0")
+            .body(Vec::new()),
+    )
+    .await
+}
+
+pub async fn quick_add_event<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &QuickAddEventOptions,
+) -> Result<Event, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .header(CONTENT_LENGTH, "0")
+            .body(Vec::new()),
+    )
+    .await
 }
 
 pub async fn query_freebusy<S: AccountStore>(
