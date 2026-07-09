@@ -223,6 +223,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             description,
             attendee,
             recurrence,
+            reminder,
+            no_reminders,
         } => {
             let request_body = match event {
                 Some(event) => read_request_body(&event, input, "Google Calendar event")?,
@@ -236,6 +238,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     description,
                     attendee,
                     recurrence,
+                    reminder,
+                    no_reminders,
                 )?,
             };
             let options = write_event_options_insert(calendar_id.clone(), request_body, base_url);
@@ -265,6 +269,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             description,
             attendee,
             recurrence,
+            reminder,
+            no_reminders,
         } => {
             let request_body = match event {
                 Some(event) => read_request_body(&event, input, "Google Calendar event")?,
@@ -278,6 +284,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     description,
                     attendee,
                     recurrence,
+                    reminder,
+                    no_reminders,
                 )?,
             };
             let options = write_event_options_update(
@@ -312,6 +320,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             description,
             attendee,
             recurrence,
+            reminder,
+            no_reminders,
         } => {
             let request_body = match event {
                 Some(event) => read_request_body(&event, input, "Google Calendar event patch")?,
@@ -325,6 +335,8 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                     description,
                     attendee,
                     recurrence,
+                    reminder,
+                    no_reminders,
                 )?,
             };
             let options = write_event_options_patch(
@@ -911,6 +923,8 @@ fn build_event_request_body(
     description: Option<String>,
     attendees: Vec<String>,
     recurrence: Vec<String>,
+    reminders: Vec<String>,
+    no_reminders: bool,
 ) -> Result<serde_json::Value> {
     let summary = summary.context("--summary is required unless --event is used")?;
     let start = start.context("--start is required unless --event is used")?;
@@ -956,6 +970,9 @@ fn build_event_request_body(
             ),
         );
     }
+    if no_reminders || !reminders.is_empty() {
+        body.insert("reminders".into(), reminder_body(reminders, no_reminders)?);
+    }
 
     Ok(serde_json::Value::Object(body))
 }
@@ -971,6 +988,8 @@ fn build_event_patch_body(
     description: Option<String>,
     attendees: Vec<String>,
     recurrence: Vec<String>,
+    reminders: Vec<String>,
+    no_reminders: bool,
 ) -> Result<serde_json::Value> {
     if all_day && start.is_none() && end.is_none() {
         anyhow::bail!("--all-day requires --start or --end when patching");
@@ -1023,6 +1042,9 @@ fn build_event_patch_body(
             ),
         );
     }
+    if no_reminders || !reminders.is_empty() {
+        body.insert("reminders".into(), reminder_body(reminders, no_reminders)?);
+    }
     if body.is_empty() {
         anyhow::bail!("patch requires --event or at least one event field flag");
     }
@@ -1050,6 +1072,37 @@ fn event_time_body(
         body["timeZone"] = serde_json::Value::String(time_zone.to_string());
     }
     Ok(body)
+}
+
+fn reminder_body(reminders: Vec<String>, no_reminders: bool) -> Result<serde_json::Value> {
+    let overrides = reminders
+        .into_iter()
+        .map(parse_reminder)
+        .collect::<Result<Vec<_>>>()?;
+    if no_reminders {
+        return Ok(serde_json::json!({ "useDefault": false }));
+    }
+    Ok(serde_json::json!({
+        "useDefault": false,
+        "overrides": overrides
+    }))
+}
+
+fn parse_reminder(reminder: String) -> Result<serde_json::Value> {
+    let (method, minutes) = reminder
+        .split_once(':')
+        .with_context(|| format!("invalid --reminder {reminder:?}; expected METHOD:MINUTES"))?;
+    match method {
+        "popup" | "email" => {}
+        _ => anyhow::bail!("invalid --reminder method {method:?}; expected popup or email"),
+    }
+    let minutes: u32 = minutes
+        .parse()
+        .with_context(|| format!("invalid --reminder minutes in {reminder:?}"))?;
+    Ok(serde_json::json!({
+        "method": method,
+        "minutes": minutes
+    }))
 }
 
 fn validate_calendar_date(field_name: &str, value: &str) -> Result<()> {

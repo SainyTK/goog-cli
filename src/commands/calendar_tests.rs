@@ -227,6 +227,8 @@ async fn run_events_create_sends_event_body() {
             description: None,
             attendee: vec![],
             recurrence: vec![],
+            reminder: vec![],
+            no_reminders: false,
         },
         &mut input,
         false,
@@ -267,7 +269,14 @@ async fn run_events_create_builds_event_body_from_flags() {
             ],
             "recurrence": [
                 "RRULE:FREQ=WEEKLY;COUNT=4"
-            ]
+            ],
+            "reminders": {
+                "useDefault": false,
+                "overrides": [
+                    { "method": "popup", "minutes": 10 },
+                    { "method": "email", "minutes": 60 }
+                ]
+            }
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "event-789",
@@ -301,6 +310,8 @@ async fn run_events_create_builds_event_body_from_flags() {
             description: Some("Weekly planning".into()),
             attendee: vec!["teammate@example.com".into(), "lead@example.com".into()],
             recurrence: vec!["RRULE:FREQ=WEEKLY;COUNT=4".into()],
+            reminder: vec!["popup:10".into(), "email:60".into()],
+            no_reminders: false,
         },
         &mut input,
         false,
@@ -360,6 +371,8 @@ async fn run_events_create_builds_all_day_event_body_from_flags() {
             description: None,
             attendee: vec![],
             recurrence: vec![],
+            reminder: vec![],
+            no_reminders: false,
         },
         &mut input,
         false,
@@ -420,6 +433,8 @@ async fn run_events_update_sends_event_body() {
             description: None,
             attendee: vec![],
             recurrence: vec![],
+            reminder: vec![],
+            no_reminders: false,
         },
         &mut input,
         false,
@@ -459,7 +474,10 @@ async fn run_events_update_builds_event_body_from_flags() {
             ],
             "recurrence": [
                 "RRULE:FREQ=DAILY;COUNT=3"
-            ]
+            ],
+            "reminders": {
+                "useDefault": false
+            }
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "event-789",
@@ -494,6 +512,8 @@ async fn run_events_update_builds_event_body_from_flags() {
             description: Some("Updated planning".into()),
             attendee: vec!["teammate@example.com".into()],
             recurrence: vec!["RRULE:FREQ=DAILY;COUNT=3".into()],
+            reminder: vec![],
+            no_reminders: true,
         },
         &mut input,
         false,
@@ -521,7 +541,13 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
             "location": "Office",
             "recurrence": [
                 "RRULE:FREQ=MONTHLY;COUNT=2"
-            ]
+            ],
+            "reminders": {
+                "useDefault": false,
+                "overrides": [
+                    { "method": "popup", "minutes": 5 }
+                ]
+            }
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "event-789",
@@ -556,6 +582,8 @@ async fn run_events_patch_sends_partial_event_body_from_flags() {
             description: None,
             attendee: vec![],
             recurrence: vec!["RRULE:FREQ=MONTHLY;COUNT=2".into()],
+            reminder: vec!["popup:5".into()],
+            no_reminders: false,
         },
         &mut input,
         false,
@@ -596,6 +624,8 @@ async fn run_events_patch_rejects_empty_flag_body() {
             description: None,
             attendee: vec![],
             recurrence: vec![],
+            reminder: vec![],
+            no_reminders: false,
         },
         &mut input,
         false,

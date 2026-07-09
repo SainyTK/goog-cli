@@ -2907,6 +2907,10 @@ fn calendar_event_create_with_flags() {
         "lead@example.com",
         "--recurrence",
         "RRULE:FREQ=WEEKLY;COUNT=4",
+        "--reminder",
+        "popup:10",
+        "--reminder",
+        "email:60",
     ])
     .unwrap();
     match cli.command {
@@ -2924,6 +2928,8 @@ fn calendar_event_create_with_flags() {
                             location,
                             attendee,
                             recurrence,
+                            reminder,
+                            no_reminders,
                             ..
                         },
                 },
@@ -2943,6 +2949,11 @@ fn calendar_event_create_with_flags() {
                 ]
             );
             assert_eq!(recurrence, vec!["RRULE:FREQ=WEEKLY;COUNT=4".to_string()]);
+            assert_eq!(
+                reminder,
+                vec!["popup:10".to_string(), "email:60".to_string()]
+            );
+            assert!(!no_reminders);
         }
         _ => panic!("unexpected parse result"),
     }
@@ -2987,6 +2998,7 @@ fn calendar_event_update_with_flags() {
         "teammate@example.com",
         "--recurrence",
         "RRULE:FREQ=DAILY;COUNT=3",
+        "--no-reminders",
     ])
     .unwrap();
     match cli.command {
@@ -3005,6 +3017,7 @@ fn calendar_event_update_with_flags() {
                             location,
                             attendee,
                             recurrence,
+                            no_reminders,
                             ..
                         },
                 },
@@ -3019,6 +3032,7 @@ fn calendar_event_update_with_flags() {
             assert_eq!(location.as_deref(), Some("Office"));
             assert_eq!(attendee, vec!["teammate@example.com".to_string()]);
             assert_eq!(recurrence, vec!["RRULE:FREQ=DAILY;COUNT=3".to_string()]);
+            assert!(no_reminders);
         }
         _ => panic!("unexpected parse result"),
     }
@@ -3056,6 +3070,8 @@ fn calendar_event_patch_with_flags() {
         "Office",
         "--recurrence",
         "RRULE:FREQ=MONTHLY;COUNT=2",
+        "--reminder",
+        "popup:5",
     ])
     .unwrap();
     match cli.command {
@@ -3070,6 +3086,7 @@ fn calendar_event_patch_with_flags() {
                             summary,
                             location,
                             recurrence,
+                            reminder,
                             ..
                         },
                 },
@@ -3080,6 +3097,7 @@ fn calendar_event_patch_with_flags() {
             assert_eq!(summary.as_deref(), Some("Planning renamed"));
             assert_eq!(location.as_deref(), Some("Office"));
             assert_eq!(recurrence, vec!["RRULE:FREQ=MONTHLY;COUNT=2".to_string()]);
+            assert_eq!(reminder, vec!["popup:5".to_string()]);
         }
         _ => panic!("unexpected parse result"),
     }

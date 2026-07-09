@@ -836,6 +836,12 @@ pub enum CalendarEventsCommand {
         /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
         #[arg(long, conflicts_with = "event")]
         recurrence: Vec<String>,
+        /// Reminder override as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long, conflicts_with = "event", conflicts_with = "no_reminders")]
+        reminder: Vec<String>,
+        /// Disable default reminders for this event.
+        #[arg(long, conflicts_with = "event")]
+        no_reminders: bool,
     },
     /// Replace an event from flags or an Events resource JSON body
     Update {
@@ -873,6 +879,12 @@ pub enum CalendarEventsCommand {
         /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
         #[arg(long, conflicts_with = "event")]
         recurrence: Vec<String>,
+        /// Reminder override as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long, conflicts_with = "event", conflicts_with = "no_reminders")]
+        reminder: Vec<String>,
+        /// Disable default reminders for this event.
+        #[arg(long, conflicts_with = "event")]
+        no_reminders: bool,
     },
     /// Partially update an event from flags or an Events resource JSON body
     Patch {
@@ -910,6 +922,12 @@ pub enum CalendarEventsCommand {
         /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
         #[arg(long, conflicts_with = "event")]
         recurrence: Vec<String>,
+        /// Reminder override as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long, conflicts_with = "event", conflicts_with = "no_reminders")]
+        reminder: Vec<String>,
+        /// Disable default reminders for this event.
+        #[arg(long, conflicts_with = "event")]
+        no_reminders: bool,
     },
     /// Move an event from one calendar to another
     Move {
