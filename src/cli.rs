@@ -284,6 +284,9 @@ impl SlidesCommand {
             | SlidesCommand::Table {
                 presentation_id, ..
             }
+            | SlidesCommand::Shape {
+                presentation_id, ..
+            }
             | SlidesCommand::ReplaceText {
                 presentation_id, ..
             } => presentation_id,
@@ -421,6 +424,32 @@ pub enum SlidesCommand {
         #[arg(long, default_value_t = 180.0)]
         height: f64,
     },
+    /// Add a shape to a slide without writing Batch Update JSON
+    Shape {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the shape on
+        #[arg(long)]
+        page_id: String,
+        /// Shape type to create
+        #[arg(long = "type", value_enum)]
+        shape_type: SlidesShapeType,
+        /// Stable object ID for the new shape. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Shape width in points
+        #[arg(long, default_value_t = 180.0)]
+        width: f64,
+        /// Shape height in points
+        #[arg(long, default_value_t = 120.0)]
+        height: f64,
+    },
     /// Replace text across a presentation or selected slides without writing Batch Update JSON
     ReplaceText {
         /// Presentation ID or URL to update
@@ -517,6 +546,60 @@ pub enum SlidesObjectCommand {
         /// Page object ID to delete
         object_id: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesShapeType {
+    Rectangle,
+    RoundRectangle,
+    Ellipse,
+    Arc,
+    RightTriangle,
+    Triangle,
+    Diamond,
+    Parallelogram,
+    Trapezoid,
+    Pentagon,
+    Hexagon,
+    Cloud,
+    #[value(name = "star-5", alias = "star5")]
+    Star5,
+    Heart,
+    Chevron,
+    HomePlate,
+    RightArrow,
+    LeftArrow,
+    UpArrow,
+    DownArrow,
+    Plus,
+}
+
+impl SlidesShapeType {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            SlidesShapeType::Rectangle => "RECTANGLE",
+            SlidesShapeType::RoundRectangle => "ROUND_RECTANGLE",
+            SlidesShapeType::Ellipse => "ELLIPSE",
+            SlidesShapeType::Arc => "ARC",
+            SlidesShapeType::RightTriangle => "RIGHT_TRIANGLE",
+            SlidesShapeType::Triangle => "TRIANGLE",
+            SlidesShapeType::Diamond => "DIAMOND",
+            SlidesShapeType::Parallelogram => "PARALLELOGRAM",
+            SlidesShapeType::Trapezoid => "TRAPEZOID",
+            SlidesShapeType::Pentagon => "PENTAGON",
+            SlidesShapeType::Hexagon => "HEXAGON",
+            SlidesShapeType::Cloud => "CLOUD",
+            SlidesShapeType::Star5 => "STAR_5",
+            SlidesShapeType::Heart => "HEART",
+            SlidesShapeType::Chevron => "CHEVRON",
+            SlidesShapeType::HomePlate => "HOME_PLATE",
+            SlidesShapeType::RightArrow => "RIGHT_ARROW",
+            SlidesShapeType::LeftArrow => "LEFT_ARROW",
+            SlidesShapeType::UpArrow => "UP_ARROW",
+            SlidesShapeType::DownArrow => "DOWN_ARROW",
+            SlidesShapeType::Plus => "PLUS",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

@@ -10,8 +10,8 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SlidesCommand, SlidesObjectCommand, SlidesPredefinedLayout, SlidesSlideCommand,
-    SlidesZOrderOperation,
+    SlidesCommand, SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType,
+    SlidesSlideCommand, SlidesZOrderOperation,
 };
 use crate::slides::{
     batch_update_presentation, create_presentation, get_presentation,
@@ -283,6 +283,33 @@ pub fn run<S: AccountStore>(
                 page_id,
                 rows,
                 columns,
+                object_id,
+                x,
+                y,
+                width,
+                height,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Shape {
+            presentation_id,
+            page_id,
+            shape_type,
+            object_id,
+            x,
+            y,
+            width,
+            height,
+        } => run_with_runtime(run_shape_unified_to(
+            config,
+            store,
+            account_override,
+            ShapeRequest {
+                presentation_id,
+                page_id,
+                shape_type,
                 object_id,
                 x,
                 y,
@@ -1047,6 +1074,87 @@ fn build_table_batch_update(request: TableRequest) -> Result<serde_json::Value> 
 
 fn generated_table_object_id() -> String {
     format!("goog_table_{}", chrono::Utc::now().timestamp_millis())
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ShapeRequest {
+    pub presentation_id: String,
+    pub page_id: String,
+    pub shape_type: SlidesShapeType,
+    pub object_id: Option<String>,
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+pub(super) async fn run_shape_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ShapeRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_shape_batch_update(request);
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to add Google Slides shape")?;
+
+    write_json_line(out, &response, "failed to serialize Slides shape response")
+}
+
+fn build_shape_batch_update(request: ShapeRequest) -> serde_json::Value {
+    let object_id = request.object_id.unwrap_or_else(generated_shape_object_id);
+    serde_json::json!({
+        "requests": [
+            {
+                "createShape": {
+                    "objectId": object_id,
+                    "shapeType": request.shape_type.api_value(),
+                    "elementProperties": {
+                        "pageObjectId": request.page_id,
+                        "size": {
+                            "width": {
+                                "magnitude": request.width,
+                                "unit": "PT"
+                            },
+                            "height": {
+                                "magnitude": request.height,
+                                "unit": "PT"
+                            }
+                        },
+                        "transform": {
+                            "scaleX": 1.0,
+                            "scaleY": 1.0,
+                            "translateX": request.x,
+                            "translateY": request.y,
+                            "unit": "PT"
+                        }
+                    }
+                }
+            }
+        ]
+    })
+}
+
+fn generated_shape_object_id() -> String {
+    format!("goog_shape_{}", chrono::Utc::now().timestamp_millis())
 }
 
 #[derive(Debug, Clone)]
