@@ -1448,9 +1448,9 @@ fn sheets_get_with_google_query_flags() {
         "--fields",
         "spreadsheetId,properties.title",
         "--include-grid-data",
-        "--ranges",
+        "--range",
         "Sheet1!A1:B2",
-        "--ranges",
+        "--range",
         "Summary!A:A",
     ])
     .unwrap();

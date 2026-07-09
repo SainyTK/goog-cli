@@ -1038,8 +1038,8 @@ pub enum SheetsCommand {
         /// Include grid data in the returned Spreadsheet
         #[arg(long)]
         include_grid_data: bool,
-        /// Limit returned grid data to a Google Sheets A1 Range
-        #[arg(long = "ranges")]
+        /// Limit returned grid data to a Google Sheets A1 Range. Repeat for multiple ranges.
+        #[arg(long = "range")]
         ranges: Vec<String>,
     },
     /// Read and write Google Sheets cell values
