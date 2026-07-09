@@ -1341,6 +1341,9 @@ pub enum CalendarEventsCommand {
         /// Lower bound for event last modification time as RFC3339
         #[arg(long)]
         updated_min: Option<String>,
+        /// Incremental sync token from a previous full events list response
+        #[arg(long)]
+        sync_token: Option<String>,
         /// Filter events by iCalendar UID
         #[arg(long, alias = "ical-uid")]
         i_cal_uid: Option<String>,

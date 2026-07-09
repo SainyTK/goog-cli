@@ -523,6 +523,7 @@ pub struct ListEventsOptions {
     pub time_zone: Option<String>,
     pub query: Option<String>,
     pub updated_min: Option<String>,
+    pub sync_token: Option<String>,
     pub i_cal_uid: Option<String>,
     pub private_extended_properties: Vec<String>,
     pub shared_extended_properties: Vec<String>,
@@ -546,6 +547,7 @@ impl ListEventsOptions {
             time_zone: None,
             query: None,
             updated_min: None,
+            sync_token: None,
             i_cal_uid: None,
             private_extended_properties: Vec::new(),
             shared_extended_properties: Vec::new(),
@@ -586,6 +588,11 @@ impl ListEventsOptions {
 
     pub fn with_updated_min(mut self, updated_min: impl Into<String>) -> Self {
         self.updated_min = Some(updated_min.into());
+        self
+    }
+
+    pub fn with_sync_token(mut self, sync_token: impl Into<String>) -> Self {
+        self.sync_token = Some(sync_token.into());
         self
     }
 
@@ -667,6 +674,9 @@ impl ListEventsOptions {
             }
             if let Some(updated_min) = &self.updated_min {
                 query.append_pair("updatedMin", updated_min);
+            }
+            if let Some(sync_token) = &self.sync_token {
+                query.append_pair("syncToken", sync_token);
             }
             if let Some(i_cal_uid) = &self.i_cal_uid {
                 query.append_pair("iCalUID", i_cal_uid);

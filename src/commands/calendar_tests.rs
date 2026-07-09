@@ -1669,6 +1669,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
             time_zone: Some("Asia/Bangkok".into()),
             query: None,
             updated_min: Some("2026-07-08T00:00:00Z".into()),
+            sync_token: None,
             i_cal_uid: Some("abc123@example.com".into()),
             private_extended_property: vec!["owner=agent".into()],
             shared_extended_property: vec!["project=alpha".into()],
@@ -1700,6 +1701,78 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
     assert_eq!(
         state.account_for_resource(&resource_key("calendar", "primary")),
         Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_events_list_sends_sync_token() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/calendar/v3/calendars/primary/events"))
+        .and(query_param("maxResults", "1"))
+        .and(query_param("syncToken", "sync-token-123"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "items": [
+                {
+                    "id": "event-123",
+                    "summary": "Updated Standup",
+                    "start": { "dateTime": "2026-07-09T09:00:00Z" },
+                    "end": { "dateTime": "2026-07-09T09:30:00Z" },
+                    "status": "confirmed"
+                }
+            ],
+            "nextSyncToken": "next-token-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::List {
+            calendar_id: "primary".into(),
+            limit: Some(1),
+            all: false,
+            time_min: None,
+            time_max: None,
+            time_zone: None,
+            query: None,
+            updated_min: None,
+            sync_token: Some("sync-token-123".into()),
+            i_cal_uid: None,
+            private_extended_property: vec![],
+            shared_extended_property: vec![],
+            event_type: vec![],
+            max_attendees: None,
+            single_events: false,
+            show_deleted: false,
+            show_hidden_invitations: false,
+            order_by: None,
+            json: false,
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SUMMARY\tEVENT ID\tSTART\tEND\tSTATUS\nUpdated Standup\tevent-123\t2026-07-09T09:00:00Z\t2026-07-09T09:30:00Z\tconfirmed\n"
     );
 }
 

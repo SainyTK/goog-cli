@@ -622,6 +622,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             time_zone,
             query,
             updated_min,
+            sync_token,
             i_cal_uid,
             private_extended_property,
             shared_extended_property,
@@ -645,6 +646,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                 time_zone,
                 query,
                 updated_min,
+                sync_token,
                 i_cal_uid,
                 private_extended_property,
                 shared_extended_property,
@@ -1132,6 +1134,7 @@ async fn collect_events_unified<S: AccountStore>(
             first_options.time_zone.clone(),
             first_options.query.clone(),
             first_options.updated_min.clone(),
+            first_options.sync_token.clone(),
             first_options.i_cal_uid.clone(),
             first_options.private_extended_properties.clone(),
             first_options.shared_extended_properties.clone(),
@@ -1732,6 +1735,7 @@ fn list_events_options(
     time_zone: Option<String>,
     query: Option<String>,
     updated_min: Option<String>,
+    sync_token: Option<String>,
     i_cal_uid: Option<String>,
     private_extended_properties: Vec<String>,
     shared_extended_properties: Vec<String>,
@@ -1763,6 +1767,9 @@ fn list_events_options(
     }
     if let Some(updated_min) = updated_min {
         options = options.with_updated_min(updated_min);
+    }
+    if let Some(sync_token) = sync_token {
+        options = options.with_sync_token(sync_token);
     }
     if let Some(i_cal_uid) = i_cal_uid {
         options = options.with_i_cal_uid(i_cal_uid);
