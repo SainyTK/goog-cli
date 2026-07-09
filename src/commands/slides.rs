@@ -1,0 +1,260 @@
+use std::future::Future;
+use std::io::{Read, Write};
+use std::path::Path;
+
+use anyhow::{Context, Result};
+
+use crate::auth::account::AccountStore;
+use crate::auth::client::AuthClient;
+use crate::auth::config::Config;
+use crate::auth::state::resource_key;
+use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
+use crate::cli::SlidesCommand;
+use crate::slides::{
+    batch_update_presentation, create_presentation, get_presentation,
+    BatchUpdatePresentationOptions, CreatePresentationOptions, GetPresentationOptions, SlidesError,
+};
+
+pub fn run<S: AccountStore>(
+    mut cmd: SlidesCommand,
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    output_json_by_default: bool,
+    quiet: bool,
+) -> Result<()> {
+    cmd.normalize_presentation_id();
+    match cmd {
+        SlidesCommand::List {
+            limit,
+            all,
+            folder,
+            json,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(super::drive::run_slides_list_command_to(
+                config,
+                store,
+                account_override,
+                limit,
+                all,
+                folder,
+                super::drive::should_emit_json(json, output_json_by_default),
+                quiet,
+                &mut std::io::stdout(),
+                &mut std::io::stderr(),
+                None,
+            ))
+        }
+        SlidesCommand::Create { title } => {
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            run_with_runtime(run_create_to(&client, title, &mut std::io::stdout(), None))
+        }
+        SlidesCommand::Get {
+            presentation_id,
+            fields,
+        } => run_with_runtime(run_get_unified_to(
+            config,
+            store,
+            account_override,
+            presentation_id,
+            fields,
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::BatchUpdate {
+            presentation_id,
+            requests,
+        } => {
+            let mut stdin = std::io::stdin();
+            run_with_runtime(run_batch_update_unified_to(
+                config,
+                store,
+                account_override,
+                presentation_id,
+                requests,
+                &mut stdin,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+    }
+}
+
+fn run_with_runtime(future: impl Future<Output = Result<()>>) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+    runtime.block_on(future)
+}
+
+pub(super) async fn run_create_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    title: String,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+) -> Result<()> {
+    let mut options = CreatePresentationOptions::new(title);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let presentation = create_presentation(client, &options)
+        .await
+        .context("failed to create Google Slides presentation")?;
+    let presentation_id = presentation
+        .get("presentationId")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    writeln!(
+        out,
+        "{presentation_id}\thttps://docs.google.com/presentation/d/{presentation_id}/edit"
+    )
+    .context("failed to write output")
+}
+
+pub(super) async fn run_get_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    presentation_id: String,
+    fields: Option<String>,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let mut options = GetPresentationOptions::new(presentation_id.clone());
+    if let Some(fields) = fields {
+        options = options.with_fields(fields);
+    }
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let presentation = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::Get(&options),
+        state_path,
+    )
+    .await
+    .context("failed to read Google Slides presentation")?;
+
+    write_json_line(
+        out,
+        &presentation,
+        "failed to serialize Slides presentation",
+    )
+}
+
+pub(super) async fn run_batch_update_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    presentation_id: String,
+    requests: String,
+    input: &mut impl Read,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let request_body = read_request_body(&requests, input)?;
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to apply Google Slides Batch Update")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides Batch Update response",
+    )
+}
+
+enum SlidesAccessAttempt<'a> {
+    Get(&'a GetPresentationOptions),
+    BatchUpdate(&'a BatchUpdatePresentationOptions),
+}
+
+async fn run_with_slides_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    attempt: SlidesAccessAttempt<'_>,
+    state_path: Option<&Path>,
+) -> Result<serde_json::Value, SlidesError> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, serde_json::Value, SlidesError> {
+            Box::pin(run_slides_access_as_account(
+                config, store, &attempt, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn run_slides_access_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    attempt: &SlidesAccessAttempt<'_>,
+    account: String,
+) -> Result<serde_json::Value, SlidesError> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))
+        .map_err(SlidesError::Auth)?;
+    match attempt {
+        SlidesAccessAttempt::Get(options) => get_presentation(&client, options).await,
+        SlidesAccessAttempt::BatchUpdate(options) => {
+            batch_update_presentation(&client, options).await
+        }
+    }
+}
+
+fn is_target_access_failure(err: &SlidesError) -> bool {
+    matches!(err, SlidesError::NotFound | SlidesError::PermissionDenied)
+}
+
+fn read_request_body(path_or_stdin: &str, input: &mut impl Read) -> Result<serde_json::Value> {
+    let (body, request_source) = if path_or_stdin == "-" {
+        let mut body = String::new();
+        input
+            .read_to_string(&mut body)
+            .context("failed to read Google Slides Batch Update request body from stdin")?;
+        (body, "stdin".to_string())
+    } else {
+        let body = std::fs::read_to_string(path_or_stdin).with_context(|| {
+            format!("failed to read Google Slides Batch Update request body: {path_or_stdin}")
+        })?;
+        (body, path_or_stdin.to_string())
+    };
+
+    serde_json::from_str(&body).with_context(|| {
+        format!("failed to parse Google Slides Batch Update request body from {request_source}")
+    })
+}
+
+fn write_json_line(out: &mut impl Write, value: &serde_json::Value, context: &str) -> Result<()> {
+    serde_json::to_writer(&mut *out, value).with_context(|| context.to_string())?;
+    writeln!(out).context("failed to write output")
+}

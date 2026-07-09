@@ -111,6 +111,16 @@ More commands:
         #[command(subcommand)]
         command: SheetsCommand,
     },
+    /// Interact with Google Slides
+    Slides {
+        #[command(subcommand)]
+        command: SlidesCommand,
+    },
+    /// Interact with Google Calendar
+    Calendar {
+        #[command(subcommand)]
+        command: CalendarCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -226,6 +236,161 @@ pub enum DriveListType {
     Files,
     /// Folders only
     Folders,
+}
+
+impl SlidesCommand {
+    /// Resolves the `presentation_id` field of any variant to a bare
+    /// Presentation ID, extracting it first if a Google Slides/Drive URL was
+    /// passed instead.
+    pub fn normalize_presentation_id(&mut self) {
+        let presentation_id = match self {
+            SlidesCommand::Create { .. } | SlidesCommand::List { .. } => return,
+            SlidesCommand::Get {
+                presentation_id, ..
+            }
+            | SlidesCommand::BatchUpdate {
+                presentation_id, ..
+            } => presentation_id,
+        };
+        *presentation_id = crate::slides::extract_presentation_id(presentation_id);
+    }
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SlidesCommand {
+    /// List native Google Slides presentations from Google Drive
+    List {
+        /// Maximum number of presentations to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all presentations across all pages
+        #[arg(long)]
+        all: bool,
+        /// Drive folder ID to list presentations from
+        #[arg(long)]
+        folder: Option<String>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a new, blank Google Slides presentation
+    Create {
+        /// Title for the new Google Slides presentation
+        title: String,
+    },
+    /// Read a raw Google Slides presentation
+    Get {
+        /// Presentation ID or URL to read
+        presentation_id: String,
+        /// Google partial response field selector
+        #[arg(long)]
+        fields: Option<String>,
+    },
+    /// Apply a raw Google Slides Batch Update request body
+    BatchUpdate {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Path to a full presentations.batchUpdate JSON request body, or - for stdin
+        #[arg(long)]
+        requests: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CalendarCommand {
+    /// List calendars or inspect calendar metadata
+    Calendars {
+        #[command(subcommand)]
+        command: CalendarCalendarsCommand,
+    },
+    /// List, create, update, or delete Google Calendar events
+    Events {
+        #[command(subcommand)]
+        command: CalendarEventsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CalendarCalendarsCommand {
+    /// List calendars visible in the account's calendar list
+    List {
+        /// Maximum number of calendars to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all calendars across all pages
+        #[arg(long)]
+        all: bool,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read one calendar's metadata
+    Get {
+        /// Calendar ID to read. Use primary for the account's primary calendar.
+        calendar_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CalendarEventsCommand {
+    /// List events on a calendar
+    List {
+        /// Calendar ID to read. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Maximum number of events to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all events across all pages
+        #[arg(long)]
+        all: bool,
+        /// Lower bound for event start time as RFC3339, such as 2026-07-09T09:00:00Z
+        #[arg(long)]
+        time_min: Option<String>,
+        /// Upper bound for event start time as RFC3339, such as 2026-07-10T09:00:00Z
+        #[arg(long)]
+        time_max: Option<String>,
+        /// Free-text search query
+        #[arg(long)]
+        query: Option<String>,
+        /// Expand recurring events into instances
+        #[arg(long)]
+        single_events: bool,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read one event from a calendar
+    Get {
+        /// Calendar ID to read. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Event ID to read
+        event_id: String,
+    },
+    /// Create an event from an Events resource JSON body
+    Create {
+        /// Calendar ID to update. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Path to an Event JSON request body, or - for stdin
+        #[arg(long)]
+        event: String,
+    },
+    /// Replace an event from an Events resource JSON body
+    Update {
+        /// Calendar ID to update. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Event ID to update
+        event_id: String,
+        /// Path to an Event JSON request body, or - for stdin
+        #[arg(long)]
+        event: String,
+    },
+    /// Delete an event from a calendar
+    Delete {
+        /// Calendar ID to update. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Event ID to delete
+        event_id: String,
+    },
 }
 
 impl DocsCommand {

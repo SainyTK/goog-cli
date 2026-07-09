@@ -25,6 +25,7 @@ pub(super) const DRIVE_FILES_FIELDS: &str =
 pub(crate) const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 pub(crate) const GOOGLE_DOC_MIME_TYPE: &str = "application/vnd.google-apps.document";
 pub(crate) const GOOGLE_SHEET_MIME_TYPE: &str = "application/vnd.google-apps.spreadsheet";
+pub(crate) const GOOGLE_SLIDES_MIME_TYPE: &str = "application/vnd.google-apps.presentation";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
@@ -197,6 +198,7 @@ enum ListFilesMode {
     Browse,
     Docs,
     Sheets,
+    Slides,
 }
 
 impl ListFilesOptions {
@@ -234,6 +236,13 @@ impl ListFilesOptions {
     pub fn sheets(page_size: u32) -> Self {
         Self {
             mode: ListFilesMode::Sheets,
+            ..Self::new(page_size)
+        }
+    }
+
+    pub fn slides(page_size: u32) -> Self {
+        Self {
+            mode: ListFilesMode::Slides,
             ..Self::new(page_size)
         }
     }
@@ -288,7 +297,13 @@ impl ListFilesOptions {
             (_, Some(folder)) => Some(parent_query_filter(folder)),
             (ListFilesMode::Folders, None) => Some(parent_query_filter("root")),
             (ListFilesMode::Browse, None) => Some(parent_query_filter("root")),
-            (ListFilesMode::Files | ListFilesMode::Docs | ListFilesMode::Sheets, None) => None,
+            (
+                ListFilesMode::Files
+                | ListFilesMode::Docs
+                | ListFilesMode::Sheets
+                | ListFilesMode::Slides,
+                None,
+            ) => None,
         }
     }
 }
@@ -301,13 +316,16 @@ impl ListFilesMode {
             Self::Browse => None,
             Self::Docs => Some(format!("mimeType = '{GOOGLE_DOC_MIME_TYPE}'")),
             Self::Sheets => Some(format!("mimeType = '{GOOGLE_SHEET_MIME_TYPE}'")),
+            Self::Slides => Some(format!("mimeType = '{GOOGLE_SLIDES_MIME_TYPE}'")),
         }
     }
 
     fn order_by(self) -> &'static str {
         match self {
             Self::Browse => "name",
-            Self::Files | Self::Folders | Self::Docs | Self::Sheets => "modifiedTime desc",
+            Self::Files | Self::Folders | Self::Docs | Self::Sheets | Self::Slides => {
+                "modifiedTime desc"
+            }
         }
     }
 }

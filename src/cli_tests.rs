@@ -2,15 +2,16 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, Cli, Command, DocsBreakCommand, DocsCommand,
-    DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand,
-    DocsListType, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
-    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle,
-    SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
+    AuthCommand, AuthMappingsCommand, CalendarCalendarsCommand, CalendarCommand,
+    CalendarEventsCommand, Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand,
+    DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType,
+    DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand,
+    DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
+    SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
     SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -254,6 +255,88 @@ fn sheets_list_with_flags() {
             assert_eq!(limit, Some(25));
             assert!(all);
             assert_eq!(folder.as_deref(), Some("folder123"));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_list_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "list",
+        "--limit",
+        "25",
+        "--all",
+        "--folder",
+        "folder123",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::List {
+                    limit,
+                    all,
+                    folder,
+                    json,
+                },
+        } => {
+            assert_eq!(limit, Some(25));
+            assert!(all);
+            assert_eq!(folder.as_deref(), Some("folder123"));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_events_list_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "list",
+        "primary",
+        "--limit",
+        "25",
+        "--all",
+        "--time-min",
+        "2026-07-09T09:00:00Z",
+        "--time-max",
+        "2026-07-10T09:00:00Z",
+        "--query",
+        "planning",
+        "--single-events",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::List {
+                            calendar_id,
+                            limit,
+                            all,
+                            time_min,
+                            time_max,
+                            query,
+                            single_events,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(limit, Some(25));
+            assert!(all);
+            assert_eq!(time_min.as_deref(), Some("2026-07-09T09:00:00Z"));
+            assert_eq!(time_max.as_deref(), Some("2026-07-10T09:00:00Z"));
+            assert_eq!(query.as_deref(), Some("planning"));
+            assert!(single_events);
             assert!(json);
         }
         _ => panic!("unexpected parse result"),
@@ -2167,6 +2250,71 @@ fn sheets_create_with_title() {
             command: SheetsCommand::Create { title },
         } => {
             assert_eq!(title, "Quarterly Plan");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_create_with_title() {
+    let cli = parse(&["slides", "create", "Quarterly Deck"]).unwrap();
+    match cli.command {
+        Command::Slides {
+            command: SlidesCommand::Create { title },
+        } => {
+            assert_eq!(title, "Quarterly Deck");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_create_with_json_body_path() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "create",
+        "primary",
+        "--event",
+        "event.json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command: CalendarEventsCommand::Create { calendar_id, event },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event, "event.json");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_list_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list",
+        "--limit",
+        "10",
+        "--all",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command: CalendarCalendarsCommand::List { limit, all, json },
+                },
+        } => {
+            assert_eq!(limit, Some(10));
+            assert!(all);
+            assert!(json);
         }
         _ => panic!("unexpected parse result"),
     }

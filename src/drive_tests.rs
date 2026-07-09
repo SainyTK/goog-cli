@@ -68,6 +68,18 @@ const SHEETS_PAGE_RESPONSE: &str = r#"{
     }
   ]
 }"#;
+const SLIDES_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "presentation-1",
+      "name": "Roadshow",
+      "parents": ["folder-123"],
+      "mimeType": "application/vnd.google-apps.presentation",
+      "modifiedTime": "2026-06-24T13:15:00.000Z"
+    }
+  ]
+}"#;
 
 fn test_config() -> Config {
     Config {
@@ -297,6 +309,35 @@ async fn list_sheets_can_filter_to_native_google_sheets_inside_a_folder() {
     let page = list_files(&client, &options).await.unwrap();
 
     assert_eq!(page.files[0].id, "sheet-1");
+}
+
+#[tokio::test]
+async fn list_slides_can_filter_to_native_google_slides_inside_a_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.presentation'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SLIDES_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::slides(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "presentation-1");
 }
 
 #[tokio::test]

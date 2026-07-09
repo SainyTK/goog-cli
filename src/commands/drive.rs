@@ -25,6 +25,7 @@ const FOLDER_TABLE_HEADER: &str = "NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED"
 const BROWSE_TABLE_HEADER: &str = "TYPE\tNAME\tID\tMIME TYPE\tMODIFIED";
 const DOCS_TABLE_HEADER: &str = "NAME\tDOCUMENT ID\tPARENT FOLDER IDS\tMODIFIED";
 const SHEETS_TABLE_HEADER: &str = "NAME\tSPREADSHEET ID\tPARENT FOLDER IDS\tMODIFIED";
+const SLIDES_TABLE_HEADER: &str = "NAME\tPRESENTATION ID\tPARENT FOLDER IDS\tMODIFIED";
 
 type DriveResult<T> = std::result::Result<T, DriveError>;
 
@@ -35,6 +36,7 @@ pub(super) enum DriveListKind {
     Browse,
     Docs,
     Sheets,
+    Slides,
 }
 
 impl DriveListKind {
@@ -45,6 +47,7 @@ impl DriveListKind {
             Self::Browse => "items",
             Self::Docs => "documents",
             Self::Sheets => "spreadsheets",
+            Self::Slides => "presentations",
         }
     }
 }
@@ -185,6 +188,36 @@ pub(super) async fn run_sheets_list_command_to<S: AccountStore>(
         store,
         account_override,
         DriveListKind::Sheets,
+        limit,
+        all,
+        folder,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+pub(super) async fn run_slides_list_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    run_resource_list_command_to(
+        config,
+        store,
+        account_override,
+        DriveListKind::Slides,
         limit,
         all,
         folder,
@@ -534,7 +567,8 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
             DriveListKind::Files
             | DriveListKind::Folders
             | DriveListKind::Docs
-            | DriveListKind::Sheets => write_ndjson(&files, out)?,
+            | DriveListKind::Sheets
+            | DriveListKind::Slides => write_ndjson(&files, out)?,
         }
     } else {
         let mut wrote_table_header = false;
@@ -544,6 +578,7 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
             DriveListKind::Browse => write_browse_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Docs => write_docs_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Sheets => write_sheets_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Slides => write_slides_table(&files, out, &mut wrote_table_header)?,
         }
     }
 
@@ -627,7 +662,8 @@ async fn run_list_items_to<S: AccountStore>(
             DriveListKind::Files
             | DriveListKind::Folders
             | DriveListKind::Docs
-            | DriveListKind::Sheets => write_ndjson(&files, out)?,
+            | DriveListKind::Sheets
+            | DriveListKind::Slides => write_ndjson(&files, out)?,
         }
     } else {
         match kind {
@@ -636,6 +672,7 @@ async fn run_list_items_to<S: AccountStore>(
             DriveListKind::Browse => write_browse_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Docs => write_docs_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Sheets => write_sheets_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Slides => write_slides_table(&files, out, &mut wrote_table_header)?,
         }
     }
 
@@ -962,6 +999,7 @@ pub(super) fn list_options(
         DriveListKind::Browse => ListFilesOptions::browse(page_size),
         DriveListKind::Docs => ListFilesOptions::docs(page_size),
         DriveListKind::Sheets => ListFilesOptions::sheets(page_size),
+        DriveListKind::Slides => ListFilesOptions::slides(page_size),
     };
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);
@@ -1135,6 +1173,14 @@ pub(super) fn write_sheets_table(
     wrote_header: &mut bool,
 ) -> Result<()> {
     write_resource_table(files, out, wrote_header, SHEETS_TABLE_HEADER)
+}
+
+pub(super) fn write_slides_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+) -> Result<()> {
+    write_resource_table(files, out, wrote_header, SLIDES_TABLE_HEADER)
 }
 
 fn write_resource_table(

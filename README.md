@@ -3,7 +3,7 @@
 ![goog CLI wallpaper](./public/goog-cli-wallpaper.png)
 
 `goog` is an Early Open-Source CLI for Google APIs.
-It is built first for power users and AI agents who want terminal-native access to Google Drive, Google Docs, Google Sheets, and Gmail without getting forced down a browser UI path.
+It is built first for power users and AI agents who want terminal-native access to Google Drive, Google Docs, Google Sheets, Google Slides, Google Calendar, and Gmail without getting forced down a browser UI path.
 
 Human-readable terminal workflows are the default experience.
 JSON is also supported for programmatic use, but it is not the primary product surface.
@@ -17,6 +17,8 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 - Google Drive file and folder listing, upload, and download commands.
 - Google Docs document listing, creation, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
+- Google Slides presentation listing, creation, raw reads, and raw batch updates.
+- Google Calendar calendar listing, calendar metadata reads, and event list/read/create/update/delete commands.
 - Gmail message listing, search, raw message reads, draft creation, and attachment downloads.
 - Multi-account OAuth setup, login, account listing, and active account switching.
 
@@ -51,6 +53,8 @@ Enable these APIs:
 - Google Drive API
 - Google Docs API
 - Google Sheets API
+- Google Slides API
+- Google Calendar API
 - Gmail API
 
 If an API already shows **Manage** with an **API Enabled** badge, skip it.
@@ -271,6 +275,27 @@ goog sheets values append-row SPREADSHEET_ID 'Sheet1!A:D' --value Ada --value Lo
 goog sheets values append-column SPREADSHEET_ID 'Sheet1!A:D' --value Open --value Closed --value Blocked
 goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --data ./rows.csv
 cat rows.tsv | goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --data - --format tsv
+```
+
+### Slides
+
+```sh
+goog slides list --limit 20
+goog slides create "Quarterly Review"
+goog slides get PRESENTATION_ID --fields 'presentationId,title,slides(objectId)'
+goog slides batch-update PRESENTATION_ID --requests ./slides-requests.json
+```
+
+### Calendar
+
+```sh
+goog calendar calendars list --limit 20
+goog calendar calendars get primary
+goog calendar events list primary --time-min 2026-07-09T00:00:00Z --time-max 2026-07-10T00:00:00Z --single-events
+goog calendar events get primary EVENT_ID
+goog calendar events create primary --event ./event.json
+goog calendar events update primary EVENT_ID --event ./event.json
+goog calendar events delete primary EVENT_ID
 ```
 
 ### Gmail

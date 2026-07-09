@@ -61,5 +61,26 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 cli.quiet,
             )
         }
+        Command::Slides { command } => {
+            let store = resolve_account_store()?;
+            commands::slides::run(
+                command,
+                &config,
+                &store,
+                cli.account.as_deref(),
+                output_json_by_default,
+                cli.quiet,
+            )
+        }
+        Command::Calendar { command } => {
+            let store = resolve_account_store()?;
+            commands::calendar::run(
+                command,
+                &config,
+                &store,
+                cli.account.as_deref(),
+                output_json_by_default,
+            )
+        }
     }
 }
