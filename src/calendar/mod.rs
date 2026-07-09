@@ -178,6 +178,30 @@ impl DeleteCalendarOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct InsertCalendarListEntryOptions {
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl InsertCalendarListEntryOptions {
+    pub fn new(request_body: Value) -> Self {
+        Self {
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["users", "me", "calendarList"])
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct GetCalendarListEntryOptions {
     pub calendar_id: String,
     base_url: String,
@@ -887,6 +911,19 @@ pub async fn get_calendar_list_entry<S: AccountStore>(
     options: &GetCalendarListEntryOptions,
 ) -> Result<CalendarListEntry, CalendarError> {
     send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn insert_calendar_list_entry<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &InsertCalendarListEntryOptions,
+) -> Result<CalendarListEntry, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
 }
 
 pub async fn patch_calendar_list_entry<S: AccountStore>(

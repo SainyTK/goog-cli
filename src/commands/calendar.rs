@@ -11,15 +11,16 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_acl, delete_calendar, delete_calendar_list_entry, delete_event, get_acl, get_calendar,
-    get_calendar_list_entry, get_colors, get_event, insert_acl, insert_calendar, insert_event,
-    list_acl, list_calendars, list_events, move_event, patch_acl, patch_calendar,
-    patch_calendar_list_entry, patch_event, query_freebusy, quick_add_event, update_acl,
-    update_calendar, update_event, CalendarError, DeleteAclOptions, DeleteCalendarListEntryOptions,
-    DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions, GetAclOptions,
-    GetCalendarListEntryOptions, GetCalendarOptions, GetColorsOptions, GetEventOptions,
-    InsertAclOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
-    ListEventsOptions, MoveEventOptions, PatchCalendarListEntryOptions, QuickAddEventOptions,
-    SendUpdates, UpdateAclOptions, UpdateCalendarOptions, WriteEventOptions,
+    get_calendar_list_entry, get_colors, get_event, insert_acl, insert_calendar,
+    insert_calendar_list_entry, insert_event, list_acl, list_calendars, list_events, move_event,
+    patch_acl, patch_calendar, patch_calendar_list_entry, patch_event, query_freebusy,
+    quick_add_event, update_acl, update_calendar, update_event, CalendarError, DeleteAclOptions,
+    DeleteCalendarListEntryOptions, DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions,
+    GetAclOptions, GetCalendarListEntryOptions, GetCalendarOptions, GetColorsOptions,
+    GetEventOptions, InsertAclOptions, InsertCalendarListEntryOptions, InsertCalendarOptions,
+    ListAclOptions, ListCalendarsOptions, ListEventsOptions, MoveEventOptions,
+    PatchCalendarListEntryOptions, QuickAddEventOptions, SendUpdates, UpdateAclOptions,
+    UpdateCalendarOptions, WriteEventOptions,
 };
 use crate::cli::{
     CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarColorsCommand,
@@ -270,6 +271,44 @@ pub(super) async fn run_calendars_command_to<S: AccountStore>(
             writeln!(out, "deleted\t{calendar_id}").context("failed to write output")
         }
         CalendarCalendarsCommand::ListEntry { command } => match command {
+            CalendarListEntryCommand::Add {
+                calendar_id,
+                summary_override,
+                color_id,
+                hidden,
+                selected,
+                default_reminder,
+                json,
+            } => {
+                let json = json || output_json_by_default;
+                let options = insert_calendar_list_entry_options(
+                    build_calendar_list_entry_insert_body(
+                        calendar_id.clone(),
+                        summary_override,
+                        color_id,
+                        hidden,
+                        selected,
+                        default_reminder,
+                    )?,
+                    base_url,
+                );
+                let target_resource_key = resource_key("calendar-list", &calendar_id);
+                let entry = run_with_calendar_unified_access(
+                    config,
+                    store,
+                    account_override,
+                    &target_resource_key,
+                    CalendarAccessAttempt::InsertCalendarListEntry(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to add Google Calendar list entry")?;
+                if json {
+                    write_json_line(out, &entry, "failed to serialize Calendar list entry")
+                } else {
+                    write_calendar_list_entry_table(out, &entry)
+                }
+            }
             CalendarListEntryCommand::Get { calendar_id, json } => {
                 let json = json || output_json_by_default;
                 let options = calendar_list_entry_get_options(calendar_id.clone(), base_url);
@@ -1021,6 +1060,7 @@ enum CalendarAccessAttempt<'a> {
     GetCalendar(&'a GetCalendarOptions),
     UpdateCalendar(&'a UpdateCalendarOptions),
     PatchCalendar(&'a UpdateCalendarOptions),
+    InsertCalendarListEntry(&'a InsertCalendarListEntryOptions),
     GetCalendarListEntry(&'a GetCalendarListEntryOptions),
     PatchCalendarListEntry(&'a PatchCalendarListEntryOptions),
     ListAcl(&'a ListAclOptions),
@@ -1073,6 +1113,9 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::GetCalendar(options) => get_calendar(&client, options).await,
         CalendarAccessAttempt::UpdateCalendar(options) => update_calendar(&client, options).await,
         CalendarAccessAttempt::PatchCalendar(options) => patch_calendar(&client, options).await,
+        CalendarAccessAttempt::InsertCalendarListEntry(options) => {
+            insert_calendar_list_entry(&client, options).await
+        }
         CalendarAccessAttempt::GetCalendarListEntry(options) => {
             get_calendar_list_entry(&client, options).await
         }
@@ -1308,6 +1351,17 @@ fn calendar_list_entry_get_options(
     base_url: Option<&str>,
 ) -> GetCalendarListEntryOptions {
     let mut options = GetCalendarListEntryOptions::new(calendar_id);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn insert_calendar_list_entry_options(
+    request_body: serde_json::Value,
+    base_url: Option<&str>,
+) -> InsertCalendarListEntryOptions {
+    let mut options = InsertCalendarListEntryOptions::new(request_body);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
@@ -1681,6 +1735,45 @@ fn build_calendar_patch_request_body(
         !body.is_empty(),
         "at least one calendar metadata flag is required"
     );
+    Ok(serde_json::Value::Object(body))
+}
+
+fn build_calendar_list_entry_insert_body(
+    calendar_id: String,
+    summary_override: Option<String>,
+    color_id: Option<String>,
+    hidden: Option<bool>,
+    selected: Option<bool>,
+    default_reminders: Vec<String>,
+) -> Result<serde_json::Value> {
+    let mut body = serde_json::Map::new();
+    body.insert("id".into(), serde_json::Value::String(calendar_id));
+    if let Some(summary_override) = summary_override {
+        body.insert(
+            "summaryOverride".into(),
+            serde_json::Value::String(summary_override),
+        );
+    }
+    if let Some(color_id) = color_id {
+        body.insert("colorId".into(), serde_json::Value::String(color_id));
+    }
+    if let Some(hidden) = hidden {
+        body.insert("hidden".into(), serde_json::Value::Bool(hidden));
+    }
+    if let Some(selected) = selected {
+        body.insert("selected".into(), serde_json::Value::Bool(selected));
+    }
+    if !default_reminders.is_empty() {
+        body.insert(
+            "defaultReminders".into(),
+            serde_json::Value::Array(
+                default_reminders
+                    .into_iter()
+                    .map(parse_default_reminder)
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+        );
+    }
     Ok(serde_json::Value::Object(body))
 }
 

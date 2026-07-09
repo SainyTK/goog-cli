@@ -1178,6 +1178,29 @@ pub enum CalendarCalendarsCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CalendarListEntryCommand {
+    /// Add an existing calendar to the authenticated user's calendar list
+    Add {
+        /// Calendar ID to add to the authenticated user's calendar list.
+        calendar_id: String,
+        /// Display name override for this calendar in the authenticated user's list.
+        #[arg(long)]
+        summary_override: Option<String>,
+        /// Calendar color ID from `goog calendar colors get`.
+        #[arg(long)]
+        color_id: Option<String>,
+        /// Hide this calendar in the authenticated user's calendar list.
+        #[arg(long)]
+        hidden: Option<bool>,
+        /// Show this calendar's events in the Google Calendar UI.
+        #[arg(long)]
+        selected: Option<bool>,
+        /// Default reminder as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long)]
+        default_reminder: Vec<String>,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
     /// Read per-user settings for one calendar list entry
     Get {
         /// Calendar ID to read. Use primary for the account's primary calendar.
