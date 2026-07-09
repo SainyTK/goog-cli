@@ -311,6 +311,8 @@ fn calendar_events_list_with_flags() {
         "2026-07-09T09:00:00Z",
         "--time-max",
         "2026-07-10T09:00:00Z",
+        "--time-zone",
+        "Asia/Bangkok",
         "--query",
         "planning",
         "--updated-min",
@@ -346,6 +348,7 @@ fn calendar_events_list_with_flags() {
                             all,
                             time_min,
                             time_max,
+                            time_zone,
                             query,
                             updated_min,
                             i_cal_uid,
@@ -365,6 +368,7 @@ fn calendar_events_list_with_flags() {
             assert!(all);
             assert_eq!(time_min.as_deref(), Some("2026-07-09T09:00:00Z"));
             assert_eq!(time_max.as_deref(), Some("2026-07-10T09:00:00Z"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
             assert_eq!(query.as_deref(), Some("planning"));
             assert_eq!(updated_min.as_deref(), Some("2026-07-08T00:00:00Z"));
             assert_eq!(i_cal_uid.as_deref(), Some("abc123@example.com"));

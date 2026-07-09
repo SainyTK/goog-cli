@@ -520,6 +520,7 @@ pub struct ListEventsOptions {
     pub page_token: Option<String>,
     pub time_min: Option<String>,
     pub time_max: Option<String>,
+    pub time_zone: Option<String>,
     pub query: Option<String>,
     pub updated_min: Option<String>,
     pub i_cal_uid: Option<String>,
@@ -541,6 +542,7 @@ impl ListEventsOptions {
             page_token: None,
             time_min: None,
             time_max: None,
+            time_zone: None,
             query: None,
             updated_min: None,
             i_cal_uid: None,
@@ -567,6 +569,11 @@ impl ListEventsOptions {
 
     pub fn with_time_max(mut self, time_max: impl Into<String>) -> Self {
         self.time_max = Some(time_max.into());
+        self
+    }
+
+    pub fn with_time_zone(mut self, time_zone: impl Into<String>) -> Self {
+        self.time_zone = Some(time_zone.into());
         self
     }
 
@@ -644,6 +651,9 @@ impl ListEventsOptions {
             }
             if let Some(time_max) = &self.time_max {
                 query.append_pair("timeMax", time_max);
+            }
+            if let Some(time_zone) = &self.time_zone {
+                query.append_pair("timeZone", time_zone);
             }
             if let Some(query_text) = &self.query {
                 query.append_pair("q", query_text);

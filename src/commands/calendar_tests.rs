@@ -1597,6 +1597,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
         .and(query_param("showDeleted", "true"))
         .and(query_param("showHiddenInvitations", "true"))
         .and(query_param("orderBy", "updated"))
+        .and(query_param("timeZone", "Asia/Bangkok"))
         .and(query_param("updatedMin", "2026-07-08T00:00:00Z"))
         .and(query_param("iCalUID", "abc123@example.com"))
         .and(query_param("privateExtendedProperty", "owner=agent"))
@@ -1614,6 +1615,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
         .and(query_param("showDeleted", "true"))
         .and(query_param("showHiddenInvitations", "true"))
         .and(query_param("orderBy", "updated"))
+        .and(query_param("timeZone", "Asia/Bangkok"))
         .and(query_param("updatedMin", "2026-07-08T00:00:00Z"))
         .and(query_param("iCalUID", "abc123@example.com"))
         .and(query_param("privateExtendedProperty", "owner=agent"))
@@ -1662,6 +1664,7 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
             all: false,
             time_min: None,
             time_max: None,
+            time_zone: Some("Asia/Bangkok".into()),
             query: None,
             updated_min: Some("2026-07-08T00:00:00Z".into()),
             i_cal_uid: Some("abc123@example.com".into()),

@@ -619,6 +619,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             all,
             time_min,
             time_max,
+            time_zone,
             query,
             updated_min,
             i_cal_uid,
@@ -640,6 +641,7 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
                 requested_result_count(limit, all).unwrap_or(DEFAULT_LIST_LIMIT),
                 time_min,
                 time_max,
+                time_zone,
                 query,
                 updated_min,
                 i_cal_uid,
@@ -1125,6 +1127,7 @@ async fn collect_events_unified<S: AccountStore>(
             page_size,
             first_options.time_min.clone(),
             first_options.time_max.clone(),
+            first_options.time_zone.clone(),
             first_options.query.clone(),
             first_options.updated_min.clone(),
             first_options.i_cal_uid.clone(),
@@ -1723,6 +1726,7 @@ fn list_events_options(
     page_size: u32,
     time_min: Option<String>,
     time_max: Option<String>,
+    time_zone: Option<String>,
     query: Option<String>,
     updated_min: Option<String>,
     i_cal_uid: Option<String>,
@@ -1746,6 +1750,9 @@ fn list_events_options(
     }
     if let Some(time_max) = time_max {
         options = options.with_time_max(time_max);
+    }
+    if let Some(time_zone) = time_zone {
+        options = options.with_time_zone(time_zone);
     }
     if let Some(query) = query {
         options = options.with_query(query);

@@ -1332,6 +1332,9 @@ pub enum CalendarEventsCommand {
         /// Upper bound for event start time as RFC3339, such as 2026-07-10T09:00:00Z
         #[arg(long)]
         time_max: Option<String>,
+        /// Time zone used for returned event times, such as Asia/Bangkok
+        #[arg(long)]
+        time_zone: Option<String>,
         /// Free-text search query
         #[arg(long)]
         query: Option<String>,
