@@ -337,6 +337,8 @@ goog calendar events instances primary RECURRING_EVENT_ID --time-min 2026-07-09T
 goog calendar events create primary --summary "Planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok --attendee teammate@example.com --recurrence "RRULE:FREQ=WEEKLY;COUNT=4" --reminder popup:10 --color-id 5 --send-updates all
 goog calendar events create primary --summary "Out of office" --start 2026-07-09 --end 2026-07-10 --all-day
 goog calendar events create primary --event ./event.json
+goog calendar events import primary --summary "Imported planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok
+goog calendar events import primary --event ./event.json
 goog calendar events quick-add primary "Lunch with Sam tomorrow at noon" --send-updates none
 goog calendar events update primary EVENT_ID --summary "Planning moved" --start 2026-07-09T10:00:00+07:00 --end 2026-07-09T10:30:00+07:00 --time-zone Asia/Bangkok --send-updates external-only
 goog calendar events update primary EVENT_ID --event ./event.json

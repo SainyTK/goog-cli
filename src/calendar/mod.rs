@@ -747,6 +747,16 @@ impl WriteEventOptions {
         }
     }
 
+    pub fn import(calendar_id: impl Into<String>, request_body: Value) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            event_id: None,
+            request_body,
+            send_updates: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
     pub fn with_send_updates(mut self, send_updates: SendUpdates) -> Self {
         self.send_updates = Some(send_updates);
         self
@@ -761,6 +771,13 @@ impl WriteEventOptions {
         let mut url = calendar_url(&self.base_url, &["calendars", &self.calendar_id, "events"])?;
         append_send_updates(&mut url, self.send_updates);
         Ok(url)
+    }
+
+    fn import_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "events", "import"],
+        )
     }
 
     fn update_url(&self) -> Result<Url, CalendarError> {
@@ -1168,6 +1185,19 @@ pub async fn insert_event<S: AccountStore>(
         client,
         client
             .post(options.insert_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn import_event<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &WriteEventOptions,
+) -> Result<Event, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.import_url()?)
             .json(&options.request_body),
     )
     .await

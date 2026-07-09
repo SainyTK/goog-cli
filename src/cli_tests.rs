@@ -3400,6 +3400,79 @@ fn calendar_event_create_rejects_mixed_json_body_and_flags() {
 }
 
 #[test]
+fn calendar_event_import_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "import",
+        "primary",
+        "--summary",
+        "Imported planning",
+        "--start",
+        "2026-07-09T09:00:00+07:00",
+        "--end",
+        "2026-07-09T09:30:00+07:00",
+        "--time-zone",
+        "Asia/Bangkok",
+        "--attendee",
+        "teammate@example.com",
+        "--recurrence",
+        "RRULE:FREQ=WEEKLY;COUNT=4",
+        "--reminder",
+        "popup:10",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Import {
+                            calendar_id,
+                            event,
+                            summary,
+                            start,
+                            end,
+                            time_zone,
+                            attendee,
+                            recurrence,
+                            reminder,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event, None);
+            assert_eq!(summary.as_deref(), Some("Imported planning"));
+            assert_eq!(start.as_deref(), Some("2026-07-09T09:00:00+07:00"));
+            assert_eq!(end.as_deref(), Some("2026-07-09T09:30:00+07:00"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+            assert_eq!(attendee, vec!["teammate@example.com".to_string()]);
+            assert_eq!(recurrence, vec!["RRULE:FREQ=WEEKLY;COUNT=4".to_string()]);
+            assert_eq!(reminder, vec!["popup:10".to_string()]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_import_rejects_mixed_json_body_and_flags() {
+    let err = parse(&[
+        "calendar",
+        "events",
+        "import",
+        "primary",
+        "--event",
+        "event.json",
+        "--summary",
+        "Planning",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("cannot be used with"));
+}
+
+#[test]
 fn calendar_event_update_with_flags() {
     let cli = parse(&[
         "calendar",

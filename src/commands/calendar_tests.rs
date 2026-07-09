@@ -1886,6 +1886,86 @@ async fn run_events_create_builds_event_body_from_flags() {
 }
 
 #[tokio::test]
+async fn run_events_import_sends_import_request_from_flags() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/calendars/primary/events/import"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "summary": "Imported planning",
+            "start": {
+                "dateTime": "2026-07-09T09:00:00+07:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "end": {
+                "dateTime": "2026-07-09T09:30:00+07:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "attendees": [
+                { "email": "teammate@example.com" }
+            ],
+            "recurrence": [
+                "RRULE:FREQ=WEEKLY;COUNT=4"
+            ],
+            "reminders": {
+                "useDefault": false,
+                "overrides": [
+                    { "method": "popup", "minutes": 10 }
+                ]
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "imported-event-123",
+            "summary": "Imported planning"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Import {
+            calendar_id: "primary".into(),
+            event: None,
+            summary: Some("Imported planning".into()),
+            start: Some("2026-07-09T09:00:00+07:00".into()),
+            end: Some("2026-07-09T09:30:00+07:00".into()),
+            time_zone: Some("Asia/Bangkok".into()),
+            all_day: false,
+            location: None,
+            description: None,
+            color_id: None,
+            attendee: vec!["teammate@example.com".into()],
+            recurrence: vec!["RRULE:FREQ=WEEKLY;COUNT=4".into()],
+            reminder: vec!["popup:10".into()],
+            no_reminders: false,
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"imported-event-123\",\"summary\":\"Imported planning\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_events_create_builds_all_day_event_body_from_flags() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

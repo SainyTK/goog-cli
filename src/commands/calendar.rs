@@ -11,7 +11,7 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_acl, delete_calendar, delete_calendar_list_entry, delete_event, get_acl, get_calendar,
-    get_calendar_list_entry, get_colors, get_event, insert_acl, insert_calendar,
+    get_calendar_list_entry, get_colors, get_event, import_event, insert_acl, insert_calendar,
     insert_calendar_list_entry, insert_event, list_acl, list_calendars, list_event_instances,
     list_events, move_event, patch_acl, patch_calendar, patch_calendar_list_entry, patch_event,
     query_freebusy, quick_add_event, update_acl, update_calendar, update_calendar_list_entry,
@@ -763,6 +763,53 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             .context("failed to create Google Calendar event")?;
             write_json_line(out, &event, "failed to serialize Calendar event")
         }
+        CalendarEventsCommand::Import {
+            calendar_id,
+            event,
+            summary,
+            start,
+            end,
+            time_zone,
+            all_day,
+            location,
+            description,
+            color_id,
+            attendee,
+            recurrence,
+            reminder,
+            no_reminders,
+        } => {
+            let request_body = match event {
+                Some(event) => read_request_body(&event, input, "Google Calendar event")?,
+                None => build_event_request_body(
+                    summary,
+                    start,
+                    end,
+                    time_zone,
+                    all_day,
+                    location,
+                    description,
+                    color_id,
+                    attendee,
+                    recurrence,
+                    reminder,
+                    no_reminders,
+                )?,
+            };
+            let options = write_event_options_import(calendar_id.clone(), request_body, base_url);
+            let target_resource_key = resource_key("calendar", &calendar_id);
+            let event = run_with_calendar_unified_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                CalendarAccessAttempt::ImportEvent(&options),
+                state_path,
+            )
+            .await
+            .context("failed to import Google Calendar event")?;
+            write_json_line(out, &event, "failed to serialize Calendar event")
+        }
         CalendarEventsCommand::Update {
             calendar_id,
             event_id,
@@ -1216,6 +1263,7 @@ enum CalendarAccessAttempt<'a> {
     ListEventInstances(&'a ListEventInstancesOptions),
     GetEvent(&'a GetEventOptions),
     InsertEvent(&'a WriteEventOptions),
+    ImportEvent(&'a WriteEventOptions),
     UpdateEvent(&'a WriteEventOptions),
     PatchEvent(&'a WriteEventOptions),
     MoveEvent(&'a MoveEventOptions),
@@ -1281,6 +1329,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         }
         CalendarAccessAttempt::GetEvent(options) => get_event(&client, options).await,
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
+        CalendarAccessAttempt::ImportEvent(options) => import_event(&client, options).await,
         CalendarAccessAttempt::UpdateEvent(options) => update_event(&client, options).await,
         CalendarAccessAttempt::PatchEvent(options) => patch_event(&client, options).await,
         CalendarAccessAttempt::MoveEvent(options) => move_event(&client, options).await,
@@ -1705,6 +1754,18 @@ fn write_event_options_insert(
     if let Some(send_updates) = send_updates {
         options = options.with_send_updates(send_updates);
     }
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn write_event_options_import(
+    calendar_id: String,
+    request_body: serde_json::Value,
+    base_url: Option<&str>,
+) -> WriteEventOptions {
+    let mut options = WriteEventOptions::import(calendar_id, request_body);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
