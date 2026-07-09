@@ -809,6 +809,19 @@ pub async fn patch_acl<S: AccountStore>(
     .await
 }
 
+pub async fn update_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateAclOptions,
+) -> Result<AclRule, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .put(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
 pub async fn delete_acl<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DeleteAclOptions,

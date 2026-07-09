@@ -3654,6 +3654,49 @@ fn calendar_acl_patch_with_role_and_json_flag() {
 }
 
 #[test]
+fn calendar_acl_update_with_full_rule_flags() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "update",
+        "team-launches@example.com",
+        "user:teammate@example.com",
+        "--scope",
+        "user",
+        "--value",
+        "teammate@example.com",
+        "--role",
+        "writer",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::Update {
+                            calendar_id,
+                            rule_id,
+                            scope,
+                            value,
+                            role,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(rule_id, "user:teammate@example.com");
+            assert_eq!(scope, CalendarAclScope::User);
+            assert_eq!(value.as_deref(), Some("teammate@example.com"));
+            assert_eq!(role, CalendarAclRole::Writer);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_acl_delete_with_rule_id() {
     let cli = parse(&[
         "calendar",

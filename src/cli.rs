@@ -861,6 +861,25 @@ pub enum CalendarAclCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Replace one access control rule
+    Update {
+        /// Calendar ID containing the rule. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// ACL rule ID, such as user:teammate@example.com or default.
+        rule_id: String,
+        /// Scope type for the replacement rule.
+        #[arg(long)]
+        scope: CalendarAclScope,
+        /// Scope value, such as a user email, group email, or domain. Omit for default scope.
+        #[arg(long)]
+        value: Option<String>,
+        /// Access role to set.
+        #[arg(long)]
+        role: CalendarAclRole,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

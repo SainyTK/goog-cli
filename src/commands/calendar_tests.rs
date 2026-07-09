@@ -753,6 +753,157 @@ async fn run_acl_patch_prints_json_when_requested() {
 }
 
 #[tokio::test]
+async fn run_acl_update_puts_rule_and_prints_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path_regex(
+            r"^/calendar/v3/calendars/team-launches(%40|@)example\.com/acl/user(:|%3A)teammate(%40|@)example\.com$",
+        ))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "role": "writer",
+            "scope": {
+                "type": "user",
+                "value": "teammate@example.com"
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "user:teammate@example.com",
+            "scope": {
+                "type": "user",
+                "value": "teammate@example.com"
+            },
+            "role": "writer"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Update {
+            calendar_id: "team-launches@example.com".into(),
+            rule_id: "user:teammate@example.com".into(),
+            scope: CalendarAclScope::User,
+            value: Some("teammate@example.com".into()),
+            role: CalendarAclRole::Writer,
+            json: false,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SCOPE TYPE\tSCOPE VALUE\tROLE\tRULE ID\nuser\tteammate@example.com\twriter\tuser:teammate@example.com\n"
+    );
+}
+
+#[tokio::test]
+async fn run_acl_update_prints_json_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/calendar/v3/calendars/primary/acl/default"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "role": "reader",
+            "scope": {
+                "type": "default"
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "default",
+            "scope": {
+                "type": "default"
+            },
+            "role": "reader"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Update {
+            calendar_id: "primary".into(),
+            rule_id: "default".into(),
+            scope: CalendarAclScope::Default,
+            value: None,
+            role: CalendarAclRole::Reader,
+            json: true,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"default\",\"role\":\"reader\",\"scope\":{\"type\":\"default\"}}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_acl_update_rejects_value_for_default_scope() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    let err = run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Update {
+            calendar_id: "primary".into(),
+            rule_id: "default".into(),
+            scope: CalendarAclScope::Default,
+            value: Some("teammate@example.com".into()),
+            role: CalendarAclRole::Reader,
+            json: false,
+        },
+        false,
+        &mut out,
+        None,
+        Some(&state_path),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "--value cannot be used with --scope default"
+    );
+}
+
+#[tokio::test]
 async fn run_acl_delete_removes_rule_and_prints_confirmation() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))

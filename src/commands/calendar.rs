@@ -12,11 +12,12 @@ use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_acl, delete_calendar, delete_event, get_acl, get_calendar, get_event, insert_acl,
     insert_calendar, insert_event, list_acl, list_calendars, list_events, move_event, patch_acl,
-    patch_calendar, patch_event, query_freebusy, quick_add_event, update_calendar, update_event,
-    CalendarError, DeleteAclOptions, DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions,
-    GetAclOptions, GetCalendarOptions, GetEventOptions, InsertAclOptions, InsertCalendarOptions,
-    ListAclOptions, ListCalendarsOptions, ListEventsOptions, MoveEventOptions,
-    QuickAddEventOptions, SendUpdates, UpdateAclOptions, UpdateCalendarOptions, WriteEventOptions,
+    patch_calendar, patch_event, query_freebusy, quick_add_event, update_acl, update_calendar,
+    update_event, CalendarError, DeleteAclOptions, DeleteCalendarOptions, DeleteEventOptions,
+    FreeBusyOptions, GetAclOptions, GetCalendarOptions, GetEventOptions, InsertAclOptions,
+    InsertCalendarOptions, ListAclOptions, ListCalendarsOptions, ListEventsOptions,
+    MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateAclOptions, UpdateCalendarOptions,
+    WriteEventOptions,
 };
 use crate::cli::{
     CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarCommand,
@@ -366,6 +367,34 @@ pub(super) async fn run_acl_command_to<S: AccountStore>(
             )
             .await
             .context("failed to patch Google Calendar ACL rule")?;
+            if json {
+                write_json_line(out, &rule, "failed to serialize Calendar ACL rule")
+            } else {
+                write_acl_rule_table(out, &rule)
+            }
+        }
+        CalendarAclCommand::Update {
+            calendar_id,
+            rule_id,
+            scope,
+            value,
+            role,
+            json,
+        } => {
+            let json = json || output_json_by_default;
+            let target_resource_key = resource_key("calendar-acl", &calendar_id);
+            let body = acl_rule_body(scope, value, role)?;
+            let options = update_acl_options(calendar_id, rule_id, body, base_url);
+            let rule = run_with_calendar_unified_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                CalendarAccessAttempt::UpdateAcl(&options),
+                state_path,
+            )
+            .await
+            .context("failed to update Google Calendar ACL rule")?;
             if json {
                 write_json_line(out, &rule, "failed to serialize Calendar ACL rule")
             } else {
@@ -875,6 +904,7 @@ enum CalendarAccessAttempt<'a> {
     ListAcl(&'a ListAclOptions),
     GetAcl(&'a GetAclOptions),
     InsertAcl(&'a InsertAclOptions),
+    UpdateAcl(&'a UpdateAclOptions),
     PatchAcl(&'a UpdateAclOptions),
     ListEvents(&'a ListEventsOptions),
     GetEvent(&'a GetEventOptions),
@@ -924,6 +954,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::ListAcl(options) => list_acl(&client, options).await,
         CalendarAccessAttempt::GetAcl(options) => get_acl(&client, options).await,
         CalendarAccessAttempt::InsertAcl(options) => insert_acl(&client, options).await,
+        CalendarAccessAttempt::UpdateAcl(options) => update_acl(&client, options).await,
         CalendarAccessAttempt::PatchAcl(options) => patch_acl(&client, options).await,
         CalendarAccessAttempt::ListEvents(options) => list_events(&client, options).await,
         CalendarAccessAttempt::GetEvent(options) => get_event(&client, options).await,
