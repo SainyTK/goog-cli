@@ -12,16 +12,16 @@ use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_acl, delete_calendar, delete_event, get_acl, get_calendar, get_colors, get_event,
     insert_acl, insert_calendar, insert_event, list_acl, list_calendars, list_events, move_event,
-    patch_acl, patch_calendar, patch_event, query_freebusy, quick_add_event, update_acl,
-    update_calendar, update_event, CalendarError, DeleteAclOptions, DeleteCalendarOptions,
-    DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarOptions, GetColorsOptions,
-    GetEventOptions, InsertAclOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
-    ListEventsOptions, MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateAclOptions,
-    UpdateCalendarOptions, WriteEventOptions,
+    patch_acl, patch_calendar, patch_calendar_list_entry, patch_event, query_freebusy,
+    quick_add_event, update_acl, update_calendar, update_event, CalendarError, DeleteAclOptions,
+    DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarOptions,
+    GetColorsOptions, GetEventOptions, InsertAclOptions, InsertCalendarOptions, ListAclOptions,
+    ListCalendarsOptions, ListEventsOptions, MoveEventOptions, PatchCalendarListEntryOptions,
+    QuickAddEventOptions, SendUpdates, UpdateAclOptions, UpdateCalendarOptions, WriteEventOptions,
 };
 use crate::cli::{
     CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarColorsCommand,
-    CalendarCommand, CalendarEventsCommand, CalendarSendUpdates,
+    CalendarCommand, CalendarEventsCommand, CalendarListEntryCommand, CalendarSendUpdates,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -267,6 +267,48 @@ pub(super) async fn run_calendars_command_to<S: AccountStore>(
             .context("failed to delete Google Calendar")?;
             writeln!(out, "deleted\t{calendar_id}").context("failed to write output")
         }
+        CalendarCalendarsCommand::ListEntry { command } => match command {
+            CalendarListEntryCommand::Patch {
+                calendar_id,
+                summary_override,
+                color_id,
+                hidden,
+                selected,
+                default_reminder,
+                clear_default_reminders,
+                json,
+            } => {
+                let json = json || output_json_by_default;
+                let options = patch_calendar_list_entry_options(
+                    calendar_id.clone(),
+                    build_calendar_list_entry_patch_body(
+                        summary_override,
+                        color_id,
+                        hidden,
+                        selected,
+                        default_reminder,
+                        clear_default_reminders,
+                    )?,
+                    base_url,
+                );
+                let target_resource_key = resource_key("calendar-list", &calendar_id);
+                let entry = run_with_calendar_unified_access(
+                    config,
+                    store,
+                    account_override,
+                    &target_resource_key,
+                    CalendarAccessAttempt::PatchCalendarListEntry(&options),
+                    state_path,
+                )
+                .await
+                .context("failed to patch Google Calendar list entry")?;
+                if json {
+                    write_json_line(out, &entry, "failed to serialize Calendar list entry")
+                } else {
+                    write_calendar_list_entry_table(out, &entry)
+                }
+            }
+        },
     }
 }
 
@@ -942,6 +984,7 @@ enum CalendarAccessAttempt<'a> {
     GetCalendar(&'a GetCalendarOptions),
     UpdateCalendar(&'a UpdateCalendarOptions),
     PatchCalendar(&'a UpdateCalendarOptions),
+    PatchCalendarListEntry(&'a PatchCalendarListEntryOptions),
     ListAcl(&'a ListAclOptions),
     GetAcl(&'a GetAclOptions),
     InsertAcl(&'a InsertAclOptions),
@@ -992,6 +1035,9 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::GetCalendar(options) => get_calendar(&client, options).await,
         CalendarAccessAttempt::UpdateCalendar(options) => update_calendar(&client, options).await,
         CalendarAccessAttempt::PatchCalendar(options) => patch_calendar(&client, options).await,
+        CalendarAccessAttempt::PatchCalendarListEntry(options) => {
+            patch_calendar_list_entry(&client, options).await
+        }
         CalendarAccessAttempt::ListAcl(options) => list_acl(&client, options).await,
         CalendarAccessAttempt::GetAcl(options) => get_acl(&client, options).await,
         CalendarAccessAttempt::InsertAcl(options) => insert_acl(&client, options).await,
@@ -1176,6 +1222,18 @@ fn update_calendar_options(
 
 fn delete_calendar_options(calendar_id: String, base_url: Option<&str>) -> DeleteCalendarOptions {
     let mut options = DeleteCalendarOptions::new(calendar_id);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn patch_calendar_list_entry_options(
+    calendar_id: String,
+    request_body: serde_json::Value,
+    base_url: Option<&str>,
+) -> PatchCalendarListEntryOptions {
+    let mut options = PatchCalendarListEntryOptions::new(calendar_id, request_body);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
@@ -1529,6 +1587,50 @@ fn build_calendar_patch_request_body(
     Ok(serde_json::Value::Object(body))
 }
 
+fn build_calendar_list_entry_patch_body(
+    summary_override: Option<String>,
+    color_id: Option<String>,
+    hidden: Option<bool>,
+    selected: Option<bool>,
+    default_reminders: Vec<String>,
+    clear_default_reminders: bool,
+) -> Result<serde_json::Value> {
+    let mut body = serde_json::Map::new();
+    if let Some(summary_override) = summary_override {
+        body.insert(
+            "summaryOverride".into(),
+            serde_json::Value::String(summary_override),
+        );
+    }
+    if let Some(color_id) = color_id {
+        body.insert("colorId".into(), serde_json::Value::String(color_id));
+    }
+    if let Some(hidden) = hidden {
+        body.insert("hidden".into(), serde_json::Value::Bool(hidden));
+    }
+    if let Some(selected) = selected {
+        body.insert("selected".into(), serde_json::Value::Bool(selected));
+    }
+    if clear_default_reminders {
+        body.insert("defaultReminders".into(), serde_json::Value::Array(vec![]));
+    } else if !default_reminders.is_empty() {
+        body.insert(
+            "defaultReminders".into(),
+            serde_json::Value::Array(
+                default_reminders
+                    .into_iter()
+                    .map(parse_default_reminder)
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+        );
+    }
+    anyhow::ensure!(
+        !body.is_empty(),
+        "at least one calendar list entry flag is required"
+    );
+    Ok(serde_json::Value::Object(body))
+}
+
 fn acl_rule_body(
     scope: CalendarAclScope,
     value: Option<String>,
@@ -1746,13 +1848,29 @@ fn parse_reminder(reminder: String) -> Result<serde_json::Value> {
     let (method, minutes) = reminder
         .split_once(':')
         .with_context(|| format!("invalid --reminder {reminder:?}; expected METHOD:MINUTES"))?;
+    parse_reminder_parts("--reminder", &reminder, method, minutes)
+}
+
+fn parse_default_reminder(reminder: String) -> Result<serde_json::Value> {
+    let (method, minutes) = reminder.split_once(':').with_context(|| {
+        format!("invalid --default-reminder {reminder:?}; expected METHOD:MINUTES")
+    })?;
+    parse_reminder_parts("--default-reminder", &reminder, method, minutes)
+}
+
+fn parse_reminder_parts(
+    flag_name: &str,
+    raw: &str,
+    method: &str,
+    minutes: &str,
+) -> Result<serde_json::Value> {
     match method {
         "popup" | "email" => {}
-        _ => anyhow::bail!("invalid --reminder method {method:?}; expected popup or email"),
+        _ => anyhow::bail!("invalid {flag_name} method {method:?}; expected popup or email"),
     }
     let minutes: u32 = minutes
         .parse()
-        .with_context(|| format!("invalid --reminder minutes in {reminder:?}"))?;
+        .with_context(|| format!("invalid {flag_name} minutes in {raw:?}"))?;
     Ok(serde_json::json!({
         "method": method,
         "minutes": minutes
@@ -1786,6 +1904,25 @@ fn write_calendars_table(out: &mut impl Write, calendars: &[serde_json::Value]) 
         .context("failed to write output")?;
     }
     Ok(())
+}
+
+fn write_calendar_list_entry_table(out: &mut impl Write, entry: &serde_json::Value) -> Result<()> {
+    writeln!(
+        out,
+        "SUMMARY\tCALENDAR ID\tCOLOR ID\tHIDDEN\tSELECTED\tDEFAULT REMINDERS"
+    )
+    .context("failed to write output")?;
+    writeln!(
+        out,
+        "{}\t{}\t{}\t{}\t{}\t{}",
+        string_field(entry, "summary"),
+        string_field(entry, "id"),
+        string_field(entry, "colorId"),
+        bool_field(entry, "hidden"),
+        bool_field(entry, "selected"),
+        default_reminders_field(entry),
+    )
+    .context("failed to write output")
 }
 
 fn write_acl_table(out: &mut impl Write, rules: &[serde_json::Value]) -> Result<()> {
@@ -1908,6 +2045,36 @@ fn string_field(value: &serde_json::Value, field: &str) -> String {
         .unwrap_or("")
         .replace('\t', " ")
         .replace('\n', " ")
+}
+
+fn bool_field(value: &serde_json::Value, field: &str) -> String {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_bool)
+        .map(|value| value.to_string())
+        .unwrap_or_default()
+}
+
+fn default_reminders_field(value: &serde_json::Value) -> String {
+    let Some(reminders) = value
+        .get("defaultReminders")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return String::new();
+    };
+    reminders
+        .iter()
+        .filter_map(|reminder| {
+            let method = reminder.get("method")?.as_str()?;
+            let minutes = reminder.get("minutes")?.as_u64()?;
+            Some(
+                format!("{method}:{minutes}")
+                    .replace('\t', " ")
+                    .replace('\n', " "),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn nested_string_field(value: &serde_json::Value, object_field: &str, field: &str) -> String {

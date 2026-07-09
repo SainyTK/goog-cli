@@ -4,11 +4,11 @@ use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, CalendarAclCommand, CalendarAclRole, CalendarAclScope,
     CalendarCalendarsCommand, CalendarColorsCommand, CalendarCommand, CalendarEventsCommand,
-    CalendarSendUpdates, Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand,
-    DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType,
-    DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand,
-    DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
-    SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
+    CalendarListEntryCommand, CalendarSendUpdates, Cli, Command, DocsBreakCommand, DocsCommand,
+    DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand,
+    DocsListType, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
+    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle,
+    SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
     SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
@@ -3596,6 +3596,60 @@ fn calendar_calendars_delete_parses_calendar_id() {
                 },
         } => {
             assert_eq!(calendar_id, "team-launches@example.com");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_list_entry_patch_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list-entry",
+        "patch",
+        "primary",
+        "--summary-override",
+        "Focus",
+        "--color-id",
+        "2",
+        "--hidden",
+        "false",
+        "--selected",
+        "true",
+        "--default-reminder",
+        "popup:10",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::ListEntry {
+                            command:
+                                CalendarListEntryCommand::Patch {
+                                    calendar_id,
+                                    summary_override,
+                                    color_id,
+                                    hidden,
+                                    selected,
+                                    default_reminder,
+                                    clear_default_reminders,
+                                    json,
+                                },
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(summary_override.as_deref(), Some("Focus"));
+            assert_eq!(color_id.as_deref(), Some("2"));
+            assert_eq!(hidden, Some(false));
+            assert_eq!(selected, Some(true));
+            assert_eq!(default_reminder, vec!["popup:10"]);
+            assert!(!clear_default_reminders);
+            assert!(json);
         }
         _ => panic!("unexpected parse result"),
     }

@@ -1056,6 +1056,41 @@ pub enum CalendarCalendarsCommand {
         /// Calendar ID to delete. Primary calendars cannot be deleted.
         calendar_id: String,
     },
+    /// Manage the authenticated user's calendar list entry settings
+    ListEntry {
+        #[command(subcommand)]
+        command: CalendarListEntryCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CalendarListEntryCommand {
+    /// Patch per-user settings for one calendar list entry
+    Patch {
+        /// Calendar ID to patch. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Display name override for this calendar in the authenticated user's list.
+        #[arg(long)]
+        summary_override: Option<String>,
+        /// Calendar color ID from `goog calendar colors get`.
+        #[arg(long)]
+        color_id: Option<String>,
+        /// Hide or unhide this calendar in the authenticated user's calendar list.
+        #[arg(long)]
+        hidden: Option<bool>,
+        /// Show or hide this calendar's events in the Google Calendar UI.
+        #[arg(long)]
+        selected: Option<bool>,
+        /// Default reminder as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long)]
+        default_reminder: Vec<String>,
+        /// Clear default reminders for this calendar list entry.
+        #[arg(long, conflicts_with = "default_reminder")]
+        clear_default_reminders: bool,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

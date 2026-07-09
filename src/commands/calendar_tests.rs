@@ -11,7 +11,7 @@ use crate::auth::testing::MemoryStore;
 use crate::calendar::CALENDAR_SCOPE;
 use crate::cli::{
     CalendarAclCommand, CalendarAclRole, CalendarAclScope, CalendarCalendarsCommand,
-    CalendarColorsCommand, CalendarEventsCommand,
+    CalendarColorsCommand, CalendarEventsCommand, CalendarListEntryCommand,
 };
 
 use super::calendar::*;
@@ -429,6 +429,174 @@ async fn run_calendars_delete_sends_delete_request() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "deleted\tteam-launches@example.com\n"
+    );
+}
+
+#[tokio::test]
+async fn run_calendar_list_entry_patch_sends_partial_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path_regex(r"^/calendar/v3/users/me/calendarList/primary$"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "summaryOverride": "Focus",
+            "colorId": "2",
+            "hidden": false,
+            "selected": true,
+            "defaultReminders": [
+                {
+                    "method": "popup",
+                    "minutes": 10
+                },
+                {
+                    "method": "email",
+                    "minutes": 60
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "primary",
+            "summary": "Primary",
+            "summaryOverride": "Focus",
+            "colorId": "2",
+            "hidden": false,
+            "selected": true,
+            "defaultReminders": [
+                {
+                    "method": "popup",
+                    "minutes": 10
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::ListEntry {
+            command: CalendarListEntryCommand::Patch {
+                calendar_id: "primary".into(),
+                summary_override: Some("Focus".into()),
+                color_id: Some("2".into()),
+                hidden: Some(false),
+                selected: Some(true),
+                default_reminder: vec!["popup:10".into(), "email:60".into()],
+                clear_default_reminders: false,
+                json: false,
+            },
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SUMMARY\tCALENDAR ID\tCOLOR ID\tHIDDEN\tSELECTED\tDEFAULT REMINDERS\nPrimary\tprimary\t2\tfalse\ttrue\tpopup:10\n"
+    );
+}
+
+#[tokio::test]
+async fn run_calendar_list_entry_patch_rejects_empty_body() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    let err = run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::ListEntry {
+            command: CalendarListEntryCommand::Patch {
+                calendar_id: "primary".into(),
+                summary_override: None,
+                color_id: None,
+                hidden: None,
+                selected: None,
+                default_reminder: vec![],
+                clear_default_reminders: false,
+                json: false,
+            },
+        },
+        false,
+        &mut out,
+        None,
+        None,
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "at least one calendar list entry flag is required"
+    );
+}
+
+#[tokio::test]
+async fn run_calendar_list_entry_patch_json_can_clear_default_reminders() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path_regex(r"^/calendar/v3/users/me/calendarList/primary$"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "defaultReminders": []
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "primary",
+            "summary": "Primary",
+            "defaultReminders": []
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+
+    run_calendars_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarCalendarsCommand::ListEntry {
+            command: CalendarListEntryCommand::Patch {
+                calendar_id: "primary".into(),
+                summary_override: None,
+                color_id: None,
+                hidden: None,
+                selected: None,
+                default_reminder: vec![],
+                clear_default_reminders: true,
+                json: true,
+            },
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"defaultReminders\":[],\"id\":\"primary\",\"summary\":\"Primary\"}\n"
     );
 }
 

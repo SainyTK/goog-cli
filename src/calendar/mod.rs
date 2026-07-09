@@ -14,6 +14,7 @@ pub const CALENDAR_SCOPES: &[&str] = &[CALENDAR_SCOPE];
 const CALENDAR_BASE_URL: &str = "https://www.googleapis.com/calendar/v3";
 
 pub type Calendar = Value;
+pub type CalendarListEntry = Value;
 pub type Acl = Value;
 pub type AclRule = Value;
 pub type CalendarList = Value;
@@ -173,6 +174,35 @@ impl DeleteCalendarOptions {
 
     fn request_url(&self) -> Result<Url, CalendarError> {
         calendar_url(&self.base_url, &["calendars", &self.calendar_id])
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PatchCalendarListEntryOptions {
+    pub calendar_id: String,
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl PatchCalendarListEntryOptions {
+    pub fn new(calendar_id: impl Into<String>, request_body: Value) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["users", "me", "calendarList", &self.calendar_id],
+        )
     }
 }
 
@@ -796,6 +826,19 @@ pub async fn delete_calendar<S: AccountStore>(
         .await
         .map_err(CalendarError::Auth)?;
     parse_empty_response(response).await
+}
+
+pub async fn patch_calendar_list_entry<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &PatchCalendarListEntryOptions,
+) -> Result<CalendarListEntry, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .request(Method::PATCH, options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
 }
 
 pub async fn get_colors<S: AccountStore>(

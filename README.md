@@ -311,6 +311,7 @@ goog calendar calendars get primary
 goog calendar calendars create --summary "Team Launches" --time-zone Asia/Bangkok --description "Launch planning calendar"
 goog calendar calendars update team-launches@example.com --summary "Team Launches Updated" --time-zone Asia/Bangkok --description "Launch planning and retros"
 goog calendar calendars patch team-launches@example.com --description "Launch planning, retros, and launch notes"
+goog calendar calendars list-entry patch team-launches@example.com --summary-override "Launches" --selected true --color-id 2 --default-reminder popup:10
 goog calendar calendars delete team-launches@example.com
 goog calendar colors get
 goog calendar acl list team-launches@example.com --limit 20
