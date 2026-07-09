@@ -7,8 +7,8 @@ const DOCS_CONTENT_SELECTOR_HELP: &str = "Selector rules:
   Use --index N, --entry N, --page P --line L, or --heading TEXT.";
 
 const DOCS_INSERT_SELECTOR_HELP: &str = "Selector rules:
-  Provide exactly one insert location selector.
-  Use --index N, --entry N, --page P --line L, --heading TEXT, --after-heading TEXT, --before-heading TEXT, --after-text TEXT, or --before-text TEXT.
+  Provide exactly one insert location selector with --at.
+  Use --at index:N, --at entry:N, --at page:P,line:L, --at heading:TEXT, --at after-heading:TEXT, --at before-heading:TEXT, --at after-text:TEXT, or --at before-text:TEXT.
 
 Write safety:
   Use --dry-run to preview without calling documents.batchUpdate.
@@ -293,32 +293,35 @@ Notes:
         document_id: String,
         /// Text to insert
         text: String,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
         /// Raw Google Docs UTF-16 index
-        #[arg(long)]
+        #[arg(long, hide = true)]
         index: Option<i64>,
         /// Document Map Entry number
-        #[arg(long)]
+        #[arg(long, hide = true)]
         entry: Option<usize>,
         /// Derived page label
-        #[arg(long)]
+        #[arg(long, hide = true)]
         page: Option<usize>,
         /// Content line within the derived page
-        #[arg(long)]
+        #[arg(long, hide = true)]
         line: Option<usize>,
         /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT")]
+        #[arg(long, value_name = "TEXT", hide = true)]
         heading: Option<String>,
         /// Insert after the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_heading: Option<String>,
         /// Insert before the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_heading: Option<String>,
         /// Insert after the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_text: Option<String>,
         /// Insert before the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
@@ -363,32 +366,35 @@ Notes:
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
         image_uri: String,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
         /// Raw Google Docs UTF-16 index
-        #[arg(long)]
+        #[arg(long, hide = true)]
         index: Option<i64>,
         /// Document Map Entry number
-        #[arg(long)]
+        #[arg(long, hide = true)]
         entry: Option<usize>,
         /// Derived page label
-        #[arg(long)]
+        #[arg(long, hide = true)]
         page: Option<usize>,
         /// Content line within the derived page
-        #[arg(long)]
+        #[arg(long, hide = true)]
         line: Option<usize>,
         /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT")]
+        #[arg(long, value_name = "TEXT", hide = true)]
         heading: Option<String>,
         /// Insert after the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_heading: Option<String>,
         /// Insert before the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_heading: Option<String>,
         /// Insert after the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_text: Option<String>,
         /// Insert before the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
@@ -405,32 +411,35 @@ Notes:
     InsertPageBreak {
         /// Google Docs Document ID or URL to update
         document_id: String,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
         /// Raw Google Docs UTF-16 index
-        #[arg(long)]
+        #[arg(long, hide = true)]
         index: Option<i64>,
         /// Document Map Entry number
-        #[arg(long)]
+        #[arg(long, hide = true)]
         entry: Option<usize>,
         /// Derived page label
-        #[arg(long)]
+        #[arg(long, hide = true)]
         page: Option<usize>,
         /// Content line within the derived page
-        #[arg(long)]
+        #[arg(long, hide = true)]
         line: Option<usize>,
         /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT")]
+        #[arg(long, value_name = "TEXT", hide = true)]
         heading: Option<String>,
         /// Insert after the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_heading: Option<String>,
         /// Insert before the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_heading: Option<String>,
         /// Insert after the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_text: Option<String>,
         /// Insert before the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
@@ -450,32 +459,35 @@ Notes:
         /// Section break type
         #[arg(long, value_enum, default_value_t = DocsSectionBreakType::NextPage)]
         section_type: DocsSectionBreakType,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
         /// Raw Google Docs UTF-16 index
-        #[arg(long)]
+        #[arg(long, hide = true)]
         index: Option<i64>,
         /// Document Map Entry number
-        #[arg(long)]
+        #[arg(long, hide = true)]
         entry: Option<usize>,
         /// Derived page label
-        #[arg(long)]
+        #[arg(long, hide = true)]
         page: Option<usize>,
         /// Content line within the derived page
-        #[arg(long)]
+        #[arg(long, hide = true)]
         line: Option<usize>,
         /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT")]
+        #[arg(long, value_name = "TEXT", hide = true)]
         heading: Option<String>,
         /// Insert after the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_heading: Option<String>,
         /// Insert before the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_heading: Option<String>,
         /// Insert after the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_text: Option<String>,
         /// Insert before the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
@@ -532,38 +544,42 @@ Notes:
   Prints the raw documents.batchUpdate response JSON, which includes the new footnoteId under replies[0].createFootnote.footnoteId.
 
 Notes:
-  Provide exactly one insert location selector: --index, --entry, --page with --line, --heading, --after-heading, --before-heading, --after-text, or --before-text.
+  Provide exactly one insert location selector with --at.
+  Use --at index:N, --at entry:N, --at page:P,line:L, --at heading:TEXT, --at after-heading:TEXT, --at before-heading:TEXT, --at after-text:TEXT, or --at before-text:TEXT.
   The footnote reference is inserted at the resolved location; the footnote's own body starts empty.
   Edit the footnote's own content with `goog docs insert-text`/`goog docs batch-update`, targeting a location inside the returned footnoteId segment.")]
     InsertFootnote {
         /// Google Docs Document ID or URL to update
         document_id: String,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
         /// Raw Google Docs UTF-16 index
-        #[arg(long)]
+        #[arg(long, hide = true)]
         index: Option<i64>,
         /// Document Map Entry number
-        #[arg(long)]
+        #[arg(long, hide = true)]
         entry: Option<usize>,
         /// Derived page label
-        #[arg(long)]
+        #[arg(long, hide = true)]
         page: Option<usize>,
         /// Content line within the derived page
-        #[arg(long)]
+        #[arg(long, hide = true)]
         line: Option<usize>,
         /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT")]
+        #[arg(long, value_name = "TEXT", hide = true)]
         heading: Option<String>,
         /// Insert after the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_heading: Option<String>,
         /// Insert before the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_heading: Option<String>,
         /// Insert after the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_text: Option<String>,
         /// Insert before the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
@@ -589,32 +605,35 @@ Notes:
         /// Number of table columns
         #[arg(long)]
         columns: Option<usize>,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
         /// Raw Google Docs UTF-16 index
-        #[arg(long)]
+        #[arg(long, hide = true)]
         index: Option<i64>,
         /// Document Map Entry number
-        #[arg(long)]
+        #[arg(long, hide = true)]
         entry: Option<usize>,
         /// Derived page label
-        #[arg(long)]
+        #[arg(long, hide = true)]
         page: Option<usize>,
         /// Content line within the derived page
-        #[arg(long)]
+        #[arg(long, hide = true)]
         line: Option<usize>,
         /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT")]
+        #[arg(long, value_name = "TEXT", hide = true)]
         heading: Option<String>,
         /// Insert after the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_heading: Option<String>,
         /// Insert before the matching heading text
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_heading: Option<String>,
         /// Insert after the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         after_text: Option<String>,
         /// Insert before the matching text span
-        #[arg(long)]
+        #[arg(long, hide = true)]
         before_text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]

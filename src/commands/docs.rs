@@ -117,6 +117,7 @@ pub fn run<S: AccountStore>(
         DocsCommand::InsertText {
             document_id,
             text,
+            at,
             index,
             entry,
             page,
@@ -130,7 +131,7 @@ pub fn run<S: AccountStore>(
             json,
             required_revision_id,
         } => {
-            let selector = insert_text_selector(
+            let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
                 entry,
                 page,
@@ -140,7 +141,8 @@ pub fn run<S: AccountStore>(
                 before_heading,
                 after_text,
                 before_text,
-            )?;
+                at,
+            })?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_text_unified_to(
@@ -194,6 +196,7 @@ pub fn run<S: AccountStore>(
         DocsCommand::InsertImage {
             document_id,
             image_uri,
+            at,
             index,
             entry,
             page,
@@ -207,7 +210,7 @@ pub fn run<S: AccountStore>(
             json,
             required_revision_id,
         } => {
-            let selector = insert_text_selector(
+            let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
                 entry,
                 page,
@@ -217,7 +220,8 @@ pub fn run<S: AccountStore>(
                 before_heading,
                 after_text,
                 before_text,
-            )?;
+                at,
+            })?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_image_unified_to(
@@ -239,6 +243,7 @@ pub fn run<S: AccountStore>(
         }
         DocsCommand::InsertPageBreak {
             document_id,
+            at,
             index,
             entry,
             page,
@@ -252,7 +257,7 @@ pub fn run<S: AccountStore>(
             json,
             required_revision_id,
         } => {
-            let selector = insert_text_selector(
+            let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
                 entry,
                 page,
@@ -262,7 +267,8 @@ pub fn run<S: AccountStore>(
                 before_heading,
                 after_text,
                 before_text,
-            )?;
+                at,
+            })?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_page_break_unified_to(
@@ -284,6 +290,7 @@ pub fn run<S: AccountStore>(
         DocsCommand::InsertSectionBreak {
             document_id,
             section_type,
+            at,
             index,
             entry,
             page,
@@ -297,7 +304,7 @@ pub fn run<S: AccountStore>(
             json,
             required_revision_id,
         } => {
-            let selector = insert_text_selector(
+            let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
                 entry,
                 page,
@@ -307,7 +314,8 @@ pub fn run<S: AccountStore>(
                 before_heading,
                 after_text,
                 before_text,
-            )?;
+                at,
+            })?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_section_break_unified_to(
@@ -375,6 +383,7 @@ pub fn run<S: AccountStore>(
         }
         DocsCommand::InsertFootnote {
             document_id,
+            at,
             index,
             entry,
             page,
@@ -388,7 +397,7 @@ pub fn run<S: AccountStore>(
             json,
             required_revision_id,
         } => {
-            let selector = insert_text_selector(
+            let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
                 entry,
                 page,
@@ -398,7 +407,8 @@ pub fn run<S: AccountStore>(
                 before_heading,
                 after_text,
                 before_text,
-            )?;
+                at,
+            })?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_create_footnote_unified_to(
@@ -422,6 +432,7 @@ pub fn run<S: AccountStore>(
             data,
             rows,
             columns,
+            at,
             index,
             entry,
             page,
@@ -436,7 +447,7 @@ pub fn run<S: AccountStore>(
             required_revision_id,
             no_auto_style,
         } => {
-            let selector = insert_text_selector(
+            let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
                 entry,
                 page,
@@ -446,7 +457,8 @@ pub fn run<S: AccountStore>(
                 before_heading,
                 after_text,
                 before_text,
-            )?;
+                at,
+            })?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_table_unified_to(
@@ -2136,17 +2148,32 @@ fn optional_content_selector(
     content_selector(index, entry, page, line, heading).map(Some)
 }
 
-pub(super) fn insert_text_selector(
-    index: Option<i64>,
-    entry: Option<usize>,
-    page: Option<usize>,
-    line: Option<usize>,
-    heading: Option<String>,
-    after_heading: Option<String>,
-    before_heading: Option<String>,
-    after_text: Option<String>,
-    before_text: Option<String>,
-) -> Result<InsertTextSelector> {
+pub(super) struct InsertTextSelectorArgs {
+    pub(super) index: Option<i64>,
+    pub(super) entry: Option<usize>,
+    pub(super) page: Option<usize>,
+    pub(super) line: Option<usize>,
+    pub(super) heading: Option<String>,
+    pub(super) after_heading: Option<String>,
+    pub(super) before_heading: Option<String>,
+    pub(super) after_text: Option<String>,
+    pub(super) before_text: Option<String>,
+    pub(super) at: Option<String>,
+}
+
+pub(super) fn insert_text_selector(args: InsertTextSelectorArgs) -> Result<InsertTextSelector> {
+    let InsertTextSelectorArgs {
+        index,
+        entry,
+        page,
+        line,
+        heading,
+        after_heading,
+        before_heading,
+        after_text,
+        before_text,
+        at,
+    } = args;
     let selector_count = usize::from(index.is_some())
         + usize::from(entry.is_some())
         + usize::from(page.is_some() || line.is_some())
@@ -2154,13 +2181,17 @@ pub(super) fn insert_text_selector(
         + usize::from(after_heading.is_some())
         + usize::from(before_heading.is_some())
         + usize::from(after_text.is_some())
-        + usize::from(before_text.is_some());
+        + usize::from(before_text.is_some())
+        + usize::from(at.is_some());
     if selector_count != 1 {
         bail!(
-            "provide exactly one insert-text selector: --index, --entry, --page with --line, --heading, --after-heading, --before-heading, --after-text, or --before-text"
+            "provide exactly one insert-text selector: --at, --index, --entry, --page with --line, --heading, --after-heading, --before-heading, --after-text, or --before-text"
         );
     }
 
+    if let Some(at) = at {
+        return parse_insert_at_selector(&at);
+    }
     if let Some(index) = index {
         return Ok(InsertTextSelector::Index(index));
     }
@@ -2193,6 +2224,60 @@ pub(super) fn insert_text_selector(
     }
 
     unreachable!("selector count checked above")
+}
+
+fn parse_insert_at_selector(selector: &str) -> Result<InsertTextSelector> {
+    if let Some((page, line)) = selector.split_once(",line:") {
+        let Some(page) = page.strip_prefix("page:") else {
+            bail!("invalid --at selector {selector:?}; use page:P,line:L");
+        };
+        return Ok(InsertTextSelector::PageLine {
+            page: parse_insert_at_number(page, "page")?,
+            line: parse_insert_at_number(line, "line")?,
+        });
+    }
+
+    let Some((kind, value)) = selector.split_once(':') else {
+        bail!("invalid --at selector {selector:?}; expected kind:value");
+    };
+    let value = trim_insert_at_value(value);
+    match kind {
+        "index" => Ok(InsertTextSelector::Index(parse_insert_at_number(
+            value, "index",
+        )?)),
+        "entry" => Ok(InsertTextSelector::Entry(parse_insert_at_number(
+            value, "entry",
+        )?)),
+        "heading" | "after-heading" => Ok(InsertTextSelector::AfterHeading(value.into())),
+        "before-heading" => Ok(InsertTextSelector::BeforeHeading(value.into())),
+        "after-text" => Ok(InsertTextSelector::AfterText(value.into())),
+        "before-text" => Ok(InsertTextSelector::BeforeText(value.into())),
+        _ => bail!(
+            "invalid --at selector kind {kind:?}; expected index, entry, page, heading, after-heading, before-heading, after-text, or before-text"
+        ),
+    }
+}
+
+fn parse_insert_at_number<T>(value: &str, label: &str) -> Result<T>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    value
+        .parse()
+        .map_err(|error| anyhow::anyhow!("invalid {label} value in --at selector: {error}"))
+}
+
+fn trim_insert_at_value(value: &str) -> &str {
+    value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            value
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })
+        .unwrap_or(value)
 }
 
 fn range_selector(

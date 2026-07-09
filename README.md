@@ -216,11 +216,11 @@ goog docs map DOCUMENT_ID --type images
 goog docs map DOCUMENT_ID --type tables
 goog docs map DOCUMENT_ID --heading "Summary"
 goog docs search-text DOCUMENT_ID "quarterly plan"
-goog docs insert-page-break DOCUMENT_ID --after-heading "Summary"
-goog docs insert-section-break DOCUMENT_ID --section-type next-page --after-heading "Appendix"
+goog docs insert-page-break DOCUMENT_ID --at 'heading:Summary'
+goog docs insert-section-break DOCUMENT_ID --section-type next-page --at 'heading:Appendix'
 goog docs create-header DOCUMENT_ID
 goog docs create-footer DOCUMENT_ID
-goog docs insert-footnote DOCUMENT_ID --after-text "quarterly plan"
+goog docs insert-footnote DOCUMENT_ID --at 'after-text:quarterly plan'
 goog docs create-named-range DOCUMENT_ID "highlights" --text "quarterly plan"
 goog docs delete-named-range DOCUMENT_ID --name "highlights"
 goog docs batch-update DOCUMENT_ID --requests ./requests.json

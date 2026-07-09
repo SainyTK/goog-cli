@@ -554,35 +554,73 @@ fn get_content_selector_rejects_mixed_or_partial_selectors() {
 
 #[test]
 fn insert_text_selector_accepts_bare_heading_alias() {
-    let selector = insert_text_selector(
-        None,
-        None,
-        None,
-        None,
-        Some("Summary".into()),
-        None,
-        None,
-        None,
-        None,
-    )
+    let selector = insert_text_selector(InsertTextSelectorArgs {
+        index: None,
+        entry: None,
+        page: None,
+        line: None,
+        heading: Some("Summary".into()),
+        after_heading: None,
+        before_heading: None,
+        after_text: None,
+        before_text: None,
+        at: None,
+    })
     .unwrap();
 
     assert_eq!(selector, InsertTextSelector::AfterHeading("Summary".into()));
 
-    let error = insert_text_selector(
-        None,
-        None,
-        None,
-        None,
-        Some("Summary".into()),
-        Some("Summary".into()),
-        None,
-        None,
-        None,
-    )
+    let error = insert_text_selector(InsertTextSelectorArgs {
+        index: None,
+        entry: None,
+        page: None,
+        line: None,
+        heading: Some("Summary".into()),
+        after_heading: Some("Summary".into()),
+        before_heading: None,
+        after_text: None,
+        before_text: None,
+        at: None,
+    })
     .expect_err("--heading and --after-heading must be mutually exclusive");
 
     assert!(error.to_string().contains("--heading"));
+}
+
+#[test]
+fn insert_text_selector_accepts_at_selector() {
+    let selector = insert_text_selector(InsertTextSelectorArgs {
+        index: None,
+        entry: None,
+        page: None,
+        line: None,
+        heading: None,
+        after_heading: None,
+        before_heading: None,
+        after_text: None,
+        before_text: None,
+        at: Some("page:2,line:5".into()),
+    })
+    .unwrap();
+    assert_eq!(selector, InsertTextSelector::PageLine { page: 2, line: 5 });
+
+    let selector = insert_text_selector(InsertTextSelectorArgs {
+        index: None,
+        entry: None,
+        page: None,
+        line: None,
+        heading: None,
+        after_heading: None,
+        before_heading: None,
+        after_text: None,
+        before_text: None,
+        at: Some("before-text:\"quarterly plan\"".into()),
+    })
+    .unwrap();
+    assert_eq!(
+        selector,
+        InsertTextSelector::BeforeText("quarterly plan".into())
+    );
 }
 
 #[tokio::test]

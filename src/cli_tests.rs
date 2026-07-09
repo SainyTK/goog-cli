@@ -511,6 +511,7 @@ fn docs_insert_text_parses_location_and_write_options() {
     let DocsCommand::InsertText {
         document_id,
         text,
+        at,
         index,
         entry,
         page,
@@ -530,6 +531,7 @@ fn docs_insert_text_parses_location_and_write_options() {
 
     assert_eq!(document_id, "document-123");
     assert_eq!(text, "Hello");
+    assert_eq!(at, None);
     assert_eq!(index, None);
     assert_eq!(entry, None);
     assert_eq!(page, Some(2));
@@ -542,6 +544,54 @@ fn docs_insert_text_parses_location_and_write_options() {
     assert!(dry_run);
     assert!(json);
     assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
+}
+
+#[test]
+fn docs_insert_commands_accept_at_selector() {
+    let Command::Docs {
+        command:
+            DocsCommand::InsertText {
+                at,
+                index,
+                after_text,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "insert-text",
+        "document-123",
+        "Hello",
+        "--at",
+        "after-text:quarterly plan",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(at.as_deref(), Some("after-text:quarterly plan"));
+    assert_eq!(index, None);
+    assert_eq!(after_text, None);
+
+    let Command::Docs {
+        command: DocsCommand::InsertTable { at, .. },
+    } = parse(&[
+        "docs",
+        "insert-table",
+        "document-123",
+        "--rows",
+        "2",
+        "--columns",
+        "2",
+        "--at",
+        "page:1,line:3",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(at.as_deref(), Some("page:1,line:3"));
 }
 
 #[test]
@@ -1138,9 +1188,10 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
     ] {
         let command_help = help(&["docs", command, "--help"]);
         assert!(command_help.contains("Provide exactly one insert location selector"));
-        assert!(command_help.contains("--heading"));
-        assert!(command_help.contains("--after-heading"));
-        assert!(command_help.contains("--before-text"));
+        assert!(command_help.contains("--at <SELECTOR>"));
+        assert!(command_help.contains("--at heading:TEXT"));
+        assert!(command_help.contains("--at before-text:TEXT"));
+        assert!(!command_help.contains("--after-heading <AFTER_HEADING>"));
     }
 
     for command in ["apply-styles", "apply-list", "create-named-range"] {
