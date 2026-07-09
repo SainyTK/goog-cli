@@ -484,10 +484,10 @@ fn resolve_text_ranges(
     all: bool,
 ) -> Result<Vec<DocumentRange>> {
     if text.is_empty() {
-        bail!("replace-text old text must not be empty");
+        bail!("text replace old text must not be empty");
     }
     if all && match_number.is_some() {
-        bail!("provide only one replace-text disambiguator: --match or --all");
+        bail!("provide only one text replace disambiguator: --match or --all");
     }
     if match_number == Some(0) {
         bail!("--match must be 1 or greater");
@@ -495,7 +495,7 @@ fn resolve_text_ranges(
 
     let matches = search_document_text(document_map, text);
     if matches.is_empty() {
-        bail!("replace-text did not match {text:?}");
+        bail!("text replace did not match {text:?}");
     }
     if all {
         return Ok(matches);
@@ -507,7 +507,7 @@ fn resolve_text_ranges(
             .map(|range| vec![range])
             .with_context(|| {
                 format!(
-                    "replace-text match {match_number} was not found; {} matches available",
+                    "text replace match {match_number} was not found; {} matches available",
                     matches.len()
                 )
             });
@@ -517,7 +517,7 @@ fn resolve_text_ranges(
         [range] => Ok(vec![range.clone()]),
         candidates => {
             let candidate_list = format_range_candidates(candidates);
-            bail!("ambiguous replace-text match {text:?}; candidates: {candidate_list}")
+            bail!("ambiguous text replace match {text:?}; candidates: {candidate_list}")
         }
     }
 }

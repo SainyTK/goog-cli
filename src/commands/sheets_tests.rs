@@ -143,7 +143,7 @@ fn update_values_command(
 ) -> SheetsValuesCommand {
     SheetsValuesCommand::Update {
         spreadsheet_id: "spreadsheet-123".into(),
-        range: "Sheet1!A1:B2".into(),
+        range: Some("Sheet1!A1:B2".into()),
         values: values.into(),
         value_input_option,
     }
@@ -164,22 +164,26 @@ fn append_values_command(
 }
 
 fn batch_update_values_command(values: impl Into<String>) -> SheetsValuesCommand {
-    SheetsValuesCommand::BatchUpdate {
+    SheetsValuesCommand::Update {
         spreadsheet_id: "spreadsheet-123".into(),
+        range: None,
         values: values.into(),
+        value_input_option: SheetsValueInputOption::UserEntered,
     }
 }
 
 fn clear_values_command() -> SheetsValuesCommand {
     SheetsValuesCommand::Clear {
         spreadsheet_id: "spreadsheet-123".into(),
-        range: "Sheet1!A1:B2".into(),
+        range: Some("Sheet1!A1:B2".into()),
+        ranges: Vec::new(),
     }
 }
 
-fn batch_clear_values_command() -> SheetsValuesCommand {
-    SheetsValuesCommand::BatchClear {
+fn clear_multiple_values_command() -> SheetsValuesCommand {
+    SheetsValuesCommand::Clear {
         spreadsheet_id: "spreadsheet-123".into(),
+        range: None,
         ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
     }
 }
@@ -295,7 +299,7 @@ async fn run_get_returns_clear_error_for_not_found_response() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("failed to fetch Google Sheets Spreadsheet"));
+    assert!(message.contains("failed to read Google Sheets Spreadsheet"));
     assert!(message.contains("Google Sheets Spreadsheet was not found"));
     assert!(out.is_empty());
 }
@@ -407,7 +411,7 @@ async fn run_get_unified_does_not_fallback_for_explicit_account_but_maps_success
     .await;
 
     let message = format!("{:#}", denied.unwrap_err());
-    assert!(message.contains("failed to fetch Google Sheets Spreadsheet"));
+    assert!(message.contains("failed to read Google Sheets Spreadsheet"));
     assert!(message.contains("Google Sheets Spreadsheet was not found"));
     assert!(denied_out.is_empty());
 
@@ -458,7 +462,8 @@ async fn run_values_get_prints_value_range_json_to_stdout() {
         &client,
         SheetsValuesCommand::Get {
             spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B2".into(),
+            range: Some("Sheet1!A1:B2".into()),
+            ranges: Vec::new(),
             value_render_option: SheetsValueRenderOption::FormattedValue,
         },
         &mut input,
@@ -877,8 +882,9 @@ async fn run_values_batch_get_prints_batch_response_json_to_stdout() {
 
     run_values_to(
         &client,
-        SheetsValuesCommand::BatchGet {
+        SheetsValuesCommand::Get {
             spreadsheet_id: "spreadsheet-123".into(),
+            range: None,
             ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
             value_render_option: SheetsValueRenderOption::Formula,
         },
@@ -912,6 +918,76 @@ async fn run_values_batch_get_prints_batch_response_json_to_stdout() {
         query_value(&url, "valueRenderOption").as_deref(),
         Some("FORMULA")
     );
+}
+
+#[tokio::test]
+async fn run_values_get_returns_read_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("missing range"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_values_to(
+        &client,
+        SheetsValuesCommand::Get {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: Some("Sheet1!A1:B2".into()),
+            ranges: Vec::new(),
+            value_render_option: SheetsValueRenderOption::FormattedValue,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to read Google Sheets ValueRange"));
+    assert!(message.contains("Google Sheets Spreadsheet was not found"));
+    assert!(out.is_empty());
+}
+
+#[tokio::test]
+async fn run_values_batch_get_returns_read_error_for_api_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("missing ranges"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let result = run_values_to(
+        &client,
+        SheetsValuesCommand::Get {
+            spreadsheet_id: "spreadsheet-123".into(),
+            range: None,
+            ranges: vec!["Sheet1!A1:B2".into(), "Summary!A:A".into()],
+            value_render_option: SheetsValueRenderOption::FormattedValue,
+        },
+        &mut input,
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to read Google Sheets ValueRanges"));
+    assert!(message.contains("Google Sheets Spreadsheet was not found"));
+    assert!(out.is_empty());
 }
 
 #[tokio::test]
@@ -953,7 +1029,8 @@ async fn run_values_get_unified_uses_fallback_and_updates_mapping() {
         None,
         SheetsValuesCommand::Get {
             spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B2".into(),
+            range: Some("Sheet1!A1:B2".into()),
+            ranges: Vec::new(),
             value_render_option: SheetsValueRenderOption::FormattedValue,
         },
         &mut input,
@@ -1036,7 +1113,7 @@ async fn run_values_write_commands_use_unified_mapping() {
             "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A1:B1:clear",
         ))
         .and(header("authorization", "Bearer bob-access"))
-        .and(body_json(&serde_json::json!({})))
+        .and(body_json(serde_json::json!({})))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "clearedRange": "Sheet1!A1:B1"
         })))
@@ -1048,7 +1125,7 @@ async fn run_values_write_commands_use_unified_mapping() {
             "/sheets/v4/spreadsheets/spreadsheet-123/values/:batchClear",
         ))
         .and(header("authorization", "Bearer bob-access"))
-        .and(body_json(&serde_json::json!({
+        .and(body_json(serde_json::json!({
             "ranges": ["Sheet1!A2:A2", "Sheet1!B2:B2"]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -1073,7 +1150,7 @@ async fn run_values_write_commands_use_unified_mapping() {
         None,
         SheetsValuesCommand::Update {
             spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B1".into(),
+            range: Some("Sheet1!A1:B1".into()),
             values: "-".into(),
             value_input_option: SheetsValueInputOption::Raw,
         },
@@ -1129,7 +1206,8 @@ async fn run_values_write_commands_use_unified_mapping() {
         None,
         SheetsValuesCommand::Clear {
             spreadsheet_id: "spreadsheet-123".into(),
-            range: "Sheet1!A1:B1".into(),
+            range: Some("Sheet1!A1:B1".into()),
+            ranges: Vec::new(),
         },
         &mut clear_input,
         &mut clear_out,
@@ -1145,8 +1223,9 @@ async fn run_values_write_commands_use_unified_mapping() {
         &config,
         &store,
         None,
-        SheetsValuesCommand::BatchClear {
+        SheetsValuesCommand::Clear {
             spreadsheet_id: "spreadsheet-123".into(),
+            range: None,
             ranges: vec!["Sheet1!A2:A2".into(), "Sheet1!B2:B2".into()],
         },
         &mut batch_clear_input,
@@ -2090,14 +2169,14 @@ async fn run_values_append_table_rejects_ragged_data() {
 }
 
 #[tokio::test]
-async fn run_values_batch_clear_prints_response_json() {
+async fn run_values_clear_repeated_ranges_prints_response_json() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(
             "/sheets/v4/spreadsheets/spreadsheet-123/values/:batchClear",
         ))
         .and(header("authorization", "Bearer sheets-write-access"))
-        .and(body_json(&serde_json::json!({
+        .and(body_json(serde_json::json!({
             "ranges": ["Sheet1!A1:B2", "Summary!A:A"]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -2115,7 +2194,7 @@ async fn run_values_batch_clear_prints_response_json() {
 
     run_values_to(
         &client,
-        batch_clear_values_command(),
+        clear_multiple_values_command(),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),
@@ -2137,7 +2216,7 @@ async fn run_values_clear_prints_response_json() {
             "/sheets/v4/spreadsheets/spreadsheet-123/values/Sheet1!A1:B2:clear",
         ))
         .and(header("authorization", "Bearer sheets-write-access"))
-        .and(body_json(&serde_json::json!({})))
+        .and(body_json(serde_json::json!({})))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "spreadsheetId": "spreadsheet-123",
             "clearedRange": "Sheet1!A1:B2"
@@ -8810,7 +8889,7 @@ async fn run_values_clear_returns_clear_error_for_api_failure() {
 }
 
 #[tokio::test]
-async fn run_values_batch_clear_returns_clear_error_for_api_failure() {
+async fn run_values_clear_repeated_ranges_returns_clear_error_for_api_failure() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(
@@ -8829,7 +8908,7 @@ async fn run_values_batch_clear_returns_clear_error_for_api_failure() {
 
     let result = run_values_to(
         &client,
-        batch_clear_values_command(),
+        clear_multiple_values_command(),
         &mut input,
         &mut out,
         Some(&spreadsheets_url),

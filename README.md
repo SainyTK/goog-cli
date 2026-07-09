@@ -3,7 +3,7 @@
 ![goog CLI wallpaper](./public/goog-cli-wallpaper.png)
 
 `goog` is an Early Open-Source CLI for Google APIs.
-It is built first for power users and AI agents who want terminal-native access to Google Drive, Google Docs, Google Sheets, and GoogleMail without getting forced down a browser UI path.
+It is built first for power users and AI agents who want terminal-native access to Google Drive, Google Docs, Google Sheets, and Gmail without getting forced down a browser UI path.
 
 Human-readable terminal workflows are the default experience.
 JSON is also supported for programmatic use, but it is not the primary product surface.
@@ -17,7 +17,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 - Google Drive file and folder listing, upload, and download commands.
 - Google Docs document listing, creation, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
-- GoogleMail message listing, search, raw message reads, draft creation, and attachment downloads.
+- Gmail message listing, search, raw message reads, draft creation, and attachment downloads.
 - Multi-account OAuth setup, login, account listing, and active account switching.
 
 ## Installation
@@ -155,7 +155,7 @@ goog --account bob@example.com drive ls
 
 ```sh
 goog drive ls --limit 20
-goog drive folder list --parent FOLDER_ID --json
+goog drive ls --type folders --folder FOLDER_ID --json
 goog drive upload ./report.pdf --folder FOLDER_ID
 goog drive download FILE_ID --output ./report.pdf
 ```
@@ -166,15 +166,18 @@ goog drive download FILE_ID --output ./report.pdf
 goog docs list --limit 20
 goog docs create "Q3 Report"
 goog docs map DOCUMENT_ID
-goog docs search-text DOCUMENT_ID "quarterly plan"
-goog docs get-content DOCUMENT_ID --heading "Summary"
-goog docs insert-page-break DOCUMENT_ID --after-heading "Summary"
-goog docs insert-section-break DOCUMENT_ID --section-type next-page --after-heading "Appendix"
-goog docs create-header DOCUMENT_ID
-goog docs create-footer DOCUMENT_ID
-goog docs create-footnote DOCUMENT_ID --after-text "quarterly plan"
-goog docs create-named-range DOCUMENT_ID "highlights" --text "quarterly plan"
-goog docs delete-named-range DOCUMENT_ID --name "highlights"
+goog docs map DOCUMENT_ID --type images
+goog docs map DOCUMENT_ID --type tables
+goog docs map DOCUMENT_ID --heading "Summary"
+goog docs text search DOCUMENT_ID "quarterly plan"
+goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
+goog docs break page DOCUMENT_ID --at 'heading:Summary'
+goog docs break section DOCUMENT_ID --section-type next-page --at 'heading:Appendix'
+goog docs header create DOCUMENT_ID
+goog docs footer create DOCUMENT_ID
+goog docs footnote insert DOCUMENT_ID --at 'after-text:quarterly plan'
+goog docs named-range create DOCUMENT_ID "highlights" --text "quarterly plan"
+goog docs named-range delete DOCUMENT_ID --name "highlights"
 goog docs batch-update DOCUMENT_ID --requests ./requests.json
 ```
 
@@ -270,14 +273,14 @@ goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --data ./rows.csv
 cat rows.tsv | goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --data - --format tsv
 ```
 
-### GoogleMail
+### Gmail
 
 ```sh
 goog mail list --limit 10
-goog mail search 'from:alerts@example.com newer_than:7d'
+goog mail list 'from:alerts@example.com newer_than:7d'
 goog mail read MESSAGE_ID
-goog mail draft create --to teammate@example.com --subject 'Status update' --body-file ./message.txt --attachment ./report.pdf
-goog mail attachment download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
+goog mail draft --to teammate@example.com --subject 'Status update' --body @./message.txt --attachment ./report.pdf
+goog mail download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
 ```
 
 Use `goog help`, `goog <command> --help`, and nested command help for the full command reference.
@@ -328,7 +331,7 @@ The auth state file grants account access within authorized scopes, so do not co
 
 ### Limitations
 
-- **`goog` cannot write Office files (.xlsx, .docx) in Drive.** Writing to an Excel-format spreadsheet (`values update`, `values batch-update`, `values append`, `batch-update`) or a Word-format document (`batch-update`) is not supported. This is a Google Sheets/Docs API restriction, not a `goog` gap: neither API can write to `.xlsx` or `.docx` files at all. Convert the file to a native Google Sheet or Google Doc first (Drive UI: File > Save as Google Sheets/Docs) to edit it with `goog`.
+- **`goog` cannot write Office files (.xlsx, .docx) in Drive.** Writing to an Excel-format spreadsheet (`values update`, `values append`, `batch-update`) or a Word-format document (`batch-update`) is not supported. This is a Google Sheets/Docs API restriction, not a `goog` gap: neither API can write to `.xlsx` or `.docx` files at all. Convert the file to a native Google Sheet or Google Doc first (Drive UI: File > Save as Google Sheets/Docs) to edit it with `goog`.
 
 ## Release Flow
 

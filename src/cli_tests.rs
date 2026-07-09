@@ -2,13 +2,15 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DriveCommand,
-    DriveFolderCommand, MailAttachmentCommand, MailCommand, MailDraftCommand, SheetsBorderEdge,
-    SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension,
-    SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType,
-    SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand, SheetsSortOrder,
-    SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption,
-    SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
+    AuthCommand, AuthMappingsCommand, Cli, Command, DocsBreakCommand, DocsCommand,
+    DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand,
+    DocsListType, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
+    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle,
+    SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
+    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
+    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -195,76 +197,6 @@ fn auth_mappings_help_uses_glossary_terms() {
 }
 
 #[test]
-fn drive_list_defaults() {
-    let cli = parse(&["drive", "list"]).unwrap();
-    assert!(matches!(
-        cli.command,
-        Command::Drive {
-            command: DriveCommand::List {
-                limit: None,
-                all: false,
-                folder: None,
-                json: false
-            }
-        }
-    ));
-}
-
-#[test]
-fn drive_list_with_folder() {
-    let cli = parse(&["drive", "list", "--folder", "folder123"]).unwrap();
-    let Command::Drive {
-        command:
-            DriveCommand::List {
-                limit,
-                all,
-                folder,
-                json,
-            },
-    } = cli.command
-    else {
-        panic!("unexpected parse result");
-    };
-
-    assert_eq!(limit, None);
-    assert!(!all);
-    assert_eq!(folder.as_deref(), Some("folder123"));
-    assert!(!json);
-}
-
-#[test]
-fn drive_list_with_flags() {
-    let cli = parse(&[
-        "drive",
-        "list",
-        "--limit",
-        "100",
-        "--all",
-        "--folder",
-        "folder123",
-        "--json",
-    ])
-    .unwrap();
-    match cli.command {
-        Command::Drive {
-            command:
-                DriveCommand::List {
-                    limit,
-                    all,
-                    folder,
-                    json,
-                },
-        } => {
-            assert_eq!(limit, Some(100));
-            assert!(all);
-            assert_eq!(folder.as_deref(), Some("folder123"));
-            assert!(json);
-        }
-        _ => panic!("unexpected parse result"),
-    }
-}
-
-#[test]
 fn docs_list_with_flags() {
     let cli = parse(&[
         "docs",
@@ -336,6 +268,8 @@ fn drive_ls_with_flags() {
         "--limit",
         "100",
         "--all",
+        "--type",
+        "files",
         "--folder",
         "folder123",
         "--json",
@@ -347,12 +281,14 @@ fn drive_ls_with_flags() {
                 DriveCommand::Ls {
                     limit,
                     all,
+                    type_,
                     folder,
                     json,
                 },
         } => {
             assert_eq!(limit, Some(100));
             assert!(all);
+            assert_eq!(type_, DriveListType::Files);
             assert_eq!(folder.as_deref(), Some("folder123"));
             assert!(json);
         }
@@ -361,64 +297,39 @@ fn drive_ls_with_flags() {
 }
 
 #[test]
-fn drive_folder_list_defaults() {
-    let cli = parse(&["drive", "folder", "list"]).unwrap();
-    let Command::Drive {
-        command:
-            DriveCommand::Folder {
-                command:
-                    DriveFolderCommand::List {
-                        limit,
-                        all,
-                        parent,
-                        json,
-                    },
-            },
-    } = cli.command
-    else {
-        panic!("unexpected parse result");
-    };
-
-    assert_eq!(limit, None);
-    assert!(!all);
-    assert_eq!(parent, None);
-    assert!(!json);
+fn drive_ls_defaults_to_items() {
+    let cli = parse(&["drive", "ls"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::Drive {
+            command: DriveCommand::Ls {
+                limit: None,
+                all: false,
+                type_: DriveListType::Items,
+                folder: None,
+                json: false
+            }
+        }
+    ));
 }
 
 #[test]
-fn drive_folder_list_with_flags() {
-    let cli = parse(&[
-        "drive",
-        "folder",
-        "list",
-        "--limit",
-        "100",
-        "--all",
-        "--parent",
-        "folder123",
-        "--json",
-    ])
-    .unwrap();
-    match cli.command {
-        Command::Drive {
-            command:
-                DriveCommand::Folder {
-                    command:
-                        DriveFolderCommand::List {
-                            limit,
-                            all,
-                            parent,
-                            json,
-                        },
-                },
-        } => {
-            assert_eq!(limit, Some(100));
-            assert!(all);
-            assert_eq!(parent.as_deref(), Some("folder123"));
-            assert!(json);
-        }
-        _ => panic!("unexpected parse result"),
-    }
+fn drive_ls_help_describes_limit_cap_and_type() {
+    let text = help(&["drive", "ls", "--help"]);
+
+    assert!(text.contains("Without --all, defaults to 50"));
+    assert!(text.contains("List all items across all pages"));
+    assert!(text.contains("Caps at --limit when both are given"));
+    assert!(text.contains("--type <TYPE>"));
+    assert!(text.contains("[default: items]"));
+    assert!(text.contains("Items use browse row fields"));
+    assert!(!text.contains("Fetch all items across all pages"));
+}
+
+#[test]
+fn drive_rejects_removed_listing_commands() {
+    assert!(parse(&["drive", "list"]).is_err());
+    assert!(parse(&["drive", "folder", "list"]).is_err());
 }
 
 #[test]
@@ -529,25 +440,66 @@ fn docs_map_with_document_id_and_json_flag() {
     let cli = parse(&["docs", "map", "document-123", "--json"]).unwrap();
     match cli.command {
         Command::Docs {
-            command: DocsCommand::Map { document_id, json },
+            command:
+                DocsCommand::Map {
+                    document_id,
+                    type_,
+                    index,
+                    entry,
+                    page,
+                    line,
+                    heading,
+                    json,
+                },
         } => {
             assert_eq!(document_id, "document-123");
+            assert_eq!(type_, DocsMapType::All);
+            assert_eq!(index, None);
+            assert_eq!(entry, None);
+            assert_eq!(page, None);
+            assert_eq!(line, None);
+            assert_eq!(heading, None);
             assert!(json);
         }
+        _ => panic!("unexpected parse result"),
+    }
+
+    let cli = parse(&["docs", "map", "document-123", "--type", "images"]).unwrap();
+    match cli.command {
+        Command::Docs {
+            command: DocsCommand::Map { type_, .. },
+        } => assert_eq!(type_, DocsMapType::Images),
+        _ => panic!("unexpected parse result"),
+    }
+
+    let cli = parse(&["docs", "map", "document-123", "--type", "tables"]).unwrap();
+    match cli.command {
+        Command::Docs {
+            command: DocsCommand::Map { type_, .. },
+        } => assert_eq!(type_, DocsMapType::Tables),
         _ => panic!("unexpected parse result"),
     }
 }
 
 #[test]
+fn docs_map_rejects_removed_list_object_verbs() {
+    assert!(parse(&["docs", "list-images", "document-123", "--json"]).is_err());
+    assert!(parse(&["docs", "list-tables", "document-123", "--json"]).is_err());
+}
+
+#[test]
 fn docs_search_text_with_document_id_text_and_json_flag() {
-    let cli = parse(&["docs", "search-text", "document-123", "Plan", "--json"]).unwrap();
+    let cli = parse(&["docs", "text", "search", "document-123", "Plan", "--json"]).unwrap();
     match cli.command {
         Command::Docs {
             command:
-                DocsCommand::SearchText {
-                    document_id,
-                    text,
-                    json,
+                DocsCommand::Text {
+                    command:
+                        DocsTextCommand::Search {
+                            document_id,
+                            text,
+                            json,
+                        },
                 },
         } => {
             assert_eq!(document_id, "document-123");
@@ -559,13 +511,14 @@ fn docs_search_text_with_document_id_text_and_json_flag() {
 }
 
 #[test]
-fn docs_get_content_accepts_location_selectors() {
-    let by_index = parse(&["docs", "get-content", "document-123", "--index", "44"]).unwrap();
+fn docs_map_accepts_content_location_selectors() {
+    let by_index = parse(&["docs", "map", "document-123", "--index", "44"]).unwrap();
     match by_index.command {
         Command::Docs {
             command:
-                DocsCommand::GetContent {
+                DocsCommand::Map {
                     document_id,
+                    type_,
                     index,
                     entry,
                     page,
@@ -575,6 +528,7 @@ fn docs_get_content_accepts_location_selectors() {
                 },
         } => {
             assert_eq!(document_id, "document-123");
+            assert_eq!(type_, DocsMapType::All);
             assert_eq!(index, Some(44));
             assert_eq!(entry, None);
             assert_eq!(page, None);
@@ -585,10 +539,10 @@ fn docs_get_content_accepts_location_selectors() {
         _ => panic!("unexpected parse result"),
     }
 
-    let by_entry = parse(&["docs", "get-content", "document-123", "--entry", "44"]).unwrap();
+    let by_entry = parse(&["docs", "map", "document-123", "--entry", "44"]).unwrap();
     match by_entry.command {
         Command::Docs {
-            command: DocsCommand::GetContent { index, entry, .. },
+            command: DocsCommand::Map { index, entry, .. },
         } => {
             assert_eq!(index, None);
             assert_eq!(entry, Some(44));
@@ -596,38 +550,29 @@ fn docs_get_content_accepts_location_selectors() {
         _ => panic!("unexpected parse result"),
     }
 
+    assert!(parse(&["docs", "map", "document-123", "--page", "2", "--line", "1",]).is_ok());
     assert!(parse(&[
         "docs",
-        "get-content",
-        "document-123",
-        "--page",
-        "2",
-        "--line",
-        "1",
-    ])
-    .is_ok());
-    assert!(parse(&[
-        "docs",
-        "get-content",
+        "map",
         "document-123",
         "--heading",
         "Appendix",
         "--json",
     ])
     .is_ok());
+    assert!(parse(&["docs", "get-content", "document-123", "--entry", "44"]).is_err());
 }
 
 #[test]
 fn docs_insert_text_parses_location_and_write_options() {
     let cli = parse(&[
         "docs",
-        "insert-text",
+        "text",
+        "insert",
         "document-123",
         "Hello",
-        "--page",
-        "2",
-        "--line",
-        "1",
+        "--at",
+        "page:2,line:1",
         "--dry-run",
         "--json",
         "--required-revision-id",
@@ -638,20 +583,16 @@ fn docs_insert_text_parses_location_and_write_options() {
     let Command::Docs { command } = cli.command else {
         panic!("unexpected parse result");
     };
-    let DocsCommand::InsertText {
-        document_id,
-        text,
-        index,
-        entry,
-        page,
-        line,
-        after_heading,
-        before_heading,
-        after_text,
-        before_text,
-        dry_run,
-        json,
-        required_revision_id,
+    let DocsCommand::Text {
+        command:
+            DocsTextCommand::Insert {
+                document_id,
+                text,
+                at,
+                dry_run,
+                json,
+                required_revision_id,
+            },
     } = command
     else {
         panic!("unexpected parse result");
@@ -659,26 +600,109 @@ fn docs_insert_text_parses_location_and_write_options() {
 
     assert_eq!(document_id, "document-123");
     assert_eq!(text, "Hello");
-    assert_eq!(index, None);
-    assert_eq!(entry, None);
-    assert_eq!(page, Some(2));
-    assert_eq!(line, Some(1));
-    assert_eq!(after_heading, None);
-    assert_eq!(before_heading, None);
-    assert_eq!(after_text, None);
-    assert_eq!(before_text, None);
+    assert_eq!(at, "page:2,line:1");
     assert!(dry_run);
     assert!(json);
     assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
 }
 
 #[test]
+fn docs_insert_commands_accept_at_selector() {
+    let Command::Docs {
+        command:
+            DocsCommand::Text {
+                command: DocsTextCommand::Insert { at, .. },
+            },
+    } = parse(&[
+        "docs",
+        "text",
+        "insert",
+        "document-123",
+        "Hello",
+        "--at",
+        "after-text:quarterly plan",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(at, "after-text:quarterly plan");
+
+    let Command::Docs {
+        command:
+            DocsCommand::Table {
+                command: DocsTableCommand::Insert { at, .. },
+            },
+    } = parse(&[
+        "docs",
+        "table",
+        "insert",
+        "document-123",
+        "--rows",
+        "2",
+        "--columns",
+        "2",
+        "--at",
+        "page:1,line:3",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(at, "page:1,line:3");
+}
+
+#[test]
+fn docs_insert_text_rejects_legacy_heading_selector() {
+    assert!(parse(&[
+        "docs",
+        "text",
+        "insert",
+        "document-123",
+        "Hello",
+        "--heading",
+        "Summary",
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_insert_commands_reject_legacy_selector_flags() {
+    assert!(parse(&[
+        "docs",
+        "text",
+        "insert",
+        "document-123",
+        "Hello",
+        "--page",
+        "2",
+        "--line",
+        "1",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "footnote",
+        "insert",
+        "document-123",
+        "--after-text",
+        "quarterly plan",
+    ])
+    .is_err());
+}
+
+#[test]
 fn docs_replace_text_parses_match_and_write_options() {
     let cli = parse(&[
         "docs",
-        "replace-text",
+        "text",
+        "replace",
         "document-123",
+        "--find",
         "old",
+        "--replace",
         "new",
         "--match",
         "2",
@@ -692,15 +716,18 @@ fn docs_replace_text_parses_match_and_write_options() {
     let Command::Docs { command } = cli.command else {
         panic!("unexpected parse result");
     };
-    let DocsCommand::ReplaceText {
-        document_id,
-        old_text,
-        new_text,
-        match_number,
-        all,
-        dry_run,
-        json,
-        required_revision_id,
+    let DocsCommand::Text {
+        command:
+            DocsTextCommand::Replace {
+                document_id,
+                old_text,
+                new_text,
+                match_number,
+                all,
+                dry_run,
+                json,
+                required_revision_id,
+            },
     } = command
     else {
         panic!("unexpected parse result");
@@ -717,43 +744,124 @@ fn docs_replace_text_parses_match_and_write_options() {
 }
 
 #[test]
-fn docs_new_high_level_editing_commands_parse() {
-    assert!(matches!(
-        parse(&["docs", "list-images", "document-123", "--json"])
-            .unwrap()
-            .command,
-        Command::Docs {
-            command: DocsCommand::ListImages { .. }
-        }
-    ));
-    assert!(matches!(
-        parse(&["docs", "list-tables", "document-123", "--json"])
-            .unwrap()
-            .command,
-        Command::Docs {
-            command: DocsCommand::ListTables { .. }
-        }
-    ));
+fn docs_replace_text_rejects_order_sensitive_text_positionals() {
+    assert!(parse(&["docs", "text", "replace", "document-123", "old", "new"]).is_err());
+}
 
-    let Command::Docs {
-        command:
-            DocsCommand::InsertImage {
-                image_uri,
-                page,
-                line,
-                dry_run,
-                json,
-                ..
-            },
-    } = parse(&[
+#[test]
+fn docs_flat_text_commands_are_removed() {
+    assert!(parse(&["docs", "search-text", "document-123", "Plan"]).is_err());
+    assert!(parse(&["docs", "insert-text", "document-123", "Hello"]).is_err());
+    assert!(parse(&[
+        "docs",
+        "replace-text",
+        "document-123",
+        "--find",
+        "old",
+        "--replace",
+        "new",
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_flat_table_commands_are_removed() {
+    assert!(parse(&[
+        "docs",
+        "insert-table",
+        "document-123",
+        "--rows",
+        "2",
+        "--columns",
+        "2",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "edit-table",
+        "document-123",
+        "--table-id",
+        "table-3",
+        "--data",
+        "table.csv",
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_flat_image_commands_are_removed() {
+    assert!(parse(&[
         "docs",
         "insert-image",
         "document-123",
         "https://example.test/image.png",
-        "--page",
-        "2",
-        "--line",
-        "1",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_flat_footnote_commands_are_removed() {
+    assert!(parse(&["docs", "insert-footnote", "document-123", "--at", "index:1",]).is_err());
+}
+
+#[test]
+fn docs_flat_break_commands_are_removed() {
+    assert!(parse(&[
+        "docs",
+        "insert-page-break",
+        "document-123",
+        "--at",
+        "index:1"
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "insert-section-break",
+        "document-123",
+        "--section-type",
+        "next-page",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_flat_header_command_is_removed() {
+    assert!(parse(&["docs", "create-header", "document-123"]).is_err());
+}
+
+#[test]
+fn docs_flat_footer_command_is_removed() {
+    assert!(parse(&["docs", "create-footer", "document-123"]).is_err());
+}
+
+#[test]
+fn docs_new_high_level_editing_commands_parse() {
+    let Command::Docs {
+        command:
+            DocsCommand::Image {
+                command:
+                    DocsImageCommand::Insert {
+                        image_uri,
+                        at,
+                        dry_run,
+                        json,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--at",
+        "page:2,line:1",
         "--dry-run",
         "--json",
     ])
@@ -763,18 +871,158 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(image_uri, "https://example.test/image.png");
-    assert_eq!(page, Some(2));
-    assert_eq!(line, Some(1));
+    assert_eq!(at, "page:2,line:1");
     assert!(dry_run);
     assert!(json);
 
     let Command::Docs {
-        command: DocsCommand::ApplyList {
-            list_type, entry, ..
-        },
+        command:
+            DocsCommand::Footnote {
+                command:
+                    DocsFootnoteCommand::Insert {
+                        at, dry_run, json, ..
+                    },
+            },
     } = parse(&[
         "docs",
-        "apply-list",
+        "footnote",
+        "insert",
+        "document-123",
+        "--at",
+        "after-text:quarterly plan",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(at, "after-text:quarterly plan");
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::Break {
+                command:
+                    DocsBreakCommand::Page {
+                        at, dry_run, json, ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "break",
+        "page",
+        "document-123",
+        "--at",
+        "heading:Summary",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(at, "heading:Summary");
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::Break {
+                command:
+                    DocsBreakCommand::Section {
+                        section_type, at, ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "break",
+        "section",
+        "document-123",
+        "--section-type",
+        "continuous",
+        "--at",
+        "heading:Appendix",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(section_type, crate::cli::DocsSectionBreakType::Continuous);
+    assert_eq!(at, "heading:Appendix");
+
+    let Command::Docs {
+        command:
+            DocsCommand::Header {
+                command:
+                    DocsHeaderCommand::Create {
+                        document_id,
+                        dry_run,
+                        json,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "header",
+        "create",
+        "document-123",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(document_id, "document-123");
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::Footer {
+                command:
+                    DocsFooterCommand::Create {
+                        document_id,
+                        dry_run,
+                        json,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "footer",
+        "create",
+        "document-123",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(document_id, "document-123");
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::ListFormat {
+                command:
+                    DocsListCommand::Apply {
+                        list_type, entry, ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "list-format",
+        "apply",
         "document-123",
         "--entry",
         "2",
@@ -797,15 +1045,19 @@ fn docs_new_high_level_editing_commands_parse() {
     ] {
         let Command::Docs {
             command:
-                DocsCommand::ApplyList {
-                    list_type,
-                    from_index,
-                    to_index,
-                    ..
+                DocsCommand::ListFormat {
+                    command:
+                        DocsListCommand::Apply {
+                            list_type,
+                            from_index,
+                            to_index,
+                            ..
+                        },
                 },
         } = parse(&[
             "docs",
-            "apply-list",
+            "list-format",
+            "apply",
             "document-123",
             "--from-index",
             "4",
@@ -826,16 +1078,20 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::ApplyList {
-                preset,
-                list_type,
-                page,
-                line,
-                ..
+            DocsCommand::ListFormat {
+                command:
+                    DocsListCommand::Apply {
+                        preset,
+                        list_type,
+                        page,
+                        line,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "apply-list",
+        "list-format",
+        "apply",
         "document-123",
         "--page",
         "3",
@@ -856,15 +1112,51 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::ApplyStyles {
-                style_json,
-                from_index,
-                to_index,
-                ..
+            DocsCommand::ListFormat {
+                command:
+                    DocsListCommand::Apply {
+                        text,
+                        match_number,
+                        list_type,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "apply-styles",
+        "list-format",
+        "apply",
+        "document-123",
+        "--text",
+        "Plan",
+        "--match",
+        "2",
+        "--type",
+        "numbered",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(text.as_deref(), Some("Plan"));
+    assert_eq!(match_number, Some(2));
+    assert_eq!(list_type, Some(DocsListType::Numbered));
+
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Apply {
+                        style_json,
+                        from_index,
+                        to_index,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "style",
+        "apply",
         "document-123",
         "--from-index",
         "1",
@@ -887,24 +1179,25 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::InsertTable {
-                data,
-                page,
-                line,
-                dry_run,
-                json,
-                ..
+            DocsCommand::Table {
+                command:
+                    DocsTableCommand::Insert {
+                        data,
+                        at,
+                        dry_run,
+                        json,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "insert-table",
+        "table",
+        "insert",
         "document-123",
         "--data",
         "table.csv",
-        "--page",
-        "2",
-        "--line",
-        "1",
+        "--at",
+        "page:2,line:1",
         "--dry-run",
         "--json",
     ])
@@ -914,23 +1207,26 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(data.as_deref(), Some("table.csv"));
-    assert_eq!(page, Some(2));
-    assert_eq!(line, Some(1));
+    assert_eq!(at, "page:2,line:1");
     assert!(dry_run);
     assert!(json);
 
     let Command::Docs {
         command:
-            DocsCommand::EditTable {
-                table_id,
-                data,
-                dry_run,
-                json,
-                ..
+            DocsCommand::Table {
+                command:
+                    DocsTableCommand::Edit {
+                        table_id,
+                        data,
+                        dry_run,
+                        json,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "edit-table",
+        "table",
+        "edit",
         "document-123",
         "--table-id",
         "table-3",
@@ -951,22 +1247,26 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::InsertTable {
-                rows,
-                columns,
-                no_auto_style,
-                ..
+            DocsCommand::Table {
+                command:
+                    DocsTableCommand::Insert {
+                        rows,
+                        columns,
+                        no_auto_style,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "insert-table",
+        "table",
+        "insert",
         "document-123",
         "--rows",
         "2",
         "--columns",
         "3",
-        "--index",
-        "44",
+        "--at",
+        "index:44",
         "--no-auto-style",
     ])
     .unwrap()
@@ -980,20 +1280,24 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::ApplyStyles {
-                heading,
-                no_auto_style,
-                ..
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Apply {
+                        heading,
+                        no_cached_style,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "apply-styles",
+        "style",
+        "apply",
         "document-123",
         "--entry",
         "2",
-        "--heading",
+        "--paragraph-style",
         "HEADING_2",
-        "--no-auto-style",
+        "--no-cached-style",
     ])
     .unwrap()
     .command
@@ -1001,22 +1305,26 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(heading.as_deref(), Some("HEADING_2"));
-    assert!(no_auto_style);
+    assert!(no_cached_style);
 
     let Command::Docs {
         command:
-            DocsCommand::ApplyList {
-                entry,
-                no_auto_style,
-                ..
+            DocsCommand::ListFormat {
+                command:
+                    DocsListCommand::Apply {
+                        entry,
+                        no_cached_style,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "apply-list",
+        "list-format",
+        "apply",
         "document-123",
         "--entry",
         "2",
-        "--no-auto-style",
+        "--no-cached-style",
         "--preset",
         "BULLET_DISC_CIRCLE_SQUARE",
     ])
@@ -1026,22 +1334,113 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(entry, Some(2));
-    assert!(no_auto_style);
+    assert!(no_cached_style);
 }
 
 #[test]
-fn docs_show_style_template_parse() {
-    let cli = parse(&["docs", "show-style-template", "document-123", "--json"]).unwrap();
+fn docs_apply_styles_uses_paragraph_style_flag() {
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command: DocsStyleCommand::Apply { heading, entry, .. },
+            },
+    } = parse(&[
+        "docs",
+        "style",
+        "apply",
+        "document-123",
+        "--entry",
+        "2",
+        "--paragraph-style",
+        "HEADING_1",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(entry, Some(2));
+    assert_eq!(heading.as_deref(), Some("HEADING_1"));
+    assert!(parse(&[
+        "docs",
+        "style",
+        "apply",
+        "document-123",
+        "--entry",
+        "2",
+        "--heading",
+        "HEADING_1",
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_apply_commands_reject_no_auto_style() {
+    assert!(parse(&[
+        "docs",
+        "style",
+        "apply",
+        "document-123",
+        "--entry",
+        "2",
+        "--no-auto-style"
+    ])
+    .is_err());
+
+    assert!(parse(&[
+        "docs",
+        "list-format",
+        "apply",
+        "document-123",
+        "--entry",
+        "2",
+        "--type",
+        "bullet",
+        "--no-auto-style"
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_style_template_bypass_help_uses_distinct_flags() {
+    let insert_table_help = help(&["docs", "table", "insert", "--help"]);
+    assert!(insert_table_help.contains("--no-auto-style"));
+    assert!(!insert_table_help.contains("--no-cached-style"));
+
+    let style_apply_help = help(&["docs", "style", "apply", "--help"]);
+    assert!(style_apply_help.contains("--no-cached-style"));
+    assert!(!style_apply_help.contains("--no-auto-style"));
+
+    let apply_list_help = help(&["docs", "list-format", "apply", "--help"]);
+    assert!(apply_list_help.contains("--no-cached-style"));
+    assert!(!apply_list_help.contains("--no-auto-style"));
+}
+
+#[test]
+fn docs_style_template_parse() {
+    let cli = parse(&["docs", "style", "template", "document-123", "--json"]).unwrap();
 
     match cli.command {
         Command::Docs {
-            command: DocsCommand::ShowStyleTemplate { document_id, json },
+            command:
+                DocsCommand::Style {
+                    command: DocsStyleCommand::Template { document_id, json },
+                },
         } => {
             assert_eq!(document_id, "document-123");
             assert!(json);
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn docs_show_style_template_is_removed() {
+    assert!(parse(&["docs", "show-style-template", "document-123"]).is_err());
+    assert!(parse(&["docs", "style-template", "document-123"]).is_err());
+    assert!(parse(&["docs", "apply-styles", "document-123", "--entry", "1"]).is_err());
+    assert!(parse(&["docs", "apply-list", "document-123", "--entry", "1"]).is_err());
 }
 
 #[test]
@@ -1078,10 +1477,53 @@ fn docs_batch_update_requires_requests() {
 fn docs_get_help_explains_raw_document_shape() {
     let help = help(&["docs", "get", "--help"]);
 
+    assert!(help.contains("Read a raw Google Docs Document"));
+    assert!(help.contains("Document ID or URL to read"));
     assert!(help.contains("Emits the Google Docs API Document JSON unchanged."));
     assert!(help.contains("body.content as ordered structural elements"));
     assert!(help.contains("paragraph.elements[].textRun.content"));
     assert!(help.contains("--include-tabs-content"));
+    assert!(!help.contains("Fetch a raw Google Docs Document"));
+    assert!(!help.contains("Google Docs Document ID or URL to fetch"));
+}
+
+#[test]
+fn docs_help_uses_short_document_id_wording() {
+    for (args, expected) in [
+        (&["docs", "map", "--help"][..], "Document ID or URL to map"),
+        (&["docs", "get", "--help"][..], "Document ID or URL to read"),
+        (
+            &["docs", "batch-update", "--help"][..],
+            "Document ID or URL to update",
+        ),
+        (
+            &["docs", "style", "template", "--help"][..],
+            "Document ID whose cached style template to read",
+        ),
+        (
+            &["docs", "text", "search", "--help"][..],
+            "Document ID or URL to search",
+        ),
+        (
+            &["docs", "text", "insert", "--help"][..],
+            "Document ID or URL to update",
+        ),
+        (
+            &["docs", "table", "edit", "--help"][..],
+            "Document ID or URL to update",
+        ),
+        (
+            &["docs", "list-format", "apply", "--help"][..],
+            "Document ID or URL to update",
+        ),
+    ] {
+        let help = help(args);
+        assert!(
+            help.contains(expected),
+            "{args:?} did not contain {expected}"
+        );
+        assert!(!help.contains("Google Docs Document ID"));
+    }
 }
 
 #[test]
@@ -1099,6 +1541,174 @@ fn docs_batch_update_help_explains_request_shape() {
     assert!(help
         .contains("developers.google.com/workspace/docs/api/reference/rest/v1/documents/request"));
     assert!(help.contains("location"));
+}
+
+#[test]
+fn docs_selector_help_explains_exactly_one_selector_rule() {
+    let map_help = help(&["docs", "map", "--help"]);
+    assert!(map_help.contains("Provide exactly one content selector."));
+    assert!(map_help.contains("--page P --line L"));
+    assert!(map_help.contains("--heading TEXT"));
+
+    for command in [
+        &["docs", "text", "insert", "--help"][..],
+        &["docs", "image", "insert", "--help"],
+        &["docs", "break", "page", "--help"],
+        &["docs", "break", "section", "--help"],
+        &["docs", "footnote", "insert", "--help"],
+        &["docs", "table", "insert", "--help"],
+    ] {
+        let command_help = help(command);
+        assert!(command_help.contains("Provide exactly one insert location selector"));
+        assert!(command_help.contains("--at <SELECTOR>"));
+        assert!(command_help.contains("--at heading:TEXT"));
+        assert!(command_help.contains("--at before-text:TEXT"));
+        assert!(!command_help.contains("--after-heading <AFTER_HEADING>"));
+    }
+
+    for command in [
+        &["docs", "style", "apply", "--help"][..],
+        &["docs", "list-format", "apply", "--help"],
+    ] {
+        let command_help = help(command);
+        assert!(command_help.contains("Provide exactly one range selector."));
+        assert!(command_help.contains("--from-index START --to-index END"));
+        assert!(command_help.contains("--text TEXT with optional --match N"));
+    }
+
+    let create_named_range_help = help(&["docs", "named-range", "create", "--help"]);
+    assert!(create_named_range_help.contains("Provide exactly one range selector."));
+    assert!(create_named_range_help.contains("--from-index START --to-index END"));
+    assert!(create_named_range_help.contains("--text TEXT with optional --match N"));
+
+    let apply_styles_help = help(&["docs", "style", "apply", "--help"]);
+    assert!(apply_styles_help.contains("--paragraph-style <PARAGRAPH_STYLE>"));
+    assert!(!apply_styles_help.contains("--heading <HEADING>"));
+}
+
+#[test]
+fn docs_named_range_create_accepts_range_selector() {
+    let cli = parse(&[
+        "docs",
+        "named-range",
+        "create",
+        "document-123",
+        "highlights",
+        "--text",
+        "quarterly plan",
+        "--match",
+        "2",
+        "--dry-run",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::NamedRange {
+                    command:
+                        DocsNamedRangeCommand::Create {
+                            document_id,
+                            name,
+                            text,
+                            match_number,
+                            dry_run,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert_eq!(name, "highlights");
+            assert_eq!(text.as_deref(), Some("quarterly plan"));
+            assert_eq!(match_number, Some(2));
+            assert!(dry_run);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn docs_named_range_delete_accepts_name_or_id_selector() {
+    let cli = parse(&[
+        "docs",
+        "named-range",
+        "delete",
+        "document-123",
+        "--name",
+        "highlights",
+        "--json",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::NamedRange {
+                    command:
+                        DocsNamedRangeCommand::Delete {
+                            document_id,
+                            name,
+                            named_range_id,
+                            json,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(document_id, "document-123");
+            assert_eq!(name.as_deref(), Some("highlights"));
+            assert!(named_range_id.is_none());
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    let cli = parse(&[
+        "docs",
+        "named-range",
+        "delete",
+        "document-123",
+        "--named-range-id",
+        "named-range-123",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Docs {
+            command:
+                DocsCommand::NamedRange {
+                    command: DocsNamedRangeCommand::Delete { named_range_id, .. },
+                },
+        } => {
+            assert_eq!(named_range_id.as_deref(), Some("named-range-123"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn docs_flat_named_range_commands_are_removed() {
+    assert!(parse(&[
+        "docs",
+        "create-named-range",
+        "document-123",
+        "highlights",
+        "--text",
+        "quarterly plan",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "delete-named-range",
+        "document-123",
+        "--name",
+        "highlights",
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_create_footnote_is_not_a_command() {
+    assert!(parse(&["docs", "create-footnote", "document-123", "--index", "1"]).is_err());
 }
 
 #[test]
@@ -1124,8 +1734,9 @@ fn mail_list_defaults_to_table_with_no_explicit_limit() {
     let cli = parse(&["mail", "list"]).unwrap();
     match cli.command {
         Command::Mail {
-            command: MailCommand::List { limit, json },
+            command: MailCommand::List { query, limit, json },
         } => {
+            assert!(query.is_none());
             assert!(limit.is_none());
             assert!(!json);
         }
@@ -1138,8 +1749,9 @@ fn mail_list_accepts_limit_and_json() {
     let cli = parse(&["mail", "list", "--limit", "25", "--json"]).unwrap();
     match cli.command {
         Command::Mail {
-            command: MailCommand::List { limit, json },
+            command: MailCommand::List { query, limit, json },
         } => {
+            assert!(query.is_none());
             assert_eq!(limit, Some(25));
             assert!(json);
         }
@@ -1153,10 +1765,10 @@ fn mail_list_does_not_accept_all() {
 }
 
 #[test]
-fn mail_search_with_query_limit_and_json() {
+fn mail_list_accepts_query_limit_and_json() {
     let cli = parse(&[
         "mail",
-        "search",
+        "list",
         "from:alice@example.com",
         "--limit",
         "25",
@@ -1165,9 +1777,9 @@ fn mail_search_with_query_limit_and_json() {
     .unwrap();
     match cli.command {
         Command::Mail {
-            command: MailCommand::Search { query, limit, json },
+            command: MailCommand::List { query, limit, json },
         } => {
-            assert_eq!(query, "from:alice@example.com");
+            assert_eq!(query.as_deref(), Some("from:alice@example.com"));
             assert_eq!(limit, Some(25));
             assert!(json);
         }
@@ -1176,13 +1788,36 @@ fn mail_search_with_query_limit_and_json() {
 }
 
 #[test]
-fn mail_search_requires_query() {
+fn mail_search_is_not_a_command() {
     assert!(parse(&["mail", "search"]).is_err());
 }
 
 #[test]
-fn mail_search_does_not_accept_all() {
-    assert!(parse(&["mail", "search", "has:attachment", "--all"]).is_err());
+fn mail_list_with_query_does_not_accept_all() {
+    assert!(parse(&["mail", "list", "has:attachment", "--all"]).is_err());
+}
+
+#[test]
+fn mail_help_uses_plain_gmail_language() {
+    let mail_help = help(&["mail", "--help"]);
+    let read_help = help(&["mail", "read", "--help"]);
+    let download_help = help(&["mail", "download", "--help"]);
+    let draft_help = help(&["mail", "draft", "--help"]);
+
+    assert!(mail_help.contains("Interact with Gmail"));
+    assert!(read_help.contains("Read a Gmail message"));
+    assert!(read_help.contains("Gmail message ID or URL to read"));
+    assert!(download_help.contains("Download a Gmail attachment"));
+    assert!(download_help.contains("Destination path (defaults to attachment filename)"));
+    assert!(draft_help.contains("Create or edit a Gmail draft message"));
+    assert!(draft_help.contains("Gmail draft ID or URL to update"));
+    assert!(draft_help.contains("Emit JSON instead of human-readable output"));
+
+    for rendered in [mail_help, read_help, download_help, draft_help] {
+        assert!(!rendered.contains("GoogleMail"));
+        assert!(!rendered.contains("Fetch a"));
+        assert!(!rendered.contains("Manage GoogleMail"));
+    }
 }
 
 #[test]
@@ -1232,7 +1867,6 @@ fn mail_read_accepts_global_account_flag() {
 fn mail_attachment_download_with_explicit_output() {
     let cli = parse(&[
         "mail",
-        "attachment",
         "download",
         "message-123",
         "attachment-456",
@@ -1243,17 +1877,14 @@ fn mail_attachment_download_with_explicit_output() {
     match cli.command {
         Command::Mail {
             command:
-                MailCommand::Attachment {
-                    command:
-                        MailAttachmentCommand::Download {
-                            message_id,
-                            attachment_id,
-                            output,
-                        },
+                MailCommand::Download {
+                    message_id,
+                    attachment_id,
+                    output,
                 },
         } => {
             assert_eq!(message_id, "message-123");
-            assert_eq!(attachment_id, "attachment-456");
+            assert_eq!(attachment_id.as_deref(), Some("attachment-456"));
             assert_eq!(output.as_deref(), Some("report.pdf"));
         }
         _ => panic!("unexpected parse result"),
@@ -1261,29 +1892,36 @@ fn mail_attachment_download_with_explicit_output() {
 }
 
 #[test]
-fn mail_attachment_download_output_is_optional() {
-    let cli = parse(&[
-        "mail",
-        "attachment",
-        "download",
-        "message-123",
-        "attachment-456",
-    ])
-    .unwrap();
+fn mail_attachment_download_output_and_attachment_id_are_optional() {
+    let cli = parse(&["mail", "download", "message-123", "attachment-456"]).unwrap();
     match cli.command {
         Command::Mail {
             command:
-                MailCommand::Attachment {
-                    command:
-                        MailAttachmentCommand::Download {
-                            message_id,
-                            attachment_id,
-                            output,
-                        },
+                MailCommand::Download {
+                    message_id,
+                    attachment_id,
+                    output,
                 },
         } => {
             assert_eq!(message_id, "message-123");
-            assert_eq!(attachment_id, "attachment-456");
+            assert_eq!(attachment_id.as_deref(), Some("attachment-456"));
+            assert!(output.is_none());
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    let cli = parse(&["mail", "download", "message-123"]).unwrap();
+    match cli.command {
+        Command::Mail {
+            command:
+                MailCommand::Download {
+                    message_id,
+                    attachment_id,
+                    output,
+                },
+        } => {
+            assert_eq!(message_id, "message-123");
+            assert!(attachment_id.is_none());
             assert!(output.is_none());
         }
         _ => panic!("unexpected parse result"),
@@ -1291,11 +1929,22 @@ fn mail_attachment_download_output_is_optional() {
 }
 
 #[test]
+fn mail_attachment_group_is_not_a_command() {
+    assert!(parse(&[
+        "mail",
+        "attachment",
+        "download",
+        "message-123",
+        "attachment-456"
+    ])
+    .is_err());
+}
+
+#[test]
 fn mail_draft_create_with_body_flags() {
     let cli = parse(&[
         "mail",
         "draft",
-        "create",
         "--to",
         "alice@example.com",
         "--to",
@@ -1315,25 +1964,22 @@ fn mail_draft_create_with_body_flags() {
         Command::Mail {
             command:
                 MailCommand::Draft {
-                    command:
-                        MailDraftCommand::Create {
-                            to,
-                            cc,
-                            bcc,
-                            subject,
-                            body,
-                            body_file,
-                            attachment,
-                            json,
-                        },
+                    draft_id,
+                    to,
+                    cc,
+                    bcc,
+                    subject,
+                    body,
+                    attachment,
+                    json,
                 },
         } => {
+            assert!(draft_id.is_none());
             assert_eq!(to, ["alice@example.com", "bob@example.com"]);
             assert_eq!(cc, ["carol@example.com"]);
             assert_eq!(bcc, ["dave@example.com"]);
             assert_eq!(subject, "Draft subject");
             assert_eq!(body.as_deref(), Some("Hello from goog"));
-            assert!(body_file.is_none());
             assert!(attachment.is_empty());
             assert!(json);
         }
@@ -1346,7 +1992,6 @@ fn mail_draft_create_with_attachment_paths() {
     let cli = parse(&[
         "mail",
         "draft",
-        "create",
         "--to",
         "alice@example.com",
         "--subject",
@@ -1363,12 +2008,13 @@ fn mail_draft_create_with_attachment_paths() {
         Command::Mail {
             command:
                 MailCommand::Draft {
-                    command:
-                        MailDraftCommand::Create {
-                            attachment, json, ..
-                        },
+                    draft_id,
+                    attachment,
+                    json,
+                    ..
                 },
         } => {
+            assert!(draft_id.is_none());
             assert_eq!(attachment, ["./invoice.pdf", "./terms.txt"]);
             assert!(!json);
         }
@@ -1381,7 +2027,6 @@ fn mail_draft_create_requires_to_recipient() {
     let err = parse(&[
         "mail",
         "draft",
-        "create",
         "--subject",
         "Draft subject",
         "--body",
@@ -1397,7 +2042,6 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
     let cli = parse(&[
         "mail",
         "draft",
-        "edit",
         "draft-123",
         "--to",
         "alice@example.com",
@@ -1414,27 +2058,22 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
         Command::Mail {
             command:
                 MailCommand::Draft {
-                    command:
-                        MailDraftCommand::Edit {
-                            draft_id,
-                            to,
-                            cc,
-                            bcc,
-                            subject,
-                            body,
-                            body_file,
-                            attachment,
-                            json,
-                        },
+                    draft_id,
+                    to,
+                    cc,
+                    bcc,
+                    subject,
+                    body,
+                    attachment,
+                    json,
                 },
         } => {
-            assert_eq!(draft_id, "draft-123");
+            assert_eq!(draft_id.as_deref(), Some("draft-123"));
             assert_eq!(to, ["alice@example.com"]);
             assert!(cc.is_empty());
             assert!(bcc.is_empty());
             assert_eq!(subject, "Updated draft");
             assert_eq!(body.as_deref(), Some("Updated body"));
-            assert!(body_file.is_none());
             assert_eq!(attachment, ["./updated.pdf"]);
             assert!(json);
         }
@@ -1447,7 +2086,6 @@ fn mail_draft_edit_requires_to_recipient() {
     let err = parse(&[
         "mail",
         "draft",
-        "edit",
         "draft-123",
         "--subject",
         "Updated draft",
@@ -1457,6 +2095,46 @@ fn mail_draft_edit_requires_to_recipient() {
     .unwrap_err();
 
     assert!(err.to_string().contains("--to <TO>"));
+}
+
+#[test]
+fn mail_draft_create_and_edit_subcommands_are_removed() {
+    assert!(parse(&[
+        "mail",
+        "draft",
+        "create",
+        "--to",
+        "alice@example.com",
+        "--subject",
+        "Draft subject",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "mail",
+        "draft",
+        "edit",
+        "draft-123",
+        "--to",
+        "alice@example.com",
+        "--subject",
+        "Draft subject",
+    ])
+    .is_err());
+}
+
+#[test]
+fn mail_draft_body_file_flag_is_removed() {
+    assert!(parse(&[
+        "mail",
+        "draft",
+        "--to",
+        "alice@example.com",
+        "--subject",
+        "Draft subject",
+        "--body-file",
+        "message.txt",
+    ])
+    .is_err());
 }
 
 #[test]
@@ -1503,9 +2181,9 @@ fn sheets_get_with_google_query_flags() {
         "--fields",
         "spreadsheetId,properties.title",
         "--include-grid-data",
-        "--ranges",
+        "--range",
         "Sheet1!A1:B2",
-        "--ranges",
+        "--range",
         "Summary!A:A",
     ])
     .unwrap();
@@ -1539,12 +2217,14 @@ fn sheets_values_get_defaults_to_formatted_values() {
                         SheetsValuesCommand::Get {
                             spreadsheet_id,
                             range,
+                            ranges,
                             value_render_option,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
-            assert_eq!(range, "Sheet1!A1:B2");
+            assert_eq!(range.as_deref(), Some("Sheet1!A1:B2"));
+            assert!(ranges.is_empty());
             assert_eq!(value_render_option, SheetsValueRenderOption::FormattedValue);
         }
         _ => panic!("unexpected parse result"),
@@ -1571,12 +2251,14 @@ fn sheets_values_get_accepts_formula_render_option() {
                         SheetsValuesCommand::Get {
                             spreadsheet_id,
                             range,
+                            ranges,
                             value_render_option,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
-            assert_eq!(range, "Sheet1!C1:C3");
+            assert_eq!(range.as_deref(), Some("Sheet1!C1:C3"));
+            assert!(ranges.is_empty());
             assert_eq!(value_render_option, SheetsValueRenderOption::Formula);
         }
         _ => panic!("unexpected parse result"),
@@ -1584,11 +2266,11 @@ fn sheets_values_get_accepts_formula_render_option() {
 }
 
 #[test]
-fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
+fn sheets_values_get_accepts_repeated_ranges_and_render_option() {
     let cli = parse(&[
         "sheets",
         "values",
-        "batch-get",
+        "get",
         "spreadsheet-123",
         "--range",
         "Sheet1!A1:B2",
@@ -1603,14 +2285,16 @@ fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
             command:
                 SheetsCommand::Values {
                     command:
-                        SheetsValuesCommand::BatchGet {
+                        SheetsValuesCommand::Get {
                             spreadsheet_id,
+                            range,
                             ranges,
                             value_render_option,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert!(range.is_none());
             assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
             assert_eq!(
                 value_render_option,
@@ -1622,8 +2306,21 @@ fn sheets_values_batch_get_accepts_repeated_ranges_and_render_option() {
 }
 
 #[test]
-fn sheets_values_batch_get_requires_range() {
-    assert!(parse(&["sheets", "values", "batch-get", "spreadsheet-123"]).is_err());
+fn sheets_values_get_requires_range() {
+    assert!(parse(&["sheets", "values", "get", "spreadsheet-123"]).is_err());
+}
+
+#[test]
+fn sheets_values_batch_get_command_is_removed() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "batch-get",
+        "spreadsheet-123",
+        "--range",
+        "Sheet1!A1:B2",
+    ])
+    .is_err());
 }
 
 #[test]
@@ -1652,7 +2349,7 @@ fn sheets_values_update_defaults_to_user_entered() {
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
-            assert_eq!(range, "Sheet1!A1:B2");
+            assert_eq!(range.as_deref(), Some("Sheet1!A1:B2"));
             assert_eq!(values, "values.json");
             assert_eq!(value_input_option, SheetsValueInputOption::UserEntered);
         }
@@ -2060,11 +2757,11 @@ fn sheets_values_update_column_requires_value() {
 }
 
 #[test]
-fn sheets_values_batch_update_with_values_path() {
+fn sheets_values_update_without_range_accepts_batch_update_body() {
     let cli = parse(&[
         "sheets",
         "values",
-        "batch-update",
+        "update",
         "spreadsheet-123",
         "--values",
         "values.json",
@@ -2075,21 +2772,25 @@ fn sheets_values_batch_update_with_values_path() {
             command:
                 SheetsCommand::Values {
                     command:
-                        SheetsValuesCommand::BatchUpdate {
+                        SheetsValuesCommand::Update {
                             spreadsheet_id,
+                            range,
                             values,
+                            value_input_option,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert!(range.is_none());
             assert_eq!(values, "values.json");
+            assert_eq!(value_input_option, SheetsValueInputOption::UserEntered);
         }
         _ => panic!("unexpected parse result"),
     }
 }
 
 #[test]
-fn sheets_values_batch_update_requires_values() {
+fn sheets_values_batch_update_command_is_removed() {
     assert!(parse(&["sheets", "values", "batch-update", "spreadsheet-123"]).is_err());
 }
 
@@ -2393,22 +3094,24 @@ fn sheets_values_clear_with_range() {
                         SheetsValuesCommand::Clear {
                             spreadsheet_id,
                             range,
+                            ranges,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
-            assert_eq!(range, "Sheet1!A1:B2");
+            assert_eq!(range.as_deref(), Some("Sheet1!A1:B2"));
+            assert!(ranges.is_empty());
         }
         _ => panic!("unexpected parse result"),
     }
 }
 
 #[test]
-fn sheets_values_batch_clear_accepts_repeated_ranges() {
+fn sheets_values_clear_accepts_repeated_ranges() {
     let cli = parse(&[
         "sheets",
         "values",
-        "batch-clear",
+        "clear",
         "spreadsheet-123",
         "--range",
         "Sheet1!A1:B2",
@@ -2421,13 +3124,15 @@ fn sheets_values_batch_clear_accepts_repeated_ranges() {
             command:
                 SheetsCommand::Values {
                     command:
-                        SheetsValuesCommand::BatchClear {
+                        SheetsValuesCommand::Clear {
                             spreadsheet_id,
+                            range,
                             ranges,
                         },
                 },
         } => {
             assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(range, None);
             assert_eq!(ranges, vec!["Sheet1!A1:B2", "Summary!A:A"]);
         }
         _ => panic!("unexpected parse result"),
@@ -2435,8 +3140,21 @@ fn sheets_values_batch_clear_accepts_repeated_ranges() {
 }
 
 #[test]
-fn sheets_values_batch_clear_requires_range() {
-    assert!(parse(&["sheets", "values", "batch-clear", "spreadsheet-123"]).is_err());
+fn sheets_values_clear_requires_range() {
+    assert!(parse(&["sheets", "values", "clear", "spreadsheet-123"]).is_err());
+}
+
+#[test]
+fn sheets_values_batch_clear_command_is_removed() {
+    assert!(parse(&[
+        "sheets",
+        "values",
+        "batch-clear",
+        "spreadsheet-123",
+        "--range",
+        "Sheet1!A1:B2",
+    ])
+    .is_err());
 }
 
 #[test]
@@ -6589,6 +7307,74 @@ fn sheets_values_rejects_unknown_enum_values() {
 }
 
 #[test]
+fn sheets_help_uses_short_spreadsheet_id_wording() {
+    for args in [
+        &["sheets", "get", "--help"][..],
+        &["sheets", "batch-update", "--help"],
+        &["sheets", "values", "get", "--help"],
+        &["sheets", "values", "update", "--help"],
+        &["sheets", "values", "append", "--help"],
+        &["sheets", "values", "clear", "--help"],
+    ] {
+        let help = help(args);
+
+        assert!(help.contains("Spreadsheet ID"));
+        assert!(!help.contains("Google Sheets Spreadsheet ID"));
+    }
+
+    let get_help = help(&["sheets", "get", "--help"]);
+    assert!(get_help.contains("Read raw spreadsheet metadata"));
+    assert!(get_help.contains("Spreadsheet ID to read"));
+    assert!(get_help.contains("Limit returned grid data to an A1 range"));
+    assert!(!get_help.contains("Fetch raw Google Sheets Spreadsheet metadata"));
+    assert!(!get_help.contains("Google Sheets A1 Range"));
+
+    let values_get_help = help(&["sheets", "values", "get", "--help"]);
+    assert!(values_get_help.contains("Read raw sheet values"));
+    assert!(values_get_help.contains("Spreadsheet ID to read"));
+    assert!(values_get_help.contains("Single A1 range to read"));
+    assert!(values_get_help.contains("A1 range to read. Repeat for multiple ranges"));
+    assert!(values_get_help.contains("Return values formatted as displayed in the sheet"));
+    assert!(!values_get_help.contains("Fetch raw Google Sheets values"));
+    assert!(!values_get_help.contains("Single Google Sheets A1 Range to fetch"));
+    assert!(!values_get_help.contains("Google Sheets A1 Range to fetch"));
+    assert!(!values_get_help.contains("Return values formatted as displayed in Google Sheets"));
+
+    let values_help = help(&["sheets", "values", "--help"]);
+    assert!(values_help.contains("Read and write sheet values"));
+    assert!(!values_help.contains("Read and write Google Sheets cell values"));
+
+    for args in [
+        &["sheets", "values", "get", "--help"][..],
+        &["sheets", "values", "update", "--help"],
+        &["sheets", "values", "append", "--help"],
+        &["sheets", "values", "clear", "--help"],
+    ] {
+        let help = help(args);
+
+        assert!(!help.contains("Google Sheets A1 range"));
+        assert!(!help.contains("Google Sheets A1 Range"));
+    }
+
+    let batch_update_help = help(&["sheets", "batch-update", "--help"]);
+    assert!(batch_update_help.contains("Apply a raw structural spreadsheet update request body"));
+    assert!(!batch_update_help
+        .contains("Apply a raw Google Sheets structural Batch Update request body"));
+
+    let values_update_help = help(&["sheets", "values", "update", "--help"]);
+    assert!(values_update_help.contains("Update sheet values"));
+    assert!(values_update_help.contains("Path to a ValueRange JSON request body"));
+    assert!(!values_update_help.contains("Update a Google Sheets ValueRange"));
+    assert!(!values_update_help.contains("Path to a Google ValueRange JSON request body"));
+
+    let values_append_help = help(&["sheets", "values", "append", "--help"]);
+    assert!(values_append_help.contains("Path to a ValueRange JSON request body"));
+    assert!(values_append_help.contains("How appended data should be inserted"));
+    assert!(!values_append_help.contains("Path to a Google ValueRange JSON request body"));
+    assert!(!values_append_help.contains("How Google Sheets should insert appended data"));
+}
+
+#[test]
 fn sheets_batch_update_with_requests_path() {
     let cli = parse(&[
         "sheets",
@@ -6659,7 +7445,7 @@ fn global_account_flag() {
 
 #[test]
 fn global_account_flag_after_subcommand() {
-    let cli = parse(&["drive", "list", "--account", "me@example.com"]).unwrap();
+    let cli = parse(&["drive", "ls", "--account", "me@example.com"]).unwrap();
     assert_eq!(cli.account.as_deref(), Some("me@example.com"));
 }
 

@@ -117,6 +117,7 @@ fn release_operator_docs_cover_channel_verification_and_recovery() {
         "Promote Preview To Stable LTS",
         "git push origin v0.1.0",
         "Verify Installer Script",
+        "--channel preview",
         "On macOS",
         "On Linux",
         "Verify Release Automation Changes",
