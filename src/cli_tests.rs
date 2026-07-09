@@ -3619,6 +3619,41 @@ fn calendar_acl_add_with_flags() {
 }
 
 #[test]
+fn calendar_acl_patch_with_role_and_json_flag() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "patch",
+        "team-launches@example.com",
+        "user:teammate@example.com",
+        "--role",
+        "reader",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::Patch {
+                            calendar_id,
+                            rule_id,
+                            role,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(rule_id, "user:teammate@example.com");
+            assert_eq!(role, CalendarAclRole::Reader);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_acl_get_with_json_flag() {
     let cli = parse(&[
         "calendar",

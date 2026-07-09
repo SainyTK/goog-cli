@@ -841,6 +841,19 @@ pub enum CalendarAclCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Partially update one access control rule
+    Patch {
+        /// Calendar ID containing the rule. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// ACL rule ID, such as user:teammate@example.com or default.
+        rule_id: String,
+        /// Access role to set.
+        #[arg(long)]
+        role: CalendarAclRole,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

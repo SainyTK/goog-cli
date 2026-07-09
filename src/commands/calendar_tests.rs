@@ -648,6 +648,111 @@ async fn run_acl_add_requires_value_for_non_default_scope() {
 }
 
 #[tokio::test]
+async fn run_acl_patch_updates_role_and_prints_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path_regex(
+            r"^/calendar/v3/calendars/team-launches(%40|@)example\.com/acl/user(:|%3A)teammate(%40|@)example\.com$",
+        ))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "role": "reader"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "user:teammate@example.com",
+            "scope": {
+                "type": "user",
+                "value": "teammate@example.com"
+            },
+            "role": "reader"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Patch {
+            calendar_id: "team-launches@example.com".into(),
+            rule_id: "user:teammate@example.com".into(),
+            role: CalendarAclRole::Reader,
+            json: false,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SCOPE TYPE\tSCOPE VALUE\tROLE\tRULE ID\nuser\tteammate@example.com\treader\tuser:teammate@example.com\n"
+    );
+}
+
+#[tokio::test]
+async fn run_acl_patch_prints_json_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/calendar/v3/calendars/primary/acl/default"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "role": "freeBusyReader"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "default",
+            "scope": {
+                "type": "default"
+            },
+            "role": "freeBusyReader"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_acl_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarAclCommand::Patch {
+            calendar_id: "primary".into(),
+            rule_id: "default".into(),
+            role: CalendarAclRole::FreeBusyReader,
+            json: true,
+        },
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"default\",\"role\":\"freeBusyReader\",\"scope\":{\"type\":\"default\"}}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

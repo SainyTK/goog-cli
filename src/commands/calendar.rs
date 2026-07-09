@@ -11,12 +11,12 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
     delete_calendar, delete_event, get_acl, get_calendar, get_event, insert_acl, insert_calendar,
-    insert_event, list_acl, list_calendars, list_events, move_event, patch_calendar, patch_event,
-    query_freebusy, quick_add_event, update_calendar, update_event, CalendarError,
+    insert_event, list_acl, list_calendars, list_events, move_event, patch_acl, patch_calendar,
+    patch_event, query_freebusy, quick_add_event, update_calendar, update_event, CalendarError,
     DeleteCalendarOptions, DeleteEventOptions, FreeBusyOptions, GetAclOptions, GetCalendarOptions,
     GetEventOptions, InsertAclOptions, InsertCalendarOptions, ListAclOptions, ListCalendarsOptions,
-    ListEventsOptions, MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateCalendarOptions,
-    WriteEventOptions,
+    ListEventsOptions, MoveEventOptions, QuickAddEventOptions, SendUpdates, UpdateAclOptions,
+    UpdateCalendarOptions, WriteEventOptions,
 };
 use crate::cli::{
     CalendarAclCommand, CalendarAclScope, CalendarCalendarsCommand, CalendarCommand,
@@ -318,6 +318,36 @@ pub(super) async fn run_acl_command_to<S: AccountStore>(
             )
             .await
             .context("failed to get Google Calendar ACL rule")?;
+            if json {
+                write_json_line(out, &rule, "failed to serialize Calendar ACL rule")
+            } else {
+                write_acl_rule_table(out, &rule)
+            }
+        }
+        CalendarAclCommand::Patch {
+            calendar_id,
+            rule_id,
+            role,
+            json,
+        } => {
+            let json = json || output_json_by_default;
+            let target_resource_key = resource_key("calendar-acl", &calendar_id);
+            let options = update_acl_options(
+                calendar_id,
+                rule_id,
+                serde_json::json!({ "role": role.api_value() }),
+                base_url,
+            );
+            let rule = run_with_calendar_unified_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                CalendarAccessAttempt::PatchAcl(&options),
+                state_path,
+            )
+            .await
+            .context("failed to patch Google Calendar ACL rule")?;
             if json {
                 write_json_line(out, &rule, "failed to serialize Calendar ACL rule")
             } else {
@@ -827,6 +857,7 @@ enum CalendarAccessAttempt<'a> {
     ListAcl(&'a ListAclOptions),
     GetAcl(&'a GetAclOptions),
     InsertAcl(&'a InsertAclOptions),
+    PatchAcl(&'a UpdateAclOptions),
     ListEvents(&'a ListEventsOptions),
     GetEvent(&'a GetEventOptions),
     InsertEvent(&'a WriteEventOptions),
@@ -875,6 +906,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::ListAcl(options) => list_acl(&client, options).await,
         CalendarAccessAttempt::GetAcl(options) => get_acl(&client, options).await,
         CalendarAccessAttempt::InsertAcl(options) => insert_acl(&client, options).await,
+        CalendarAccessAttempt::PatchAcl(options) => patch_acl(&client, options).await,
         CalendarAccessAttempt::ListEvents(options) => list_events(&client, options).await,
         CalendarAccessAttempt::GetEvent(options) => get_event(&client, options).await,
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
@@ -1062,6 +1094,19 @@ fn insert_acl_options(
     if no_send_notifications {
         options = options.with_send_notifications(false);
     }
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn update_acl_options(
+    calendar_id: String,
+    rule_id: String,
+    body: serde_json::Value,
+    base_url: Option<&str>,
+) -> UpdateAclOptions {
+    let mut options = UpdateAclOptions::new(calendar_id, rule_id, body);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }

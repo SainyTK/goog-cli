@@ -284,6 +284,41 @@ impl InsertAclOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct UpdateAclOptions {
+    pub calendar_id: String,
+    pub rule_id: String,
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl UpdateAclOptions {
+    pub fn new(
+        calendar_id: impl Into<String>,
+        rule_id: impl Into<String>,
+        request_body: Value,
+    ) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            rule_id: rule_id.into(),
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "acl", &self.rule_id],
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ListEventsOptions {
     pub calendar_id: String,
     pub max_results: u32,
@@ -727,6 +762,19 @@ pub async fn insert_acl<S: AccountStore>(
         client,
         client
             .post(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn patch_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateAclOptions,
+) -> Result<AclRule, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .request(Method::PATCH, options.request_url()?)
             .json(&options.request_body),
     )
     .await
