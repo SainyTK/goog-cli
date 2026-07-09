@@ -3091,7 +3091,7 @@ async fn high_level_docs_unified_commands_do_not_fallback_for_explicit_account()
 
     for result in [map, search, content] {
         let message = format!("{:#}", result.unwrap_err());
-        assert!(message.contains("failed to fetch Google Docs Document"));
+        assert!(message.contains("failed to read Google Docs Document"));
         assert!(message.contains("Google Docs Document was not found"));
     }
     assert!(load_runtime_state_from_path(&state_path)
@@ -3208,7 +3208,7 @@ async fn run_get_unified_does_not_fallback_for_explicit_account_but_maps_success
     .await;
 
     let message = format!("{:#}", denied.unwrap_err());
-    assert!(message.contains("failed to fetch Google Docs Document"));
+    assert!(message.contains("failed to read Google Docs Document"));
     assert!(message.contains("Google Docs Document was not found"));
     assert!(denied_out.is_empty());
 
@@ -3269,7 +3269,7 @@ async fn run_get_unified_does_not_fallback_on_non_target_api_error() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("failed to fetch Google Docs Document"));
+    assert!(message.contains("failed to read Google Docs Document"));
     assert!(message.contains("Google Docs API error (500 Internal Server Error): server broke"));
     assert!(out.is_empty());
     assert!(load_runtime_state_from_path(&state_path)
@@ -3422,7 +3422,7 @@ async fn run_get_returns_clear_error_for_not_found_response() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("failed to fetch Google Docs Document"));
+    assert!(message.contains("failed to read Google Docs Document"));
     assert!(message.contains("Google Docs Document was not found"));
     assert!(out.is_empty());
 }

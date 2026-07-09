@@ -1717,7 +1717,7 @@ pub(super) async fn run_get_to<S: AccountStore>(
 
     let document = get_document(client, &options)
         .await
-        .context("failed to fetch Google Docs Document")?;
+        .context("failed to read Google Docs Document")?;
     refresh_style_template_cache(&document_id, &document, style_cache_dir);
     write_json_line(out, &document, "failed to serialize Docs Document")
 }
@@ -1750,7 +1750,7 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to fetch Google Docs Document")?;
+    .context("failed to read Google Docs Document")?;
 
     refresh_style_template_cache(&document_id, &document, style_cache_dir);
     write_json_line(out, &document, "failed to serialize Docs Document")
@@ -2009,7 +2009,7 @@ async fn get_document_map<S: AccountStore>(
     let options = get_document_options(document_id, None, true, documents_url);
     let document = get_document(client, &options)
         .await
-        .context("failed to fetch Google Docs Document")?;
+        .context("failed to read Google Docs Document")?;
     Ok(build_document_map(&document))
 }
 
@@ -2032,7 +2032,7 @@ async fn get_document_map_unified<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to fetch Google Docs Document")?;
+    .context("failed to read Google Docs Document")?;
     Ok(build_document_map(&document))
 }
 
