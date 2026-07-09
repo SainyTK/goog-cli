@@ -9,7 +9,10 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{SlidesCommand, SlidesObjectCommand, SlidesPredefinedLayout, SlidesSlideCommand};
+use crate::cli::{
+    SlidesCommand, SlidesObjectCommand, SlidesPredefinedLayout, SlidesSlideCommand,
+    SlidesZOrderOperation,
+};
 use crate::slides::{
     batch_update_presentation, create_presentation, get_presentation,
     BatchUpdatePresentationOptions, CreatePresentationOptions, GetPresentationOptions, SlidesError,
@@ -182,6 +185,26 @@ pub fn run<S: AccountStore>(
             ObjectDeleteRequest {
                 presentation_id,
                 object_id,
+            },
+            &mut std::io::stdout(),
+            None,
+            None,
+        )),
+        SlidesCommand::Object {
+            command:
+                SlidesObjectCommand::Order {
+                    presentation_id,
+                    object_ids,
+                    operation,
+                },
+        } => run_with_runtime(run_object_order_unified_to(
+            config,
+            store,
+            account_override,
+            ObjectOrderRequest {
+                presentation_id,
+                object_ids,
+                operation,
             },
             &mut std::io::stdout(),
             None,
@@ -643,6 +666,61 @@ fn build_object_move_batch_update(request: ObjectMoveRequest) -> serde_json::Val
                         "translateY": request.y,
                         "unit": "PT"
                     }
+                }
+            }
+        ]
+    })
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct ObjectOrderRequest {
+    pub presentation_id: String,
+    pub object_ids: Vec<String>,
+    pub operation: SlidesZOrderOperation,
+}
+
+pub(super) async fn run_object_order_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: ObjectOrderRequest,
+    out: &mut impl Write,
+    presentations_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let presentation_id = request.presentation_id.clone();
+    let request_body = build_object_order_batch_update(request);
+    let mut options = BatchUpdatePresentationOptions::new(presentation_id.clone(), request_body);
+    if let Some(presentations_url) = presentations_url {
+        options = options.with_presentations_url(presentations_url);
+    }
+
+    let target_resource_key = resource_key("slides", &presentation_id);
+    let response = run_with_slides_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        SlidesAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .context("failed to arrange Google Slides objects")?;
+
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Slides object order response",
+    )
+}
+
+fn build_object_order_batch_update(request: ObjectOrderRequest) -> serde_json::Value {
+    serde_json::json!({
+        "requests": [
+            {
+                "updatePageElementsZOrder": {
+                    "pageElementObjectIds": request.object_ids,
+                    "operation": request.operation.api_value()
                 }
             }
         ]

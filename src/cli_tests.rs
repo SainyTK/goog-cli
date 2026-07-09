@@ -12,7 +12,7 @@ use crate::cli::{
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
-    SlidesObjectCommand, SlidesPredefinedLayout, SlidesSlideCommand,
+    SlidesObjectCommand, SlidesPredefinedLayout, SlidesSlideCommand, SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -2579,6 +2579,54 @@ fn slides_object_move_with_transform_flags() {
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn slides_object_order_with_repeated_object_ids() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "order",
+        "presentation-123",
+        "--object-id",
+        "box-1",
+        "--object-id",
+        "image-1",
+        "--operation",
+        "bring-to-front",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Order {
+                            presentation_id,
+                            object_ids,
+                            operation,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_ids, vec!["box-1", "image-1"]);
+            assert_eq!(operation, SlidesZOrderOperation::BringToFront);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_order_requires_object_id() {
+    assert!(parse(&[
+        "slides",
+        "object",
+        "order",
+        "presentation-123",
+        "--operation",
+        "send-to-back",
+    ])
+    .is_err());
 }
 
 #[test]

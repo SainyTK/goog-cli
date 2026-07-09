@@ -268,6 +268,9 @@ impl SlidesCommand {
                     SlidesObjectCommand::Move {
                         presentation_id, ..
                     }
+                    | SlidesObjectCommand::Order {
+                        presentation_id, ..
+                    }
                     | SlidesObjectCommand::Delete {
                         presentation_id, ..
                     },
@@ -496,6 +499,17 @@ pub enum SlidesObjectCommand {
         #[arg(long, default_value_t = 1.0)]
         scale_y: f64,
     },
+    /// Bring objects forward or send them backward without writing Batch Update JSON
+    Order {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID to arrange. Repeat to move multiple objects together.
+        #[arg(long = "object-id", required = true)]
+        object_ids: Vec<String>,
+        /// Z-order operation to apply
+        #[arg(long, value_enum)]
+        operation: SlidesZOrderOperation,
+    },
     /// Delete a shape, image, table, or other page object without writing Batch Update JSON
     Delete {
         /// Presentation ID or URL to update
@@ -503,6 +517,25 @@ pub enum SlidesObjectCommand {
         /// Page object ID to delete
         object_id: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesZOrderOperation {
+    BringToFront,
+    BringForward,
+    SendBackward,
+    SendToBack,
+}
+
+impl SlidesZOrderOperation {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            SlidesZOrderOperation::BringToFront => "BRING_TO_FRONT",
+            SlidesZOrderOperation::BringForward => "BRING_FORWARD",
+            SlidesZOrderOperation::SendBackward => "SEND_BACKWARD",
+            SlidesZOrderOperation::SendToBack => "SEND_TO_BACK",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

@@ -9,7 +9,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::cli::SlidesPredefinedLayout;
+use crate::cli::{SlidesPredefinedLayout, SlidesZOrderOperation};
 use crate::slides::SLIDES_SCOPE;
 
 use super::slides::*;
@@ -430,6 +430,61 @@ async fn run_object_move_sends_update_transform_request() {
             y: 240.0,
             scale_x: 1.5,
             scale_y: 0.75,
+        },
+        &mut out,
+        Some(&presentations_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"presentationId\":\"presentation-123\",\"replies\":[{}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_object_order_sends_update_z_order_request() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123:batchUpdate",
+        ))
+        .and(header("authorization", "Bearer slides-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updatePageElementsZOrder": {
+                        "pageElementObjectIds": ["box-1", "image-1"],
+                        "operation": "BRING_TO_FRONT"
+                    }
+                }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "presentationId": "presentation-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("slides-access"))
+        .unwrap();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_object_order_unified_to(
+        &test_config(),
+        &store,
+        None,
+        ObjectOrderRequest {
+            presentation_id: "presentation-123".into(),
+            object_ids: vec!["box-1".into(), "image-1".into()],
+            operation: SlidesZOrderOperation::BringToFront,
         },
         &mut out,
         Some(&presentations_url(&server)),
