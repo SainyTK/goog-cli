@@ -3397,6 +3397,37 @@ fn calendar_event_create_with_json_body_path() {
 }
 
 #[test]
+fn calendar_event_get_with_json_flag() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "get",
+        "primary",
+        "event-123",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Get {
+                            calendar_id,
+                            event_id,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_event_create_with_flags() {
     let cli = parse(&[
         "calendar",

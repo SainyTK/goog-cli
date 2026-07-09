@@ -1667,6 +1667,100 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
 }
 
 #[tokio::test]
+async fn run_events_get_prints_table_by_default() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/calendar/v3/calendars/primary/events/event-123"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "event-123",
+            "summary": "Standup",
+            "start": { "dateTime": "2026-07-09T09:00:00Z" },
+            "end": { "dateTime": "2026-07-09T09:30:00Z" },
+            "status": "confirmed"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarEventsCommand::Get {
+            calendar_id: "primary".into(),
+            event_id: "event-123".into(),
+            json: false,
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "SUMMARY\tEVENT ID\tSTART\tEND\tSTATUS\nStandup\tevent-123\t2026-07-09T09:00:00Z\t2026-07-09T09:30:00Z\tconfirmed\n"
+    );
+}
+
+#[tokio::test]
+async fn run_events_get_prints_json_when_requested() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/calendar/v3/calendars/primary/events/event-123"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "event-123",
+            "summary": "Standup",
+            "status": "confirmed"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        CalendarEventsCommand::Get {
+            calendar_id: "primary".into(),
+            event_id: "event-123".into(),
+            json: true,
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"event-123\",\"status\":\"confirmed\",\"summary\":\"Standup\"}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_event_instances_lists_recurring_event_occurrences() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

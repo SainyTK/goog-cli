@@ -1345,6 +1345,9 @@ pub enum CalendarEventsCommand {
         calendar_id: String,
         /// Event ID to read
         event_id: String,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
     },
     /// List generated instances for a recurring event
     Instances {

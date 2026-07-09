@@ -656,7 +656,9 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
         CalendarEventsCommand::Get {
             calendar_id,
             event_id,
+            json,
         } => {
+            let json = json || output_json_by_default;
             let options = get_event_options(calendar_id.clone(), event_id.clone(), base_url);
             let target_resource_key = calendar_event_resource_key(&calendar_id, &event_id);
             let event = run_with_calendar_unified_access(
@@ -669,7 +671,11 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             )
             .await
             .context("failed to read Google Calendar event")?;
-            write_json_line(out, &event, "failed to serialize Calendar event")
+            if json {
+                write_json_line(out, &event, "failed to serialize Calendar event")
+            } else {
+                write_events_table(out, &[event])
+            }
         }
         CalendarEventsCommand::Instances {
             calendar_id,
