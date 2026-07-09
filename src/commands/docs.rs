@@ -6,7 +6,9 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{DocsCommand, DocsMapType, DocsNamedRangeCommand, DocsTextCommand};
+use crate::cli::{
+    DocsCommand, DocsMapType, DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand,
+};
 use crate::docs::{
     batch_update_document,
     change::{
@@ -436,25 +438,28 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::InsertTable {
-            document_id,
-            data,
-            rows,
-            columns,
-            at,
-            index,
-            entry,
-            page,
-            line,
-            heading,
-            after_heading,
-            before_heading,
-            after_text,
-            before_text,
-            dry_run,
-            json,
-            required_revision_id,
-            no_auto_style,
+        DocsCommand::Table {
+            command:
+                DocsTableCommand::Insert {
+                    document_id,
+                    data,
+                    rows,
+                    columns,
+                    at,
+                    index,
+                    entry,
+                    page,
+                    line,
+                    heading,
+                    after_heading,
+                    before_heading,
+                    after_text,
+                    before_text,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                    no_auto_style,
+                },
         } => {
             let selector = insert_text_selector(InsertTextSelectorArgs {
                 index,
@@ -491,14 +496,17 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::EditTable {
-            document_id,
-            table_id,
-            data,
-            resize,
-            dry_run,
-            json,
-            required_revision_id,
+        DocsCommand::Table {
+            command:
+                DocsTableCommand::Edit {
+                    document_id,
+                    table_id,
+                    data,
+                    resize,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;

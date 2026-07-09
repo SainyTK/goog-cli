@@ -3,9 +3,9 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsCommand, DocsListType, DocsMapType,
-    DocsNamedRangeCommand, DocsTextCommand, DriveCommand, DriveListType, MailCommand,
-    SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand,
+    DocsNamedRangeCommand, DocsTableCommand, DocsTextCommand, DriveCommand, DriveListType,
+    MailCommand, SheetsCommand, SheetsInsertDataOption, SheetsValueInputOption,
+    SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -586,10 +586,14 @@ fn docs_insert_commands_accept_at_selector() {
     assert_eq!(after_text, None);
 
     let Command::Docs {
-        command: DocsCommand::InsertTable { at, .. },
+        command:
+            DocsCommand::Table {
+                command: DocsTableCommand::Insert { at, .. },
+            },
     } = parse(&[
         "docs",
-        "insert-table",
+        "table",
+        "insert",
         "document-123",
         "--rows",
         "2",
@@ -705,6 +709,32 @@ fn docs_flat_text_commands_are_removed() {
         "old",
         "--replace",
         "new",
+    ])
+    .is_err());
+}
+
+#[test]
+fn docs_flat_table_commands_are_removed() {
+    assert!(parse(&[
+        "docs",
+        "insert-table",
+        "document-123",
+        "--rows",
+        "2",
+        "--columns",
+        "2",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "edit-table",
+        "document-123",
+        "--table-id",
+        "table-3",
+        "--data",
+        "table.csv",
     ])
     .is_err());
 }
@@ -917,17 +947,21 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::InsertTable {
-                data,
-                page,
-                line,
-                dry_run,
-                json,
-                ..
+            DocsCommand::Table {
+                command:
+                    DocsTableCommand::Insert {
+                        data,
+                        page,
+                        line,
+                        dry_run,
+                        json,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "insert-table",
+        "table",
+        "insert",
         "document-123",
         "--data",
         "table.csv",
@@ -951,16 +985,20 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::EditTable {
-                table_id,
-                data,
-                dry_run,
-                json,
-                ..
+            DocsCommand::Table {
+                command:
+                    DocsTableCommand::Edit {
+                        table_id,
+                        data,
+                        dry_run,
+                        json,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "edit-table",
+        "table",
+        "edit",
         "document-123",
         "--table-id",
         "table-3",
@@ -981,15 +1019,19 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::InsertTable {
-                rows,
-                columns,
-                no_auto_style,
-                ..
+            DocsCommand::Table {
+                command:
+                    DocsTableCommand::Insert {
+                        rows,
+                        columns,
+                        no_auto_style,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "insert-table",
+        "table",
+        "insert",
         "document-123",
         "--rows",
         "2",
@@ -1119,7 +1161,7 @@ fn docs_apply_commands_reject_no_auto_style() {
 
 #[test]
 fn docs_style_template_bypass_help_uses_distinct_flags() {
-    let insert_table_help = help(&["docs", "insert-table", "--help"]);
+    let insert_table_help = help(&["docs", "table", "insert", "--help"]);
     assert!(insert_table_help.contains("--no-auto-style"));
     assert!(!insert_table_help.contains("--no-cached-style"));
 
@@ -1220,7 +1262,7 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
         &["docs", "insert-page-break", "--help"],
         &["docs", "insert-section-break", "--help"],
         &["docs", "insert-footnote", "--help"],
-        &["docs", "insert-table", "--help"],
+        &["docs", "table", "insert", "--help"],
     ] {
         let command_help = help(command);
         assert!(command_help.contains("Provide exactly one insert location selector"));

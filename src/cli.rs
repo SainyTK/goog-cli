@@ -218,13 +218,15 @@ impl DocsCommand {
             | DocsCommand::CreateHeader { document_id, .. }
             | DocsCommand::CreateFooter { document_id, .. }
             | DocsCommand::InsertFootnote { document_id, .. }
-            | DocsCommand::InsertTable { document_id, .. }
-            | DocsCommand::EditTable { document_id, .. }
             | DocsCommand::ApplyStyles { document_id, .. }
             | DocsCommand::ApplyList { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. }
             | DocsCommand::StyleTemplate { document_id, .. } => document_id,
+            DocsCommand::Table { command } => match command {
+                DocsTableCommand::Insert { document_id, .. }
+                | DocsTableCommand::Edit { document_id, .. } => document_id,
+            },
             DocsCommand::NamedRange { command } => match command {
                 DocsNamedRangeCommand::Create { document_id, .. }
                 | DocsNamedRangeCommand::Delete { document_id, .. } => document_id,
@@ -517,85 +519,10 @@ Notes:
         #[arg(long)]
         required_revision_id: Option<String>,
     },
-    /// Insert a table through a high-level Document Map location selector
-    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
-    InsertTable {
-        /// Google Docs Document ID or URL to update
-        document_id: String,
-        /// CSV or TSV data file to populate the inserted table
-        #[arg(long)]
-        data: Option<String>,
-        /// Number of table rows
-        #[arg(long)]
-        rows: Option<usize>,
-        /// Number of table columns
-        #[arg(long)]
-        columns: Option<usize>,
-        /// Insert location selector
-        #[arg(long, value_name = "SELECTOR")]
-        at: Option<String>,
-        /// Raw Google Docs UTF-16 index
-        #[arg(long, hide = true)]
-        index: Option<i64>,
-        /// Document Map Entry number
-        #[arg(long, hide = true)]
-        entry: Option<usize>,
-        /// Derived page label
-        #[arg(long, hide = true)]
-        page: Option<usize>,
-        /// Content line within the derived page
-        #[arg(long, hide = true)]
-        line: Option<usize>,
-        /// Insert after the matching heading text (same as --after-heading)
-        #[arg(long, value_name = "TEXT", hide = true)]
-        heading: Option<String>,
-        /// Insert after the matching heading text
-        #[arg(long, hide = true)]
-        after_heading: Option<String>,
-        /// Insert before the matching heading text
-        #[arg(long, hide = true)]
-        before_heading: Option<String>,
-        /// Insert after the matching text span
-        #[arg(long, hide = true)]
-        after_text: Option<String>,
-        /// Insert before the matching text span
-        #[arg(long, hide = true)]
-        before_text: Option<String>,
-        /// Preview the edit without calling documents.batchUpdate
-        #[arg(long)]
-        dry_run: bool,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-        /// Require the document to still be at this revision before applying the edit
-        #[arg(long)]
-        required_revision_id: Option<String>,
-        /// Skip applying the cached style template's header styling to the new table
-        #[arg(long)]
-        no_auto_style: bool,
-    },
-    /// Replace table cell text from CSV or TSV data
-    EditTable {
-        /// Google Docs Document ID or URL to update
-        document_id: String,
-        /// Table handle from `docs map --type tables`, such as table-3
-        #[arg(long)]
-        table_id: String,
-        /// CSV or TSV data file with replacement cell text
-        #[arg(long)]
-        data: String,
-        /// Allow future structural table resizing
-        #[arg(long)]
-        resize: bool,
-        /// Preview the edit without calling documents.batchUpdate
-        #[arg(long)]
-        dry_run: bool,
-        /// Emit structured JSON
-        #[arg(long)]
-        json: bool,
-        /// Require the document to still be at this revision before applying the edit
-        #[arg(long)]
-        required_revision_id: Option<String>,
+    /// Insert or edit tables
+    Table {
+        #[command(subcommand)]
+        command: DocsTableCommand,
     },
     /// Apply common text styles through a high-level Document Range
     #[command(after_long_help = DOCS_RANGE_SELECTOR_HELP)]
@@ -852,6 +779,90 @@ pub enum DocsTextCommand {
         /// Replace every text match
         #[arg(long)]
         all: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DocsTableCommand {
+    /// Insert a table through a high-level Document Map location selector
+    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
+    Insert {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// CSV or TSV data file to populate the inserted table
+        #[arg(long)]
+        data: Option<String>,
+        /// Number of table rows
+        #[arg(long)]
+        rows: Option<usize>,
+        /// Number of table columns
+        #[arg(long)]
+        columns: Option<usize>,
+        /// Insert location selector
+        #[arg(long, value_name = "SELECTOR")]
+        at: Option<String>,
+        /// Raw Google Docs UTF-16 index
+        #[arg(long, hide = true)]
+        index: Option<i64>,
+        /// Document Map Entry number
+        #[arg(long, hide = true)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long, hide = true)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long, hide = true)]
+        line: Option<usize>,
+        /// Insert after the matching heading text (same as --after-heading)
+        #[arg(long, value_name = "TEXT", hide = true)]
+        heading: Option<String>,
+        /// Insert after the matching heading text
+        #[arg(long, hide = true)]
+        after_heading: Option<String>,
+        /// Insert before the matching heading text
+        #[arg(long, hide = true)]
+        before_heading: Option<String>,
+        /// Insert after the matching text span
+        #[arg(long, hide = true)]
+        after_text: Option<String>,
+        /// Insert before the matching text span
+        #[arg(long, hide = true)]
+        before_text: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+        /// Skip applying the cached style template's header styling to the new table
+        #[arg(long)]
+        no_auto_style: bool,
+    },
+    /// Replace table cell text from CSV or TSV data
+    Edit {
+        /// Google Docs Document ID or URL to update
+        document_id: String,
+        /// Table handle from `docs map --type tables`, such as table-3
+        #[arg(long)]
+        table_id: String,
+        /// CSV or TSV data file with replacement cell text
+        #[arg(long)]
+        data: String,
+        /// Allow future structural table resizing
+        #[arg(long)]
+        resize: bool,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
