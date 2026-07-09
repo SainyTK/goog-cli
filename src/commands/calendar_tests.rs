@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use wiremock::matchers::{body_json, header, method, path};
+use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
@@ -593,6 +593,53 @@ async fn run_events_patch_rejects_empty_flag_body() {
     assert!(err
         .to_string()
         .contains("patch requires --event or at least one event field flag"));
+}
+
+#[tokio::test]
+async fn run_events_move_posts_destination_and_prints_event() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/calendar/v3/calendars/primary/events/event-789/move"))
+        .and(query_param("destination", "team@example.com"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "event-789",
+            "summary": "Planning"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Move {
+            source_calendar_id: "primary".into(),
+            event_id: "event-789".into(),
+            destination: "team@example.com".into(),
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"event-789\",\"summary\":\"Planning\"}\n"
+    );
 }
 
 #[tokio::test]

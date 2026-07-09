@@ -2836,6 +2836,38 @@ fn calendar_event_patch_rejects_mixed_json_body_and_flags() {
 }
 
 #[test]
+fn calendar_event_move_with_destination() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "move",
+        "primary",
+        "event-123",
+        "--destination",
+        "team@example.com",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Move {
+                            source_calendar_id,
+                            event_id,
+                            destination,
+                        },
+                },
+        } => {
+            assert_eq!(source_calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert_eq!(destination, "team@example.com");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn calendar_freebusy_with_flags() {
     let cli = parse(&[
         "calendar",

@@ -710,6 +710,16 @@ pub enum CalendarEventsCommand {
         #[arg(long, conflicts_with = "event")]
         attendee: Vec<String>,
     },
+    /// Move an event from one calendar to another
+    Move {
+        /// Source calendar ID. Use primary for the account's primary calendar.
+        source_calendar_id: String,
+        /// Event ID to move
+        event_id: String,
+        /// Destination calendar ID
+        #[arg(long)]
+        destination: String,
+    },
     /// Delete an event from a calendar
     Delete {
         /// Calendar ID to update. Use primary for the account's primary calendar.

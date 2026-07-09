@@ -287,6 +287,50 @@ impl DeleteEventOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct MoveEventOptions {
+    pub source_calendar_id: String,
+    pub event_id: String,
+    pub destination_calendar_id: String,
+    base_url: String,
+}
+
+impl MoveEventOptions {
+    pub fn new(
+        source_calendar_id: impl Into<String>,
+        event_id: impl Into<String>,
+        destination_calendar_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            source_calendar_id: source_calendar_id.into(),
+            event_id: event_id.into(),
+            destination_calendar_id: destination_calendar_id.into(),
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(
+            &self.base_url,
+            &[
+                "calendars",
+                &self.source_calendar_id,
+                "events",
+                &self.event_id,
+                "move",
+            ],
+        )?;
+        url.query_pairs_mut()
+            .append_pair("destination", &self.destination_calendar_id);
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct FreeBusyOptions {
     pub request_body: Value,
     base_url: String,
@@ -399,6 +443,13 @@ pub async fn delete_event<S: AccountStore>(
         .await
         .map_err(CalendarError::Auth)?;
     parse_empty_response(response).await
+}
+
+pub async fn move_event<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &MoveEventOptions,
+) -> Result<Event, CalendarError> {
+    send_json_request(client, client.post(options.request_url()?)).await
 }
 
 pub async fn query_freebusy<S: AccountStore>(

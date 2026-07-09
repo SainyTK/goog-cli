@@ -10,9 +10,9 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::calendar::{
-    delete_event, get_calendar, get_event, insert_event, list_calendars, list_events, patch_event,
-    query_freebusy, update_event, CalendarError, DeleteEventOptions, FreeBusyOptions,
-    GetCalendarOptions, GetEventOptions, ListCalendarsOptions, ListEventsOptions,
+    delete_event, get_calendar, get_event, insert_event, list_calendars, list_events, move_event,
+    patch_event, query_freebusy, update_event, CalendarError, DeleteEventOptions, FreeBusyOptions,
+    GetCalendarOptions, GetEventOptions, ListCalendarsOptions, ListEventsOptions, MoveEventOptions,
     WriteEventOptions,
 };
 use crate::cli::{CalendarCalendarsCommand, CalendarCommand, CalendarEventsCommand};
@@ -338,6 +338,30 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             .context("failed to patch Google Calendar event")?;
             write_json_line(out, &event, "failed to serialize Calendar event")
         }
+        CalendarEventsCommand::Move {
+            source_calendar_id,
+            event_id,
+            destination,
+        } => {
+            let options = move_event_options(
+                source_calendar_id.clone(),
+                event_id.clone(),
+                destination.clone(),
+                base_url,
+            );
+            let target_resource_key = calendar_event_resource_key(&source_calendar_id, &event_id);
+            let event = run_with_calendar_unified_access(
+                config,
+                store,
+                account_override,
+                &target_resource_key,
+                CalendarAccessAttempt::MoveEvent(&options),
+                state_path,
+            )
+            .await
+            .context("failed to move Google Calendar event")?;
+            write_json_line(out, &event, "failed to serialize Calendar event")
+        }
         CalendarEventsCommand::Delete {
             calendar_id,
             event_id,
@@ -504,6 +528,7 @@ enum CalendarAccessAttempt<'a> {
     InsertEvent(&'a WriteEventOptions),
     UpdateEvent(&'a WriteEventOptions),
     PatchEvent(&'a WriteEventOptions),
+    MoveEvent(&'a MoveEventOptions),
     FreeBusy(&'a FreeBusyOptions),
 }
 
@@ -545,6 +570,7 @@ async fn run_calendar_access_as_account<S: AccountStore>(
         CalendarAccessAttempt::InsertEvent(options) => insert_event(&client, options).await,
         CalendarAccessAttempt::UpdateEvent(options) => update_event(&client, options).await,
         CalendarAccessAttempt::PatchEvent(options) => patch_event(&client, options).await,
+        CalendarAccessAttempt::MoveEvent(options) => move_event(&client, options).await,
         CalendarAccessAttempt::FreeBusy(options) => query_freebusy(&client, options).await,
     }
 }
@@ -715,6 +741,19 @@ fn delete_event_options(
     base_url: Option<&str>,
 ) -> DeleteEventOptions {
     let mut options = DeleteEventOptions::new(calendar_id, event_id);
+    if let Some(base_url) = base_url {
+        options = options.with_base_url(base_url);
+    }
+    options
+}
+
+fn move_event_options(
+    source_calendar_id: String,
+    event_id: String,
+    destination_calendar_id: String,
+    base_url: Option<&str>,
+) -> MoveEventOptions {
+    let mut options = MoveEventOptions::new(source_calendar_id, event_id, destination_calendar_id);
     if let Some(base_url) = base_url {
         options = options.with_base_url(base_url);
     }
