@@ -1347,6 +1347,9 @@ pub enum CalendarEventsCommand {
         /// Filter by shared extended property as NAME=VALUE. Repeat for multiple filters.
         #[arg(long)]
         shared_extended_property: Vec<String>,
+        /// Filter by event type. Repeat for multiple types.
+        #[arg(long, value_enum)]
+        event_type: Vec<CalendarEventType>,
         /// Expand recurring events into instances
         #[arg(long)]
         single_events: bool,
@@ -1642,6 +1645,29 @@ impl CalendarEventsOrderBy {
             "startTime" => Some(CalendarEventsOrderBy::StartTime),
             "updated" => Some(CalendarEventsOrderBy::Updated),
             _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum CalendarEventType {
+    Birthday,
+    Default,
+    FocusTime,
+    FromGmail,
+    OutOfOffice,
+    WorkingLocation,
+}
+
+impl CalendarEventType {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            CalendarEventType::Birthday => "birthday",
+            CalendarEventType::Default => "default",
+            CalendarEventType::FocusTime => "focusTime",
+            CalendarEventType::FromGmail => "fromGmail",
+            CalendarEventType::OutOfOffice => "outOfOffice",
+            CalendarEventType::WorkingLocation => "workingLocation",
         }
     }
 }

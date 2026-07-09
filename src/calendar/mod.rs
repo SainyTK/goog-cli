@@ -525,6 +525,7 @@ pub struct ListEventsOptions {
     pub i_cal_uid: Option<String>,
     pub private_extended_properties: Vec<String>,
     pub shared_extended_properties: Vec<String>,
+    pub event_types: Vec<String>,
     pub single_events: bool,
     pub show_deleted: bool,
     pub show_hidden_invitations: bool,
@@ -545,6 +546,7 @@ impl ListEventsOptions {
             i_cal_uid: None,
             private_extended_properties: Vec::new(),
             shared_extended_properties: Vec::new(),
+            event_types: Vec::new(),
             single_events: false,
             show_deleted: false,
             show_hidden_invitations: false,
@@ -596,6 +598,11 @@ impl ListEventsOptions {
         shared_extended_properties: Vec<String>,
     ) -> Self {
         self.shared_extended_properties = shared_extended_properties;
+        self
+    }
+
+    pub fn with_event_types(mut self, event_types: Vec<String>) -> Self {
+        self.event_types = event_types;
         self
     }
 
@@ -652,6 +659,9 @@ impl ListEventsOptions {
             }
             for extended_property in &self.shared_extended_properties {
                 query.append_pair("sharedExtendedProperty", extended_property);
+            }
+            for event_type in &self.event_types {
+                query.append_pair("eventTypes", event_type);
             }
             if self.single_events {
                 query.append_pair("singleEvents", "true");

@@ -1601,6 +1601,8 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
         .and(query_param("iCalUID", "abc123@example.com"))
         .and(query_param("privateExtendedProperty", "owner=agent"))
         .and(query_param("sharedExtendedProperty", "project=alpha"))
+        .and(query_param("eventTypes", "outOfOffice"))
+        .and(query_param("eventTypes", "workingLocation"))
         .and(header("authorization", "Bearer alice-access"))
         .respond_with(ResponseTemplate::new(403).set_body_string("denied"))
         .expect(1)
@@ -1616,6 +1618,8 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
         .and(query_param("iCalUID", "abc123@example.com"))
         .and(query_param("privateExtendedProperty", "owner=agent"))
         .and(query_param("sharedExtendedProperty", "project=alpha"))
+        .and(query_param("eventTypes", "outOfOffice"))
+        .and(query_param("eventTypes", "workingLocation"))
         .and(header("authorization", "Bearer bob-access"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "items": [
@@ -1663,6 +1667,10 @@ async fn run_events_list_uses_unified_fallback_and_maps_calendar() {
             i_cal_uid: Some("abc123@example.com".into()),
             private_extended_property: vec!["owner=agent".into()],
             shared_extended_property: vec!["project=alpha".into()],
+            event_type: vec![
+                crate::cli::CalendarEventType::OutOfOffice,
+                crate::cli::CalendarEventType::WorkingLocation,
+            ],
             single_events: false,
             show_deleted: true,
             show_hidden_invitations: true,

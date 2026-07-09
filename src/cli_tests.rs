@@ -3,19 +3,19 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, CalendarAclCommand, CalendarAclRole, CalendarAclScope,
-    CalendarCalendarsCommand, CalendarColorsCommand, CalendarCommand, CalendarEventsCommand,
-    CalendarEventsOrderBy, CalendarListEntryCommand, CalendarSendUpdates, Cli, Command,
-    DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand,
-    DocsImageCommand, DocsListCommand, DocsListType, DocsMapType, DocsNamedRangeCommand,
-    DocsStyleCommand, DocsTableCommand, DocsTextCommand, DriveCommand, DriveListType, MailCommand,
-    SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition,
-    SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
-    SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
-    SheetsSortOrder, SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
-    SheetsWrapStrategy, SlidesCommand, SlidesImageReplaceMethod, SlidesLineCategory,
-    SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand,
-    SlidesZOrderOperation,
+    CalendarCalendarsCommand, CalendarColorsCommand, CalendarCommand, CalendarEventType,
+    CalendarEventsCommand, CalendarEventsOrderBy, CalendarListEntryCommand, CalendarSendUpdates,
+    Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand,
+    DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType, DocsMapType,
+    DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
+    DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
+    SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
+    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
+    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
+    SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout,
+    SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -323,6 +323,10 @@ fn calendar_events_list_with_flags() {
         "workflow=demo",
         "--shared-extended-property",
         "project=alpha",
+        "--event-type",
+        "out-of-office",
+        "--event-type",
+        "working-location",
         "--single-events",
         "--show-deleted",
         "--show-hidden-invitations",
@@ -347,6 +351,7 @@ fn calendar_events_list_with_flags() {
                             i_cal_uid,
                             private_extended_property,
                             shared_extended_property,
+                            event_type,
                             single_events,
                             show_deleted,
                             show_hidden_invitations,
@@ -368,6 +373,13 @@ fn calendar_events_list_with_flags() {
                 vec!["owner=agent".to_string(), "workflow=demo".to_string()]
             );
             assert_eq!(shared_extended_property, vec!["project=alpha".to_string()]);
+            assert_eq!(
+                event_type,
+                vec![
+                    CalendarEventType::OutOfOffice,
+                    CalendarEventType::WorkingLocation
+                ]
+            );
             assert!(single_events);
             assert!(show_deleted);
             assert!(show_hidden_invitations);
