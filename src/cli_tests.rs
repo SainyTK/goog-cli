@@ -1464,7 +1464,6 @@ fn mail_draft_create_with_body_flags() {
                             bcc,
                             subject,
                             body,
-                            body_file,
                             attachment,
                             json,
                         },
@@ -1475,7 +1474,6 @@ fn mail_draft_create_with_body_flags() {
             assert_eq!(bcc, ["dave@example.com"]);
             assert_eq!(subject, "Draft subject");
             assert_eq!(body.as_deref(), Some("Hello from goog"));
-            assert!(body_file.is_none());
             assert!(attachment.is_empty());
             assert!(json);
         }
@@ -1564,7 +1562,6 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
                             bcc,
                             subject,
                             body,
-                            body_file,
                             attachment,
                             json,
                         },
@@ -1576,7 +1573,6 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
             assert!(bcc.is_empty());
             assert_eq!(subject, "Updated draft");
             assert_eq!(body.as_deref(), Some("Updated body"));
-            assert!(body_file.is_none());
             assert_eq!(attachment, ["./updated.pdf"]);
             assert!(json);
         }
@@ -1599,6 +1595,22 @@ fn mail_draft_edit_requires_to_recipient() {
     .unwrap_err();
 
     assert!(err.to_string().contains("--to <TO>"));
+}
+
+#[test]
+fn mail_draft_body_file_flag_is_removed() {
+    assert!(parse(&[
+        "mail",
+        "draft",
+        "create",
+        "--to",
+        "alice@example.com",
+        "--subject",
+        "Draft subject",
+        "--body-file",
+        "message.txt",
+    ])
+    .is_err());
 }
 
 #[test]

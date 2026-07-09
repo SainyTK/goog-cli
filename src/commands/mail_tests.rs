@@ -1,6 +1,7 @@
 use base64::Engine;
 use chrono::{Duration, Utc};
 use serde_json::Value;
+use std::io::Cursor;
 use wiremock::matchers::{body_json, body_string_contains, header, method, path, query_param};
 use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
 
@@ -13,6 +14,31 @@ use crate::mail::GMAIL_SCOPE;
 use crate::test_support::CurrentDirGuard;
 
 use super::mail::*;
+
+#[test]
+fn resolve_draft_body_supports_literal_file_and_stdin_sources() {
+    let temp = tempfile::tempdir().unwrap();
+    let body_path = temp.path().join("message.txt");
+    std::fs::write(&body_path, "Body from file").unwrap();
+
+    let mut empty_stdin = Cursor::new(Vec::<u8>::new());
+    assert_eq!(
+        resolve_draft_body_from_reader(Some("Literal body".into()), &mut empty_stdin).unwrap(),
+        "Literal body"
+    );
+
+    assert_eq!(
+        resolve_draft_body_from_reader(Some(format!("@{}", body_path.display())), &mut empty_stdin)
+            .unwrap(),
+        "Body from file"
+    );
+
+    let mut stdin = Cursor::new("Body from stdin".as_bytes());
+    assert_eq!(
+        resolve_draft_body_from_reader(Some("-".into()), &mut stdin).unwrap(),
+        "Body from stdin"
+    );
+}
 
 fn test_config() -> Config {
     Config {

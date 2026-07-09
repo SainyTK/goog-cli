@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -82,14 +82,13 @@ pub fn run<S: AccountStore>(
                 bcc,
                 subject,
                 body,
-                body_file,
                 attachment,
                 json,
             } => {
                 let runtime =
                     tokio::runtime::Runtime::new().context("failed to start async runtime")?;
                 let client = AuthClient::from_config(config.clone(), store, account_override)?;
-                let body = resolve_draft_body(body, body_file)?;
+                let body = resolve_draft_body(body)?;
                 let attachments = resolve_draft_attachments(attachment)?;
                 runtime.block_on(run_draft_create_to(
                     &client,
@@ -113,14 +112,13 @@ pub fn run<S: AccountStore>(
                 bcc,
                 subject,
                 body,
-                body_file,
                 attachment,
                 json,
             } => {
                 let runtime =
                     tokio::runtime::Runtime::new().context("failed to start async runtime")?;
                 let client = AuthClient::from_config(config.clone(), store, account_override)?;
-                let body = resolve_draft_body(body, body_file)?;
+                let body = resolve_draft_body(body)?;
                 let attachments = resolve_draft_attachments(attachment)?;
                 runtime.block_on(run_draft_edit_to(
                     &client,
@@ -555,14 +553,32 @@ fn get_message_options(message_id: String, messages_url: Option<&str>) -> GetMes
     options
 }
 
-fn resolve_draft_body(body: Option<String>, body_file: Option<String>) -> Result<String> {
-    match (body, body_file) {
-        (Some(body), None) => Ok(body),
-        (None, Some(path)) => std::fs::read_to_string(&path)
-            .with_context(|| format!("failed to read GoogleMail Draft body file: {path}")),
-        (None, None) => Ok(String::new()),
-        (Some(_), Some(_)) => unreachable!("clap prevents --body and --body-file together"),
+fn resolve_draft_body(body: Option<String>) -> Result<String> {
+    resolve_draft_body_from_reader(body, &mut std::io::stdin())
+}
+
+pub(super) fn resolve_draft_body_from_reader(
+    body: Option<String>,
+    stdin: &mut impl Read,
+) -> Result<String> {
+    let Some(body) = body else {
+        return Ok(String::new());
+    };
+
+    if body == "-" {
+        let mut stdin_body = String::new();
+        stdin
+            .read_to_string(&mut stdin_body)
+            .context("failed to read GoogleMail Draft body from stdin")?;
+        return Ok(stdin_body);
     }
+
+    if let Some(path) = body.strip_prefix('@') {
+        return std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read GoogleMail Draft body file: {path}"));
+    }
+
+    Ok(body)
 }
 
 pub(super) fn resolve_draft_attachments(paths: Vec<String>) -> Result<Vec<DraftAttachmentInput>> {

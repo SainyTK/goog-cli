@@ -990,12 +990,9 @@ pub enum MailDraftCommand {
         /// Draft subject
         #[arg(long)]
         subject: String,
-        /// Plain text draft body
-        #[arg(long, conflicts_with = "body_file")]
+        /// Plain text draft body, @path for a body file, or - for stdin
+        #[arg(long)]
         body: Option<String>,
-        /// Path to a plain text draft body file
-        #[arg(long, conflicts_with = "body")]
-        body_file: Option<String>,
         /// Local file to attach to the draft. Repeat for multiple attachments.
         #[arg(long)]
         attachment: Vec<String>,
@@ -1019,12 +1016,9 @@ pub enum MailDraftCommand {
         /// Draft subject
         #[arg(long)]
         subject: String,
-        /// Plain text draft body
-        #[arg(long, conflicts_with = "body_file")]
+        /// Plain text draft body, @path for a body file, or - for stdin
+        #[arg(long)]
         body: Option<String>,
-        /// Path to a plain text draft body file
-        #[arg(long, conflicts_with = "body")]
-        body_file: Option<String>,
         /// Local file to attach to the draft. Repeat for multiple attachments.
         #[arg(long)]
         attachment: Vec<String>,
