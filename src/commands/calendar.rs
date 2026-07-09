@@ -215,8 +215,28 @@ pub(super) async fn run_events_command_to<S: AccountStore>(
             calendar_id,
             event_id,
             event,
+            summary,
+            start,
+            end,
+            time_zone,
+            all_day,
+            location,
+            description,
+            attendee,
         } => {
-            let request_body = read_request_body(&event, input, "Google Calendar event")?;
+            let request_body = match event {
+                Some(event) => read_request_body(&event, input, "Google Calendar event")?,
+                None => build_event_request_body(
+                    summary,
+                    start,
+                    end,
+                    time_zone,
+                    all_day,
+                    location,
+                    description,
+                    attendee,
+                )?,
+            };
             let options = write_event_options_update(
                 calendar_id.clone(),
                 event_id.clone(),

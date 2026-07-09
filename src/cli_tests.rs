@@ -2423,6 +2423,79 @@ fn calendar_event_create_rejects_mixed_json_body_and_flags() {
 }
 
 #[test]
+fn calendar_event_update_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "update",
+        "primary",
+        "event-123",
+        "--summary",
+        "Planning moved",
+        "--start",
+        "2026-07-09T10:00:00+07:00",
+        "--end",
+        "2026-07-09T10:30:00+07:00",
+        "--time-zone",
+        "Asia/Bangkok",
+        "--location",
+        "Office",
+        "--attendee",
+        "teammate@example.com",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Update {
+                            calendar_id,
+                            event_id,
+                            event,
+                            summary,
+                            start,
+                            end,
+                            time_zone,
+                            location,
+                            attendee,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert_eq!(event, None);
+            assert_eq!(summary.as_deref(), Some("Planning moved"));
+            assert_eq!(start.as_deref(), Some("2026-07-09T10:00:00+07:00"));
+            assert_eq!(end.as_deref(), Some("2026-07-09T10:30:00+07:00"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+            assert_eq!(location.as_deref(), Some("Office"));
+            assert_eq!(attendee, vec!["teammate@example.com".to_string()]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_update_rejects_mixed_json_body_and_flags() {
+    let err = parse(&[
+        "calendar",
+        "events",
+        "update",
+        "primary",
+        "event-123",
+        "--event",
+        "event.json",
+        "--summary",
+        "Planning",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("cannot be used with"));
+}
+
+#[test]
 fn calendar_calendars_list_with_flags() {
     let cli = parse(&[
         "calendar",

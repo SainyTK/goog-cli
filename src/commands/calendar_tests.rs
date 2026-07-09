@@ -369,3 +369,132 @@ async fn run_events_create_builds_all_day_event_body_from_flags() {
         "{\"id\":\"event-all-day\",\"summary\":\"Out of office\"}\n"
     );
 }
+
+#[tokio::test]
+async fn run_events_update_sends_event_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/calendar/v3/calendars/primary/events/event-456"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "summary": "goog-e2e-calendar-updated",
+            "start": { "dateTime": "2026-07-09T10:00:00Z" },
+            "end": { "dateTime": "2026-07-09T10:30:00Z" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "event-456",
+            "summary": "goog-e2e-calendar-updated"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = br#"{"summary":"goog-e2e-calendar-updated","start":{"dateTime":"2026-07-09T10:00:00Z"},"end":{"dateTime":"2026-07-09T10:30:00Z"}}"#.as_slice();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Update {
+            calendar_id: "primary".into(),
+            event_id: "event-456".into(),
+            event: Some("-".into()),
+            summary: None,
+            start: None,
+            end: None,
+            time_zone: None,
+            all_day: false,
+            location: None,
+            description: None,
+            attendee: vec![],
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"event-456\",\"summary\":\"goog-e2e-calendar-updated\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_events_update_builds_event_body_from_flags() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/calendar/v3/calendars/primary/events/event-789"))
+        .and(header("authorization", "Bearer calendar-access"))
+        .and(body_json(serde_json::json!({
+            "summary": "Planning moved",
+            "start": {
+                "dateTime": "2026-07-09T10:00:00+07:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "end": {
+                "dateTime": "2026-07-09T10:30:00+07:00",
+                "timeZone": "Asia/Bangkok"
+            },
+            "location": "Office",
+            "description": "Updated planning",
+            "attendees": [
+                { "email": "teammate@example.com" }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "event-789",
+            "summary": "Planning moved"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &calendar_token("calendar-access"))
+        .unwrap();
+    let mut input = std::io::empty();
+    let mut out = Vec::new();
+    let (_state_dir, state_path) = write_test_state();
+
+    run_events_command_to(
+        &test_config(),
+        &store,
+        None,
+        CalendarEventsCommand::Update {
+            calendar_id: "primary".into(),
+            event_id: "event-789".into(),
+            event: None,
+            summary: Some("Planning moved".into()),
+            start: Some("2026-07-09T10:00:00+07:00".into()),
+            end: Some("2026-07-09T10:30:00+07:00".into()),
+            time_zone: Some("Asia/Bangkok".into()),
+            all_day: false,
+            location: Some("Office".into()),
+            description: Some("Updated planning".into()),
+            attendee: vec!["teammate@example.com".into()],
+        },
+        &mut input,
+        false,
+        &mut out,
+        Some(&calendar_base_url(&server)),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"id\":\"event-789\",\"summary\":\"Planning moved\"}\n"
+    );
+}
