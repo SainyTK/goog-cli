@@ -599,21 +599,24 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::ApplyList {
-            document_id,
-            from_index,
-            to_index,
-            entry,
-            page,
-            line,
-            text,
-            match_number,
-            list_type,
-            preset,
-            dry_run,
-            json,
-            required_revision_id,
-            no_cached_style,
+        DocsCommand::List {
+            command:
+                crate::cli::DocsListCommand::Apply {
+                    document_id,
+                    from_index,
+                    to_index,
+                    entry,
+                    page,
+                    line,
+                    text,
+                    match_number,
+                    list_type,
+                    preset,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                    no_cached_style,
+                },
         } => {
             let selector =
                 range_selector(from_index, to_index, entry, page, line, text, match_number)?;

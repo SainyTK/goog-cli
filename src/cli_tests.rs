@@ -3,10 +3,10 @@ use clap::Parser;
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
     AuthCommand, AuthMappingsCommand, Cli, Command, DocsBreakCommand, DocsCommand,
-    DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListType,
-    DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand,
-    DriveCommand, DriveListType, MailCommand, SheetsCommand, SheetsInsertDataOption,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
+    DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand,
+    DocsListType, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
+    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsCommand,
+    SheetsInsertDataOption, SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -969,12 +969,17 @@ fn docs_new_high_level_editing_commands_parse() {
     assert!(json);
 
     let Command::Docs {
-        command: DocsCommand::ApplyList {
-            list_type, entry, ..
-        },
+        command:
+            DocsCommand::List {
+                command:
+                    DocsListCommand::Apply {
+                        list_type, entry, ..
+                    },
+            },
     } = parse(&[
         "docs",
-        "apply-list",
+        "list",
+        "apply",
         "document-123",
         "--entry",
         "2",
@@ -997,15 +1002,19 @@ fn docs_new_high_level_editing_commands_parse() {
     ] {
         let Command::Docs {
             command:
-                DocsCommand::ApplyList {
-                    list_type,
-                    from_index,
-                    to_index,
-                    ..
+                DocsCommand::List {
+                    command:
+                        DocsListCommand::Apply {
+                            list_type,
+                            from_index,
+                            to_index,
+                            ..
+                        },
                 },
         } = parse(&[
             "docs",
-            "apply-list",
+            "list",
+            "apply",
             "document-123",
             "--from-index",
             "4",
@@ -1026,16 +1035,20 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::ApplyList {
-                preset,
-                list_type,
-                page,
-                line,
-                ..
+            DocsCommand::List {
+                command:
+                    DocsListCommand::Apply {
+                        preset,
+                        list_type,
+                        page,
+                        line,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "apply-list",
+        "list",
+        "apply",
         "document-123",
         "--page",
         "3",
@@ -1056,15 +1069,19 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::ApplyList {
-                text,
-                match_number,
-                list_type,
-                ..
+            DocsCommand::List {
+                command:
+                    DocsListCommand::Apply {
+                        text,
+                        match_number,
+                        list_type,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "apply-list",
+        "list",
+        "apply",
         "document-123",
         "--text",
         "Plan",
@@ -1253,14 +1270,18 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
-            DocsCommand::ApplyList {
-                entry,
-                no_cached_style,
-                ..
+            DocsCommand::List {
+                command:
+                    DocsListCommand::Apply {
+                        entry,
+                        no_cached_style,
+                        ..
+                    },
             },
     } = parse(&[
         "docs",
-        "apply-list",
+        "list",
+        "apply",
         "document-123",
         "--entry",
         "2",
@@ -1330,7 +1351,8 @@ fn docs_apply_commands_reject_no_auto_style() {
 
     assert!(parse(&[
         "docs",
-        "apply-list",
+        "list",
+        "apply",
         "document-123",
         "--entry",
         "2",
@@ -1351,7 +1373,7 @@ fn docs_style_template_bypass_help_uses_distinct_flags() {
     assert!(style_apply_help.contains("--no-cached-style"));
     assert!(!style_apply_help.contains("--no-auto-style"));
 
-    let apply_list_help = help(&["docs", "apply-list", "--help"]);
+    let apply_list_help = help(&["docs", "list", "apply", "--help"]);
     assert!(apply_list_help.contains("--no-cached-style"));
     assert!(!apply_list_help.contains("--no-auto-style"));
 }
@@ -1379,6 +1401,7 @@ fn docs_show_style_template_is_removed() {
     assert!(parse(&["docs", "show-style-template", "document-123"]).is_err());
     assert!(parse(&["docs", "style-template", "document-123"]).is_err());
     assert!(parse(&["docs", "apply-styles", "document-123", "--entry", "1"]).is_err());
+    assert!(parse(&["docs", "apply-list", "document-123", "--entry", "1"]).is_err());
 }
 
 #[test]
@@ -1463,7 +1486,7 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
 
     for command in [
         &["docs", "style", "apply", "--help"][..],
-        &["docs", "apply-list", "--help"],
+        &["docs", "list", "apply", "--help"],
     ] {
         let command_help = help(command);
         assert!(command_help.contains("Provide exactly one range selector."));
