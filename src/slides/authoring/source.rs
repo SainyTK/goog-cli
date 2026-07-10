@@ -260,6 +260,30 @@ where
     Option::<FiniteNumber>::deserialize(deserializer).map(|value| value.map(|value| value.0))
 }
 
+fn deserialize_native_requests<'de, D>(deserializer: D) -> Result<Vec<Value>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let requests = Vec::<NativeRequestValue>::deserialize(deserializer)?;
+    Ok(requests.into_iter().map(|request| request.0).collect())
+}
+
+struct NativeRequestValue(Value);
+
+impl<'de> Deserialize<'de> for NativeRequestValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        if value.is_object() {
+            Ok(Self(value))
+        } else {
+            Err(de::Error::custom("native request must be an object"))
+        }
+    }
+}
+
 struct FiniteNumber(f64);
 
 impl<'de> Deserialize<'de> for FiniteNumber {
@@ -351,6 +375,7 @@ pub struct SafeAreaDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SlideDefinition {
     #[serde(deserialize_with = "deserialize_strict_string")]
     pub key: String,
@@ -396,8 +421,8 @@ pub struct SlideDefinition {
     pub sources: Vec<SourceDefinition>,
     #[serde(default)]
     pub questions: Vec<QuestionDefinition>,
-    #[serde(flatten)]
-    pub content: BTreeMap<String, Value>,
+    #[serde(default, deserialize_with = "deserialize_native_requests")]
+    pub native_requests: Vec<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

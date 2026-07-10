@@ -98,7 +98,6 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.slides[0].footer.as_deref(),
         Some("Risk-tiered evidence | Independent challenge | Customer outcome monitoring")
     );
-    assert!(source.slides[0].content.is_empty());
     assert_eq!(
         source.slides[1].statement.as_deref(),
         Some("A correct sentence can still create an unsafe banking outcome.")
@@ -271,24 +270,165 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.slides[13].questions[0].body,
         "Scope, risk tier, permissions, and prohibited outcomes"
     );
-    assert!(!source.slides[1].content.contains_key("statement"));
-    assert!(!source.slides[1].content.contains_key("body"));
-    assert!(!source.slides[1].content.contains_key("takeaway"));
-    assert!(!source.slides[4].content.contains_key("owner"));
-    assert!(!source.slides[9].content.contains_key("items"));
-    for slide in &source.slides {
-        assert!(!slide.content.contains_key("columns"));
-        assert!(!slide.content.contains_key("rows"));
-        assert!(!slide.content.contains_key("stages"));
-        assert!(!slide.content.contains_key("evidence"));
-        assert!(!slide.content.contains_key("groups"));
-        assert!(!slide.content.contains_key("steps"));
-        assert!(!slide.content.contains_key("signals"));
-        assert!(!slide.content.contains_key("milestones"));
-        assert!(!slide.content.contains_key("sources"));
-        assert!(!slide.content.contains_key("questions"));
-    }
     assert_eq!(source.slides[13].key, "operating-principle");
+}
+
+#[test]
+fn rejects_non_list_native_requests_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: custom
+    pattern: freeform
+    nativeRequests: createShape
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "custom",
+                "pattern": "freeform",
+                "nativeRequests": "createShape"
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("slides[0].nativeRequests"), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_non_object_native_request_entries_with_exact_paths() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: custom
+    pattern: freeform
+    nativeRequests:
+      - createShape
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "custom",
+                "pattern": "freeform",
+                "nativeRequests": [null]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("slides[0].nativeRequests[0]"), "{message}");
+        assert!(
+            message.contains("native request must be an object"),
+            "{message}"
+        );
+    }
+}
+
+#[test]
+fn reads_native_requests_from_yaml_and_json_without_interpreting_them() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: custom
+    pattern: freeform
+    nativeRequests:
+      - createShape:
+          objectId: custom-shape
+          shapeType: RECTANGLE
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "custom",
+                "pattern": "freeform",
+                "nativeRequests": [{
+                    "createShape": {
+                        "objectId": "custom-shape",
+                        "shapeType": "RECTANGLE"
+                    }
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+
+        assert_eq!(
+            source.slides[0].native_requests,
+            [serde_json::json!({
+                "createShape": {
+                    "objectId": "custom-shape",
+                    "shapeType": "RECTANGLE"
+                }
+            })]
+        );
+    }
+}
+
+#[test]
+fn rejects_unknown_slide_fields_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: cover
+    pattern: cover
+    titlle: Misspelled title
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "cover",
+                "pattern": "cover",
+                "titlle": "Misspelled title"
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("slides[0].titlle"), "{message}");
+        assert!(message.contains("unknown field `titlle`"), "{message}");
+    }
 }
 
 #[test]
@@ -331,7 +471,6 @@ slides:
         assert_eq!(entry.key, "framework");
         assert_eq!(entry.title, "Framework title");
         assert_eq!(entry.note, "Framework note");
-        assert!(!source.slides[0].content.contains_key("sources"));
     }
 }
 
@@ -378,7 +517,6 @@ slides:
             question.body,
             "Scope, risk tier, permissions, and prohibited outcomes"
         );
-        assert!(!source.slides[0].content.contains_key("questions"));
     }
 }
 
@@ -905,7 +1043,6 @@ slides:
         let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
 
         assert_eq!(source.slides[0].emphasis.as_deref(), Some("high"));
-        assert!(!source.slides[0].content.contains_key("emphasis"));
     }
 }
 
@@ -974,7 +1111,6 @@ slides:
         let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
 
         assert_eq!(source.slides[0].density.as_deref(), Some("compact"));
-        assert!(!source.slides[0].content.contains_key("density"));
     }
 }
 
@@ -1309,7 +1445,6 @@ slides:
         assert_eq!(row.cells["dimension"], "Safe");
         assert_eq!(row.cells["method"], "Red-team harmful actions");
         assert_eq!(row.cells["evidence"], "Severe breach | live");
-        assert!(!source.slides[0].content.contains_key("rows"));
     }
 }
 
@@ -1519,7 +1654,6 @@ slides:
             Some("Customer recognizes the assistant and its limits")
         );
         assert_eq!(stage.measure.as_deref(), Some("Disclosure comprehension"));
-        assert!(!source.slides[0].content.contains_key("stages"));
     }
 }
 
@@ -1599,7 +1733,6 @@ slides:
             evidence.items[0].body,
             "Retrieval precision, groundedness, and policy rule checks"
         );
-        assert!(!source.slides[0].content.contains_key("evidence"));
     }
 }
 
@@ -1840,7 +1973,6 @@ slides:
             group.cards[0].body,
             "Misleading fees and unsuitable guidance"
         );
-        assert!(!source.slides[0].content.contains_key("groups"));
     }
 }
 
@@ -1938,7 +2070,6 @@ slides:
         assert_eq!(step.key, "sample");
         assert_eq!(step.title, "Sample");
         assert_eq!(step.body, "Stratify by journey and risk tier.");
-        assert!(!source.slides[0].content.contains_key("steps"));
     }
 }
 
@@ -2072,7 +2203,6 @@ slides:
         assert_eq!(signal.key, "customer-outcome");
         assert_eq!(signal.title, "Customer outcome");
         assert_eq!(signal.items, ["Task completion", "Repeat contact"]);
-        assert!(!source.slides[0].content.contains_key("signals"));
     }
 }
 
@@ -2217,7 +2347,6 @@ slides:
             milestone.exit.as_deref(),
             Some("Independent validation confirms the evidence is complete.")
         );
-        assert!(!source.slides[0].content.contains_key("milestones"));
     }
 }
 
