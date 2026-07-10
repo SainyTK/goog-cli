@@ -76,6 +76,10 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     let footer = geometry.footer.as_ref().unwrap();
     assert_eq!(footer.height, 18.0);
     assert_eq!(footer.gap, 12.0);
+    let pattern_defaults = source.theme.pattern_defaults.as_ref().unwrap();
+    let footer_defaults = pattern_defaults.footer.as_ref().unwrap();
+    assert!(footer_defaults.show_slide_number);
+    assert_eq!(footer_defaults.line, "rule");
     assert_eq!(source.slides.len(), 14);
     assert_eq!(source.slides[0].key, "cover");
     assert_eq!(source.slides[13].key, "operating-principle");
@@ -152,7 +156,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\n  patternDefaults:\n    footer: {{showSlideNumber: true, line: rule}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -182,6 +186,9 @@ fn yaml_and_json_sources_have_semantic_parity() {
                 "geometry": {{
                     "safeArea": {{"top": 24, "right": 24, "bottom": 24, "left": 24}},
                     "footer": {{"height": 18, "gap": 12}}
+                }},
+                "patternDefaults": {{
+                    "footer": {{"showSlideNumber": true, "line": "rule"}}
                 }}
             }},
             "quality": {{
@@ -608,6 +615,75 @@ slides: []
 
         assert!(message.contains(expected_path), "{message}");
         assert!(message.contains(expected_error), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_pattern_default_fields_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  patternDefaults:
+    footer:
+      showSlideNumber: true
+      line: rule
+      position: bottom
+quality: {}
+slides: []
+"#,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("theme.patternDefaults.footer.position"),
+        "{message}"
+    );
+    assert!(message.contains("unknown field `position`"), "{message}");
+}
+
+#[test]
+fn rejects_invalid_pattern_default_values_with_exact_source_paths() {
+    let sources = [
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {
+                "patternDefaults": {
+                    "footer": {"showSlideNumber": "yes", "line": "rule"}
+                }
+            },
+            "quality": {},
+            "slides": []
+        }"#,
+            "theme.patternDefaults.footer.showSlideNumber",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  patternDefaults:
+    footer:
+      showSlideNumber: true
+      line: 42
+quality: {}
+slides: []
+"#,
+            "theme.patternDefaults.footer.line",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
     }
 }
 

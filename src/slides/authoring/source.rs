@@ -39,7 +39,7 @@ pub struct ThemeDefinition {
     #[serde(default)]
     pub lines: BTreeMap<String, LineDefinition>,
     pub geometry: Option<GeometryDefinition>,
-    pub pattern_defaults: Option<Value>,
+    pub pattern_defaults: Option<PatternDefaultsDefinition>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -109,6 +109,20 @@ pub struct FooterGeometryDefinition {
     pub height: f64,
     #[serde(deserialize_with = "deserialize_finite_number")]
     pub gap: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PatternDefaultsDefinition {
+    pub footer: Option<FooterDefaultsDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FooterDefaultsDefinition {
+    pub show_slide_number: bool,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub line: String,
 }
 
 impl<'de> Deserialize<'de> for FontDefinition {
