@@ -3532,6 +3532,46 @@ slides: []
 }
 
 #[test]
+fn rejects_non_finite_quality_numbers_with_the_exact_source_path() {
+    let sources = [
+        (
+            "quality:\n  minimumFontSize: .nan",
+            "quality.minimumFontSize",
+        ),
+        (
+            "quality:\n  minimumTextContrast: .nan",
+            "quality.minimumTextContrast",
+        ),
+        (
+            "quality:\n  safeArea: {top: .nan, right: 24, bottom: 24, left: 24}",
+            "quality.safeArea.top",
+        ),
+        (
+            "quality:\n  safeArea: {top: 24, right: .nan, bottom: 24, left: 24}",
+            "quality.safeArea.right",
+        ),
+        (
+            "quality:\n  safeArea: {top: 24, right: 24, bottom: .nan, left: 24}",
+            "quality.safeArea.bottom",
+        ),
+        (
+            "quality:\n  safeArea: {top: 24, right: 24, bottom: 24, left: .nan}",
+            "quality.safeArea.left",
+        ),
+    ];
+
+    for (quality, expected_path) in sources {
+        let source =
+            format!("schemaVersion: 1\npresentation: {{}}\ntheme: {{}}\n{quality}\nslides: []\n");
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("number must be finite"), "{message}");
+    }
+}
+
+#[test]
 fn reports_nested_yaml_type_errors_with_the_exact_source_path() {
     let mut source = io::Cursor::new(
         r#"

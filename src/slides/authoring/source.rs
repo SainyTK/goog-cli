@@ -327,7 +327,9 @@ pub struct PresentationDefinition {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QualityDefinition {
+    #[serde(default, deserialize_with = "deserialize_optional_finite_number")]
     pub minimum_font_size: Option<f64>,
+    #[serde(default, deserialize_with = "deserialize_optional_finite_number")]
     pub minimum_text_contrast: Option<f64>,
     pub safe_area: Option<SafeAreaDefinition>,
     pub required_alt_text: Option<bool>,
@@ -338,9 +340,13 @@ pub struct QualityDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SafeAreaDefinition {
+    #[serde(deserialize_with = "deserialize_finite_number")]
     pub top: f64,
+    #[serde(deserialize_with = "deserialize_finite_number")]
     pub right: f64,
+    #[serde(deserialize_with = "deserialize_finite_number")]
     pub bottom: f64,
+    #[serde(deserialize_with = "deserialize_finite_number")]
     pub left: f64,
 }
 
