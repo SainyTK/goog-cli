@@ -361,6 +361,8 @@ pub struct SlideDefinition {
     pub takeaway: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
     pub owner: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub emphasis: Option<String>,
     #[serde(default)]
     pub items: Vec<ListItemDefinition>,
     pub columns: Option<SlideColumnsDefinition>,

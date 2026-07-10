@@ -876,6 +876,75 @@ slides:
 }
 
 #[test]
+fn reads_slide_emphasis_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: safe-and-fair-conduct
+    pattern: cards
+    emphasis: high
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "safe-and-fair-conduct",
+                "pattern": "cards",
+                "emphasis": "high"
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+
+        assert_eq!(source.slides[0].emphasis.as_deref(), Some("high"));
+        assert!(!source.slides[0].content.contains_key("emphasis"));
+    }
+}
+
+#[test]
+fn rejects_non_string_slide_emphasis_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: safe-and-fair-conduct
+    pattern: cards
+    emphasis: 42
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "safe-and-fair-conduct",
+                "pattern": "cards",
+                "emphasis": ["high"]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("slides[0].emphasis"), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
 fn rejects_malformed_slide_items_in_yaml_and_json() {
     let sources = [
         r#"
