@@ -364,6 +364,8 @@ pub struct SlideDefinition {
     #[serde(default)]
     pub items: Vec<ListItemDefinition>,
     pub columns: Option<SlideColumnsDefinition>,
+    #[serde(default)]
+    pub rows: Vec<EvidenceTableRowDefinition>,
     #[serde(flatten)]
     pub content: BTreeMap<String, Value>,
 }
@@ -377,6 +379,55 @@ pub struct ListItemDefinition {
     pub title: String,
     #[serde(deserialize_with = "deserialize_strict_string")]
     pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EvidenceTableRowDefinition {
+    pub key: String,
+    #[serde(flatten)]
+    pub cells: BTreeMap<String, String>,
+}
+
+impl<'de> Deserialize<'de> for EvidenceTableRowDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_map(EvidenceTableRowDefinitionVisitor)
+    }
+}
+
+struct EvidenceTableRowDefinitionVisitor;
+
+impl<'de> Visitor<'de> for EvidenceTableRowDefinitionVisitor {
+    type Value = EvidenceTableRowDefinition;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("an evidence table row with a stable key and string cells")
+    }
+
+    fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let mut key = None;
+        let mut cells = BTreeMap::new();
+
+        while let Some(field) = map.next_key::<String>()? {
+            if field == "key" {
+                if key.is_some() {
+                    return Err(de::Error::duplicate_field("key"));
+                }
+                key = Some(map.next_value::<StrictString>()?.0);
+            } else {
+                let value = map.next_value::<StrictString>()?.0;
+                cells.insert(field, value);
+            }
+        }
+
+        let key = key.ok_or_else(|| de::Error::missing_field("key"))?;
+        Ok(EvidenceTableRowDefinition { key, cells })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

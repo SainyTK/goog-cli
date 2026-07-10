@@ -155,6 +155,21 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     };
     assert_eq!(table_columns[0].label.as_deref(), Some("What to measure"));
     assert_eq!(table_columns[0].width, Some(0.23));
+    assert_eq!(source.slides[3].rows.len(), 7);
+    assert_eq!(source.slides[3].rows[0].key, "valid-reliable");
+    assert_eq!(
+        source.slides[3].rows[0].cells["dimension"],
+        "Valid and reliable"
+    );
+    assert_eq!(
+        source.slides[3].rows[0].cells["method"],
+        "Risk-tiered golden-set replay and dual review"
+    );
+    assert_eq!(
+        source.slides[3].rows[0].cells["evidence"],
+        "Task success; unsupported claims | weekly"
+    );
+    assert_eq!(source.slides[6].rows.len(), 5);
     assert_eq!(
         source.slides[5].columns,
         Some(SlideColumnsDefinition::Count(2))
@@ -170,6 +185,7 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     assert!(!source.slides[9].content.contains_key("items"));
     for slide in &source.slides {
         assert!(!slide.content.contains_key("columns"));
+        assert!(!slide.content.contains_key("rows"));
     }
     assert_eq!(source.slides[13].key, "operating-principle");
 }
@@ -738,6 +754,114 @@ slides:
         );
         assert_eq!(columns[0].sections[0].label, "PRIMARY CONTROL");
         assert_eq!(columns[0].sections[0].body, "Approved knowledge");
+    }
+}
+
+#[test]
+fn reads_evidence_table_rows_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: measurement-framework
+    pattern: evidence-table
+    rows:
+      - key: safe
+        dimension: Safe
+        method: Red-team harmful actions
+        evidence: Severe breach | live
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "measurement-framework",
+                "pattern": "evidence-table",
+                "rows": [{
+                    "key": "safe",
+                    "dimension": "Safe",
+                    "method": "Red-team harmful actions",
+                    "evidence": "Severe breach | live"
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let row = &source.slides[0].rows[0];
+
+        assert_eq!(row.key, "safe");
+        assert_eq!(row.cells["dimension"], "Safe");
+        assert_eq!(row.cells["method"], "Red-team harmful actions");
+        assert_eq!(row.cells["evidence"], "Severe breach | live");
+        assert!(!source.slides[0].content.contains_key("rows"));
+    }
+}
+
+#[test]
+fn rejects_malformed_evidence_table_rows_with_exact_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: measurement-framework
+    pattern: evidence-table
+    rows:
+      - key: 42
+        dimension: Safe
+"#,
+            "slides[0].rows[0].key",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: measurement-framework
+    pattern: evidence-table
+    rows:
+      - key: safe
+        dimension: 42
+"#,
+            "slides[0].rows[0].dimension",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "measurement-framework",
+                "pattern": "evidence-table",
+                "rows": [{
+                    "key": "safe",
+                    "dimension": ["Safe"]
+                }]
+            }]
+        }"#,
+            "slides[0].rows[0].dimension",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
     }
 }
 
