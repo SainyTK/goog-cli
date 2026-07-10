@@ -210,6 +210,184 @@ fn yaml_and_json_sources_have_semantic_parity() {
 }
 
 #[test]
+fn reads_typed_assets_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+assets:
+  hero:
+    url: https://example.com/hero.png
+    checksum: sha256:0123456789abcdef
+    altText: A customer reviewing account information
+    placementPolicy: cover
+quality: {}
+slides: []
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "assets": {
+                "hero": {
+                    "url": "https://example.com/hero.png",
+                    "checksum": "sha256:0123456789abcdef",
+                    "altText": "A customer reviewing account information",
+                    "placementPolicy": "cover"
+                }
+            },
+            "quality": {},
+            "slides": []
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let hero = &source.assets["hero"];
+
+        assert_eq!(hero.url, "https://example.com/hero.png");
+        assert_eq!(hero.checksum, "sha256:0123456789abcdef");
+        assert_eq!(
+            hero.alt_text.as_deref(),
+            Some("A customer reviewing account information")
+        );
+        assert_eq!(hero.placement_policy, "cover");
+    }
+}
+
+#[test]
+fn allows_missing_asset_alt_text_for_later_quality_policy_validation() {
+    let mut source = io::Cursor::new(
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+assets:
+  hero:
+    url: https://example.com/hero.png
+    checksum: sha256:0123456789abcdef
+    placementPolicy: cover
+quality:
+  requiredAltText: false
+slides: []
+"#,
+    );
+
+    let source = read_deck_source("-", &mut source).unwrap();
+
+    assert!(source.assets["hero"].alt_text.is_none());
+}
+
+#[test]
+fn rejects_unknown_asset_fields_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+assets:
+  hero:
+    url: https://example.com/hero.png
+    checksum: sha256:0123456789abcdef
+    altText: A customer reviewing account information
+    placementPolicy: cover
+    license: internal
+quality: {}
+slides: []
+"#,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("assets.hero.license"), "{message}");
+    assert!(message.contains("unknown field `license`"), "{message}");
+}
+
+#[test]
+fn rejects_invalid_asset_values_with_exact_source_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+assets:
+  hero:
+    url: 42
+    checksum: sha256:0123456789abcdef
+    altText: A customer reviewing account information
+    placementPolicy: cover
+quality: {}
+slides: []
+"#,
+            "assets.hero.url",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "assets": {
+                "hero": {
+                    "url": "https://example.com/hero.png",
+                    "checksum": ["sha256:0123456789abcdef"],
+                    "altText": "A customer reviewing account information",
+                    "placementPolicy": "cover"
+                }
+            },
+            "quality": {},
+            "slides": []
+        }"#,
+            "assets.hero.checksum",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+assets:
+  hero:
+    url: https://example.com/hero.png
+    checksum: sha256:0123456789abcdef
+    altText: 42
+    placementPolicy: cover
+quality: {}
+slides: []
+"#,
+            "assets.hero.altText",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "assets": {
+                "hero": {
+                    "url": "https://example.com/hero.png",
+                    "checksum": "sha256:0123456789abcdef",
+                    "altText": "A customer reviewing account information",
+                    "placementPolicy": {"fit": "cover"}
+                }
+            },
+            "quality": {},
+            "slides": []
+        }"#,
+            "assets.hero.placementPolicy",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
 fn rejects_unknown_type_style_fields_with_the_exact_source_path() {
     let mut source = io::Cursor::new(
         r#"

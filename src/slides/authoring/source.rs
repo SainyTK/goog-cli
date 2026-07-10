@@ -14,11 +14,24 @@ pub struct DeckSource {
     pub presentation: PresentationDefinition,
     pub theme: ThemeDefinition,
     #[serde(default)]
-    pub assets: BTreeMap<String, Value>,
+    pub assets: BTreeMap<String, AssetDefinition>,
     #[serde(default)]
     pub layouts: BTreeMap<String, Value>,
     pub quality: QualityDefinition,
     pub slides: Vec<SlideDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AssetDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub url: String,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub checksum: String,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub alt_text: Option<String>,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub placement_policy: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
