@@ -218,6 +218,40 @@ _Avoid_: Rows payload, cells payload
 The Google Sheets `spreadsheets.batchUpdate` operation that applies ordered structural mutation requests to a Spreadsheet, such as adding Sheets, formatting cells, resizing dimensions, filters, merges, and protected ranges.
 _Avoid_: Values batch update, patch, edit
 
+### Slides
+
+**Deck Source**:
+The versioned YAML or JSON description of a presentation's narrative, theme, Slide Patterns, assets, and stable keys.
+_Avoid_: Deck script, presentation program, request file
+
+**Slide Pattern**:
+A semantic layout that converts structured slide content into planned elements and geometry.
+_Avoid_: Template, slide type, layout preset
+
+**Managed Presentation**:
+A Google Slides presentation whose managed slides and objects are reconciled from a Deck Source by `goog-cli`.
+_Avoid_: Generated presentation, owned presentation, synced deck
+
+**Presentation Plan**:
+The normalized and fully laid-out desired state compiled from a Deck Source before comparison with Google.
+_Avoid_: Request list, render plan, deck payload
+
+**Apply Plan**:
+The ordered semantic difference between a Presentation Plan and the current live presentation.
+_Avoid_: Batch Update, request queue, patch
+
+**Apply Journal**:
+The local record of completed request chunks and final verification state for one apply invocation.
+_Avoid_: Transaction log, request log, checkpoint file
+
+**Quality Report**:
+The structured findings from source, layout, live-state, thumbnail, and export verification.
+_Avoid_: Validation log, lint output, QA notes
+
+**Managed Object**:
+A slide or page element whose stable identity is owned by a Deck Source.
+_Avoid_: Generated object, tracked object, CLI object
+
 ### File Transfer
 
 **Resumable Upload**:
