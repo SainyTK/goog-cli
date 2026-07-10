@@ -36,6 +36,9 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.theme.colors.get("accent").map(String::as_str),
         Some("#FF6B35")
     );
+    let heading_font = &source.theme.fonts["heading"];
+    assert_eq!(heading_font.family, "Arial");
+    assert_eq!(heading_font.fallbacks, ["sans-serif"]);
     assert_eq!(source.slides.len(), 14);
     assert_eq!(source.slides[0].key, "cover");
     assert_eq!(source.slides[13].key, "operating-principle");
@@ -112,7 +115,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme: {{}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -121,7 +124,11 @@ fn yaml_and_json_sources_have_semantic_parity() {
         r#"{{
             "schemaVersion": 1,
             "presentation": {{}},
-            "theme": {{}},
+            "theme": {{
+                "fonts": {{
+                    "heading": {{"family": "Arial", "fallbacks": ["sans-serif"]}}
+                }}
+            }},
             "quality": {{
                 "minimumFontSize": 9,
                 "minimumTextContrast": 4.5,
@@ -270,6 +277,99 @@ slides: []
         let message = error.to_string();
 
         assert!(message.contains("theme.colors.ink"), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_font_token_fields_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  fonts:
+    heading:
+      family: Arial
+      fallback: [sans-serif]
+quality: {}
+slides: []
+"#,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("theme.fonts.heading.fallback"),
+        "{message}"
+    );
+    assert!(message.contains("unknown field `fallback`"), "{message}");
+}
+
+#[test]
+fn supports_scalar_font_family_shorthand_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  fonts:
+    heading: Arial
+quality: {}
+slides: []
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {"fonts": {"heading": "Arial"}},
+            "quality": {},
+            "slides": []
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let heading = &source.theme.fonts["heading"];
+
+        assert_eq!(heading.family, "Arial");
+        assert!(heading.fallbacks.is_empty());
+    }
+}
+
+#[test]
+fn rejects_non_string_font_values_in_yaml_and_json() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  fonts:
+    heading:
+      family: 42
+quality: {}
+slides: []
+"#,
+            "theme.fonts.heading.family",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {"fonts": {"heading": {"family": "Arial", "fallbacks": [42]}}},
+            "quality": {},
+            "slides": []
+        }"#,
+            "theme.fonts.heading.fallbacks[0]",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
         assert!(message.contains("invalid type"), "{message}");
     }
 }

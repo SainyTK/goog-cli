@@ -3,7 +3,7 @@ use std::fmt;
 use std::io::Read;
 use std::path::Path;
 
-use serde::de::{self, Visitor};
+use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
@@ -27,7 +27,7 @@ pub struct ThemeDefinition {
     #[serde(default, deserialize_with = "deserialize_strict_string_map")]
     pub colors: BTreeMap<String, String>,
     #[serde(default)]
-    pub fonts: BTreeMap<String, Value>,
+    pub fonts: BTreeMap<String, FontDefinition>,
     #[serde(default)]
     pub type_styles: BTreeMap<String, Value>,
     #[serde(default)]
@@ -40,6 +40,88 @@ pub struct ThemeDefinition {
     pub lines: BTreeMap<String, Value>,
     pub geometry: Option<Value>,
     pub pattern_defaults: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FontDefinition {
+    pub family: String,
+    pub fallbacks: Vec<String>,
+}
+
+impl<'de> Deserialize<'de> for FontDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(FontDefinitionVisitor)
+    }
+}
+
+struct FontDefinitionVisitor;
+
+impl<'de> Visitor<'de> for FontDefinitionVisitor {
+    type Value = FontDefinition;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a font family string or font definition")
+    }
+
+    fn visit_str<E>(self, family: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(FontDefinition {
+            family: family.to_owned(),
+            fallbacks: Vec::new(),
+        })
+    }
+
+    fn visit_string<E>(self, family: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(FontDefinition {
+            family,
+            fallbacks: Vec::new(),
+        })
+    }
+
+    fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let definition =
+            FontDefinitionObject::deserialize(de::value::MapAccessDeserializer::new(map))?;
+        Ok(FontDefinition {
+            family: definition.family,
+            fallbacks: definition.fallbacks,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct FontDefinitionObject {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    family: String,
+    #[serde(default, deserialize_with = "deserialize_strict_string_vec")]
+    fallbacks: Vec<String>,
+}
+
+fn deserialize_strict_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    StrictString::deserialize(deserializer).map(|value| value.0)
+}
+
+fn deserialize_strict_string_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let values = Vec::<StrictString>::deserialize(deserializer)?;
+    Ok(values.into_iter().map(|value| value.0).collect())
 }
 
 fn deserialize_strict_string_map<'de, D>(
