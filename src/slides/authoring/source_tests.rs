@@ -225,6 +225,27 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
             "Complaint and detriment"
         ]
     );
+    assert_eq!(source.slides[10].milestones.len(), 5);
+    assert_eq!(source.slides[10].milestones[0].key, "detect");
+    assert_eq!(source.slides[10].milestones[0].title, "Detect");
+    assert_eq!(source.slides[10].milestones[0].body, None);
+    assert_eq!(source.slides[10].milestones[0].exit, None);
+    assert_eq!(source.slides[11].milestones.len(), 3);
+    assert_eq!(source.slides[11].milestones[0].key, "baseline");
+    assert_eq!(
+        source.slides[11].milestones[0].title,
+        "Baseline one journey"
+    );
+    assert_eq!(
+        source.slides[11].milestones[0].body.as_deref(),
+        Some(
+            "Choose a bounded customer journey. Define risk tier, approved sources, harm taxonomy, owners, and golden set."
+        )
+    );
+    assert_eq!(
+        source.slides[11].milestones[0].exit.as_deref(),
+        Some("Independent validation confirms the evidence is complete.")
+    );
     assert_eq!(
         source.slides[5].columns,
         Some(SlideColumnsDefinition::Count(2))
@@ -246,6 +267,7 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         assert!(!slide.content.contains_key("groups"));
         assert!(!slide.content.contains_key("steps"));
         assert!(!slide.content.contains_key("signals"));
+        assert!(!slide.content.contains_key("milestones"));
     }
     assert_eq!(source.slides[13].key, "operating-principle");
 }
@@ -1714,6 +1736,162 @@ slides:
 
     assert!(
         message.contains("slides[0].signals[0].cadence"),
+        "{message}"
+    );
+    assert!(message.contains("unknown field"), "{message}");
+}
+
+#[test]
+fn reads_timeline_milestones_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: implementation-path
+    pattern: timeline
+    milestones:
+      - key: baseline
+        title: Baseline one journey
+        body: Choose a bounded customer journey.
+        exit: Independent validation confirms the evidence is complete.
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "implementation-path",
+                "pattern": "timeline",
+                "milestones": [{
+                    "key": "baseline",
+                    "title": "Baseline one journey",
+                    "body": "Choose a bounded customer journey.",
+                    "exit": "Independent validation confirms the evidence is complete."
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let milestone = &source.slides[0].milestones[0];
+
+        assert_eq!(milestone.key, "baseline");
+        assert_eq!(milestone.title, "Baseline one journey");
+        assert_eq!(
+            milestone.body.as_deref(),
+            Some("Choose a bounded customer journey.")
+        );
+        assert_eq!(
+            milestone.exit.as_deref(),
+            Some("Independent validation confirms the evidence is complete.")
+        );
+        assert!(!source.slides[0].content.contains_key("milestones"));
+    }
+}
+
+#[test]
+fn rejects_malformed_timeline_milestones_with_exact_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: ongoing-monitoring
+    pattern: timeline
+    milestones:
+      - key: 42
+        title: Detect
+"#,
+            "slides[0].milestones[0].key",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "ongoing-monitoring",
+                "pattern": "timeline",
+                "milestones": [{"key": "detect", "title": ["Detect"]}]
+            }]
+        }"#,
+            "slides[0].milestones[0].title",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: implementation-path
+    pattern: timeline
+    milestones:
+      - key: baseline
+        title: Baseline one journey
+        body: 42
+"#,
+            "slides[0].milestones[0].body",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "implementation-path",
+                "pattern": "timeline",
+                "milestones": [{
+                    "key": "baseline",
+                    "title": "Baseline one journey",
+                    "exit": ["Evidence is complete"]
+                }]
+            }]
+        }"#,
+            "slides[0].milestones[0].exit",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_timeline_milestone_fields() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: ongoing-monitoring
+    pattern: timeline
+    milestones:
+      - key: detect
+        title: Detect
+        cadence: continuous
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("slides[0].milestones[0].cadence"),
         "{message}"
     );
     assert!(message.contains("unknown field"), "{message}");

@@ -375,6 +375,8 @@ pub struct SlideDefinition {
     pub steps: Vec<StepDefinition>,
     #[serde(default)]
     pub signals: Vec<TimelineSignalDefinition>,
+    #[serde(default)]
+    pub milestones: Vec<TimelineMilestoneDefinition>,
     #[serde(flatten)]
     pub content: BTreeMap<String, Value>,
 }
@@ -441,6 +443,19 @@ pub struct TimelineSignalDefinition {
     pub title: String,
     #[serde(default, deserialize_with = "deserialize_strict_string_vec")]
     pub items: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TimelineMilestoneDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub key: String,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub title: String,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub body: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub exit: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
