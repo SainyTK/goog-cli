@@ -38,7 +38,7 @@ pub struct ThemeDefinition {
     pub outlines: BTreeMap<String, OutlineDefinition>,
     #[serde(default)]
     pub lines: BTreeMap<String, LineDefinition>,
-    pub geometry: Option<Value>,
+    pub geometry: Option<GeometryDefinition>,
     pub pattern_defaults: Option<Value>,
 }
 
@@ -80,6 +80,35 @@ pub struct LineDefinition {
     pub color: String,
     #[serde(deserialize_with = "deserialize_finite_number")]
     pub width: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GeometryDefinition {
+    pub safe_area: Option<GeometrySafeAreaDefinition>,
+    pub footer: Option<FooterGeometryDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GeometrySafeAreaDefinition {
+    #[serde(deserialize_with = "deserialize_finite_number")]
+    pub top: f64,
+    #[serde(deserialize_with = "deserialize_finite_number")]
+    pub right: f64,
+    #[serde(deserialize_with = "deserialize_finite_number")]
+    pub bottom: f64,
+    #[serde(deserialize_with = "deserialize_finite_number")]
+    pub left: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FooterGeometryDefinition {
+    #[serde(deserialize_with = "deserialize_finite_number")]
+    pub height: f64,
+    #[serde(deserialize_with = "deserialize_finite_number")]
+    pub gap: f64,
 }
 
 impl<'de> Deserialize<'de> for FontDefinition {
