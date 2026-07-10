@@ -2420,6 +2420,38 @@ fn yaml_and_json_sources_have_semantic_parity() {
 }
 
 #[test]
+fn rejects_non_string_allowed_overlap_groups_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality:
+  allowedOverlapGroups: [42]
+slides: []
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {"allowedOverlapGroups": [42]},
+            "slides": []
+        }"#,
+    ];
+
+    for source in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(
+            message.contains("quality.allowedOverlapGroups[0]"),
+            "{message}"
+        );
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
 fn reads_typed_assets_from_yaml_and_json() {
     let sources = [
         r#"

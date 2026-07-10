@@ -329,7 +329,7 @@ pub struct QualityDefinition {
     pub minimum_text_contrast: Option<f64>,
     pub safe_area: Option<SafeAreaDefinition>,
     pub required_alt_text: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_strict_string_vec")]
     pub allowed_overlap_groups: Vec<String>,
 }
 
