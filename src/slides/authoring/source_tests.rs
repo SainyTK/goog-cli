@@ -23,6 +23,15 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
             .map(String::as_str),
         Some("Responsible AI measurement for banking virtual assistants")
     );
+    assert_eq!(source.quality.minimum_font_size, Some(9.0));
+    assert_eq!(source.quality.minimum_text_contrast, Some(4.5));
+    assert_eq!(source.quality.required_alt_text, Some(true));
+    assert_eq!(source.quality.allowed_overlap_groups, Vec::<String>::new());
+    let safe_area = source.quality.safe_area.as_ref().unwrap();
+    assert_eq!(safe_area.top, 24.0);
+    assert_eq!(safe_area.right, 24.0);
+    assert_eq!(safe_area.bottom, 24.0);
+    assert_eq!(safe_area.left, 24.0);
     assert_eq!(source.slides.len(), 14);
     assert_eq!(source.slides[0].key, "cover");
     assert_eq!(source.slides[13].key, "operating-principle");
@@ -99,7 +108,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme: {{}}\nquality: {{}}\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme: {{}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -109,7 +118,13 @@ fn yaml_and_json_sources_have_semantic_parity() {
             "schemaVersion": 1,
             "presentation": {{}},
             "theme": {{}},
-            "quality": {{}},
+            "quality": {{
+                "minimumFontSize": 9,
+                "minimumTextContrast": 4.5,
+                "safeArea": {{"top": 24, "right": 24, "bottom": 24, "left": 24}},
+                "requiredAltText": true,
+                "allowedOverlapGroups": ["intentional"]
+            }},
             "slides": [{{"key": "cover", "pattern": "cover", "title": "Hello"}}]
         }}"#
     )
@@ -159,6 +174,79 @@ fn rejects_unknown_presentation_fields_with_the_exact_source_path() {
     assert!(message.contains("presentation.aspectRato"), "{message}");
     assert!(message.contains("unknown field `aspectRato`"), "{message}");
     assert!(message.contains("stdin"), "{message}");
+}
+
+#[test]
+fn rejects_unknown_quality_fields_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {"minimumFontSze": 9},
+            "slides": []
+        }"#,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("quality.minimumFontSze"), "{message}");
+    assert!(
+        message.contains("unknown field `minimumFontSze`"),
+        "{message}"
+    );
+    assert!(message.contains("stdin"), "{message}");
+}
+
+#[test]
+fn rejects_unknown_safe_area_fields_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality:
+  safeArea:
+    top: 24
+    right: 24
+    bottom: 24
+    left: 24
+    gutter: 12
+slides: []
+"#,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("quality.safeArea.gutter"), "{message}");
+    assert!(message.contains("unknown field `gutter`"), "{message}");
+    assert!(message.contains("line 11 column 5"), "{message}");
+}
+
+#[test]
+fn reports_quality_value_type_errors_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality:
+  safeArea:
+    top: [24]
+    right: 24
+    bottom: 24
+    left: 24
+slides: []
+"#,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("quality.safeArea.top"), "{message}");
+    assert!(message.contains("invalid type"), "{message}");
 }
 
 #[test]

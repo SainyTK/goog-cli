@@ -16,7 +16,7 @@ pub struct DeckSource {
     pub assets: BTreeMap<String, Value>,
     #[serde(default)]
     pub layouts: BTreeMap<String, Value>,
-    pub quality: Value,
+    pub quality: QualityDefinition,
     pub slides: Vec<SlideDefinition>,
 }
 
@@ -28,6 +28,26 @@ pub struct PresentationDefinition {
     pub speaker_notes: Option<String>,
     #[serde(default)]
     pub metadata: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct QualityDefinition {
+    pub minimum_font_size: Option<f64>,
+    pub minimum_text_contrast: Option<f64>,
+    pub safe_area: Option<SafeAreaDefinition>,
+    pub required_alt_text: Option<bool>,
+    #[serde(default)]
+    pub allowed_overlap_groups: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SafeAreaDefinition {
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+    pub left: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
