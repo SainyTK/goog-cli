@@ -3116,6 +3116,105 @@ fn rejects_unknown_presentation_fields_with_the_exact_source_path() {
 }
 
 #[test]
+fn rejects_non_string_presentation_settings_with_exact_source_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation:
+  aspectRatio: 16
+theme: {}
+quality: {}
+slides: []
+"#,
+            "presentation.aspectRatio",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation:
+  language: 42
+theme: {}
+quality: {}
+slides: []
+"#,
+            "presentation.language",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation:
+  speakerNotes: false
+theme: {}
+quality: {}
+slides: []
+"#,
+            "presentation.speakerNotes",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation:
+  metadata:
+    subject: 42
+theme: {}
+quality: {}
+slides: []
+"#,
+            "presentation.metadata.subject",
+        ),
+        (
+            r#"{
+                "schemaVersion": 1,
+                "presentation": {"aspectRatio": 16},
+                "theme": {},
+                "quality": {},
+                "slides": []
+            }"#,
+            "presentation.aspectRatio",
+        ),
+        (
+            r#"{
+                "schemaVersion": 1,
+                "presentation": {"language": 42},
+                "theme": {},
+                "quality": {},
+                "slides": []
+            }"#,
+            "presentation.language",
+        ),
+        (
+            r#"{
+                "schemaVersion": 1,
+                "presentation": {"speakerNotes": false},
+                "theme": {},
+                "quality": {},
+                "slides": []
+            }"#,
+            "presentation.speakerNotes",
+        ),
+        (
+            r#"{
+                "schemaVersion": 1,
+                "presentation": {"metadata": {"subject": 42}},
+                "theme": {},
+                "quality": {},
+                "slides": []
+            }"#,
+            "presentation.metadata.subject",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
 fn rejects_unknown_quality_fields_with_the_exact_source_path() {
     let mut source = io::Cursor::new(
         r#"{

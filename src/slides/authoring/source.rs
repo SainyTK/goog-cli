@@ -312,10 +312,13 @@ impl Visitor<'_> for StrictStringVisitor {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PresentationDefinition {
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
     pub aspect_ratio: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
     pub language: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
     pub speaker_notes: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_strict_string_map")]
     pub metadata: BTreeMap<String, String>,
 }
 
