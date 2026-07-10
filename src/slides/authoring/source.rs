@@ -334,7 +334,9 @@ pub struct SafeAreaDefinition {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SlideDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
     pub key: String,
+    #[serde(deserialize_with = "deserialize_strict_string")]
     pub pattern: String,
     #[serde(flatten)]
     pub content: BTreeMap<String, Value>,

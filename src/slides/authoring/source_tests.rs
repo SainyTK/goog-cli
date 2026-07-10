@@ -131,6 +131,66 @@ slides:
 }
 
 #[test]
+fn rejects_non_string_slide_keys_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: 42
+    pattern: cover
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{"key": 42, "pattern": "cover"}]
+        }"#,
+    ];
+
+    for source in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("slides[0].key"), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_non_string_slide_patterns_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: cover
+    pattern: 42
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{"key": "cover", "pattern": ["cover"]}]
+        }"#,
+    ];
+
+    for source in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("slides[0].pattern"), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
 fn reads_json_deck_sources_from_json_paths() {
     let mut file = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
     write!(
