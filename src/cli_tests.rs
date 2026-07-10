@@ -2,16 +2,20 @@ use clap::Parser;
 
 use crate::auth::config::OAuthAppType;
 use crate::cli::{
-    AuthCommand, AuthMappingsCommand, CalendarCalendarsCommand, CalendarCommand,
-    CalendarEventsCommand, Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand,
-    DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType,
-    DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand,
-    DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
+    AuthCommand, AuthMappingsCommand, CalendarAclCommand, CalendarAclRole, CalendarAclScope,
+    CalendarCalendarsCommand, CalendarColorsCommand, CalendarCommand, CalendarEventType,
+    CalendarEventsCommand, CalendarEventsOrderBy, CalendarListEntryCommand, CalendarSendUpdates,
+    Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand,
+    DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType, DocsMapType,
+    DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
+    DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
     SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
     SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
+    SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout,
+    SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -307,9 +311,33 @@ fn calendar_events_list_with_flags() {
         "2026-07-09T09:00:00Z",
         "--time-max",
         "2026-07-10T09:00:00Z",
+        "--time-zone",
+        "Asia/Bangkok",
         "--query",
         "planning",
+        "--updated-min",
+        "2026-07-08T00:00:00Z",
+        "--sync-token",
+        "sync-token-123",
+        "--i-cal-uid",
+        "abc123@example.com",
+        "--private-extended-property",
+        "owner=agent",
+        "--private-extended-property",
+        "workflow=demo",
+        "--shared-extended-property",
+        "project=alpha",
+        "--event-type",
+        "out-of-office",
+        "--event-type",
+        "working-location",
+        "--max-attendees",
+        "3",
         "--single-events",
+        "--show-deleted",
+        "--show-hidden-invitations",
+        "--order-by",
+        "start-time",
         "--json",
     ])
     .unwrap();
@@ -324,8 +352,19 @@ fn calendar_events_list_with_flags() {
                             all,
                             time_min,
                             time_max,
+                            time_zone,
                             query,
+                            updated_min,
+                            sync_token,
+                            i_cal_uid,
+                            private_extended_property,
+                            shared_extended_property,
+                            event_type,
+                            max_attendees,
                             single_events,
+                            show_deleted,
+                            show_hidden_invitations,
+                            order_by,
                             json,
                         },
                 },
@@ -335,8 +374,74 @@ fn calendar_events_list_with_flags() {
             assert!(all);
             assert_eq!(time_min.as_deref(), Some("2026-07-09T09:00:00Z"));
             assert_eq!(time_max.as_deref(), Some("2026-07-10T09:00:00Z"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
             assert_eq!(query.as_deref(), Some("planning"));
+            assert_eq!(updated_min.as_deref(), Some("2026-07-08T00:00:00Z"));
+            assert_eq!(sync_token.as_deref(), Some("sync-token-123"));
+            assert_eq!(i_cal_uid.as_deref(), Some("abc123@example.com"));
+            assert_eq!(
+                private_extended_property,
+                vec!["owner=agent".to_string(), "workflow=demo".to_string()]
+            );
+            assert_eq!(shared_extended_property, vec!["project=alpha".to_string()]);
+            assert_eq!(
+                event_type,
+                vec![
+                    CalendarEventType::OutOfOffice,
+                    CalendarEventType::WorkingLocation
+                ]
+            );
+            assert_eq!(max_attendees, Some(3));
             assert!(single_events);
+            assert!(show_deleted);
+            assert!(show_hidden_invitations);
+            assert_eq!(order_by, Some(CalendarEventsOrderBy::StartTime));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_instances_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "instances",
+        "primary",
+        "recurring-event-123",
+        "--limit",
+        "25",
+        "--all",
+        "--time-min",
+        "2026-07-09T09:00:00Z",
+        "--time-max",
+        "2026-07-30T09:00:00Z",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Instances {
+                            calendar_id,
+                            event_id,
+                            limit,
+                            all,
+                            time_min,
+                            time_max,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "recurring-event-123");
+            assert_eq!(limit, Some(25));
+            assert!(all);
+            assert_eq!(time_min.as_deref(), Some("2026-07-09T09:00:00Z"));
+            assert_eq!(time_max.as_deref(), Some("2026-07-30T09:00:00Z"));
             assert!(json);
         }
         _ => panic!("unexpected parse result"),
@@ -2269,6 +2374,1337 @@ fn slides_create_with_title() {
 }
 
 #[test]
+fn slides_text_box_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "text-box",
+        "presentation-123",
+        "--page-id",
+        "slide-1",
+        "--text",
+        "Quarterly plan",
+        "--object-id",
+        "box-1",
+        "--x",
+        "48",
+        "--y",
+        "96",
+        "--width",
+        "300",
+        "--height",
+        "80",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TextBox {
+                    presentation_id,
+                    page_id,
+                    text,
+                    object_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(text, "Quarterly plan");
+            assert_eq!(object_id.as_deref(), Some("box-1"));
+            assert_eq!(x, 48.0);
+            assert_eq!(y, 96.0);
+            assert_eq!(width, 300.0);
+            assert_eq!(height, 80.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_image_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "image",
+        "presentation-123",
+        "--page-id",
+        "slide-1",
+        "--url",
+        "https://example.com/chart.png",
+        "--object-id",
+        "image-1",
+        "--x",
+        "48",
+        "--y",
+        "96",
+        "--width",
+        "300",
+        "--height",
+        "180",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Image {
+                    presentation_id,
+                    page_id,
+                    url,
+                    object_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(url, "https://example.com/chart.png");
+            assert_eq!(object_id.as_deref(), Some("image-1"));
+            assert_eq!(x, 48.0);
+            assert_eq!(y, 96.0);
+            assert_eq!(width, 300.0);
+            assert_eq!(height, 180.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_video_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "video",
+        "presentation-123",
+        "--page-id",
+        "slide-1",
+        "--video-id",
+        "dQw4w9WgXcQ",
+        "--object-id",
+        "video-1",
+        "--x",
+        "48",
+        "--y",
+        "96",
+        "--width",
+        "300",
+        "--height",
+        "180",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Video {
+                    presentation_id,
+                    page_id,
+                    video_id,
+                    object_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(video_id, "dQw4w9WgXcQ");
+            assert_eq!(object_id.as_deref(), Some("video-1"));
+            assert_eq!(x, 48.0);
+            assert_eq!(y, 96.0);
+            assert_eq!(width, 300.0);
+            assert_eq!(height, 180.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_replace_image_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "replace-image",
+        "presentation-123",
+        "image-1",
+        "--url",
+        "https://example.com/new-chart.png",
+        "--method",
+        "center-crop",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::ReplaceImage {
+                            presentation_id,
+                            image_id,
+                            url,
+                            method,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(image_id, "image-1");
+            assert_eq!(url, "https://example.com/new-chart.png");
+            assert_eq!(method, SlidesImageReplaceMethod::CenterCrop);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "table",
+        "presentation-123",
+        "--page-id",
+        "slide-1",
+        "--rows",
+        "3",
+        "--columns",
+        "4",
+        "--object-id",
+        "table-1",
+        "--x",
+        "48",
+        "--y",
+        "96",
+        "--width",
+        "300",
+        "--height",
+        "180",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Table {
+                    presentation_id,
+                    page_id,
+                    rows,
+                    columns,
+                    object_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(rows, 3);
+            assert_eq!(columns, 4);
+            assert_eq!(object_id.as_deref(), Some("table-1"));
+            assert_eq!(x, 48.0);
+            assert_eq!(y, 96.0);
+            assert_eq!(width, 300.0);
+            assert_eq!(height, 180.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_fill_with_rows() {
+    let cli = parse(&[
+        "slides",
+        "table-fill",
+        "presentation-123",
+        "table-1",
+        "--row",
+        "Metric|Value",
+        "--row",
+        "ARR|1200000",
+        "--delimiter",
+        "|",
+        "--start-row",
+        "1",
+        "--start-column",
+        "2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableFill {
+                    presentation_id,
+                    table_id,
+                    rows,
+                    delimiter,
+                    start_row,
+                    start_column,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(rows, vec!["Metric|Value", "ARR|1200000"]);
+            assert_eq!(delimiter, "|");
+            assert_eq!(start_row, 1);
+            assert_eq!(start_column, 2);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_insert_rows_with_reference_cell() {
+    let cli = parse(&[
+        "slides",
+        "table-insert-rows",
+        "presentation-123",
+        "table-1",
+        "--reference-row",
+        "2",
+        "--reference-column",
+        "1",
+        "--number",
+        "3",
+        "--below",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableInsertRows {
+                    presentation_id,
+                    table_id,
+                    reference_row,
+                    reference_column,
+                    number,
+                    below,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(reference_row, 2);
+            assert_eq!(reference_column, 1);
+            assert_eq!(number, 3);
+            assert!(below);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_delete_row_with_reference_cell() {
+    let cli = parse(&[
+        "slides",
+        "table-delete-row",
+        "presentation-123",
+        "table-1",
+        "--reference-row",
+        "2",
+        "--reference-column",
+        "1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableDeleteRow {
+                    presentation_id,
+                    table_id,
+                    reference_row,
+                    reference_column,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(reference_row, 2);
+            assert_eq!(reference_column, 1);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_insert_columns_with_reference_cell() {
+    let cli = parse(&[
+        "slides",
+        "table-insert-columns",
+        "presentation-123",
+        "table-1",
+        "--reference-row",
+        "2",
+        "--reference-column",
+        "1",
+        "--number",
+        "3",
+        "--right",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableInsertColumns {
+                    presentation_id,
+                    table_id,
+                    reference_row,
+                    reference_column,
+                    number,
+                    right,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(reference_row, 2);
+            assert_eq!(reference_column, 1);
+            assert_eq!(number, 3);
+            assert!(right);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_delete_column_with_reference_cell() {
+    let cli = parse(&[
+        "slides",
+        "table-delete-column",
+        "presentation-123",
+        "table-1",
+        "--reference-row",
+        "2",
+        "--reference-column",
+        "1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableDeleteColumn {
+                    presentation_id,
+                    table_id,
+                    reference_row,
+                    reference_column,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(reference_row, 2);
+            assert_eq!(reference_column, 1);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_merge_cells_with_table_range() {
+    let cli = parse(&[
+        "slides",
+        "table-merge-cells",
+        "presentation-123",
+        "table-1",
+        "--start-row",
+        "1",
+        "--start-column",
+        "2",
+        "--row-span",
+        "2",
+        "--column-span",
+        "3",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableMergeCells {
+                    presentation_id,
+                    table_id,
+                    start_row,
+                    start_column,
+                    row_span,
+                    column_span,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(start_row, 1);
+            assert_eq!(start_column, 2);
+            assert_eq!(row_span, 2);
+            assert_eq!(column_span, 3);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_merge_cells_rejects_zero_span() {
+    assert!(parse(&[
+        "slides",
+        "table-merge-cells",
+        "presentation-123",
+        "table-1",
+        "--start-row",
+        "0",
+        "--start-column",
+        "0",
+        "--row-span",
+        "0",
+        "--column-span",
+        "2",
+    ])
+    .is_err());
+}
+
+#[test]
+fn slides_table_unmerge_cells_with_table_range() {
+    let cli = parse(&[
+        "slides",
+        "table-unmerge-cells",
+        "presentation-123",
+        "table-1",
+        "--start-row",
+        "1",
+        "--start-column",
+        "2",
+        "--row-span",
+        "2",
+        "--column-span",
+        "3",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::TableUnmergeCells {
+                    presentation_id,
+                    table_id,
+                    start_row,
+                    start_column,
+                    row_span,
+                    column_span,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(table_id, "table-1");
+            assert_eq!(start_row, 1);
+            assert_eq!(start_column, 2);
+            assert_eq!(row_span, 2);
+            assert_eq!(column_span, 3);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_table_unmerge_cells_rejects_zero_span() {
+    assert!(parse(&[
+        "slides",
+        "table-unmerge-cells",
+        "presentation-123",
+        "table-1",
+        "--start-row",
+        "0",
+        "--start-column",
+        "0",
+        "--row-span",
+        "0",
+        "--column-span",
+        "2",
+    ])
+    .is_err());
+}
+
+#[test]
+fn slides_shape_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "shape",
+        "presentation-123",
+        "--page-id",
+        "slide-1",
+        "--type",
+        "round-rectangle",
+        "--object-id",
+        "shape-1",
+        "--x",
+        "48",
+        "--y",
+        "96",
+        "--width",
+        "300",
+        "--height",
+        "180",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Shape {
+                    presentation_id,
+                    page_id,
+                    shape_type,
+                    object_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(shape_type, SlidesShapeType::RoundRectangle);
+            assert_eq!(object_id.as_deref(), Some("shape-1"));
+            assert_eq!(x, 48.0);
+            assert_eq!(y, 96.0);
+            assert_eq!(width, 300.0);
+            assert_eq!(height, 180.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_line_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "line",
+        "presentation-123",
+        "--page-id",
+        "slide-1",
+        "--category",
+        "curved",
+        "--object-id",
+        "line-1",
+        "--x",
+        "48",
+        "--y",
+        "96",
+        "--width",
+        "300",
+        "--height",
+        "120",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Line {
+                    presentation_id,
+                    page_id,
+                    category,
+                    object_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(category, SlidesLineCategory::Curved);
+            assert_eq!(object_id.as_deref(), Some("line-1"));
+            assert_eq!(x, 48.0);
+            assert_eq!(y, 96.0);
+            assert_eq!(width, 300.0);
+            assert_eq!(height, 120.0);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_replace_text_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "replace-text",
+        "presentation-123",
+        "--find",
+        "{{title}}",
+        "--replace",
+        "Quarterly plan",
+        "--match-case",
+        "--page-id",
+        "slide-1",
+        "--page-id",
+        "slide-2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::ReplaceText {
+                    presentation_id,
+                    find,
+                    replacement,
+                    match_case,
+                    page_ids,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(find, "{{title}}");
+            assert_eq!(replacement, "Quarterly plan");
+            assert!(match_case);
+            assert_eq!(page_ids, vec!["slide-1", "slide-2"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_create_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "slide",
+        "create",
+        "presentation-123",
+        "--object-id",
+        "slide-2",
+        "--insertion-index",
+        "1",
+        "--layout",
+        "title-and-body",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Create {
+                            presentation_id,
+                            object_id,
+                            insertion_index,
+                            layout,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id.as_deref(), Some("slide-2"));
+            assert_eq!(insertion_index, Some(1));
+            assert_eq!(layout, SlidesPredefinedLayout::TitleAndBody);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_move_with_repeated_page_ids() {
+    let cli = parse(&[
+        "slides",
+        "slide",
+        "move",
+        "presentation-123",
+        "--page-id",
+        "slide-2",
+        "--page-id",
+        "slide-3",
+        "--insertion-index",
+        "1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Move {
+                            presentation_id,
+                            page_ids,
+                            insertion_index,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_ids, vec!["slide-2", "slide-3"]);
+            assert_eq!(insertion_index, 1);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_move_requires_page_id() {
+    assert!(parse(&[
+        "slides",
+        "slide",
+        "move",
+        "presentation-123",
+        "--insertion-index",
+        "1",
+    ])
+    .is_err());
+}
+
+#[test]
+fn slides_slide_delete_with_page_id() {
+    let cli = parse(&["slides", "slide", "delete", "presentation-123", "slide-2"]).unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Delete {
+                            presentation_id,
+                            page_id,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-2");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_background_with_color() {
+    let cli = parse(&[
+        "slides",
+        "slide",
+        "background",
+        "presentation-123",
+        "slide-2",
+        "--color",
+        "#fbbc04",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Background {
+                            presentation_id,
+                            page_id,
+                            color,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-2");
+            assert_eq!(color, "#fbbc04");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_delete_with_object_id() {
+    let cli = parse(&["slides", "object", "delete", "presentation-123", "box-1"]).unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Delete {
+                            presentation_id,
+                            object_id,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "box-1");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_move_with_transform_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "move",
+        "presentation-123",
+        "box-1",
+        "--x",
+        "120",
+        "--y",
+        "240",
+        "--scale-x",
+        "1.5",
+        "--scale-y",
+        "0.75",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Move {
+                            presentation_id,
+                            object_id,
+                            x,
+                            y,
+                            scale_x,
+                            scale_y,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "box-1");
+            assert_eq!(x, 120.0);
+            assert_eq!(y, 240.0);
+            assert_eq!(scale_x, 1.5);
+            assert_eq!(scale_y, 0.75);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_order_with_repeated_object_ids() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "order",
+        "presentation-123",
+        "--object-id",
+        "box-1",
+        "--object-id",
+        "image-1",
+        "--operation",
+        "bring-to-front",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Order {
+                            presentation_id,
+                            object_ids,
+                            operation,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_ids, vec!["box-1", "image-1"]);
+            assert_eq!(operation, SlidesZOrderOperation::BringToFront);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_order_requires_object_id() {
+    assert!(parse(&[
+        "slides",
+        "object",
+        "order",
+        "presentation-123",
+        "--operation",
+        "send-to-back",
+    ])
+    .is_err());
+}
+
+#[test]
+fn slides_object_group_with_repeated_object_ids() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "group",
+        "presentation-123",
+        "--object-id",
+        "box-1",
+        "--object-id",
+        "image-1",
+        "--group-id",
+        "group-1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Group {
+                            presentation_id,
+                            object_ids,
+                            group_id,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_ids, vec!["box-1", "image-1"]);
+            assert_eq!(group_id.as_deref(), Some("group-1"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_group_requires_at_least_two_object_ids() {
+    assert!(parse(&["slides", "object", "group", "presentation-123",]).is_err());
+}
+
+#[test]
+fn slides_object_ungroup_with_repeated_object_ids() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "ungroup",
+        "presentation-123",
+        "--object-id",
+        "group-1",
+        "--object-id",
+        "group-2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Ungroup {
+                            presentation_id,
+                            object_ids,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_ids, vec!["group-1", "group-2"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_ungroup_requires_object_id() {
+    assert!(parse(&["slides", "object", "ungroup", "presentation-123"]).is_err());
+}
+
+#[test]
+fn slides_object_style_with_shape_properties() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "style",
+        "presentation-123",
+        "shape-1",
+        "--fill-color",
+        "#1a73e8",
+        "--outline-color",
+        "202124",
+        "--outline-weight",
+        "2",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::Style {
+                            presentation_id,
+                            object_id,
+                            fill_color,
+                            outline_color,
+                            outline_weight,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "shape-1");
+            assert_eq!(fill_color.as_deref(), Some("#1a73e8"));
+            assert_eq!(outline_color.as_deref(), Some("202124"));
+            assert_eq!(outline_weight, Some(2.0));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_line_style_with_line_properties() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "line-style",
+        "presentation-123",
+        "line-1",
+        "--color",
+        "#1a73e8",
+        "--weight",
+        "3",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::LineStyle {
+                            presentation_id,
+                            object_id,
+                            color,
+                            weight,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "line-1");
+            assert_eq!(color.as_deref(), Some("#1a73e8"));
+            assert_eq!(weight, Some(3.0));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_text_style_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "text-style",
+        "presentation-123",
+        "shape-1",
+        "--color",
+        "#1a73e8",
+        "--font-family",
+        "Georgia",
+        "--font-size",
+        "18",
+        "--bold",
+        "--italic",
+        "false",
+        "--underline",
+        "--start-index",
+        "2",
+        "--end-index",
+        "12",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::TextStyle {
+                            presentation_id,
+                            object_id,
+                            color,
+                            font_family,
+                            font_size,
+                            bold,
+                            italic,
+                            underline,
+                            start_index,
+                            end_index,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "shape-1");
+            assert_eq!(color.as_deref(), Some("#1a73e8"));
+            assert_eq!(font_family.as_deref(), Some("Georgia"));
+            assert_eq!(font_size, Some(18.0));
+            assert_eq!(bold, Some(true));
+            assert_eq!(italic, Some(false));
+            assert_eq!(underline, Some(true));
+            assert_eq!(start_index, Some(2));
+            assert_eq!(end_index, Some(12));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_insert_text_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "insert-text",
+        "presentation-123",
+        "shape-1",
+        "--text",
+        "Quarterly plan",
+        "--index",
+        "3",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::InsertText {
+                            presentation_id,
+                            object_id,
+                            text,
+                            index,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "shape-1");
+            assert_eq!(text, "Quarterly plan");
+            assert_eq!(index, 3);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_delete_text_with_range_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "delete-text",
+        "presentation-123",
+        "shape-1",
+        "--start-index",
+        "3",
+        "--end-index",
+        "12",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::DeleteText {
+                            presentation_id,
+                            object_id,
+                            all,
+                            start_index,
+                            end_index,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "shape-1");
+            assert!(!all);
+            assert_eq!(start_index, Some(3));
+            assert_eq!(end_index, Some(12));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_object_alt_text_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "object",
+        "alt-text",
+        "presentation-123",
+        "image-1",
+        "--title",
+        "Pipeline chart",
+        "--description",
+        "Bar chart showing qualified pipeline by stage",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Object {
+                    command:
+                        SlidesObjectCommand::AltText {
+                            presentation_id,
+                            object_id,
+                            title,
+                            description,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(object_id, "image-1");
+            assert_eq!(title.as_deref(), Some("Pipeline chart"));
+            assert_eq!(
+                description.as_deref(),
+                Some("Bar chart showing qualified pipeline by stage")
+            );
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_duplicate_with_flags() {
+    let cli = parse(&[
+        "slides",
+        "slide",
+        "duplicate",
+        "presentation-123",
+        "slide-1",
+        "--object-id",
+        "slide-2",
+        "--insertion-index",
+        "1",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Slide {
+                    command:
+                        SlidesSlideCommand::Duplicate {
+                            presentation_id,
+                            page_id,
+                            object_id,
+                            insertion_index,
+                        },
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(page_id, "slide-1");
+            assert_eq!(object_id.as_deref(), Some("slide-2"));
+            assert_eq!(insertion_index, Some(1));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_duplicate_requires_object_id_for_insertion_index() {
+    assert!(parse(&[
+        "slides",
+        "slide",
+        "duplicate",
+        "presentation-123",
+        "slide-1",
+        "--insertion-index",
+        "1",
+    ])
+    .is_err());
+}
+
+#[test]
+fn slides_get_with_json_flag() {
+    let cli = parse(&["slides", "get", "presentation-123", "--json"]).unwrap();
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Get {
+                    presentation_id,
+                    fields,
+                    json,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert!(fields.is_none());
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_slide_create_rejects_negative_insertion_index() {
+    assert!(parse(&[
+        "slides",
+        "slide",
+        "create",
+        "presentation-123",
+        "--insertion-index",
+        "-1",
+    ])
+    .is_err());
+}
+
+#[test]
 fn calendar_event_create_with_json_body_path() {
     let cli = parse(&[
         "calendar",
@@ -2283,11 +3719,557 @@ fn calendar_event_create_with_json_body_path() {
         Command::Calendar {
             command:
                 CalendarCommand::Events {
-                    command: CalendarEventsCommand::Create { calendar_id, event },
+                    command:
+                        CalendarEventsCommand::Create {
+                            calendar_id, event, ..
+                        },
                 },
         } => {
             assert_eq!(calendar_id, "primary");
-            assert_eq!(event, "event.json");
+            assert_eq!(event.as_deref(), Some("event.json"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_get_with_json_flag() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "get",
+        "primary",
+        "event-123",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Get {
+                            calendar_id,
+                            event_id,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_create_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "create",
+        "primary",
+        "--summary",
+        "Planning",
+        "--start",
+        "2026-07-09T09:00:00+07:00",
+        "--end",
+        "2026-07-09T09:30:00+07:00",
+        "--time-zone",
+        "Asia/Bangkok",
+        "--location",
+        "Office",
+        "--color-id",
+        "5",
+        "--attendee",
+        "teammate@example.com",
+        "--attendee",
+        "lead@example.com",
+        "--recurrence",
+        "RRULE:FREQ=WEEKLY;COUNT=4",
+        "--reminder",
+        "popup:10",
+        "--reminder",
+        "email:60",
+        "--google-meet",
+        "--meet-request-id",
+        "meet-request-1",
+        "--send-updates",
+        "all",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Create {
+                            calendar_id,
+                            event,
+                            summary,
+                            start,
+                            end,
+                            time_zone,
+                            location,
+                            color_id,
+                            attendee,
+                            recurrence,
+                            reminder,
+                            no_reminders,
+                            google_meet,
+                            meet_request_id,
+                            send_updates,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event, None);
+            assert_eq!(summary.as_deref(), Some("Planning"));
+            assert_eq!(start.as_deref(), Some("2026-07-09T09:00:00+07:00"));
+            assert_eq!(end.as_deref(), Some("2026-07-09T09:30:00+07:00"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+            assert_eq!(location.as_deref(), Some("Office"));
+            assert_eq!(color_id.as_deref(), Some("5"));
+            assert_eq!(
+                attendee,
+                vec![
+                    "teammate@example.com".to_string(),
+                    "lead@example.com".to_string()
+                ]
+            );
+            assert_eq!(recurrence, vec!["RRULE:FREQ=WEEKLY;COUNT=4".to_string()]);
+            assert_eq!(
+                reminder,
+                vec!["popup:10".to_string(), "email:60".to_string()]
+            );
+            assert!(!no_reminders);
+            assert!(google_meet);
+            assert_eq!(meet_request_id.as_deref(), Some("meet-request-1"));
+            assert!(matches!(send_updates, Some(CalendarSendUpdates::All)));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_create_rejects_mixed_json_body_and_flags() {
+    let err = parse(&[
+        "calendar",
+        "events",
+        "create",
+        "primary",
+        "--event",
+        "event.json",
+        "--summary",
+        "Planning",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("cannot be used with"));
+}
+
+#[test]
+fn calendar_event_create_rejects_meet_request_id_without_google_meet() {
+    assert!(parse(&[
+        "calendar",
+        "events",
+        "create",
+        "primary",
+        "--summary",
+        "Planning",
+        "--start",
+        "2026-07-09T09:00:00+07:00",
+        "--end",
+        "2026-07-09T09:30:00+07:00",
+        "--meet-request-id",
+        "meet-request-1",
+    ])
+    .is_err());
+}
+
+#[test]
+fn calendar_event_import_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "import",
+        "primary",
+        "--summary",
+        "Imported planning",
+        "--start",
+        "2026-07-09T09:00:00+07:00",
+        "--end",
+        "2026-07-09T09:30:00+07:00",
+        "--time-zone",
+        "Asia/Bangkok",
+        "--attendee",
+        "teammate@example.com",
+        "--recurrence",
+        "RRULE:FREQ=WEEKLY;COUNT=4",
+        "--reminder",
+        "popup:10",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Import {
+                            calendar_id,
+                            event,
+                            summary,
+                            start,
+                            end,
+                            time_zone,
+                            attendee,
+                            recurrence,
+                            reminder,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event, None);
+            assert_eq!(summary.as_deref(), Some("Imported planning"));
+            assert_eq!(start.as_deref(), Some("2026-07-09T09:00:00+07:00"));
+            assert_eq!(end.as_deref(), Some("2026-07-09T09:30:00+07:00"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+            assert_eq!(attendee, vec!["teammate@example.com".to_string()]);
+            assert_eq!(recurrence, vec!["RRULE:FREQ=WEEKLY;COUNT=4".to_string()]);
+            assert_eq!(reminder, vec!["popup:10".to_string()]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_import_rejects_mixed_json_body_and_flags() {
+    let err = parse(&[
+        "calendar",
+        "events",
+        "import",
+        "primary",
+        "--event",
+        "event.json",
+        "--summary",
+        "Planning",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("cannot be used with"));
+}
+
+#[test]
+fn calendar_event_update_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "update",
+        "primary",
+        "event-123",
+        "--summary",
+        "Planning moved",
+        "--start",
+        "2026-07-09T10:00:00+07:00",
+        "--end",
+        "2026-07-09T10:30:00+07:00",
+        "--time-zone",
+        "Asia/Bangkok",
+        "--location",
+        "Office",
+        "--color-id",
+        "7",
+        "--attendee",
+        "teammate@example.com",
+        "--recurrence",
+        "RRULE:FREQ=DAILY;COUNT=3",
+        "--no-reminders",
+        "--send-updates",
+        "external-only",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Update {
+                            calendar_id,
+                            event_id,
+                            event,
+                            summary,
+                            start,
+                            end,
+                            time_zone,
+                            location,
+                            color_id,
+                            attendee,
+                            recurrence,
+                            no_reminders,
+                            send_updates,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert_eq!(event, None);
+            assert_eq!(summary.as_deref(), Some("Planning moved"));
+            assert_eq!(start.as_deref(), Some("2026-07-09T10:00:00+07:00"));
+            assert_eq!(end.as_deref(), Some("2026-07-09T10:30:00+07:00"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+            assert_eq!(location.as_deref(), Some("Office"));
+            assert_eq!(color_id.as_deref(), Some("7"));
+            assert_eq!(attendee, vec!["teammate@example.com".to_string()]);
+            assert_eq!(recurrence, vec!["RRULE:FREQ=DAILY;COUNT=3".to_string()]);
+            assert!(no_reminders);
+            assert!(matches!(
+                send_updates,
+                Some(CalendarSendUpdates::ExternalOnly)
+            ));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_update_rejects_mixed_json_body_and_flags() {
+    let err = parse(&[
+        "calendar",
+        "events",
+        "update",
+        "primary",
+        "event-123",
+        "--event",
+        "event.json",
+        "--summary",
+        "Planning",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("cannot be used with"));
+}
+
+#[test]
+fn calendar_event_patch_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "patch",
+        "primary",
+        "event-123",
+        "--summary",
+        "Planning renamed",
+        "--location",
+        "Office",
+        "--color-id",
+        "9",
+        "--recurrence",
+        "RRULE:FREQ=MONTHLY;COUNT=2",
+        "--reminder",
+        "popup:5",
+        "--send-updates",
+        "none",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Patch {
+                            calendar_id,
+                            event_id,
+                            event,
+                            summary,
+                            location,
+                            color_id,
+                            recurrence,
+                            reminder,
+                            send_updates,
+                            ..
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert_eq!(event, None);
+            assert_eq!(summary.as_deref(), Some("Planning renamed"));
+            assert_eq!(location.as_deref(), Some("Office"));
+            assert_eq!(color_id.as_deref(), Some("9"));
+            assert_eq!(recurrence, vec!["RRULE:FREQ=MONTHLY;COUNT=2".to_string()]);
+            assert_eq!(reminder, vec!["popup:5".to_string()]);
+            assert!(matches!(send_updates, Some(CalendarSendUpdates::None)));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_patch_rejects_mixed_json_body_and_flags() {
+    let err = parse(&[
+        "calendar",
+        "events",
+        "patch",
+        "primary",
+        "event-123",
+        "--event",
+        "event.json",
+        "--summary",
+        "Planning",
+    ])
+    .unwrap_err();
+
+    assert!(err.to_string().contains("cannot be used with"));
+}
+
+#[test]
+fn calendar_event_move_with_destination() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "move",
+        "primary",
+        "event-123",
+        "--destination",
+        "team@example.com",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Move {
+                            source_calendar_id,
+                            event_id,
+                            destination,
+                        },
+                },
+        } => {
+            assert_eq!(source_calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert_eq!(destination, "team@example.com");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_quick_add_with_text_and_send_updates() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "quick-add",
+        "primary",
+        "Lunch with Sam tomorrow at noon",
+        "--send-updates",
+        "external-only",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::QuickAdd {
+                            calendar_id,
+                            text,
+                            send_updates,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(text, "Lunch with Sam tomorrow at noon");
+            assert!(matches!(
+                send_updates,
+                Some(CalendarSendUpdates::ExternalOnly)
+            ));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_event_delete_with_send_updates() {
+    let cli = parse(&[
+        "calendar",
+        "events",
+        "delete",
+        "primary",
+        "event-123",
+        "--send-updates",
+        "all",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Events {
+                    command:
+                        CalendarEventsCommand::Delete {
+                            calendar_id,
+                            event_id,
+                            send_updates,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(event_id, "event-123");
+            assert!(matches!(send_updates, Some(CalendarSendUpdates::All)));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_freebusy_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "freebusy",
+        "--time-min",
+        "2026-07-09T09:00:00Z",
+        "--time-max",
+        "2026-07-09T17:00:00Z",
+        "--calendar",
+        "primary",
+        "--calendar",
+        "team@example.com",
+        "--time-zone",
+        "Asia/Bangkok",
+        "--group-expansion-max",
+        "10",
+        "--calendar-expansion-max",
+        "20",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Freebusy {
+                    time_min,
+                    time_max,
+                    calendars,
+                    time_zone,
+                    group_expansion_max,
+                    calendar_expansion_max,
+                    json,
+                },
+        } => {
+            assert_eq!(time_min, "2026-07-09T09:00:00Z");
+            assert_eq!(time_max, "2026-07-09T17:00:00Z");
+            assert_eq!(
+                calendars,
+                vec!["primary".to_string(), "team@example.com".to_string()]
+            );
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+            assert_eq!(group_expansion_max, Some(10));
+            assert_eq!(calendar_expansion_max, Some(20));
+            assert!(json);
         }
         _ => panic!("unexpected parse result"),
     }
@@ -2314,6 +4296,589 @@ fn calendar_calendars_list_with_flags() {
         } => {
             assert_eq!(limit, Some(10));
             assert!(all);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_create_with_metadata_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "create",
+        "--summary",
+        "Team Launches",
+        "--description",
+        "Launch planning calendar",
+        "--location",
+        "Bangkok",
+        "--time-zone",
+        "Asia/Bangkok",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::Create {
+                            summary,
+                            description,
+                            location,
+                            time_zone,
+                        },
+                },
+        } => {
+            assert_eq!(summary, "Team Launches");
+            assert_eq!(description.as_deref(), Some("Launch planning calendar"));
+            assert_eq!(location.as_deref(), Some("Bangkok"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_update_with_metadata_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "update",
+        "team-launches@example.com",
+        "--summary",
+        "Team Launches Updated",
+        "--description",
+        "Launch planning and retros",
+        "--location",
+        "Bangkok",
+        "--time-zone",
+        "Asia/Bangkok",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::Update {
+                            calendar_id,
+                            summary,
+                            description,
+                            location,
+                            time_zone,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(summary, "Team Launches Updated");
+            assert_eq!(description.as_deref(), Some("Launch planning and retros"));
+            assert_eq!(location.as_deref(), Some("Bangkok"));
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_patch_with_metadata_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "patch",
+        "team-launches@example.com",
+        "--description",
+        "Launch planning and retros",
+        "--time-zone",
+        "Asia/Bangkok",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::Patch {
+                            calendar_id,
+                            summary,
+                            description,
+                            location,
+                            time_zone,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(summary, None);
+            assert_eq!(description.as_deref(), Some("Launch planning and retros"));
+            assert_eq!(location, None);
+            assert_eq!(time_zone.as_deref(), Some("Asia/Bangkok"));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_delete_parses_calendar_id() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "delete",
+        "team-launches@example.com",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command: CalendarCalendarsCommand::Delete { calendar_id },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_list_entry_add_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list-entry",
+        "add",
+        "team-launches@example.com",
+        "--summary-override",
+        "Launches",
+        "--color-id",
+        "2",
+        "--hidden",
+        "false",
+        "--selected",
+        "true",
+        "--default-reminder",
+        "popup:10",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::ListEntry {
+                            command:
+                                CalendarListEntryCommand::Add {
+                                    calendar_id,
+                                    summary_override,
+                                    color_id,
+                                    hidden,
+                                    selected,
+                                    default_reminder,
+                                    json,
+                                },
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(summary_override.as_deref(), Some("Launches"));
+            assert_eq!(color_id.as_deref(), Some("2"));
+            assert_eq!(hidden, Some(false));
+            assert_eq!(selected, Some(true));
+            assert_eq!(default_reminder, vec!["popup:10"]);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_list_entry_patch_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list-entry",
+        "patch",
+        "primary",
+        "--summary-override",
+        "Focus",
+        "--color-id",
+        "2",
+        "--hidden",
+        "false",
+        "--selected",
+        "true",
+        "--default-reminder",
+        "popup:10",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::ListEntry {
+                            command:
+                                CalendarListEntryCommand::Patch {
+                                    calendar_id,
+                                    summary_override,
+                                    color_id,
+                                    hidden,
+                                    selected,
+                                    default_reminder,
+                                    clear_default_reminders,
+                                    json,
+                                },
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(summary_override.as_deref(), Some("Focus"));
+            assert_eq!(color_id.as_deref(), Some("2"));
+            assert_eq!(hidden, Some(false));
+            assert_eq!(selected, Some(true));
+            assert_eq!(default_reminder, vec!["popup:10"]);
+            assert!(!clear_default_reminders);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_list_entry_update_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list-entry",
+        "update",
+        "primary",
+        "--summary-override",
+        "Focus",
+        "--color-id",
+        "2",
+        "--hidden",
+        "false",
+        "--selected",
+        "true",
+        "--default-reminder",
+        "popup:10",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::ListEntry {
+                            command:
+                                CalendarListEntryCommand::Update {
+                                    calendar_id,
+                                    summary_override,
+                                    color_id,
+                                    hidden,
+                                    selected,
+                                    default_reminder,
+                                    clear_default_reminders,
+                                    json,
+                                },
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "primary");
+            assert_eq!(summary_override.as_deref(), Some("Focus"));
+            assert_eq!(color_id.as_deref(), Some("2"));
+            assert_eq!(hidden, Some(false));
+            assert_eq!(selected, Some(true));
+            assert_eq!(default_reminder, vec!["popup:10"]);
+            assert!(!clear_default_reminders);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_list_entry_get_with_json() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list-entry",
+        "get",
+        "team-launches@example.com",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::ListEntry {
+                            command: CalendarListEntryCommand::Get { calendar_id, json },
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_calendars_list_entry_delete_parses_calendar_id() {
+    let cli = parse(&[
+        "calendar",
+        "calendars",
+        "list-entry",
+        "delete",
+        "team-launches@example.com",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Calendars {
+                    command:
+                        CalendarCalendarsCommand::ListEntry {
+                            command: CalendarListEntryCommand::Delete { calendar_id },
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_acl_list_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "list",
+        "team-launches@example.com",
+        "--limit",
+        "10",
+        "--all",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::List {
+                            calendar_id,
+                            limit,
+                            all,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(limit, Some(10));
+            assert!(all);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_colors_get_with_json_flag() {
+    let cli = parse(&["calendar", "colors", "get", "--json"]).unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Colors {
+                    command: CalendarColorsCommand::Get { json },
+                },
+        } => {
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_acl_add_with_flags() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "add",
+        "team-launches@example.com",
+        "--scope",
+        "user",
+        "--value",
+        "teammate@example.com",
+        "--role",
+        "writer",
+        "--no-send-notifications",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::Add {
+                            calendar_id,
+                            scope,
+                            value,
+                            role,
+                            no_send_notifications,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(scope, CalendarAclScope::User);
+            assert_eq!(value.as_deref(), Some("teammate@example.com"));
+            assert_eq!(role, CalendarAclRole::Writer);
+            assert!(no_send_notifications);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_acl_patch_with_role_and_json_flag() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "patch",
+        "team-launches@example.com",
+        "user:teammate@example.com",
+        "--role",
+        "reader",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::Patch {
+                            calendar_id,
+                            rule_id,
+                            role,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(rule_id, "user:teammate@example.com");
+            assert_eq!(role, CalendarAclRole::Reader);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_acl_update_with_full_rule_flags() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "update",
+        "team-launches@example.com",
+        "user:teammate@example.com",
+        "--scope",
+        "user",
+        "--value",
+        "teammate@example.com",
+        "--role",
+        "writer",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::Update {
+                            calendar_id,
+                            rule_id,
+                            scope,
+                            value,
+                            role,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(rule_id, "user:teammate@example.com");
+            assert_eq!(scope, CalendarAclScope::User);
+            assert_eq!(value.as_deref(), Some("teammate@example.com"));
+            assert_eq!(role, CalendarAclRole::Writer);
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_acl_delete_with_rule_id() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "delete",
+        "team-launches@example.com",
+        "user:teammate@example.com",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::Delete {
+                            calendar_id,
+                            rule_id,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(rule_id, "user:teammate@example.com");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn calendar_acl_get_with_json_flag() {
+    let cli = parse(&[
+        "calendar",
+        "acl",
+        "get",
+        "team-launches@example.com",
+        "user:teammate@example.com",
+        "--json",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Calendar {
+            command:
+                CalendarCommand::Acl {
+                    command:
+                        CalendarAclCommand::Get {
+                            calendar_id,
+                            rule_id,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(calendar_id, "team-launches@example.com");
+            assert_eq!(rule_id, "user:teammate@example.com");
             assert!(json);
         }
         _ => panic!("unexpected parse result"),

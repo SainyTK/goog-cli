@@ -250,6 +250,105 @@ impl SlidesCommand {
             }
             | SlidesCommand::BatchUpdate {
                 presentation_id, ..
+            }
+            | SlidesCommand::Slide {
+                command:
+                    SlidesSlideCommand::Create {
+                        presentation_id, ..
+                    }
+                    | SlidesSlideCommand::Duplicate {
+                        presentation_id, ..
+                    }
+                    | SlidesSlideCommand::Move {
+                        presentation_id, ..
+                    }
+                    | SlidesSlideCommand::Background {
+                        presentation_id, ..
+                    }
+                    | SlidesSlideCommand::Delete {
+                        presentation_id, ..
+                    },
+            }
+            | SlidesCommand::Object {
+                command:
+                    SlidesObjectCommand::Move {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::Order {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::Group {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::Ungroup {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::Style {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::LineStyle {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::TextStyle {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::InsertText {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::DeleteText {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::AltText {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::ReplaceImage {
+                        presentation_id, ..
+                    }
+                    | SlidesObjectCommand::Delete {
+                        presentation_id, ..
+                    },
+            }
+            | SlidesCommand::TextBox {
+                presentation_id, ..
+            }
+            | SlidesCommand::Image {
+                presentation_id, ..
+            }
+            | SlidesCommand::Video {
+                presentation_id, ..
+            }
+            | SlidesCommand::Table {
+                presentation_id, ..
+            }
+            | SlidesCommand::TableFill {
+                presentation_id, ..
+            }
+            | SlidesCommand::TableInsertRows {
+                presentation_id, ..
+            }
+            | SlidesCommand::TableDeleteRow {
+                presentation_id, ..
+            }
+            | SlidesCommand::TableInsertColumns {
+                presentation_id, ..
+            }
+            | SlidesCommand::TableDeleteColumn {
+                presentation_id, ..
+            }
+            | SlidesCommand::TableMergeCells {
+                presentation_id, ..
+            }
+            | SlidesCommand::TableUnmergeCells {
+                presentation_id, ..
+            }
+            | SlidesCommand::Shape {
+                presentation_id, ..
+            }
+            | SlidesCommand::Line {
+                presentation_id, ..
+            }
+            | SlidesCommand::ReplaceText {
+                presentation_id, ..
             } => presentation_id,
         };
         *presentation_id = crate::slides::extract_presentation_id(presentation_id);
@@ -278,13 +377,16 @@ pub enum SlidesCommand {
         /// Title for the new Google Slides presentation
         title: String,
     },
-    /// Read a raw Google Slides presentation
+    /// Read a Google Slides presentation
     Get {
         /// Presentation ID or URL to read
         presentation_id: String,
         /// Google partial response field selector
         #[arg(long)]
         fields: Option<String>,
+        /// Emit raw JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Apply a raw Google Slides Batch Update request body
     BatchUpdate {
@@ -294,6 +396,685 @@ pub enum SlidesCommand {
         #[arg(long)]
         requests: String,
     },
+    /// Create or manage slides inside a presentation
+    Slide {
+        #[command(subcommand)]
+        command: SlidesSlideCommand,
+    },
+    /// Manage objects inside slides
+    Object {
+        #[command(subcommand)]
+        command: SlidesObjectCommand,
+    },
+    /// Add a text box to a slide without writing Batch Update JSON
+    TextBox {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the text box on
+        #[arg(long)]
+        page_id: String,
+        /// Text to insert into the text box
+        #[arg(long)]
+        text: String,
+        /// Stable object ID for the new text box. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Text box width in points
+        #[arg(long, default_value_t = 360.0)]
+        width: f64,
+        /// Text box height in points
+        #[arg(long, default_value_t = 120.0)]
+        height: f64,
+    },
+    /// Add an image to a slide without writing Batch Update JSON
+    Image {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the image on
+        #[arg(long)]
+        page_id: String,
+        /// Publicly reachable image URL
+        #[arg(long)]
+        url: String,
+        /// Stable object ID for the new image. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Image width in points
+        #[arg(long, default_value_t = 360.0)]
+        width: f64,
+        /// Image height in points
+        #[arg(long, default_value_t = 240.0)]
+        height: f64,
+    },
+    /// Add a YouTube video to a slide without writing Batch Update JSON
+    Video {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the video on
+        #[arg(long)]
+        page_id: String,
+        /// YouTube video ID, such as dQw4w9WgXcQ
+        #[arg(long)]
+        video_id: String,
+        /// Stable object ID for the new video. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Video width in points
+        #[arg(long, default_value_t = 360.0)]
+        width: f64,
+        /// Video height in points
+        #[arg(long, default_value_t = 240.0)]
+        height: f64,
+    },
+    /// Add a table to a slide without writing Batch Update JSON
+    Table {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the table on
+        #[arg(long)]
+        page_id: String,
+        /// Number of table rows
+        #[arg(long)]
+        rows: u32,
+        /// Number of table columns
+        #[arg(long)]
+        columns: u32,
+        /// Stable object ID for the new table. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Table width in points
+        #[arg(long, default_value_t = 360.0)]
+        width: f64,
+        /// Table height in points
+        #[arg(long, default_value_t = 180.0)]
+        height: f64,
+    },
+    /// Fill an existing table with row values without writing Batch Update JSON
+    TableFill {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to fill
+        table_id: String,
+        /// Table row values separated by --delimiter. Repeat once per row.
+        #[arg(long = "row", required = true)]
+        rows: Vec<String>,
+        /// Delimiter used to split each --row value into cells
+        #[arg(long, default_value = "|")]
+        delimiter: String,
+        /// Zero-based row index for the first provided row
+        #[arg(long, default_value_t = 0)]
+        start_row: u32,
+        /// Zero-based column index for the first provided cell
+        #[arg(long, default_value_t = 0)]
+        start_column: u32,
+    },
+    /// Insert rows into an existing table without writing Batch Update JSON
+    TableInsertRows {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the reference cell
+        #[arg(long)]
+        reference_row: u32,
+        /// Zero-based column index of the reference cell
+        #[arg(long, default_value_t = 0)]
+        reference_column: u32,
+        /// Number of rows to insert, up to 20 per Slides API request
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=20))]
+        number: u32,
+        /// Insert below the reference row instead of above it
+        #[arg(long)]
+        below: bool,
+    },
+    /// Delete a row from an existing table without writing Batch Update JSON
+    TableDeleteRow {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the reference cell
+        #[arg(long)]
+        reference_row: u32,
+        /// Zero-based column index of the reference cell
+        #[arg(long, default_value_t = 0)]
+        reference_column: u32,
+    },
+    /// Insert columns into an existing table without writing Batch Update JSON
+    TableInsertColumns {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the reference cell
+        #[arg(long, default_value_t = 0)]
+        reference_row: u32,
+        /// Zero-based column index of the reference cell
+        #[arg(long)]
+        reference_column: u32,
+        /// Number of columns to insert, up to 20 per Slides API request
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..=20))]
+        number: u32,
+        /// Insert to the right of the reference column instead of to the left
+        #[arg(long)]
+        right: bool,
+    },
+    /// Delete a column from an existing table without writing Batch Update JSON
+    TableDeleteColumn {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the reference cell
+        #[arg(long, default_value_t = 0)]
+        reference_row: u32,
+        /// Zero-based column index of the reference cell
+        #[arg(long)]
+        reference_column: u32,
+    },
+    /// Merge a range of table cells without writing Batch Update JSON
+    TableMergeCells {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the first cell in the range
+        #[arg(long)]
+        start_row: u32,
+        /// Zero-based column index of the first cell in the range
+        #[arg(long)]
+        start_column: u32,
+        /// Number of rows in the merge range
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        row_span: u32,
+        /// Number of columns in the merge range
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        column_span: u32,
+    },
+    /// Unmerge a range of table cells without writing Batch Update JSON
+    TableUnmergeCells {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Table object ID to edit
+        table_id: String,
+        /// Zero-based row index of the first cell in the range
+        #[arg(long)]
+        start_row: u32,
+        /// Zero-based column index of the first cell in the range
+        #[arg(long)]
+        start_column: u32,
+        /// Number of rows in the unmerge range
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        row_span: u32,
+        /// Number of columns in the unmerge range
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        column_span: u32,
+    },
+    /// Add a shape to a slide without writing Batch Update JSON
+    Shape {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the shape on
+        #[arg(long)]
+        page_id: String,
+        /// Shape type to create
+        #[arg(long = "type", value_enum)]
+        shape_type: SlidesShapeType,
+        /// Stable object ID for the new shape. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Shape width in points
+        #[arg(long, default_value_t = 180.0)]
+        width: f64,
+        /// Shape height in points
+        #[arg(long, default_value_t = 120.0)]
+        height: f64,
+    },
+    /// Add a line or connector to a slide without writing Batch Update JSON
+    Line {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to place the line on
+        #[arg(long)]
+        page_id: String,
+        /// Line category to create
+        #[arg(long, value_enum, default_value_t = SlidesLineCategory::Straight)]
+        category: SlidesLineCategory,
+        /// Stable object ID for the new line. Generated when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Left offset in points
+        #[arg(long, default_value_t = 72.0)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long, default_value_t = 72.0)]
+        y: f64,
+        /// Line bounding-box width in points
+        #[arg(long, default_value_t = 240.0)]
+        width: f64,
+        /// Line bounding-box height in points
+        #[arg(long, default_value_t = 0.0)]
+        height: f64,
+    },
+    /// Replace text across a presentation or selected slides without writing Batch Update JSON
+    ReplaceText {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Text to find
+        #[arg(long)]
+        find: String,
+        /// Replacement text
+        #[arg(long = "replace")]
+        replacement: String,
+        /// Match case when searching for text
+        #[arg(long)]
+        match_case: bool,
+        /// Slide page object ID to limit replacement to. Repeat for multiple slides.
+        #[arg(long = "page-id")]
+        page_ids: Vec<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SlidesSlideCommand {
+    /// Create a slide without writing Batch Update JSON
+    Create {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Stable object ID for the new slide. Google generates one when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Zero-based insertion index. Appends when omitted.
+        #[arg(long)]
+        insertion_index: Option<u32>,
+        /// Google Slides predefined layout to use
+        #[arg(long, value_enum, default_value_t = SlidesPredefinedLayout::Blank)]
+        layout: SlidesPredefinedLayout,
+    },
+    /// Duplicate a slide without writing Batch Update JSON
+    Duplicate {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to duplicate
+        page_id: String,
+        /// Stable object ID for the duplicated slide. Google generates one when omitted.
+        #[arg(long)]
+        object_id: Option<String>,
+        /// Zero-based insertion index for the duplicated slide. Requires --object-id.
+        #[arg(long, requires = "object_id")]
+        insertion_index: Option<u32>,
+    },
+    /// Move one or more existing slides to a new position without writing Batch Update JSON
+    Move {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to move. Repeat to move multiple slides together.
+        #[arg(long = "page-id", required = true)]
+        page_ids: Vec<String>,
+        /// Zero-based insertion index for the moved slide group
+        #[arg(long)]
+        insertion_index: u32,
+    },
+    /// Set a slide background color without writing Batch Update JSON
+    Background {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to update
+        page_id: String,
+        /// Background color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        color: String,
+    },
+    /// Delete a slide without writing Batch Update JSON
+    Delete {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Slide page object ID to delete
+        page_id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SlidesObjectCommand {
+    /// Move or scale a shape, image, table, or other page object without writing Batch Update JSON
+    Move {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID to move or scale
+        object_id: String,
+        /// Left offset in points
+        #[arg(long)]
+        x: f64,
+        /// Top offset in points
+        #[arg(long)]
+        y: f64,
+        /// Horizontal scale to apply
+        #[arg(long, default_value_t = 1.0)]
+        scale_x: f64,
+        /// Vertical scale to apply
+        #[arg(long, default_value_t = 1.0)]
+        scale_y: f64,
+    },
+    /// Bring objects forward or send them backward without writing Batch Update JSON
+    Order {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID to arrange. Repeat to move multiple objects together.
+        #[arg(long = "object-id", required = true)]
+        object_ids: Vec<String>,
+        /// Z-order operation to apply
+        #[arg(long, value_enum)]
+        operation: SlidesZOrderOperation,
+    },
+    /// Group two or more page objects without writing Batch Update JSON
+    Group {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID to group. Repeat for each child object.
+        #[arg(long = "object-id", required = true)]
+        object_ids: Vec<String>,
+        /// Stable object ID for the new group. Google generates one when omitted.
+        #[arg(long)]
+        group_id: Option<String>,
+    },
+    /// Ungroup one or more grouped page objects without writing Batch Update JSON
+    Ungroup {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Group object ID to ungroup. Repeat to ungroup multiple groups on the same slide.
+        #[arg(long = "object-id", required = true)]
+        object_ids: Vec<String>,
+    },
+    /// Style a shape or text box fill and outline without writing Batch Update JSON
+    Style {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Shape or text box page object ID to style
+        object_id: String,
+        /// Fill color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        fill_color: Option<String>,
+        /// Outline color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        outline_color: Option<String>,
+        /// Outline weight in points
+        #[arg(long)]
+        outline_weight: Option<f64>,
+    },
+    /// Style a line color and weight without writing Batch Update JSON
+    LineStyle {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Line page object ID to style
+        object_id: String,
+        /// Line color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        color: Option<String>,
+        /// Line weight in points
+        #[arg(long)]
+        weight: Option<f64>,
+    },
+    /// Style text inside a shape or text box without writing Batch Update JSON
+    TextStyle {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Shape or text box page object ID whose text should be styled
+        object_id: String,
+        /// Text color as #RRGGBB or RRGGBB
+        #[arg(long)]
+        color: Option<String>,
+        /// Font family, such as Arial or Georgia
+        #[arg(long)]
+        font_family: Option<String>,
+        /// Font size in points
+        #[arg(long)]
+        font_size: Option<f64>,
+        /// Set or clear bold. Omit the value to set true.
+        #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+        bold: Option<bool>,
+        /// Set or clear italic. Omit the value to set true.
+        #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+        italic: Option<bool>,
+        /// Set or clear underline. Omit the value to set true.
+        #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+        underline: Option<bool>,
+        /// Zero-based start index for a fixed text range
+        #[arg(long)]
+        start_index: Option<u32>,
+        /// Zero-based end index for a fixed text range
+        #[arg(long)]
+        end_index: Option<u32>,
+    },
+    /// Insert text into an existing shape or text box without writing Batch Update JSON
+    InsertText {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Shape or text box page object ID to receive the text
+        object_id: String,
+        /// Text to insert
+        #[arg(long)]
+        text: String,
+        /// Zero-based text insertion index
+        #[arg(long, default_value_t = 0)]
+        index: u32,
+    },
+    /// Delete text from an existing shape or text box without writing Batch Update JSON
+    DeleteText {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Shape or text box page object ID whose text should be deleted
+        object_id: String,
+        /// Delete all text from the object
+        #[arg(long)]
+        all: bool,
+        /// Zero-based start index for a fixed text range
+        #[arg(long)]
+        start_index: Option<u32>,
+        /// Zero-based end index for a fixed text range
+        #[arg(long)]
+        end_index: Option<u32>,
+    },
+    /// Set accessibility alt text on a page object without writing Batch Update JSON
+    AltText {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID whose alt text should be updated
+        object_id: String,
+        /// Human-readable alt text title
+        #[arg(long)]
+        title: Option<String>,
+        /// Human-readable alt text description
+        #[arg(long)]
+        description: Option<String>,
+    },
+    /// Replace an existing image while preserving its size and position
+    ReplaceImage {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Image page object ID to replace
+        image_id: String,
+        /// Publicly reachable replacement image URL
+        #[arg(long)]
+        url: String,
+        /// How the replacement image should fit the existing image bounds
+        #[arg(long, value_enum, default_value_t = SlidesImageReplaceMethod::CenterInside)]
+        method: SlidesImageReplaceMethod,
+    },
+    /// Delete a shape, image, table, or other page object without writing Batch Update JSON
+    Delete {
+        /// Presentation ID or URL to update
+        presentation_id: String,
+        /// Page object ID to delete
+        object_id: String,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesImageReplaceMethod {
+    CenterInside,
+    CenterCrop,
+}
+
+impl SlidesImageReplaceMethod {
+    pub fn as_api_value(self) -> &'static str {
+        match self {
+            SlidesImageReplaceMethod::CenterInside => "CENTER_INSIDE",
+            SlidesImageReplaceMethod::CenterCrop => "CENTER_CROP",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesShapeType {
+    Rectangle,
+    RoundRectangle,
+    Ellipse,
+    Arc,
+    RightTriangle,
+    Triangle,
+    Diamond,
+    Parallelogram,
+    Trapezoid,
+    Pentagon,
+    Hexagon,
+    Cloud,
+    #[value(name = "star-5", alias = "star5")]
+    Star5,
+    Heart,
+    Chevron,
+    HomePlate,
+    RightArrow,
+    LeftArrow,
+    UpArrow,
+    DownArrow,
+    Plus,
+}
+
+impl SlidesShapeType {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            SlidesShapeType::Rectangle => "RECTANGLE",
+            SlidesShapeType::RoundRectangle => "ROUND_RECTANGLE",
+            SlidesShapeType::Ellipse => "ELLIPSE",
+            SlidesShapeType::Arc => "ARC",
+            SlidesShapeType::RightTriangle => "RIGHT_TRIANGLE",
+            SlidesShapeType::Triangle => "TRIANGLE",
+            SlidesShapeType::Diamond => "DIAMOND",
+            SlidesShapeType::Parallelogram => "PARALLELOGRAM",
+            SlidesShapeType::Trapezoid => "TRAPEZOID",
+            SlidesShapeType::Pentagon => "PENTAGON",
+            SlidesShapeType::Hexagon => "HEXAGON",
+            SlidesShapeType::Cloud => "CLOUD",
+            SlidesShapeType::Star5 => "STAR_5",
+            SlidesShapeType::Heart => "HEART",
+            SlidesShapeType::Chevron => "CHEVRON",
+            SlidesShapeType::HomePlate => "HOME_PLATE",
+            SlidesShapeType::RightArrow => "RIGHT_ARROW",
+            SlidesShapeType::LeftArrow => "LEFT_ARROW",
+            SlidesShapeType::UpArrow => "UP_ARROW",
+            SlidesShapeType::DownArrow => "DOWN_ARROW",
+            SlidesShapeType::Plus => "PLUS",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesLineCategory {
+    Straight,
+    Bent,
+    Curved,
+}
+
+impl SlidesLineCategory {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            SlidesLineCategory::Straight => "STRAIGHT",
+            SlidesLineCategory::Bent => "BENT",
+            SlidesLineCategory::Curved => "CURVED",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesZOrderOperation {
+    BringToFront,
+    BringForward,
+    SendBackward,
+    SendToBack,
+}
+
+impl SlidesZOrderOperation {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            SlidesZOrderOperation::BringToFront => "BRING_TO_FRONT",
+            SlidesZOrderOperation::BringForward => "BRING_FORWARD",
+            SlidesZOrderOperation::SendBackward => "SEND_BACKWARD",
+            SlidesZOrderOperation::SendToBack => "SEND_TO_BACK",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum SlidesPredefinedLayout {
+    Blank,
+    CaptionOnly,
+    Title,
+    TitleAndBody,
+    TitleAndTwoColumns,
+    TitleOnly,
+    SectionHeader,
+    SectionTitleAndDescription,
+    OneColumnText,
+    MainPoint,
+    BigNumber,
+}
+
+impl SlidesPredefinedLayout {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            SlidesPredefinedLayout::Blank => "BLANK",
+            SlidesPredefinedLayout::CaptionOnly => "CAPTION_ONLY",
+            SlidesPredefinedLayout::Title => "TITLE",
+            SlidesPredefinedLayout::TitleAndBody => "TITLE_AND_BODY",
+            SlidesPredefinedLayout::TitleAndTwoColumns => "TITLE_AND_TWO_COLUMNS",
+            SlidesPredefinedLayout::TitleOnly => "TITLE_ONLY",
+            SlidesPredefinedLayout::SectionHeader => "SECTION_HEADER",
+            SlidesPredefinedLayout::SectionTitleAndDescription => "SECTION_TITLE_AND_DESCRIPTION",
+            SlidesPredefinedLayout::OneColumnText => "ONE_COLUMN_TEXT",
+            SlidesPredefinedLayout::MainPoint => "MAIN_POINT",
+            SlidesPredefinedLayout::BigNumber => "BIG_NUMBER",
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -303,11 +1084,182 @@ pub enum CalendarCommand {
         #[command(subcommand)]
         command: CalendarCalendarsCommand,
     },
-    /// List, create, update, or delete Google Calendar events
+    /// Inspect calendar sharing and access rules
+    Acl {
+        #[command(subcommand)]
+        command: CalendarAclCommand,
+    },
+    /// Inspect available calendar and event color IDs
+    Colors {
+        #[command(subcommand)]
+        command: CalendarColorsCommand,
+    },
+    /// List, create, import, update, move, quick-add, or delete Google Calendar events
     Events {
         #[command(subcommand)]
         command: CalendarEventsCommand,
     },
+    /// Query free/busy windows across calendars
+    Freebusy {
+        /// Query interval start as RFC3339, such as 2026-07-09T09:00:00Z
+        #[arg(long)]
+        time_min: String,
+        /// Query interval end as RFC3339, such as 2026-07-09T17:00:00Z
+        #[arg(long)]
+        time_max: String,
+        /// Calendar or group ID to query. Repeat for multiple calendars.
+        #[arg(long = "calendar", required = true)]
+        calendars: Vec<String>,
+        /// Time zone used in the response, such as Asia/Bangkok.
+        #[arg(long)]
+        time_zone: Option<String>,
+        /// Maximum members to expand for a group.
+        #[arg(long)]
+        group_expansion_max: Option<u32>,
+        /// Maximum calendars to expand.
+        #[arg(long)]
+        calendar_expansion_max: Option<u32>,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CalendarColorsCommand {
+    /// Read the available color palettes for calendars and events
+    Get {
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CalendarAclCommand {
+    /// Add an access control rule to a calendar
+    Add {
+        /// Calendar ID to share. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Scope type for the rule.
+        #[arg(long)]
+        scope: CalendarAclScope,
+        /// Scope value, such as a user email, group email, or domain. Omit for default scope.
+        #[arg(long)]
+        value: Option<String>,
+        /// Access role to grant.
+        #[arg(long)]
+        role: CalendarAclRole,
+        /// Suppress Google Calendar sharing notification emails.
+        #[arg(long)]
+        no_send_notifications: bool,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+    /// List access control rules for a calendar
+    List {
+        /// Calendar ID to inspect. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Maximum number of ACL rules to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all ACL rules across all pages
+        #[arg(long)]
+        all: bool,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read one access control rule by rule ID
+    Get {
+        /// Calendar ID to inspect. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// ACL rule ID, such as user:teammate@example.com or default.
+        rule_id: String,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+    /// Delete one access control rule
+    Delete {
+        /// Calendar ID containing the rule. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// ACL rule ID, such as user:teammate@example.com or default.
+        rule_id: String,
+    },
+    /// Partially update one access control rule
+    Patch {
+        /// Calendar ID containing the rule. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// ACL rule ID, such as user:teammate@example.com or default.
+        rule_id: String,
+        /// Access role to set.
+        #[arg(long)]
+        role: CalendarAclRole,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+    /// Replace one access control rule
+    Update {
+        /// Calendar ID containing the rule. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// ACL rule ID, such as user:teammate@example.com or default.
+        rule_id: String,
+        /// Scope type for the replacement rule.
+        #[arg(long)]
+        scope: CalendarAclScope,
+        /// Scope value, such as a user email, group email, or domain. Omit for default scope.
+        #[arg(long)]
+        value: Option<String>,
+        /// Access role to set.
+        #[arg(long)]
+        role: CalendarAclRole,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CalendarAclScope {
+    Default,
+    User,
+    Group,
+    Domain,
+}
+
+impl CalendarAclScope {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            CalendarAclScope::Default => "default",
+            CalendarAclScope::User => "user",
+            CalendarAclScope::Group => "group",
+            CalendarAclScope::Domain => "domain",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CalendarAclRole {
+    None,
+    FreeBusyReader,
+    Reader,
+    Writer,
+    Owner,
+}
+
+impl CalendarAclRole {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            CalendarAclRole::None => "none",
+            CalendarAclRole::FreeBusyReader => "freeBusyReader",
+            CalendarAclRole::Reader => "reader",
+            CalendarAclRole::Writer => "writer",
+            CalendarAclRole::Owner => "owner",
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -329,6 +1281,157 @@ pub enum CalendarCalendarsCommand {
         /// Calendar ID to read. Use primary for the account's primary calendar.
         calendar_id: String,
     },
+    /// Create a secondary calendar
+    Create {
+        /// Calendar title
+        #[arg(long)]
+        summary: String,
+        /// Calendar description
+        #[arg(long)]
+        description: Option<String>,
+        /// Calendar location
+        #[arg(long)]
+        location: Option<String>,
+        /// Calendar time zone, such as Asia/Bangkok
+        #[arg(long)]
+        time_zone: Option<String>,
+    },
+    /// Replace one calendar's editable metadata
+    Update {
+        /// Calendar ID to update. Primary calendars can be updated.
+        calendar_id: String,
+        /// Calendar title
+        #[arg(long)]
+        summary: String,
+        /// Calendar description
+        #[arg(long)]
+        description: Option<String>,
+        /// Calendar location
+        #[arg(long)]
+        location: Option<String>,
+        /// Calendar time zone, such as Asia/Bangkok
+        #[arg(long)]
+        time_zone: Option<String>,
+    },
+    /// Patch one calendar's editable metadata
+    Patch {
+        /// Calendar ID to patch. Primary calendars can be patched.
+        calendar_id: String,
+        /// Calendar title
+        #[arg(long)]
+        summary: Option<String>,
+        /// Calendar description
+        #[arg(long)]
+        description: Option<String>,
+        /// Calendar location
+        #[arg(long)]
+        location: Option<String>,
+        /// Calendar time zone, such as Asia/Bangkok
+        #[arg(long)]
+        time_zone: Option<String>,
+    },
+    /// Delete a secondary calendar
+    Delete {
+        /// Calendar ID to delete. Primary calendars cannot be deleted.
+        calendar_id: String,
+    },
+    /// Manage the authenticated user's calendar list entry settings
+    ListEntry {
+        #[command(subcommand)]
+        command: CalendarListEntryCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CalendarListEntryCommand {
+    /// Add an existing calendar to the authenticated user's calendar list
+    Add {
+        /// Calendar ID to add to the authenticated user's calendar list.
+        calendar_id: String,
+        /// Display name override for this calendar in the authenticated user's list.
+        #[arg(long)]
+        summary_override: Option<String>,
+        /// Calendar color ID from `goog calendar colors get`.
+        #[arg(long)]
+        color_id: Option<String>,
+        /// Hide this calendar in the authenticated user's calendar list.
+        #[arg(long)]
+        hidden: Option<bool>,
+        /// Show this calendar's events in the Google Calendar UI.
+        #[arg(long)]
+        selected: Option<bool>,
+        /// Default reminder as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long)]
+        default_reminder: Vec<String>,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read per-user settings for one calendar list entry
+    Get {
+        /// Calendar ID to read. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+    /// Replace per-user settings for one calendar list entry
+    Update {
+        /// Calendar ID to replace. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Display name override for this calendar in the authenticated user's list.
+        #[arg(long)]
+        summary_override: Option<String>,
+        /// Calendar color ID from `goog calendar colors get`.
+        #[arg(long)]
+        color_id: Option<String>,
+        /// Hide or unhide this calendar in the authenticated user's calendar list.
+        #[arg(long)]
+        hidden: Option<bool>,
+        /// Show or hide this calendar's events in the Google Calendar UI.
+        #[arg(long)]
+        selected: Option<bool>,
+        /// Default reminder as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long)]
+        default_reminder: Vec<String>,
+        /// Clear default reminders for this calendar list entry.
+        #[arg(long, conflicts_with = "default_reminder")]
+        clear_default_reminders: bool,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove one calendar from the authenticated user's calendar list
+    Delete {
+        /// Calendar ID to remove from the authenticated user's calendar list.
+        calendar_id: String,
+    },
+    /// Patch per-user settings for one calendar list entry
+    Patch {
+        /// Calendar ID to patch. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Display name override for this calendar in the authenticated user's list.
+        #[arg(long)]
+        summary_override: Option<String>,
+        /// Calendar color ID from `goog calendar colors get`.
+        #[arg(long)]
+        color_id: Option<String>,
+        /// Hide or unhide this calendar in the authenticated user's calendar list.
+        #[arg(long)]
+        hidden: Option<bool>,
+        /// Show or hide this calendar's events in the Google Calendar UI.
+        #[arg(long)]
+        selected: Option<bool>,
+        /// Default reminder as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long)]
+        default_reminder: Vec<String>,
+        /// Clear default reminders for this calendar list entry.
+        #[arg(long, conflicts_with = "default_reminder")]
+        clear_default_reminders: bool,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -349,12 +1452,45 @@ pub enum CalendarEventsCommand {
         /// Upper bound for event start time as RFC3339, such as 2026-07-10T09:00:00Z
         #[arg(long)]
         time_max: Option<String>,
+        /// Time zone used for returned event times, such as Asia/Bangkok
+        #[arg(long)]
+        time_zone: Option<String>,
         /// Free-text search query
         #[arg(long)]
         query: Option<String>,
+        /// Lower bound for event last modification time as RFC3339
+        #[arg(long)]
+        updated_min: Option<String>,
+        /// Incremental sync token from a previous full events list response
+        #[arg(long)]
+        sync_token: Option<String>,
+        /// Filter events by iCalendar UID
+        #[arg(long, alias = "ical-uid")]
+        i_cal_uid: Option<String>,
+        /// Filter by private extended property as NAME=VALUE. Repeat for multiple filters.
+        #[arg(long)]
+        private_extended_property: Vec<String>,
+        /// Filter by shared extended property as NAME=VALUE. Repeat for multiple filters.
+        #[arg(long)]
+        shared_extended_property: Vec<String>,
+        /// Filter by event type. Repeat for multiple types.
+        #[arg(long, value_enum)]
+        event_type: Vec<CalendarEventType>,
+        /// Maximum attendees to include per event in the response
+        #[arg(long)]
+        max_attendees: Option<u32>,
         /// Expand recurring events into instances
         #[arg(long)]
         single_events: bool,
+        /// Include deleted events with cancelled status
+        #[arg(long)]
+        show_deleted: bool,
+        /// Include hidden invitations
+        #[arg(long)]
+        show_hidden_invitations: bool,
+        /// Order events by start time or last update time
+        #[arg(long, value_enum)]
+        order_by: Option<CalendarEventsOrderBy>,
         /// Emit newline-delimited JSON
         #[arg(long)]
         json: bool,
@@ -365,16 +1501,130 @@ pub enum CalendarEventsCommand {
         calendar_id: String,
         /// Event ID to read
         event_id: String,
+        /// Emit raw JSON response
+        #[arg(long)]
+        json: bool,
     },
-    /// Create an event from an Events resource JSON body
+    /// List generated instances for a recurring event
+    Instances {
+        /// Calendar ID to read. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Recurring event ID to expand
+        event_id: String,
+        /// Maximum number of instances to return (default: 50)
+        #[arg(long)]
+        limit: Option<u32>,
+        /// Fetch all instances across all pages
+        #[arg(long)]
+        all: bool,
+        /// Lower bound for instance start time as RFC3339, such as 2026-07-09T09:00:00Z
+        #[arg(long)]
+        time_min: Option<String>,
+        /// Upper bound for instance start time as RFC3339, such as 2026-07-10T09:00:00Z
+        #[arg(long)]
+        time_max: Option<String>,
+        /// Emit newline-delimited JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create an event from flags or an Events resource JSON body
     Create {
         /// Calendar ID to update. Use primary for the account's primary calendar.
         calendar_id: String,
         /// Path to an Event JSON request body, or - for stdin
         #[arg(long)]
-        event: String,
+        event: Option<String>,
+        /// Event summary. Required unless --event is used.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        summary: Option<String>,
+        /// Event start as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        start: Option<String>,
+        /// Event end as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        end: Option<String>,
+        /// IANA time zone for date-time events, such as Asia/Bangkok.
+        #[arg(long, conflicts_with = "event")]
+        time_zone: Option<String>,
+        /// Treat --start and --end as all-day dates.
+        #[arg(long, conflicts_with = "event")]
+        all_day: bool,
+        /// Event location.
+        #[arg(long, conflicts_with = "event")]
+        location: Option<String>,
+        /// Event description.
+        #[arg(long, conflicts_with = "event")]
+        description: Option<String>,
+        /// Event color ID from `goog calendar colors get`.
+        #[arg(long, conflicts_with = "event")]
+        color_id: Option<String>,
+        /// Attendee email address. Repeat for multiple attendees.
+        #[arg(long, conflicts_with = "event")]
+        attendee: Vec<String>,
+        /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
+        #[arg(long, conflicts_with = "event")]
+        recurrence: Vec<String>,
+        /// Reminder override as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long, conflicts_with = "event", conflicts_with = "no_reminders")]
+        reminder: Vec<String>,
+        /// Disable default reminders for this event.
+        #[arg(long, conflicts_with = "event")]
+        no_reminders: bool,
+        /// Add a Google Meet conference link to the event.
+        #[arg(long, conflicts_with = "event")]
+        google_meet: bool,
+        /// Stable conference create request ID. Generated when --google-meet is used without this flag.
+        #[arg(long, conflicts_with = "event", requires = "google_meet")]
+        meet_request_id: Option<String>,
+        /// Guests who should receive creation notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
     },
-    /// Replace an event from an Events resource JSON body
+    /// Import a private event copy from flags or an Events resource JSON body
+    Import {
+        /// Calendar ID to update. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Path to an Event JSON request body, or - for stdin
+        #[arg(long)]
+        event: Option<String>,
+        /// Event summary. Required unless --event is used.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        summary: Option<String>,
+        /// Event start as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        start: Option<String>,
+        /// Event end as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        end: Option<String>,
+        /// IANA time zone for date-time events, such as Asia/Bangkok.
+        #[arg(long, conflicts_with = "event")]
+        time_zone: Option<String>,
+        /// Treat --start and --end as all-day dates.
+        #[arg(long, conflicts_with = "event")]
+        all_day: bool,
+        /// Event location.
+        #[arg(long, conflicts_with = "event")]
+        location: Option<String>,
+        /// Event description.
+        #[arg(long, conflicts_with = "event")]
+        description: Option<String>,
+        /// Event color ID from `goog calendar colors get`.
+        #[arg(long, conflicts_with = "event")]
+        color_id: Option<String>,
+        /// Attendee email address. Repeat for multiple attendees.
+        #[arg(long, conflicts_with = "event")]
+        attendee: Vec<String>,
+        /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
+        #[arg(long, conflicts_with = "event")]
+        recurrence: Vec<String>,
+        /// Reminder override as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long, conflicts_with = "event", conflicts_with = "no_reminders")]
+        reminder: Vec<String>,
+        /// Disable default reminders for this event.
+        #[arg(long, conflicts_with = "event")]
+        no_reminders: bool,
+    },
+    /// Replace an event from flags or an Events resource JSON body
     Update {
         /// Calendar ID to update. Use primary for the account's primary calendar.
         calendar_id: String,
@@ -382,7 +1632,127 @@ pub enum CalendarEventsCommand {
         event_id: String,
         /// Path to an Event JSON request body, or - for stdin
         #[arg(long)]
-        event: String,
+        event: Option<String>,
+        /// Event summary. Required unless --event is used.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        summary: Option<String>,
+        /// Event start as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        start: Option<String>,
+        /// Event end as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, required_unless_present = "event", conflicts_with = "event")]
+        end: Option<String>,
+        /// IANA time zone for date-time events, such as Asia/Bangkok.
+        #[arg(long, conflicts_with = "event")]
+        time_zone: Option<String>,
+        /// Treat --start and --end as all-day dates.
+        #[arg(long, conflicts_with = "event")]
+        all_day: bool,
+        /// Event location.
+        #[arg(long, conflicts_with = "event")]
+        location: Option<String>,
+        /// Event description.
+        #[arg(long, conflicts_with = "event")]
+        description: Option<String>,
+        /// Event color ID from `goog calendar colors get`.
+        #[arg(long, conflicts_with = "event")]
+        color_id: Option<String>,
+        /// Attendee email address. Repeat for multiple attendees.
+        #[arg(long, conflicts_with = "event")]
+        attendee: Vec<String>,
+        /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
+        #[arg(long, conflicts_with = "event")]
+        recurrence: Vec<String>,
+        /// Reminder override as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long, conflicts_with = "event", conflicts_with = "no_reminders")]
+        reminder: Vec<String>,
+        /// Disable default reminders for this event.
+        #[arg(long, conflicts_with = "event")]
+        no_reminders: bool,
+        /// Add a Google Meet conference link to the event.
+        #[arg(long, conflicts_with = "event")]
+        google_meet: bool,
+        /// Stable conference create request ID. Generated when --google-meet is used without this flag.
+        #[arg(long, conflicts_with = "event", requires = "google_meet")]
+        meet_request_id: Option<String>,
+        /// Guests who should receive update notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
+    },
+    /// Partially update an event from flags or an Events resource JSON body
+    Patch {
+        /// Calendar ID to update. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Event ID to patch
+        event_id: String,
+        /// Path to an Event JSON request body, or - for stdin
+        #[arg(long)]
+        event: Option<String>,
+        /// Event summary.
+        #[arg(long, conflicts_with = "event")]
+        summary: Option<String>,
+        /// Event start as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, conflicts_with = "event")]
+        start: Option<String>,
+        /// Event end as RFC3339 date-time, or YYYY-MM-DD with --all-day.
+        #[arg(long, conflicts_with = "event")]
+        end: Option<String>,
+        /// IANA time zone for patched date-time fields, such as Asia/Bangkok.
+        #[arg(long, conflicts_with = "event")]
+        time_zone: Option<String>,
+        /// Treat patched --start and --end values as all-day dates.
+        #[arg(long, conflicts_with = "event")]
+        all_day: bool,
+        /// Event location.
+        #[arg(long, conflicts_with = "event")]
+        location: Option<String>,
+        /// Event description.
+        #[arg(long, conflicts_with = "event")]
+        description: Option<String>,
+        /// Event color ID from `goog calendar colors get`.
+        #[arg(long, conflicts_with = "event")]
+        color_id: Option<String>,
+        /// Attendee email address. Repeat for multiple attendees.
+        #[arg(long, conflicts_with = "event")]
+        attendee: Vec<String>,
+        /// Recurrence rule or date entry, such as RRULE:FREQ=WEEKLY;COUNT=4. Repeat for multiple entries.
+        #[arg(long, conflicts_with = "event")]
+        recurrence: Vec<String>,
+        /// Reminder override as METHOD:MINUTES, where METHOD is popup or email. Repeat for multiple reminders.
+        #[arg(long, conflicts_with = "event", conflicts_with = "no_reminders")]
+        reminder: Vec<String>,
+        /// Disable default reminders for this event.
+        #[arg(long, conflicts_with = "event")]
+        no_reminders: bool,
+        /// Add a Google Meet conference link to the event.
+        #[arg(long, conflicts_with = "event")]
+        google_meet: bool,
+        /// Stable conference create request ID. Generated when --google-meet is used without this flag.
+        #[arg(long, conflicts_with = "event", requires = "google_meet")]
+        meet_request_id: Option<String>,
+        /// Guests who should receive update notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
+    },
+    /// Move an event from one calendar to another
+    Move {
+        /// Source calendar ID. Use primary for the account's primary calendar.
+        source_calendar_id: String,
+        /// Event ID to move
+        event_id: String,
+        /// Destination calendar ID
+        #[arg(long)]
+        destination: String,
+    },
+    /// Create an event from natural language text
+    QuickAdd {
+        /// Calendar ID to update. Use primary for the account's primary calendar.
+        calendar_id: String,
+        /// Natural language event text, such as "Lunch with Sam tomorrow at noon"
+        text: String,
+        /// Guests who should receive creation notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
     },
     /// Delete an event from a calendar
     Delete {
@@ -390,7 +1760,63 @@ pub enum CalendarEventsCommand {
         calendar_id: String,
         /// Event ID to delete
         event_id: String,
+        /// Guests who should receive deletion notifications: all, external-only, or none.
+        #[arg(long, value_enum)]
+        send_updates: Option<CalendarSendUpdates>,
     },
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub enum CalendarSendUpdates {
+    All,
+    ExternalOnly,
+    None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum CalendarEventsOrderBy {
+    StartTime,
+    Updated,
+}
+
+impl CalendarEventsOrderBy {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            CalendarEventsOrderBy::StartTime => "startTime",
+            CalendarEventsOrderBy::Updated => "updated",
+        }
+    }
+
+    pub fn from_api_value(value: &str) -> Option<Self> {
+        match value {
+            "startTime" => Some(CalendarEventsOrderBy::StartTime),
+            "updated" => Some(CalendarEventsOrderBy::Updated),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum CalendarEventType {
+    Birthday,
+    Default,
+    FocusTime,
+    FromGmail,
+    OutOfOffice,
+    WorkingLocation,
+}
+
+impl CalendarEventType {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            CalendarEventType::Birthday => "birthday",
+            CalendarEventType::Default => "default",
+            CalendarEventType::FocusTime => "focusTime",
+            CalendarEventType::FromGmail => "fromGmail",
+            CalendarEventType::OutOfOffice => "outOfOffice",
+            CalendarEventType::WorkingLocation => "workingLocation",
+        }
+    }
 }
 
 impl DocsCommand {

@@ -17,8 +17,8 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 - Google Drive file and folder listing, upload, and download commands.
 - Google Docs document listing, creation, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
-- Google Slides presentation listing, creation, raw reads, and raw batch updates.
-- Google Calendar calendar listing, calendar metadata reads, and event list/read/create/update/delete commands.
+- Google Slides presentation listing, creation, raw reads, high-level slide/text/image/table/shape edits, and raw batch updates.
+- Google Calendar calendar listing, calendar metadata reads, free/busy lookup, and event list/read/create/update/delete commands.
 - Gmail message listing, search, raw message reads, draft creation, and attachment downloads.
 - Multi-account OAuth setup, login, account listing, and active account switching.
 
@@ -282,7 +282,39 @@ cat rows.tsv | goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --dat
 ```sh
 goog slides list --limit 20
 goog slides create "Quarterly Review"
-goog slides get PRESENTATION_ID --fields 'presentationId,title,slides(objectId)'
+goog slides get PRESENTATION_ID
+goog slides get PRESENTATION_ID --fields 'presentationId,title,slides(objectId)' --json
+goog slides slide create PRESENTATION_ID --layout title-and-body --object-id agenda-slide
+goog slides slide duplicate PRESENTATION_ID SLIDE_OBJECT_ID --object-id copied-slide --insertion-index 1
+goog slides slide move PRESENTATION_ID --page-id SLIDE_OBJECT_ID --insertion-index 1
+goog slides slide background PRESENTATION_ID SLIDE_OBJECT_ID --color "#fbbc04"
+goog slides slide delete PRESENTATION_ID SLIDE_OBJECT_ID
+goog slides text-box PRESENTATION_ID --page-id SLIDE_OBJECT_ID --text "Executive summary" --x 72 --y 72 --width 360 --height 120
+goog slides image PRESENTATION_ID --page-id SLIDE_OBJECT_ID --url https://example.com/chart.png --x 72 --y 216 --width 360 --height 240
+goog slides video PRESENTATION_ID --page-id SLIDE_OBJECT_ID --video-id dQw4w9WgXcQ --x 72 --y 216 --width 360 --height 240
+goog slides object replace-image PRESENTATION_ID IMAGE_OBJECT_ID --url https://example.com/new-chart.png --method center-crop
+goog slides table PRESENTATION_ID --page-id SLIDE_OBJECT_ID --rows 4 --columns 3 --x 72 --y 72 --width 360 --height 180
+goog slides table-fill PRESENTATION_ID TABLE_OBJECT_ID --row "Metric|Value" --row 'ARR|$1.2M'
+goog slides table-insert-rows PRESENTATION_ID TABLE_OBJECT_ID --reference-row 1 --number 2 --below
+goog slides table-delete-row PRESENTATION_ID TABLE_OBJECT_ID --reference-row 1
+goog slides table-insert-columns PRESENTATION_ID TABLE_OBJECT_ID --reference-column 1 --number 2 --right
+goog slides table-delete-column PRESENTATION_ID TABLE_OBJECT_ID --reference-column 1
+goog slides table-merge-cells PRESENTATION_ID TABLE_OBJECT_ID --start-row 0 --start-column 0 --row-span 1 --column-span 2
+goog slides table-unmerge-cells PRESENTATION_ID TABLE_OBJECT_ID --start-row 0 --start-column 0 --row-span 1 --column-span 2
+goog slides shape PRESENTATION_ID --page-id SLIDE_OBJECT_ID --type round-rectangle --x 72 --y 72 --width 240 --height 96
+goog slides line PRESENTATION_ID --page-id SLIDE_OBJECT_ID --category straight --x 72 --y 72 --width 240 --height 0
+goog slides object style PRESENTATION_ID PAGE_OBJECT_ID --fill-color "#1a73e8" --outline-color "#202124" --outline-weight 2
+goog slides object line-style PRESENTATION_ID LINE_OBJECT_ID --color "#1a73e8" --weight 3
+goog slides object insert-text PRESENTATION_ID PAGE_OBJECT_ID --text "Updated takeaway" --index 0
+goog slides object delete-text PRESENTATION_ID PAGE_OBJECT_ID --start-index 0 --end-index 7
+goog slides object text-style PRESENTATION_ID PAGE_OBJECT_ID --color "#202124" --font-family Georgia --font-size 18 --bold --italic false --start-index 0 --end-index 17
+goog slides object alt-text PRESENTATION_ID PAGE_OBJECT_ID --title "Pipeline chart" --description "Bar chart showing qualified pipeline by stage"
+goog slides object move PRESENTATION_ID PAGE_OBJECT_ID --x 96 --y 144 --scale-x 1.2 --scale-y 1.2
+goog slides object order PRESENTATION_ID --object-id PAGE_OBJECT_ID --operation bring-to-front
+goog slides object group PRESENTATION_ID --object-id SHAPE_OBJECT_ID --object-id IMAGE_OBJECT_ID --group-id hero-group
+goog slides object ungroup PRESENTATION_ID --object-id hero-group
+goog slides replace-text PRESENTATION_ID --find "{{client_name}}" --replace "Acme Co." --page-id SLIDE_OBJECT_ID
+goog slides object delete PRESENTATION_ID PAGE_OBJECT_ID
 goog slides batch-update PRESENTATION_ID --requests ./slides-requests.json
 ```
 
@@ -291,11 +323,43 @@ goog slides batch-update PRESENTATION_ID --requests ./slides-requests.json
 ```sh
 goog calendar calendars list --limit 20
 goog calendar calendars get primary
-goog calendar events list primary --time-min 2026-07-09T00:00:00Z --time-max 2026-07-10T00:00:00Z --single-events
+goog calendar calendars create --summary "Team Launches" --time-zone Asia/Bangkok --description "Launch planning calendar"
+goog calendar calendars update team-launches@example.com --summary "Team Launches Updated" --time-zone Asia/Bangkok --description "Launch planning and retros"
+goog calendar calendars patch team-launches@example.com --description "Launch planning, retros, and launch notes"
+goog calendar calendars list-entry add team-launches@example.com --summary-override "Launches" --selected true --color-id 2
+goog calendar calendars list-entry get team-launches@example.com
+goog calendar calendars list-entry update team-launches@example.com --summary-override "Launches" --selected true --color-id 2 --default-reminder popup:10
+goog calendar calendars list-entry patch team-launches@example.com --summary-override "Launches" --selected true --color-id 2 --default-reminder popup:10
+goog calendar calendars list-entry delete team-launches@example.com
+goog calendar calendars delete team-launches@example.com
+goog calendar colors get
+goog calendar acl list team-launches@example.com --limit 20
+goog calendar acl get team-launches@example.com user:teammate@example.com
+goog calendar acl add team-launches@example.com --scope user --value teammate@example.com --role writer --no-send-notifications
+goog calendar acl update team-launches@example.com user:teammate@example.com --scope user --value teammate@example.com --role writer
+goog calendar acl patch team-launches@example.com user:teammate@example.com --role reader
+goog calendar acl delete team-launches@example.com user:teammate@example.com
+goog calendar freebusy --time-min 2026-07-09T09:00:00Z --time-max 2026-07-09T17:00:00Z --calendar primary --calendar teammate@example.com
+goog calendar events list primary --time-min 2026-07-09T00:00:00Z --time-max 2026-07-10T00:00:00Z --time-zone Asia/Bangkok --single-events
+goog calendar events list primary --updated-min 2026-07-08T00:00:00Z --show-deleted --show-hidden-invitations --order-by updated --json
+goog calendar events list primary --sync-token NEXT_SYNC_TOKEN --json
+goog calendar events list primary --i-cal-uid abc123@example.com --json
+goog calendar events list primary --private-extended-property owner=agent --shared-extended-property project=alpha --json
+goog calendar events list primary --event-type out-of-office --event-type working-location --max-attendees 3 --json
 goog calendar events get primary EVENT_ID
+goog calendar events get primary EVENT_ID --json
+goog calendar events instances primary RECURRING_EVENT_ID --time-min 2026-07-09T00:00:00Z --time-max 2026-07-30T00:00:00Z
+goog calendar events create primary --summary "Planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok --attendee teammate@example.com --recurrence "RRULE:FREQ=WEEKLY;COUNT=4" --reminder popup:10 --color-id 5 --google-meet --send-updates all
+goog calendar events create primary --summary "Out of office" --start 2026-07-09 --end 2026-07-10 --all-day
 goog calendar events create primary --event ./event.json
+goog calendar events import primary --summary "Imported planning" --start 2026-07-09T09:00:00+07:00 --end 2026-07-09T09:30:00+07:00 --time-zone Asia/Bangkok
+goog calendar events import primary --event ./event.json
+goog calendar events quick-add primary "Lunch with Sam tomorrow at noon" --send-updates none
+goog calendar events update primary EVENT_ID --summary "Planning moved" --start 2026-07-09T10:00:00+07:00 --end 2026-07-09T10:30:00+07:00 --time-zone Asia/Bangkok --send-updates external-only
 goog calendar events update primary EVENT_ID --event ./event.json
-goog calendar events delete primary EVENT_ID
+goog calendar events patch primary EVENT_ID --summary "Planning renamed" --location "Office" --color-id 7 --google-meet --meet-request-id planning-meet-1 --no-reminders --send-updates none
+goog calendar events move primary EVENT_ID --destination team@example.com
+goog calendar events delete primary EVENT_ID --send-updates all
 ```
 
 ### Gmail

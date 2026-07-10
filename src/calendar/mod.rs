@@ -2,7 +2,7 @@ pub mod error;
 
 pub use error::CalendarError;
 
-use reqwest::{Response, StatusCode};
+use reqwest::{header::CONTENT_LENGTH, Method, Response, StatusCode};
 use serde_json::Value;
 use url::Url;
 
@@ -14,9 +14,31 @@ pub const CALENDAR_SCOPES: &[&str] = &[CALENDAR_SCOPE];
 const CALENDAR_BASE_URL: &str = "https://www.googleapis.com/calendar/v3";
 
 pub type Calendar = Value;
+pub type CalendarListEntry = Value;
+pub type Acl = Value;
+pub type AclRule = Value;
 pub type CalendarList = Value;
+pub type Colors = Value;
 pub type Event = Value;
 pub type Events = Value;
+pub type FreeBusy = Value;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendUpdates {
+    All,
+    ExternalOnly,
+    None,
+}
+
+impl SendUpdates {
+    fn api_value(self) -> &'static str {
+        match self {
+            SendUpdates::All => "all",
+            SendUpdates::ExternalOnly => "externalOnly",
+            SendUpdates::None => "none",
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ListCalendarsOptions {
@@ -82,14 +104,435 @@ impl GetCalendarOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct InsertCalendarOptions {
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl InsertCalendarOptions {
+    pub fn new(request_body: Value) -> Self {
+        Self {
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["calendars"])
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateCalendarOptions {
+    pub calendar_id: String,
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl UpdateCalendarOptions {
+    pub fn new(calendar_id: impl Into<String>, request_body: Value) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["calendars", &self.calendar_id])
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteCalendarOptions {
+    pub calendar_id: String,
+    base_url: String,
+}
+
+impl DeleteCalendarOptions {
+    pub fn new(calendar_id: impl Into<String>) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["calendars", &self.calendar_id])
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InsertCalendarListEntryOptions {
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl InsertCalendarListEntryOptions {
+    pub fn new(request_body: Value) -> Self {
+        Self {
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["users", "me", "calendarList"])
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GetCalendarListEntryOptions {
+    pub calendar_id: String,
+    base_url: String,
+}
+
+impl GetCalendarListEntryOptions {
+    pub fn new(calendar_id: impl Into<String>) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["users", "me", "calendarList", &self.calendar_id],
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PatchCalendarListEntryOptions {
+    pub calendar_id: String,
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl PatchCalendarListEntryOptions {
+    pub fn new(calendar_id: impl Into<String>, request_body: Value) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["users", "me", "calendarList", &self.calendar_id],
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateCalendarListEntryOptions {
+    pub calendar_id: String,
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl UpdateCalendarListEntryOptions {
+    pub fn new(calendar_id: impl Into<String>, request_body: Value) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["users", "me", "calendarList", &self.calendar_id],
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteCalendarListEntryOptions {
+    pub calendar_id: String,
+    base_url: String,
+}
+
+impl DeleteCalendarListEntryOptions {
+    pub fn new(calendar_id: impl Into<String>) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["users", "me", "calendarList", &self.calendar_id],
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GetColorsOptions {
+    base_url: String,
+}
+
+impl GetColorsOptions {
+    pub fn new() -> Self {
+        Self {
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["colors"])
+    }
+}
+
+impl Default for GetColorsOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ListAclOptions {
+    pub calendar_id: String,
+    pub max_results: u32,
+    pub page_token: Option<String>,
+    base_url: String,
+}
+
+impl ListAclOptions {
+    pub fn new(calendar_id: impl Into<String>, max_results: u32) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            max_results,
+            page_token: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_page_token(mut self, page_token: impl Into<String>) -> Self {
+        self.page_token = Some(page_token.into());
+        self
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(&self.base_url, &["calendars", &self.calendar_id, "acl"])?;
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("maxResults", &self.max_results.to_string());
+            if let Some(page_token) = &self.page_token {
+                query.append_pair("pageToken", page_token);
+            }
+        }
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GetAclOptions {
+    pub calendar_id: String,
+    pub rule_id: String,
+    base_url: String,
+}
+
+impl GetAclOptions {
+    pub fn new(calendar_id: impl Into<String>, rule_id: impl Into<String>) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            rule_id: rule_id.into(),
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "acl", &self.rule_id],
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InsertAclOptions {
+    pub calendar_id: String,
+    pub request_body: Value,
+    pub send_notifications: Option<bool>,
+    base_url: String,
+}
+
+impl InsertAclOptions {
+    pub fn new(calendar_id: impl Into<String>, request_body: Value) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            request_body,
+            send_notifications: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_send_notifications(mut self, send_notifications: bool) -> Self {
+        self.send_notifications = Some(send_notifications);
+        self
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(&self.base_url, &["calendars", &self.calendar_id, "acl"])?;
+        if let Some(send_notifications) = self.send_notifications {
+            url.query_pairs_mut()
+                .append_pair("sendNotifications", &send_notifications.to_string());
+        }
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateAclOptions {
+    pub calendar_id: String,
+    pub rule_id: String,
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl UpdateAclOptions {
+    pub fn new(
+        calendar_id: impl Into<String>,
+        rule_id: impl Into<String>,
+        request_body: Value,
+    ) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            rule_id: rule_id.into(),
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "acl", &self.rule_id],
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteAclOptions {
+    pub calendar_id: String,
+    pub rule_id: String,
+    base_url: String,
+}
+
+impl DeleteAclOptions {
+    pub fn new(calendar_id: impl Into<String>, rule_id: impl Into<String>) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            rule_id: rule_id.into(),
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "acl", &self.rule_id],
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ListEventsOptions {
     pub calendar_id: String,
     pub max_results: u32,
     pub page_token: Option<String>,
     pub time_min: Option<String>,
     pub time_max: Option<String>,
+    pub time_zone: Option<String>,
     pub query: Option<String>,
+    pub updated_min: Option<String>,
+    pub sync_token: Option<String>,
+    pub i_cal_uid: Option<String>,
+    pub private_extended_properties: Vec<String>,
+    pub shared_extended_properties: Vec<String>,
+    pub event_types: Vec<String>,
+    pub max_attendees: Option<u32>,
     pub single_events: bool,
+    pub show_deleted: bool,
+    pub show_hidden_invitations: bool,
+    pub order_by: Option<String>,
     base_url: String,
 }
 
@@ -101,8 +544,19 @@ impl ListEventsOptions {
             page_token: None,
             time_min: None,
             time_max: None,
+            time_zone: None,
             query: None,
+            updated_min: None,
+            sync_token: None,
+            i_cal_uid: None,
+            private_extended_properties: Vec::new(),
+            shared_extended_properties: Vec::new(),
+            event_types: Vec::new(),
+            max_attendees: None,
             single_events: false,
+            show_deleted: false,
+            show_hidden_invitations: false,
+            order_by: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
@@ -122,13 +576,74 @@ impl ListEventsOptions {
         self
     }
 
+    pub fn with_time_zone(mut self, time_zone: impl Into<String>) -> Self {
+        self.time_zone = Some(time_zone.into());
+        self
+    }
+
     pub fn with_query(mut self, query: impl Into<String>) -> Self {
         self.query = Some(query.into());
         self
     }
 
+    pub fn with_updated_min(mut self, updated_min: impl Into<String>) -> Self {
+        self.updated_min = Some(updated_min.into());
+        self
+    }
+
+    pub fn with_sync_token(mut self, sync_token: impl Into<String>) -> Self {
+        self.sync_token = Some(sync_token.into());
+        self
+    }
+
+    pub fn with_i_cal_uid(mut self, i_cal_uid: impl Into<String>) -> Self {
+        self.i_cal_uid = Some(i_cal_uid.into());
+        self
+    }
+
+    pub fn with_private_extended_properties(
+        mut self,
+        private_extended_properties: Vec<String>,
+    ) -> Self {
+        self.private_extended_properties = private_extended_properties;
+        self
+    }
+
+    pub fn with_shared_extended_properties(
+        mut self,
+        shared_extended_properties: Vec<String>,
+    ) -> Self {
+        self.shared_extended_properties = shared_extended_properties;
+        self
+    }
+
+    pub fn with_event_types(mut self, event_types: Vec<String>) -> Self {
+        self.event_types = event_types;
+        self
+    }
+
+    pub fn with_max_attendees(mut self, max_attendees: u32) -> Self {
+        self.max_attendees = Some(max_attendees);
+        self
+    }
+
     pub fn with_single_events(mut self, single_events: bool) -> Self {
         self.single_events = single_events;
+        self
+    }
+
+    pub fn with_show_deleted(mut self, show_deleted: bool) -> Self {
+        self.show_deleted = show_deleted;
+        self
+    }
+
+    pub fn with_show_hidden_invitations(mut self, show_hidden_invitations: bool) -> Self {
+        self.show_hidden_invitations = show_hidden_invitations;
+        self
+    }
+
+    pub fn with_order_by(mut self, order_by: impl Into<String>) -> Self {
+        self.order_by = Some(order_by.into());
         self
     }
 
@@ -151,11 +666,120 @@ impl ListEventsOptions {
             if let Some(time_max) = &self.time_max {
                 query.append_pair("timeMax", time_max);
             }
+            if let Some(time_zone) = &self.time_zone {
+                query.append_pair("timeZone", time_zone);
+            }
             if let Some(query_text) = &self.query {
                 query.append_pair("q", query_text);
             }
+            if let Some(updated_min) = &self.updated_min {
+                query.append_pair("updatedMin", updated_min);
+            }
+            if let Some(sync_token) = &self.sync_token {
+                query.append_pair("syncToken", sync_token);
+            }
+            if let Some(i_cal_uid) = &self.i_cal_uid {
+                query.append_pair("iCalUID", i_cal_uid);
+            }
+            for extended_property in &self.private_extended_properties {
+                query.append_pair("privateExtendedProperty", extended_property);
+            }
+            for extended_property in &self.shared_extended_properties {
+                query.append_pair("sharedExtendedProperty", extended_property);
+            }
+            for event_type in &self.event_types {
+                query.append_pair("eventTypes", event_type);
+            }
+            if let Some(max_attendees) = self.max_attendees {
+                query.append_pair("maxAttendees", &max_attendees.to_string());
+            }
             if self.single_events {
                 query.append_pair("singleEvents", "true");
+            }
+            if self.show_deleted {
+                query.append_pair("showDeleted", "true");
+            }
+            if self.show_hidden_invitations {
+                query.append_pair("showHiddenInvitations", "true");
+            }
+            if let Some(order_by) = &self.order_by {
+                query.append_pair("orderBy", order_by);
+            }
+        }
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ListEventInstancesOptions {
+    pub calendar_id: String,
+    pub event_id: String,
+    pub max_results: u32,
+    pub page_token: Option<String>,
+    pub time_min: Option<String>,
+    pub time_max: Option<String>,
+    base_url: String,
+}
+
+impl ListEventInstancesOptions {
+    pub fn new(
+        calendar_id: impl Into<String>,
+        event_id: impl Into<String>,
+        max_results: u32,
+    ) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            event_id: event_id.into(),
+            max_results,
+            page_token: None,
+            time_min: None,
+            time_max: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_page_token(mut self, page_token: impl Into<String>) -> Self {
+        self.page_token = Some(page_token.into());
+        self
+    }
+
+    pub fn with_time_min(mut self, time_min: impl Into<String>) -> Self {
+        self.time_min = Some(time_min.into());
+        self
+    }
+
+    pub fn with_time_max(mut self, time_max: impl Into<String>) -> Self {
+        self.time_max = Some(time_max.into());
+        self
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(
+            &self.base_url,
+            &[
+                "calendars",
+                &self.calendar_id,
+                "events",
+                &self.event_id,
+                "instances",
+            ],
+        )?;
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("maxResults", &self.max_results.to_string());
+            if let Some(page_token) = &self.page_token {
+                query.append_pair("pageToken", page_token);
+            }
+            if let Some(time_min) = &self.time_min {
+                query.append_pair("timeMin", time_min);
+            }
+            if let Some(time_max) = &self.time_max {
+                query.append_pair("timeMax", time_max);
             }
         }
         Ok(url)
@@ -196,6 +820,8 @@ pub struct WriteEventOptions {
     pub calendar_id: String,
     pub event_id: Option<String>,
     pub request_body: Value,
+    pub send_updates: Option<SendUpdates>,
+    pub conference_data_version: Option<u32>,
     base_url: String,
 }
 
@@ -205,6 +831,8 @@ impl WriteEventOptions {
             calendar_id: calendar_id.into(),
             event_id: None,
             request_body,
+            send_updates: None,
+            conference_data_version: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
@@ -218,8 +846,46 @@ impl WriteEventOptions {
             calendar_id: calendar_id.into(),
             event_id: Some(event_id.into()),
             request_body,
+            send_updates: None,
+            conference_data_version: None,
             base_url: CALENDAR_BASE_URL.to_string(),
         }
+    }
+
+    pub fn patch(
+        calendar_id: impl Into<String>,
+        event_id: impl Into<String>,
+        request_body: Value,
+    ) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            event_id: Some(event_id.into()),
+            request_body,
+            send_updates: None,
+            conference_data_version: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn import(calendar_id: impl Into<String>, request_body: Value) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            event_id: None,
+            request_body,
+            send_updates: None,
+            conference_data_version: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_send_updates(mut self, send_updates: SendUpdates) -> Self {
+        self.send_updates = Some(send_updates);
+        self
+    }
+
+    pub fn with_conference_data_version(mut self, conference_data_version: u32) -> Self {
+        self.conference_data_version = Some(conference_data_version);
+        self
     }
 
     pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
@@ -228,7 +894,17 @@ impl WriteEventOptions {
     }
 
     fn insert_url(&self) -> Result<Url, CalendarError> {
-        calendar_url(&self.base_url, &["calendars", &self.calendar_id, "events"])
+        let mut url = calendar_url(&self.base_url, &["calendars", &self.calendar_id, "events"])?;
+        append_send_updates(&mut url, self.send_updates);
+        append_conference_data_version(&mut url, self.conference_data_version);
+        Ok(url)
+    }
+
+    fn import_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "events", "import"],
+        )
     }
 
     fn update_url(&self) -> Result<Url, CalendarError> {
@@ -236,10 +912,13 @@ impl WriteEventOptions {
             .event_id
             .as_deref()
             .ok_or_else(|| CalendarError::InvalidResponse("event_id was missing".into()))?;
-        calendar_url(
+        let mut url = calendar_url(
             &self.base_url,
             &["calendars", &self.calendar_id, "events", event_id],
-        )
+        )?;
+        append_send_updates(&mut url, self.send_updates);
+        append_conference_data_version(&mut url, self.conference_data_version);
+        Ok(url)
     }
 }
 
@@ -247,6 +926,7 @@ impl WriteEventOptions {
 pub struct DeleteEventOptions {
     pub calendar_id: String,
     pub event_id: String,
+    pub send_updates: Option<SendUpdates>,
     base_url: String,
 }
 
@@ -255,6 +935,49 @@ impl DeleteEventOptions {
         Self {
             calendar_id: calendar_id.into(),
             event_id: event_id.into(),
+            send_updates: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_send_updates(mut self, send_updates: SendUpdates) -> Self {
+        self.send_updates = Some(send_updates);
+        self
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "events", &self.event_id],
+        )?;
+        append_send_updates(&mut url, self.send_updates);
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MoveEventOptions {
+    pub source_calendar_id: String,
+    pub event_id: String,
+    pub destination_calendar_id: String,
+    base_url: String,
+}
+
+impl MoveEventOptions {
+    pub fn new(
+        source_calendar_id: impl Into<String>,
+        event_id: impl Into<String>,
+        destination_calendar_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            source_calendar_id: source_calendar_id.into(),
+            event_id: event_id.into(),
+            destination_calendar_id: destination_calendar_id.into(),
             base_url: CALENDAR_BASE_URL.to_string(),
         }
     }
@@ -265,10 +988,87 @@ impl DeleteEventOptions {
     }
 
     fn request_url(&self) -> Result<Url, CalendarError> {
-        calendar_url(
+        let mut url = calendar_url(
             &self.base_url,
-            &["calendars", &self.calendar_id, "events", &self.event_id],
-        )
+            &[
+                "calendars",
+                &self.source_calendar_id,
+                "events",
+                &self.event_id,
+                "move",
+            ],
+        )?;
+        url.query_pairs_mut()
+            .append_pair("destination", &self.destination_calendar_id);
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct QuickAddEventOptions {
+    pub calendar_id: String,
+    pub text: String,
+    pub send_updates: Option<SendUpdates>,
+    base_url: String,
+}
+
+impl QuickAddEventOptions {
+    pub fn new(calendar_id: impl Into<String>, text: impl Into<String>) -> Self {
+        Self {
+            calendar_id: calendar_id.into(),
+            text: text.into(),
+            send_updates: None,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub fn with_send_updates(mut self, send_updates: SendUpdates) -> Self {
+        self.send_updates = Some(send_updates);
+        self
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        let mut url = calendar_url(
+            &self.base_url,
+            &["calendars", &self.calendar_id, "events", "quickAdd"],
+        )?;
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("text", &self.text);
+            if let Some(send_updates) = self.send_updates {
+                query.append_pair("sendUpdates", send_updates.api_value());
+            }
+        }
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FreeBusyOptions {
+    pub request_body: Value,
+    base_url: String,
+}
+
+impl FreeBusyOptions {
+    pub fn new(request_body: Value) -> Self {
+        Self {
+            request_body,
+            base_url: CALENDAR_BASE_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, CalendarError> {
+        calendar_url(&self.base_url, &["freeBusy"])
     }
 }
 
@@ -285,6 +1085,22 @@ fn calendar_url(base_url: &str, path_segments: &[&str]) -> Result<Url, CalendarE
     Ok(url)
 }
 
+fn append_send_updates(url: &mut Url, send_updates: Option<SendUpdates>) {
+    if let Some(send_updates) = send_updates {
+        url.query_pairs_mut()
+            .append_pair("sendUpdates", send_updates.api_value());
+    }
+}
+
+fn append_conference_data_version(url: &mut Url, conference_data_version: Option<u32>) {
+    if let Some(conference_data_version) = conference_data_version {
+        url.query_pairs_mut().append_pair(
+            "conferenceDataVersion",
+            &conference_data_version.to_string(),
+        );
+    }
+}
+
 pub async fn list_calendars<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ListCalendarsOptions,
@@ -299,9 +1115,194 @@ pub async fn get_calendar<S: AccountStore>(
     send_json_request(client, client.get(options.request_url()?)).await
 }
 
+pub async fn insert_calendar<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &InsertCalendarOptions,
+) -> Result<Calendar, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn update_calendar<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateCalendarOptions,
+) -> Result<Calendar, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .put(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn patch_calendar<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateCalendarOptions,
+) -> Result<Calendar, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .request(Method::PATCH, options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn delete_calendar<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DeleteCalendarOptions,
+) -> Result<(), CalendarError> {
+    let response = client
+        .send_with_scopes(client.delete(options.request_url()?), CALENDAR_SCOPES)
+        .await
+        .map_err(CalendarError::Auth)?;
+    parse_empty_response(response).await
+}
+
+pub async fn get_calendar_list_entry<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &GetCalendarListEntryOptions,
+) -> Result<CalendarListEntry, CalendarError> {
+    send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn insert_calendar_list_entry<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &InsertCalendarListEntryOptions,
+) -> Result<CalendarListEntry, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn patch_calendar_list_entry<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &PatchCalendarListEntryOptions,
+) -> Result<CalendarListEntry, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .request(Method::PATCH, options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn update_calendar_list_entry<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateCalendarListEntryOptions,
+) -> Result<CalendarListEntry, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .put(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn delete_calendar_list_entry<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DeleteCalendarListEntryOptions,
+) -> Result<(), CalendarError> {
+    let response = client
+        .send_with_scopes(client.delete(options.request_url()?), CALENDAR_SCOPES)
+        .await
+        .map_err(CalendarError::Auth)?;
+    parse_empty_response(response).await
+}
+
+pub async fn get_colors<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &GetColorsOptions,
+) -> Result<Colors, CalendarError> {
+    send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn list_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ListAclOptions,
+) -> Result<Acl, CalendarError> {
+    send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn get_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &GetAclOptions,
+) -> Result<AclRule, CalendarError> {
+    send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn insert_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &InsertAclOptions,
+) -> Result<AclRule, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn patch_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateAclOptions,
+) -> Result<AclRule, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .request(Method::PATCH, options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn update_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateAclOptions,
+) -> Result<AclRule, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .put(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn delete_acl<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DeleteAclOptions,
+) -> Result<(), CalendarError> {
+    let response = client
+        .send_with_scopes(client.delete(options.request_url()?), CALENDAR_SCOPES)
+        .await
+        .map_err(CalendarError::Auth)?;
+    parse_empty_response(response).await
+}
+
 pub async fn list_events<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ListEventsOptions,
+) -> Result<Events, CalendarError> {
+    send_json_request(client, client.get(options.request_url()?)).await
+}
+
+pub async fn list_event_instances<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ListEventInstancesOptions,
 ) -> Result<Events, CalendarError> {
     send_json_request(client, client.get(options.request_url()?)).await
 }
@@ -326,6 +1327,19 @@ pub async fn insert_event<S: AccountStore>(
     .await
 }
 
+pub async fn import_event<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &WriteEventOptions,
+) -> Result<Event, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.import_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
 pub async fn update_event<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &WriteEventOptions,
@@ -334,6 +1348,19 @@ pub async fn update_event<S: AccountStore>(
         client,
         client
             .put(options.update_url()?)
+            .json(&options.request_body),
+    )
+    .await
+}
+
+pub async fn patch_event<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &WriteEventOptions,
+) -> Result<Event, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .request(Method::PATCH, options.update_url()?)
             .json(&options.request_body),
     )
     .await
@@ -348,6 +1375,47 @@ pub async fn delete_event<S: AccountStore>(
         .await
         .map_err(CalendarError::Auth)?;
     parse_empty_response(response).await
+}
+
+pub async fn move_event<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &MoveEventOptions,
+) -> Result<Event, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .header(CONTENT_LENGTH, "0")
+            .body(Vec::new()),
+    )
+    .await
+}
+
+pub async fn quick_add_event<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &QuickAddEventOptions,
+) -> Result<Event, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .header(CONTENT_LENGTH, "0")
+            .body(Vec::new()),
+    )
+    .await
+}
+
+pub async fn query_freebusy<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &FreeBusyOptions,
+) -> Result<FreeBusy, CalendarError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&options.request_body),
+    )
+    .await
 }
 
 async fn send_json_request<S: AccountStore>(
