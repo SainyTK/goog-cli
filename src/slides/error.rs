@@ -20,6 +20,9 @@ pub enum SlidesError {
     #[error("invalid Google Slides API URL: {0}")]
     InvalidUrl(#[from] url::ParseError),
 
+    #[error("Google Slides network error: {0}")]
+    Network(String),
+
     #[error("auth error: {0}")]
     Auth(#[from] crate::auth::error::AuthError),
 }
