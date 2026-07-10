@@ -264,6 +264,13 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.slides[12].sources[0].note,
         "Trustworthiness characteristics and the Govern, Map, Measure, and Manage lifecycle."
     );
+    assert_eq!(source.slides[13].questions.len(), 4);
+    assert_eq!(source.slides[13].questions[0].key, "capability");
+    assert_eq!(source.slides[13].questions[0].title, "What can it do?");
+    assert_eq!(
+        source.slides[13].questions[0].body,
+        "Scope, risk tier, permissions, and prohibited outcomes"
+    );
     assert!(!source.slides[1].content.contains_key("statement"));
     assert!(!source.slides[1].content.contains_key("body"));
     assert!(!source.slides[1].content.contains_key("takeaway"));
@@ -279,6 +286,7 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         assert!(!slide.content.contains_key("signals"));
         assert!(!slide.content.contains_key("milestones"));
         assert!(!slide.content.contains_key("sources"));
+        assert!(!slide.content.contains_key("questions"));
     }
     assert_eq!(source.slides[13].key, "operating-principle");
 }
@@ -325,6 +333,144 @@ slides:
         assert_eq!(entry.note, "Framework note");
         assert!(!source.slides[0].content.contains_key("sources"));
     }
+}
+
+#[test]
+fn reads_closing_questions_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: operating-principle
+    pattern: closing
+    questions:
+      - key: capability
+        title: What can it do?
+        body: Scope, risk tier, permissions, and prohibited outcomes
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "operating-principle",
+                "pattern": "closing",
+                "questions": [{
+                    "key": "capability",
+                    "title": "What can it do?",
+                    "body": "Scope, risk tier, permissions, and prohibited outcomes"
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let question = &source.slides[0].questions[0];
+
+        assert_eq!(question.key, "capability");
+        assert_eq!(question.title, "What can it do?");
+        assert_eq!(
+            question.body,
+            "Scope, risk tier, permissions, and prohibited outcomes"
+        );
+        assert!(!source.slides[0].content.contains_key("questions"));
+    }
+}
+
+#[test]
+fn rejects_malformed_closing_questions_with_exact_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: operating-principle
+    pattern: closing
+    questions:
+      - key: 42
+        title: What can it do?
+        body: Scope and permissions
+"#,
+            "slides[0].questions[0].key",
+        ),
+        (
+            r#"{
+                "schemaVersion": 1,
+                "presentation": {},
+                "theme": {},
+                "quality": {},
+                "slides": [{
+                    "key": "operating-principle",
+                    "pattern": "closing",
+                    "questions": [{
+                        "key": "capability",
+                        "title": ["What can it do?"],
+                        "body": "Scope and permissions"
+                    }]
+                }]
+            }"#,
+            "slides[0].questions[0].title",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: operating-principle
+    pattern: closing
+    questions:
+      - key: capability
+        title: What can it do?
+        body: 42
+"#,
+            "slides[0].questions[0].body",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_closing_question_fields() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: operating-principle
+    pattern: closing
+    questions:
+      - key: capability
+        title: What can it do?
+        body: Scope and permissions
+        answer: Named capability inventory
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("slides[0].questions[0].answer"),
+        "{message}"
+    );
+    assert!(message.contains("unknown field"), "{message}");
 }
 
 #[test]
