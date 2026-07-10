@@ -32,8 +32,8 @@ pub struct ThemeDefinition {
     pub type_styles: BTreeMap<String, TypeStyleDefinition>,
     #[serde(default, deserialize_with = "deserialize_finite_number_map")]
     pub spacing: BTreeMap<String, f64>,
-    #[serde(default)]
-    pub fills: BTreeMap<String, Value>,
+    #[serde(default, deserialize_with = "deserialize_strict_string_map")]
+    pub fills: BTreeMap<String, String>,
     #[serde(default)]
     pub outlines: BTreeMap<String, Value>,
     #[serde(default)]
