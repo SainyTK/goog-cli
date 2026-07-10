@@ -350,6 +350,8 @@ pub struct SlideDefinition {
     pub statement: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
     pub body: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub takeaway: Option<String>,
     #[serde(flatten)]
     pub content: BTreeMap<String, Value>,
 }
