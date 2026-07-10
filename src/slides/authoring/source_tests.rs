@@ -170,6 +170,24 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         "Task success; unsupported claims | weekly"
     );
     assert_eq!(source.slides[6].rows.len(), 5);
+    assert_eq!(source.slides[4].stages.len(), 4);
+    assert_eq!(source.slides[4].stages[0].key, "stratify");
+    assert_eq!(source.slides[4].stages[0].title, "Stratify");
+    assert_eq!(
+        source.slides[4].stages[0].body.as_deref(),
+        Some("Cover journey, risk tier, language, channel, customer state, and edge cases.")
+    );
+    assert_eq!(source.slides[8].stages.len(), 4);
+    assert_eq!(source.slides[8].stages[0].key, "disclose-ai");
+    assert_eq!(source.slides[8].stages[0].title, "Disclose AI");
+    assert_eq!(
+        source.slides[8].stages[0].test.as_deref(),
+        Some("Customer recognizes the assistant and its limits")
+    );
+    assert_eq!(
+        source.slides[8].stages[0].measure.as_deref(),
+        Some("Disclosure comprehension")
+    );
     assert_eq!(
         source.slides[5].columns,
         Some(SlideColumnsDefinition::Count(2))
@@ -186,6 +204,7 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     for slide in &source.slides {
         assert!(!slide.content.contains_key("columns"));
         assert!(!slide.content.contains_key("rows"));
+        assert!(!slide.content.contains_key("stages"));
     }
     assert_eq!(source.slides[13].key, "operating-principle");
 }
@@ -863,6 +882,181 @@ slides:
         assert!(message.contains(expected_path), "{message}");
         assert!(message.contains("invalid type"), "{message}");
     }
+}
+
+#[test]
+fn rejects_malformed_process_stages_with_exact_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: valid-and-reliable
+    pattern: process
+    stages:
+      - key: 42
+        title: Stratify
+"#,
+            "slides[0].stages[0].key",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "valid-and-reliable",
+                "pattern": "process",
+                "stages": [{"key": "stratify", "title": ["Stratify"]}]
+            }]
+        }"#,
+            "slides[0].stages[0].title",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: valid-and-reliable
+    pattern: process
+    stages:
+      - key: stratify
+        title: Stratify
+        body: 42
+"#,
+            "slides[0].stages[0].body",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: human-control
+    pattern: process
+    stages:
+      - key: disclose-ai
+        title: Disclose AI
+        test: 42
+"#,
+            "slides[0].stages[0].test",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "human-control",
+                "pattern": "process",
+                "stages": [{
+                    "key": "disclose-ai",
+                    "title": "Disclose AI",
+                    "measure": {"name": "Disclosure comprehension"}
+                }]
+            }]
+        }"#,
+            "slides[0].stages[0].measure",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn reads_process_stages_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: human-control
+    pattern: process
+    stages:
+      - key: disclose-ai
+        title: Disclose AI
+        body: Explain the assistant's limits.
+        test: Customer recognizes the assistant and its limits
+        measure: Disclosure comprehension
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "human-control",
+                "pattern": "process",
+                "stages": [{
+                    "key": "disclose-ai",
+                    "title": "Disclose AI",
+                    "body": "Explain the assistant's limits.",
+                    "test": "Customer recognizes the assistant and its limits",
+                    "measure": "Disclosure comprehension"
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let stage = &source.slides[0].stages[0];
+
+        assert_eq!(stage.key, "disclose-ai");
+        assert_eq!(stage.title, "Disclose AI");
+        assert_eq!(
+            stage.body.as_deref(),
+            Some("Explain the assistant's limits.")
+        );
+        assert_eq!(
+            stage.test.as_deref(),
+            Some("Customer recognizes the assistant and its limits")
+        );
+        assert_eq!(stage.measure.as_deref(), Some("Disclosure comprehension"));
+        assert!(!source.slides[0].content.contains_key("stages"));
+    }
+}
+
+#[test]
+fn rejects_unknown_process_stage_fields() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: valid-and-reliable
+    pattern: process
+    stages:
+      - key: stratify
+        title: Stratify
+        description: Cover the representative cases.
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("slides[0].stages[0].description"),
+        "{message}"
+    );
+    assert!(message.contains("unknown field"), "{message}");
 }
 
 #[test]
