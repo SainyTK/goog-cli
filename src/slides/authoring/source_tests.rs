@@ -99,6 +99,11 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         Some("Risk-tiered evidence | Independent challenge | Customer outcome monitoring")
     );
     assert!(source.slides[0].content.is_empty());
+    assert_eq!(
+        source.slides[1].statement.as_deref(),
+        Some("A correct sentence can still create an unsafe banking outcome.")
+    );
+    assert!(!source.slides[1].content.contains_key("statement"));
     assert_eq!(source.slides[13].key, "operating-principle");
 }
 
@@ -277,6 +282,41 @@ slides:
 }
 
 #[test]
+fn rejects_non_string_slide_statements_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: why-measurement-changes
+    pattern: statement
+    statement: 42
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "why-measurement-changes",
+                "pattern": "statement",
+                "statement": ["Measure the outcome"]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("slides[0].statement"), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
 fn reads_json_deck_sources_from_json_paths() {
     let mut file = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
     write!(
@@ -302,7 +342,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\n  patternDefaults:\n    footer: {{showSlideNumber: true, line: rule}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    eyebrow: INTRODUCTION\n    title: Hello\n    subtitle: A concise overview\n    footer: Internal\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\n  patternDefaults:\n    footer: {{showSlideNumber: true, line: rule}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    eyebrow: INTRODUCTION\n    title: Hello\n    subtitle: A concise overview\n    footer: Internal\n    statement: Measure the outcome\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -350,7 +390,8 @@ fn yaml_and_json_sources_have_semantic_parity() {
                 "eyebrow": "INTRODUCTION",
                 "title": "Hello",
                 "subtitle": "A concise overview",
-                "footer": "Internal"
+                "footer": "Internal",
+                "statement": "Measure the outcome"
             }}]
         }}"#
     )
