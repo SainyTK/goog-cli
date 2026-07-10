@@ -28,6 +28,7 @@ bytes = "1"
 futures-util = "0.3"
 base64 = "0.22"
 tempfile = "3"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 wiremock = "0.6"

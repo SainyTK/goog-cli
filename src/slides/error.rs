@@ -23,6 +23,12 @@ pub enum SlidesError {
     #[error("Google Slides network error: {0}")]
     Network(String),
 
+    #[error("Google Slides artifact error: {0}")]
+    Artifact(String),
+
+    #[error("Google Slides artifact I/O error: {0}")]
+    ArtifactIo(#[source] std::io::Error),
+
     #[error("auth error: {0}")]
     Auth(#[from] crate::auth::error::AuthError),
 }

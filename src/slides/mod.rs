@@ -1,3 +1,4 @@
+pub(crate) mod authoring;
 pub mod error;
 
 #[cfg(test)]
