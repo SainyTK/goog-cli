@@ -10,7 +10,7 @@ use serde_json::Value;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeckSource {
     pub schema_version: u32,
-    pub presentation: Value,
+    pub presentation: PresentationDefinition,
     pub theme: Value,
     #[serde(default)]
     pub assets: BTreeMap<String, Value>,
@@ -18,6 +18,16 @@ pub struct DeckSource {
     pub layouts: BTreeMap<String, Value>,
     pub quality: Value,
     pub slides: Vec<SlideDefinition>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PresentationDefinition {
+    pub aspect_ratio: Option<String>,
+    pub language: Option<String>,
+    pub speaker_notes: Option<String>,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -125,16 +135,26 @@ pub fn read_deck_source(
     }
 
     let source: DeckSource = match format {
-        DeckSourceFormat::Json => serde_json::from_str(&contents).map_err(|error| {
-            DeckSourceError::new(format!(
-                "failed to parse JSON Deck Source {source_name}: {error}"
-            ))
-        })?,
-        DeckSourceFormat::Yaml => serde_yaml_ng::from_str(&contents).map_err(|error| {
-            DeckSourceError::new(format!(
-                "failed to parse YAML Deck Source {source_name}: {error}"
-            ))
-        })?,
+        DeckSourceFormat::Json => {
+            let mut deserializer = serde_json::Deserializer::from_str(&contents);
+            serde_path_to_error::deserialize(&mut deserializer).map_err(|error| {
+                DeckSourceError::new(format!(
+                    "failed to parse JSON Deck Source {source_name} at {}: {}",
+                    error.path(),
+                    error.inner()
+                ))
+            })?
+        }
+        DeckSourceFormat::Yaml => {
+            let deserializer = serde_yaml_ng::Deserializer::from_str(&contents);
+            serde_path_to_error::deserialize(deserializer).map_err(|error| {
+                DeckSourceError::new(format!(
+                    "failed to parse YAML Deck Source {source_name} at {}: {}",
+                    error.path(),
+                    error.inner()
+                ))
+            })?
+        }
     };
 
     let mut slide_keys = BTreeMap::new();
