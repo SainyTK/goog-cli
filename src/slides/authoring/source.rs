@@ -354,8 +354,21 @@ pub struct SlideDefinition {
     pub takeaway: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
     pub owner: Option<String>,
+    #[serde(default)]
+    pub items: Vec<ListItemDefinition>,
     #[serde(flatten)]
     pub content: BTreeMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ListItemDefinition {
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub key: Option<String>,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub title: String,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub body: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -117,10 +117,21 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.slides[4].owner.as_deref(),
         Some("Product quality and Model Risk | Release and weekly review")
     );
+    assert_eq!(source.slides[9].items.len(), 4);
+    assert_eq!(
+        source.slides[9].items[0].key.as_deref(),
+        Some("critical-harms")
+    );
+    assert_eq!(source.slides[9].items[0].title, "Critical harms");
+    assert_eq!(
+        source.slides[9].items[0].body,
+        "No unresolved critical safety, conduct, security, privacy, or action failure"
+    );
     assert!(!source.slides[1].content.contains_key("statement"));
     assert!(!source.slides[1].content.contains_key("body"));
     assert!(!source.slides[1].content.contains_key("takeaway"));
     assert!(!source.slides[4].content.contains_key("owner"));
+    assert!(!source.slides[9].content.contains_key("items"));
     assert_eq!(source.slides[13].key, "operating-principle");
 }
 
@@ -439,6 +450,91 @@ slides:
 }
 
 #[test]
+fn rejects_malformed_slide_items_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: release-governance
+    pattern: statement-and-list
+    items:
+      - key: 42
+        title: Critical harms
+        body: No unresolved critical failures
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "release-governance",
+                "pattern": "statement-and-list",
+                "items": [{
+                    "key": "critical-harms",
+                    "title": "Critical harms",
+                    "body": ["No unresolved critical failures"]
+                }]
+            }]
+        }"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "release-governance",
+                "pattern": "statement-and-list",
+                "items": [{
+                    "key": "critical-harms",
+                    "title": ["Critical harms"],
+                    "body": "No unresolved critical failures"
+                }]
+            }]
+        }"#,
+    ];
+    let expected_paths = [
+        "slides[0].items[0].key",
+        "slides[0].items[0].body",
+        "slides[0].items[0].title",
+    ];
+
+    for (source, expected_path) in sources.into_iter().zip(expected_paths) {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_slide_item_fields() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: release-governance
+    pattern: statement-and-list
+    items:
+      - title: Critical harms
+        body: No unresolved critical failures
+        emphasis: high
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("slides[0].items[0].emphasis"), "{message}");
+    assert!(message.contains("unknown field"), "{message}");
+}
+
+#[test]
 fn reads_json_deck_sources_from_json_paths() {
     let mut file = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
     write!(
@@ -464,7 +560,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\n  patternDefaults:\n    footer: {{showSlideNumber: true, line: rule}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    eyebrow: INTRODUCTION\n    title: Hello\n    subtitle: A concise overview\n    footer: Internal\n    statement: Measure the outcome\n    body: Explain the evidence\n    takeaway: Act on the evidence\n    owner: Product quality\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\n  patternDefaults:\n    footer: {{showSlideNumber: true, line: rule}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    eyebrow: INTRODUCTION\n    title: Hello\n    subtitle: A concise overview\n    footer: Internal\n    statement: Measure the outcome\n    body: Explain the evidence\n    takeaway: Act on the evidence\n    owner: Product quality\n    items:\n      - title: Critical harms\n        body: No unresolved critical failures\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -516,7 +612,11 @@ fn yaml_and_json_sources_have_semantic_parity() {
                 "statement": "Measure the outcome",
                 "body": "Explain the evidence",
                 "takeaway": "Act on the evidence",
-                "owner": "Product quality"
+                "owner": "Product quality",
+                "items": [{{
+                    "title": "Critical harms",
+                    "body": "No unresolved critical failures"
+                }}]
             }}]
         }}"#
     )
