@@ -32,6 +32,10 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     assert_eq!(safe_area.right, 24.0);
     assert_eq!(safe_area.bottom, 24.0);
     assert_eq!(safe_area.left, 24.0);
+    assert_eq!(
+        source.theme.colors.get("accent").map(String::as_str),
+        Some("#FF6B35")
+    );
     assert_eq!(source.slides.len(), 14);
     assert_eq!(source.slides[0].key, "cover");
     assert_eq!(source.slides[13].key, "operating-principle");
@@ -197,6 +201,77 @@ fn rejects_unknown_quality_fields_with_the_exact_source_path() {
         "{message}"
     );
     assert!(message.contains("stdin"), "{message}");
+}
+
+#[test]
+fn rejects_unknown_theme_groups_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r##"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {"colour": {"ink": "#111111"}},
+            "quality": {},
+            "slides": []
+        }"##,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("theme.colour"), "{message}");
+    assert!(message.contains("unknown field `colour`"), "{message}");
+    assert!(message.contains("stdin"), "{message}");
+}
+
+#[test]
+fn reports_color_token_type_errors_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r##"
+schemaVersion: 1
+presentation: {}
+theme:
+  colors:
+    ink: ["#111111"]
+quality: {}
+slides: []
+"##,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("theme.colors.ink"), "{message}");
+    assert!(message.contains("invalid type"), "{message}");
+}
+
+#[test]
+fn rejects_non_string_color_scalars_in_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  colors:
+    ink: 42
+quality: {}
+slides: []
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {"colors": {"ink": 42}},
+            "quality": {},
+            "slides": []
+        }"#,
+    ];
+
+    for source in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("theme.colors.ink"), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
 }
 
 #[test]
