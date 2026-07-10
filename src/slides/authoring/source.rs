@@ -37,7 +37,7 @@ pub struct ThemeDefinition {
     #[serde(default)]
     pub outlines: BTreeMap<String, OutlineDefinition>,
     #[serde(default)]
-    pub lines: BTreeMap<String, Value>,
+    pub lines: BTreeMap<String, LineDefinition>,
     pub geometry: Option<Value>,
     pub pattern_defaults: Option<Value>,
 }
@@ -67,6 +67,15 @@ pub struct TypeStyleDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OutlineDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub color: String,
+    #[serde(deserialize_with = "deserialize_finite_number")]
+    pub width: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LineDefinition {
     #[serde(deserialize_with = "deserialize_strict_string")]
     pub color: String,
     #[serde(deserialize_with = "deserialize_finite_number")]

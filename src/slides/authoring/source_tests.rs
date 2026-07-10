@@ -64,6 +64,9 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     let panel_outline = &source.theme.outlines["panel"];
     assert_eq!(panel_outline.color, "rule");
     assert_eq!(panel_outline.width, 1.0);
+    let rule_line = &source.theme.lines["rule"];
+    assert_eq!(rule_line.color, "rule");
+    assert_eq!(rule_line.width, 1.0);
     assert_eq!(source.slides.len(), 14);
     assert_eq!(source.slides[0].key, "cover");
     assert_eq!(source.slides[13].key, "operating-principle");
@@ -140,7 +143,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -165,7 +168,8 @@ fn yaml_and_json_sources_have_semantic_parity() {
                 }},
                 "spacing": {{"pageMargin": 42}},
                 "fills": {{"panel": "panel"}},
-                "outlines": {{"panel": {{"color": "rule", "width": 1}}}}
+                "outlines": {{"panel": {{"color": "rule", "width": 1}}}},
+                "lines": {{"rule": {{"color": "rule", "width": 1}}}}
             }},
             "quality": {{
                 "minimumFontSize": 9,
@@ -431,6 +435,85 @@ quality: {}
 slides: []
 "#,
             "theme.outlines.panel.width",
+            "number must be finite",
+        ),
+    ];
+
+    for (source, expected_path, expected_error) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains(expected_error), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_line_token_fields_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  lines:
+    rule:
+      color: rule
+      width: 1
+      dash: solid
+quality: {}
+slides: []
+"#,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("theme.lines.rule.dash"), "{message}");
+    assert!(message.contains("unknown field `dash`"), "{message}");
+}
+
+#[test]
+fn rejects_invalid_line_token_values_with_exact_source_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  lines:
+    rule:
+      color: 42
+      width: 1
+quality: {}
+slides: []
+"#,
+            "theme.lines.rule.color",
+            "invalid type",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {"lines": {"rule": {"color": "rule", "width": "thin"}}},
+            "quality": {},
+            "slides": []
+        }"#,
+            "theme.lines.rule.width",
+            "invalid type",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  lines:
+    rule:
+      color: rule
+      width: .nan
+quality: {}
+slides: []
+"#,
+            "theme.lines.rule.width",
             "number must be finite",
         ),
     ];
