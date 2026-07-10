@@ -61,6 +61,9 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.theme.fills.get("accent").map(String::as_str),
         Some("accent")
     );
+    let panel_outline = &source.theme.outlines["panel"];
+    assert_eq!(panel_outline.color, "rule");
+    assert_eq!(panel_outline.width, 1.0);
     assert_eq!(source.slides.len(), 14);
     assert_eq!(source.slides[0].key, "cover");
     assert_eq!(source.slides[13].key, "operating-principle");
@@ -137,7 +140,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -161,7 +164,8 @@ fn yaml_and_json_sources_have_semantic_parity() {
                     }}
                 }},
                 "spacing": {{"pageMargin": 42}},
-                "fills": {{"panel": "panel"}}
+                "fills": {{"panel": "panel"}},
+                "outlines": {{"panel": {{"color": "rule", "width": 1}}}}
             }},
             "quality": {{
                 "minimumFontSize": 9,
@@ -355,6 +359,88 @@ slides: []
 
         assert!(message.contains("theme.fills.panel"), "{message}");
         assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_outline_token_fields_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  outlines:
+    panel:
+      color: rule
+      width: 1
+      opacity: 0.5
+quality: {}
+slides: []
+"#,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("theme.outlines.panel.opacity"),
+        "{message}"
+    );
+    assert!(message.contains("unknown field `opacity`"), "{message}");
+}
+
+#[test]
+fn rejects_invalid_outline_token_values_with_exact_source_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  outlines:
+    panel:
+      color: 42
+      width: 1
+quality: {}
+slides: []
+"#,
+            "theme.outlines.panel.color",
+            "invalid type",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {"outlines": {"panel": {"color": "rule", "width": "thin"}}},
+            "quality": {},
+            "slides": []
+        }"#,
+            "theme.outlines.panel.width",
+            "invalid type",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  outlines:
+    panel:
+      color: rule
+      width: .nan
+quality: {}
+slides: []
+"#,
+            "theme.outlines.panel.width",
+            "number must be finite",
+        ),
+    ];
+
+    for (source, expected_path, expected_error) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains(expected_error), "{message}");
     }
 }
 

@@ -35,7 +35,7 @@ pub struct ThemeDefinition {
     #[serde(default, deserialize_with = "deserialize_strict_string_map")]
     pub fills: BTreeMap<String, String>,
     #[serde(default)]
-    pub outlines: BTreeMap<String, Value>,
+    pub outlines: BTreeMap<String, OutlineDefinition>,
     #[serde(default)]
     pub lines: BTreeMap<String, Value>,
     pub geometry: Option<Value>,
@@ -62,6 +62,15 @@ pub struct TypeStyleDefinition {
     pub alignment: String,
     #[serde(deserialize_with = "deserialize_strict_string")]
     pub color: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OutlineDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub color: String,
+    #[serde(deserialize_with = "deserialize_finite_number")]
+    pub width: f64,
 }
 
 impl<'de> Deserialize<'de> for FontDefinition {
@@ -168,6 +177,13 @@ where
         .into_iter()
         .map(|(key, value)| (key, value.0))
         .collect())
+}
+
+fn deserialize_finite_number<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    FiniteNumber::deserialize(deserializer).map(|value| value.0)
 }
 
 struct FiniteNumber(f64);
