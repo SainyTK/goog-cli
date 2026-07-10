@@ -197,6 +197,16 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         evidence.items[0].body,
         "Retrieval precision, groundedness, and policy rule checks"
     );
+    assert_eq!(source.slides[5].groups.len(), 2);
+    assert_eq!(source.slides[5].groups[0].key, "unacceptable-outcomes");
+    assert_eq!(source.slides[5].groups[0].title, "Unacceptable outcomes");
+    assert_eq!(source.slides[5].groups[0].cards.len(), 4);
+    assert_eq!(source.slides[5].groups[0].cards[0].key, "customer-harm");
+    assert_eq!(source.slides[5].groups[0].cards[0].title, "Customer harm");
+    assert_eq!(
+        source.slides[5].groups[0].cards[0].body,
+        "Misleading fees, unsuitable guidance, and denied complaint access"
+    );
     assert_eq!(
         source.slides[5].columns,
         Some(SlideColumnsDefinition::Count(2))
@@ -215,6 +225,7 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         assert!(!slide.content.contains_key("rows"));
         assert!(!slide.content.contains_key("stages"));
         assert!(!slide.content.contains_key("evidence"));
+        assert!(!slide.content.contains_key("groups"));
     }
     assert_eq!(source.slides[13].key, "operating-principle");
 }
@@ -1197,6 +1208,225 @@ slides:
         "{message}"
     );
     assert!(message.contains("unknown field"), "{message}");
+}
+
+#[test]
+fn rejects_malformed_card_groups_with_exact_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: safe-and-fair-conduct
+    pattern: cards
+    groups:
+      - key: 42
+        title: Unacceptable outcomes
+        cards: []
+"#,
+            "slides[0].groups[0].key",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "safe-and-fair-conduct",
+                "pattern": "cards",
+                "groups": [{
+                    "key": "unacceptable-outcomes",
+                    "title": ["Unacceptable outcomes"],
+                    "cards": []
+                }]
+            }]
+        }"#,
+            "slides[0].groups[0].title",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: safe-and-fair-conduct
+    pattern: cards
+    groups:
+      - key: unacceptable-outcomes
+        title: Unacceptable outcomes
+        cards:
+          - key: 42
+            title: Customer harm
+            body: Misleading fees
+"#,
+            "slides[0].groups[0].cards[0].key",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "safe-and-fair-conduct",
+                "pattern": "cards",
+                "groups": [{
+                    "key": "unacceptable-outcomes",
+                    "title": "Unacceptable outcomes",
+                    "cards": [{
+                        "key": "customer-harm",
+                        "title": {"text": "Customer harm"},
+                        "body": "Misleading fees"
+                    }]
+                }]
+            }]
+        }"#,
+            "slides[0].groups[0].cards[0].title",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: safe-and-fair-conduct
+    pattern: cards
+    groups:
+      - key: unacceptable-outcomes
+        title: Unacceptable outcomes
+        cards:
+          - key: customer-harm
+            title: Customer harm
+            body: 42
+"#,
+            "slides[0].groups[0].cards[0].body",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn reads_card_groups_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: safe-and-fair-conduct
+    pattern: cards
+    groups:
+      - key: unacceptable-outcomes
+        title: Unacceptable outcomes
+        cards:
+          - key: customer-harm
+            title: Customer harm
+            body: Misleading fees and unsuitable guidance
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "safe-and-fair-conduct",
+                "pattern": "cards",
+                "groups": [{
+                    "key": "unacceptable-outcomes",
+                    "title": "Unacceptable outcomes",
+                    "cards": [{
+                        "key": "customer-harm",
+                        "title": "Customer harm",
+                        "body": "Misleading fees and unsuitable guidance"
+                    }]
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let group = &source.slides[0].groups[0];
+
+        assert_eq!(group.key, "unacceptable-outcomes");
+        assert_eq!(group.title, "Unacceptable outcomes");
+        assert_eq!(group.cards.len(), 1);
+        assert_eq!(group.cards[0].key, "customer-harm");
+        assert_eq!(group.cards[0].title, "Customer harm");
+        assert_eq!(
+            group.cards[0].body,
+            "Misleading fees and unsuitable guidance"
+        );
+        assert!(!source.slides[0].content.contains_key("groups"));
+    }
+}
+
+#[test]
+fn rejects_unknown_card_group_fields() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: safe-and-fair-conduct
+    pattern: cards
+    groups:
+      - key: unacceptable-outcomes
+        title: Unacceptable outcomes
+        description: Severe customer harms
+        cards: []
+"#,
+            "slides[0].groups[0].description",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "safe-and-fair-conduct",
+                "pattern": "cards",
+                "groups": [{
+                    "key": "unacceptable-outcomes",
+                    "title": "Unacceptable outcomes",
+                    "cards": [{
+                        "key": "customer-harm",
+                        "title": "Customer harm",
+                        "body": "Misleading fees",
+                        "severity": "critical"
+                    }]
+                }]
+            }]
+        }"#,
+            "slides[0].groups[0].cards[0].severity",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("unknown field"), "{message}");
+    }
 }
 
 #[test]

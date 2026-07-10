@@ -369,6 +369,8 @@ pub struct SlideDefinition {
     #[serde(default)]
     pub stages: Vec<ProcessStageDefinition>,
     pub evidence: Option<SlideEvidenceDefinition>,
+    #[serde(default)]
+    pub groups: Vec<CardGroupDefinition>,
     #[serde(flatten)]
     pub content: BTreeMap<String, Value>,
 }
@@ -391,6 +393,28 @@ pub struct SlideEvidenceDefinition {
     pub title: String,
     #[serde(default)]
     pub items: Vec<ListItemDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CardGroupDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub key: String,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub title: String,
+    #[serde(default)]
+    pub cards: Vec<CardDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CardDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub key: String,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub title: String,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub body: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
