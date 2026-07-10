@@ -207,6 +207,13 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.slides[5].groups[0].cards[0].body,
         "Misleading fees, unsuitable guidance, and denied complaint access"
     );
+    assert_eq!(source.slides[7].steps.len(), 4);
+    assert_eq!(source.slides[7].steps[0].key, "sample");
+    assert_eq!(source.slides[7].steps[0].title, "Sample");
+    assert_eq!(
+        source.slides[7].steps[0].body,
+        "Stratify by journey, risk tier, language, dialect, accessibility, and lawful cohort."
+    );
     assert_eq!(
         source.slides[5].columns,
         Some(SlideColumnsDefinition::Count(2))
@@ -226,6 +233,7 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         assert!(!slide.content.contains_key("stages"));
         assert!(!slide.content.contains_key("evidence"));
         assert!(!slide.content.contains_key("groups"));
+        assert!(!slide.content.contains_key("steps"));
     }
     assert_eq!(source.slides[13].key, "operating-principle");
 }
@@ -1427,6 +1435,138 @@ slides:
         assert!(message.contains(expected_path), "{message}");
         assert!(message.contains("unknown field"), "{message}");
     }
+}
+
+#[test]
+fn reads_steps_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: fairness
+    pattern: comparison
+    steps:
+      - key: sample
+        title: Sample
+        body: Stratify by journey and risk tier.
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "fairness",
+                "pattern": "comparison",
+                "steps": [{
+                    "key": "sample",
+                    "title": "Sample",
+                    "body": "Stratify by journey and risk tier."
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let step = &source.slides[0].steps[0];
+
+        assert_eq!(step.key, "sample");
+        assert_eq!(step.title, "Sample");
+        assert_eq!(step.body, "Stratify by journey and risk tier.");
+        assert!(!source.slides[0].content.contains_key("steps"));
+    }
+}
+
+#[test]
+fn rejects_malformed_steps_with_exact_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: fairness
+    pattern: comparison
+    steps:
+      - key: 42
+        title: Sample
+        body: Stratify by journey and risk tier.
+"#,
+            "slides[0].steps[0].key",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "fairness",
+                "pattern": "comparison",
+                "steps": [{
+                    "key": "sample",
+                    "title": ["Sample"],
+                    "body": "Stratify by journey and risk tier."
+                }]
+            }]
+        }"#,
+            "slides[0].steps[0].title",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: fairness
+    pattern: comparison
+    steps:
+      - key: sample
+        title: Sample
+        body: 42
+"#,
+            "slides[0].steps[0].body",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_step_fields() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: fairness
+    pattern: comparison
+    steps:
+      - key: sample
+        title: Sample
+        body: Stratify by journey and risk tier.
+        owner: Responsible AI
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("slides[0].steps[0].owner"), "{message}");
+    assert!(message.contains("unknown field"), "{message}");
 }
 
 #[test]
