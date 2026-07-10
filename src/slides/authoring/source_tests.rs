@@ -46,6 +46,9 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     assert_eq!(title_style.line_spacing, 1.05);
     assert_eq!(title_style.alignment, "start");
     assert_eq!(title_style.color, "ink");
+    assert_eq!(source.theme.spacing["pageMargin"], 42.0);
+    assert_eq!(source.theme.spacing["sectionGap"], 18.0);
+    assert_eq!(source.theme.spacing["itemGap"], 12.0);
     assert_eq!(source.slides.len(), 14);
     assert_eq!(source.slides[0].key, "cover");
     assert_eq!(source.slides[13].key, "operating-principle");
@@ -122,7 +125,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -144,7 +147,8 @@ fn yaml_and_json_sources_have_semantic_parity() {
                         "alignment": "start",
                         "color": "ink"
                     }}
-                }}
+                }},
+                "spacing": {{"pageMargin": 42}}
             }},
             "quality": {{
                 "minimumFontSize": 9,
@@ -260,6 +264,54 @@ slides: []
 
         assert!(message.contains(expected_path), "{message}");
         assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_invalid_spacing_tokens_with_the_exact_source_path() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  spacing:
+    pageMargin: wide
+quality: {}
+slides: []
+"#,
+            "invalid type",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {"spacing": {"pageMargin": "wide"}},
+            "quality": {},
+            "slides": []
+        }"#,
+            "invalid type",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  spacing:
+    pageMargin: .nan
+quality: {}
+slides: []
+"#,
+            "number must be finite",
+        ),
+    ];
+
+    for (source, expected_error) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains("theme.spacing.pageMargin"), "{message}");
+        assert!(message.contains(expected_error), "{message}");
     }
 }
 

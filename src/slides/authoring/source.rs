@@ -30,8 +30,8 @@ pub struct ThemeDefinition {
     pub fonts: BTreeMap<String, FontDefinition>,
     #[serde(default)]
     pub type_styles: BTreeMap<String, TypeStyleDefinition>,
-    #[serde(default)]
-    pub spacing: BTreeMap<String, Value>,
+    #[serde(default, deserialize_with = "deserialize_finite_number_map")]
+    pub spacing: BTreeMap<String, f64>,
     #[serde(default)]
     pub fills: BTreeMap<String, Value>,
     #[serde(default)]
@@ -157,6 +157,33 @@ where
         .into_iter()
         .map(|(key, value)| (key, value.0))
         .collect())
+}
+
+fn deserialize_finite_number_map<'de, D>(deserializer: D) -> Result<BTreeMap<String, f64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let values = BTreeMap::<String, FiniteNumber>::deserialize(deserializer)?;
+    Ok(values
+        .into_iter()
+        .map(|(key, value)| (key, value.0))
+        .collect())
+}
+
+struct FiniteNumber(f64);
+
+impl<'de> Deserialize<'de> for FiniteNumber {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = f64::deserialize(deserializer)?;
+        if value.is_finite() {
+            Ok(Self(value))
+        } else {
+            Err(de::Error::custom("number must be finite"))
+        }
+    }
 }
 
 struct StrictString(String);
