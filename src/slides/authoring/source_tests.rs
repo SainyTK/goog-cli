@@ -214,6 +214,17 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.slides[7].steps[0].body,
         "Stratify by journey, risk tier, language, dialect, accessibility, and lawful cohort."
     );
+    assert_eq!(source.slides[10].signals.len(), 4);
+    assert_eq!(source.slides[10].signals[0].key, "customer-outcome");
+    assert_eq!(source.slides[10].signals[0].title, "Customer outcome");
+    assert_eq!(
+        source.slides[10].signals[0].items,
+        [
+            "Task completion",
+            "Repeat contact",
+            "Complaint and detriment"
+        ]
+    );
     assert_eq!(
         source.slides[5].columns,
         Some(SlideColumnsDefinition::Count(2))
@@ -234,6 +245,7 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         assert!(!slide.content.contains_key("evidence"));
         assert!(!slide.content.contains_key("groups"));
         assert!(!slide.content.contains_key("steps"));
+        assert!(!slide.content.contains_key("signals"));
     }
     assert_eq!(source.slides[13].key, "operating-principle");
 }
@@ -1566,6 +1578,144 @@ slides:
     let message = error.to_string();
 
     assert!(message.contains("slides[0].steps[0].owner"), "{message}");
+    assert!(message.contains("unknown field"), "{message}");
+}
+
+#[test]
+fn reads_timeline_signals_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: ongoing-monitoring
+    pattern: timeline
+    signals:
+      - key: customer-outcome
+        title: Customer outcome
+        items:
+          - Task completion
+          - Repeat contact
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "ongoing-monitoring",
+                "pattern": "timeline",
+                "signals": [{
+                    "key": "customer-outcome",
+                    "title": "Customer outcome",
+                    "items": ["Task completion", "Repeat contact"]
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let signal = &source.slides[0].signals[0];
+
+        assert_eq!(signal.key, "customer-outcome");
+        assert_eq!(signal.title, "Customer outcome");
+        assert_eq!(signal.items, ["Task completion", "Repeat contact"]);
+        assert!(!source.slides[0].content.contains_key("signals"));
+    }
+}
+
+#[test]
+fn rejects_malformed_timeline_signals_with_exact_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: ongoing-monitoring
+    pattern: timeline
+    signals:
+      - key: 42
+        title: Customer outcome
+        items: []
+"#,
+            "slides[0].signals[0].key",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "ongoing-monitoring",
+                "pattern": "timeline",
+                "signals": [{
+                    "key": "customer-outcome",
+                    "title": ["Customer outcome"],
+                    "items": []
+                }]
+            }]
+        }"#,
+            "slides[0].signals[0].title",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: ongoing-monitoring
+    pattern: timeline
+    signals:
+      - key: customer-outcome
+        title: Customer outcome
+        items:
+          - 42
+"#,
+            "slides[0].signals[0].items[0]",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_timeline_signal_fields() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: ongoing-monitoring
+    pattern: timeline
+    signals:
+      - key: customer-outcome
+        title: Customer outcome
+        items: []
+        cadence: weekly
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("slides[0].signals[0].cadence"),
+        "{message}"
+    );
     assert!(message.contains("unknown field"), "{message}");
 }
 
