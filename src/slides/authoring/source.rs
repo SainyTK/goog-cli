@@ -67,9 +67,11 @@ pub struct FontDefinition {
 pub struct TypeStyleDefinition {
     #[serde(deserialize_with = "deserialize_strict_string")]
     pub font: String,
+    #[serde(deserialize_with = "deserialize_finite_number")]
     pub size: f64,
     #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
     pub weight: Option<String>,
+    #[serde(deserialize_with = "deserialize_finite_number")]
     pub line_spacing: f64,
     #[serde(deserialize_with = "deserialize_strict_string")]
     pub alignment: String,

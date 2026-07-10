@@ -2729,6 +2729,54 @@ slides: []
 }
 
 #[test]
+fn rejects_non_finite_type_style_numbers_with_exact_source_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  typeStyles:
+    title:
+      font: heading
+      size: .nan
+      lineSpacing: 1.05
+      alignment: start
+      color: ink
+quality: {}
+slides: []
+"#,
+            "theme.typeStyles.title.size",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  typeStyles:
+    title:
+      font: heading
+      size: 30
+      lineSpacing: .nan
+      alignment: start
+      color: ink
+quality: {}
+slides: []
+"#,
+            "theme.typeStyles.title.lineSpacing",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("number must be finite"), "{message}");
+    }
+}
+
+#[test]
 fn rejects_invalid_spacing_tokens_with_the_exact_source_path() {
     let sources = [
         (
