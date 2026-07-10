@@ -254,6 +254,16 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.slides[12].columns,
         Some(SlideColumnsDefinition::Count(2))
     );
+    assert_eq!(source.slides[12].sources.len(), 8);
+    assert_eq!(source.slides[12].sources[0].key, "nist-ai-rmf");
+    assert_eq!(
+        source.slides[12].sources[0].title,
+        "NIST AI RMF 1.0 and Core"
+    );
+    assert_eq!(
+        source.slides[12].sources[0].note,
+        "Trustworthiness characteristics and the Govern, Map, Measure, and Manage lifecycle."
+    );
     assert!(!source.slides[1].content.contains_key("statement"));
     assert!(!source.slides[1].content.contains_key("body"));
     assert!(!source.slides[1].content.contains_key("takeaway"));
@@ -268,8 +278,141 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         assert!(!slide.content.contains_key("steps"));
         assert!(!slide.content.contains_key("signals"));
         assert!(!slide.content.contains_key("milestones"));
+        assert!(!slide.content.contains_key("sources"));
     }
     assert_eq!(source.slides[13].key, "operating-principle");
+}
+
+#[test]
+fn reads_typed_slide_sources_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: source-basis
+    pattern: sources
+    sources:
+      - key: framework
+        title: Framework title
+        note: Framework note
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "source-basis",
+                "pattern": "sources",
+                "sources": [{
+                    "key": "framework",
+                    "title": "Framework title",
+                    "note": "Framework note"
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let entry = &source.slides[0].sources[0];
+
+        assert_eq!(entry.key, "framework");
+        assert_eq!(entry.title, "Framework title");
+        assert_eq!(entry.note, "Framework note");
+        assert!(!source.slides[0].content.contains_key("sources"));
+    }
+}
+
+#[test]
+fn rejects_malformed_slide_sources_with_exact_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: source-basis
+    pattern: sources
+    sources:
+      - key: 42
+        title: Framework title
+        note: Framework note
+"#,
+            "slides[0].sources[0].key",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "source-basis",
+                "pattern": "sources",
+                "sources": [{
+                    "key": "framework",
+                    "title": ["Framework title"],
+                    "note": "Framework note"
+                }]
+            }]
+        }"#,
+            "slides[0].sources[0].title",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: source-basis
+    pattern: sources
+    sources:
+      - key: framework
+        title: Framework title
+        note: 42
+"#,
+            "slides[0].sources[0].note",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_slide_source_fields() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: source-basis
+    pattern: sources
+    sources:
+      - key: framework
+        title: Framework title
+        note: Framework note
+        url: https://example.test/framework
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("slides[0].sources[0].url"), "{message}");
+    assert!(message.contains("unknown field"), "{message}");
 }
 
 #[test]
