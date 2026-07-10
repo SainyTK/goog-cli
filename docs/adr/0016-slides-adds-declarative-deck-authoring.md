@@ -1,0 +1,5 @@
+# Slides Adds Declarative Deck Authoring
+
+`goog slides` adds a Deck Authoring interface centered on a versioned semantic Deck Source, with built-in Slide Patterns for normal authoring and a freeform escape hatch for explicit positioning; Google Slides remains the rendering source of truth, so previews come from live Slides thumbnails and PowerPoint or PDF files come from native Drive export rather than a second local renderer.
+Caller-provided stable keys determine slide and page-element identity, while Drive `appProperties` record presentation-level ownership and apply state; applying a Deck Source uses idempotent managed reconciliation instead of reset-and-rebuild, changes or deletes only Managed Objects by default, and detects concurrent edits to Managed Objects rather than attempting an automatic merge.
+Existing high-level object commands and raw `goog slides batch-update` remain available for direct editing and unsupported native features, extending ADR-0011's direction toward a deep high-level authoring interface without adopting the Docs location-selector model for Slides.
