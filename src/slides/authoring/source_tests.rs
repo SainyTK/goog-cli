@@ -39,6 +39,13 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     let heading_font = &source.theme.fonts["heading"];
     assert_eq!(heading_font.family, "Arial");
     assert_eq!(heading_font.fallbacks, ["sans-serif"]);
+    let title_style = &source.theme.type_styles["title"];
+    assert_eq!(title_style.font, "heading");
+    assert_eq!(title_style.size, 30.0);
+    assert_eq!(title_style.weight.as_deref(), Some("bold"));
+    assert_eq!(title_style.line_spacing, 1.05);
+    assert_eq!(title_style.alignment, "start");
+    assert_eq!(title_style.color, "ink");
     assert_eq!(source.slides.len(), 14);
     assert_eq!(source.slides[0].key, "cover");
     assert_eq!(source.slides[13].key, "operating-principle");
@@ -115,7 +122,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    title: Hello\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -127,6 +134,16 @@ fn yaml_and_json_sources_have_semantic_parity() {
             "theme": {{
                 "fonts": {{
                     "heading": {{"family": "Arial", "fallbacks": ["sans-serif"]}}
+                }},
+                "typeStyles": {{
+                    "title": {{
+                        "font": "heading",
+                        "size": 30,
+                        "weight": "bold",
+                        "lineSpacing": 1.05,
+                        "alignment": "start",
+                        "color": "ink"
+                    }}
                 }}
             }},
             "quality": {{
@@ -145,6 +162,105 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let json_source = read_deck_source(json.path().to_str().unwrap(), &mut io::empty()).unwrap();
 
     assert_eq!(yaml_source, json_source);
+}
+
+#[test]
+fn rejects_unknown_type_style_fields_with_the_exact_source_path() {
+    let mut source = io::Cursor::new(
+        r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  typeStyles:
+    title:
+      font: heading
+      size: 30
+      lineSpacing: 1.05
+      alignment: start
+      color: ink
+      fontWeight: bold
+quality: {}
+slides: []
+"#,
+    );
+
+    let error = read_deck_source("-", &mut source).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("theme.typeStyles.title.fontWeight"),
+        "{message}"
+    );
+    assert!(message.contains("unknown field `fontWeight`"), "{message}");
+}
+
+#[test]
+fn rejects_invalid_type_style_values_with_exact_source_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  typeStyles:
+    title:
+      font: 42
+      size: 30
+      lineSpacing: 1.05
+      alignment: start
+      color: ink
+quality: {}
+slides: []
+"#,
+            "theme.typeStyles.title.font",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {
+                "typeStyles": {
+                    "title": {
+                        "font": "heading",
+                        "size": "large",
+                        "lineSpacing": 1.05,
+                        "alignment": "start",
+                        "color": "ink"
+                    }
+                }
+            },
+            "quality": {},
+            "slides": []
+        }"#,
+            "theme.typeStyles.title.size",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme:
+  typeStyles:
+    title:
+      font: heading
+      size: 30
+      weight: 700
+      lineSpacing: 1.05
+      alignment: start
+      color: ink
+quality: {}
+slides: []
+"#,
+            "theme.typeStyles.title.weight",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
 }
 
 #[test]

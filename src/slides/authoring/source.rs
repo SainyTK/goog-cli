@@ -29,7 +29,7 @@ pub struct ThemeDefinition {
     #[serde(default)]
     pub fonts: BTreeMap<String, FontDefinition>,
     #[serde(default)]
-    pub type_styles: BTreeMap<String, Value>,
+    pub type_styles: BTreeMap<String, TypeStyleDefinition>,
     #[serde(default)]
     pub spacing: BTreeMap<String, Value>,
     #[serde(default)]
@@ -47,6 +47,21 @@ pub struct ThemeDefinition {
 pub struct FontDefinition {
     pub family: String,
     pub fallbacks: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TypeStyleDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub font: String,
+    pub size: f64,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub weight: Option<String>,
+    pub line_spacing: f64,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub alignment: String,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub color: String,
 }
 
 impl<'de> Deserialize<'de> for FontDefinition {
@@ -122,6 +137,13 @@ where
 {
     let values = Vec::<StrictString>::deserialize(deserializer)?;
     Ok(values.into_iter().map(|value| value.0).collect())
+}
+
+fn deserialize_optional_strict_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<StrictString>::deserialize(deserializer).map(|value| value.map(|value| value.0))
 }
 
 fn deserialize_strict_string_map<'de, D>(
