@@ -188,6 +188,15 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.slides[8].stages[0].measure.as_deref(),
         Some("Disclosure comprehension")
     );
+    let evidence = source.slides[4].evidence.as_ref().unwrap();
+    assert_eq!(evidence.title, "Score four layers, then inspect failures");
+    assert_eq!(evidence.items.len(), 4);
+    assert_eq!(evidence.items[0].key.as_deref(), Some("automated"));
+    assert_eq!(evidence.items[0].title, "Automated");
+    assert_eq!(
+        evidence.items[0].body,
+        "Retrieval precision, groundedness, and policy rule checks"
+    );
     assert_eq!(
         source.slides[5].columns,
         Some(SlideColumnsDefinition::Count(2))
@@ -205,6 +214,7 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         assert!(!slide.content.contains_key("columns"));
         assert!(!slide.content.contains_key("rows"));
         assert!(!slide.content.contains_key("stages"));
+        assert!(!slide.content.contains_key("evidence"));
     }
     assert_eq!(source.slides[13].key, "operating-principle");
 }
@@ -1054,6 +1064,136 @@ slides:
 
     assert!(
         message.contains("slides[0].stages[0].description"),
+        "{message}"
+    );
+    assert!(message.contains("unknown field"), "{message}");
+}
+
+#[test]
+fn reads_slide_evidence_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: valid-and-reliable
+    pattern: process
+    evidence:
+      title: Score four layers, then inspect failures
+      items:
+        - key: automated
+          title: Automated
+          body: Retrieval precision, groundedness, and policy rule checks
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "valid-and-reliable",
+                "pattern": "process",
+                "evidence": {
+                    "title": "Score four layers, then inspect failures",
+                    "items": [{
+                        "key": "automated",
+                        "title": "Automated",
+                        "body": "Retrieval precision, groundedness, and policy rule checks"
+                    }]
+                }
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let evidence = source.slides[0].evidence.as_ref().unwrap();
+
+        assert_eq!(evidence.title, "Score four layers, then inspect failures");
+        assert_eq!(evidence.items.len(), 1);
+        assert_eq!(evidence.items[0].key.as_deref(), Some("automated"));
+        assert_eq!(evidence.items[0].title, "Automated");
+        assert_eq!(
+            evidence.items[0].body,
+            "Retrieval precision, groundedness, and policy rule checks"
+        );
+        assert!(!source.slides[0].content.contains_key("evidence"));
+    }
+}
+
+#[test]
+fn rejects_malformed_slide_evidence_with_exact_paths() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: valid-and-reliable
+    pattern: process
+    evidence:
+      title: 42
+      items: []
+"#,
+            "slides[0].evidence.title",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "valid-and-reliable",
+                "pattern": "process",
+                "evidence": {
+                    "title": "Score four layers",
+                    "items": [{
+                        "key": "automated",
+                        "title": "Automated",
+                        "body": ["Retrieval precision"]
+                    }]
+                }
+            }]
+        }"#,
+            "slides[0].evidence.items[0].body",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_slide_evidence_fields() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: valid-and-reliable
+    pattern: process
+    evidence:
+      title: Score four layers
+      items: []
+      description: Inspect failures by severity.
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("slides[0].evidence.description"),
         "{message}"
     );
     assert!(message.contains("unknown field"), "{message}");
