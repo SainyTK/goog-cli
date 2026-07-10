@@ -3,7 +3,7 @@ use std::fmt;
 use std::io::Read;
 use std::path::Path;
 
-use serde::de::{self, MapAccess, Visitor};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
@@ -251,6 +251,13 @@ where
     FiniteNumber::deserialize(deserializer).map(|value| value.0)
 }
 
+fn deserialize_optional_finite_number<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<FiniteNumber>::deserialize(deserializer).map(|value| value.map(|value| value.0))
+}
+
 struct FiniteNumber(f64);
 
 impl<'de> Deserialize<'de> for FiniteNumber {
@@ -356,6 +363,7 @@ pub struct SlideDefinition {
     pub owner: Option<String>,
     #[serde(default)]
     pub items: Vec<ListItemDefinition>,
+    pub columns: Option<SlideColumnsDefinition>,
     #[serde(flatten)]
     pub content: BTreeMap<String, Value>,
 }
@@ -369,6 +377,89 @@ pub struct ListItemDefinition {
     pub title: String,
     #[serde(deserialize_with = "deserialize_strict_string")]
     pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum SlideColumnsDefinition {
+    Count(u32),
+    Definitions(Vec<SlideColumnDefinition>),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SlideColumnDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub key: String,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub title: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub summary: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub body: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_strict_string")]
+    pub label: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_finite_number")]
+    pub width: Option<f64>,
+    #[serde(default)]
+    pub sections: Vec<SlideColumnSectionDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SlideColumnSectionDefinition {
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub label: String,
+    #[serde(deserialize_with = "deserialize_strict_string")]
+    pub body: String,
+}
+
+impl<'de> Deserialize<'de> for SlideColumnsDefinition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(SlideColumnsDefinitionVisitor)
+    }
+}
+
+struct SlideColumnsDefinitionVisitor;
+
+impl<'de> Visitor<'de> for SlideColumnsDefinitionVisitor {
+    type Value = SlideColumnsDefinition;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("a non-negative integer column count or a list of column definitions")
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let count = u32::try_from(value)
+            .map_err(|_| de::Error::invalid_value(de::Unexpected::Unsigned(value), &self))?;
+        Ok(SlideColumnsDefinition::Count(count))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        let count = u32::try_from(value)
+            .map_err(|_| de::Error::invalid_value(de::Unexpected::Signed(value), &self))?;
+        Ok(SlideColumnsDefinition::Count(count))
+    }
+
+    fn visit_seq<S>(self, mut sequence: S) -> Result<Self::Value, S::Error>
+    where
+        S: SeqAccess<'de>,
+    {
+        let mut definitions = Vec::with_capacity(sequence.size_hint().unwrap_or(0));
+        while let Some(definition) = sequence.next_element()? {
+            definitions.push(definition);
+        }
+        Ok(SlideColumnsDefinition::Definitions(definitions))
+    }
 }
 
 #[derive(Debug, Deserialize)]

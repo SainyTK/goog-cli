@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use super::source::read_deck_source;
+use super::source::{read_deck_source, SlideColumnsDefinition};
 
 #[test]
 fn reads_the_responsible_ai_benchmark_from_yaml() {
@@ -127,11 +127,50 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         source.slides[9].items[0].body,
         "No unresolved critical safety, conduct, security, privacy, or action failure"
     );
+    let SlideColumnsDefinition::Definitions(risk_columns) =
+        source.slides[2].columns.as_ref().unwrap()
+    else {
+        panic!("expected structured comparison columns");
+    };
+    assert_eq!(risk_columns.len(), 3);
+    assert_eq!(risk_columns[0].key, "information");
+    assert_eq!(
+        risk_columns[0].title.as_deref(),
+        Some("Tier 1 | Information")
+    );
+    assert_eq!(
+        risk_columns[0].summary.as_deref(),
+        Some("Branch hours, navigation, and approved product facts")
+    );
+    assert_eq!(risk_columns[0].sections.len(), 2);
+    assert_eq!(risk_columns[0].sections[0].label, "PRIMARY CONTROL");
+    assert_eq!(
+        risk_columns[0].sections[0].body,
+        "Approved knowledge, citation checks, and safe uncertainty"
+    );
+    let SlideColumnsDefinition::Definitions(table_columns) =
+        source.slides[3].columns.as_ref().unwrap()
+    else {
+        panic!("expected structured evidence-table columns");
+    };
+    assert_eq!(table_columns[0].label.as_deref(), Some("What to measure"));
+    assert_eq!(table_columns[0].width, Some(0.23));
+    assert_eq!(
+        source.slides[5].columns,
+        Some(SlideColumnsDefinition::Count(2))
+    );
+    assert_eq!(
+        source.slides[12].columns,
+        Some(SlideColumnsDefinition::Count(2))
+    );
     assert!(!source.slides[1].content.contains_key("statement"));
     assert!(!source.slides[1].content.contains_key("body"));
     assert!(!source.slides[1].content.contains_key("takeaway"));
     assert!(!source.slides[4].content.contains_key("owner"));
     assert!(!source.slides[9].content.contains_key("items"));
+    for slide in &source.slides {
+        assert!(!slide.content.contains_key("columns"));
+    }
     assert_eq!(source.slides[13].key, "operating-principle");
 }
 
@@ -535,6 +574,174 @@ slides:
 }
 
 #[test]
+fn rejects_invalid_slide_columns() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: safe-and-fair-conduct
+    pattern: cards
+    columns: true
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(message.contains("slides[0].columns"), "{message}");
+    assert!(message.contains("invalid type"), "{message}");
+}
+
+#[test]
+fn rejects_malformed_structured_slide_columns() {
+    let sources = [
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: risk-tiering
+    pattern: comparison
+    columns:
+      - key: 42
+        title: Tier 1
+"#,
+            "slides[0].columns[0].key",
+        ),
+        (
+            r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "measurement-framework",
+                "pattern": "evidence-table",
+                "columns": [{
+                    "key": "dimension",
+                    "label": "What to measure",
+                    "width": "wide"
+                }]
+            }]
+        }"#,
+            "slides[0].columns[0].width",
+        ),
+        (
+            r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: risk-tiering
+    pattern: comparison
+    columns:
+      - key: information
+        sections:
+          - label: PRIMARY CONTROL
+            body: 42
+"#,
+            "slides[0].columns[0].sections[0].body",
+        ),
+    ];
+
+    for (source, expected_path) in sources {
+        let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+        let message = error.to_string();
+
+        assert!(message.contains(expected_path), "{message}");
+        assert!(message.contains("invalid type"), "{message}");
+    }
+}
+
+#[test]
+fn rejects_unknown_structured_slide_column_fields() {
+    let source = r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: risk-tiering
+    pattern: comparison
+    columns:
+      - key: information
+        heading: Tier 1
+"#;
+
+    let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
+    let message = error.to_string();
+
+    assert!(
+        message.contains("slides[0].columns[0].heading"),
+        "{message}"
+    );
+    assert!(message.contains("unknown field"), "{message}");
+}
+
+#[test]
+fn reads_structured_slide_columns_from_yaml_and_json() {
+    let sources = [
+        r#"
+schemaVersion: 1
+presentation: {}
+theme: {}
+quality: {}
+slides:
+  - key: risk-tiering
+    pattern: comparison
+    columns:
+      - key: information
+        title: Tier 1
+        summary: Approved product facts
+        sections:
+          - label: PRIMARY CONTROL
+            body: Approved knowledge
+"#,
+        r#"{
+            "schemaVersion": 1,
+            "presentation": {},
+            "theme": {},
+            "quality": {},
+            "slides": [{
+                "key": "risk-tiering",
+                "pattern": "comparison",
+                "columns": [{
+                    "key": "information",
+                    "title": "Tier 1",
+                    "summary": "Approved product facts",
+                    "sections": [{
+                        "label": "PRIMARY CONTROL",
+                        "body": "Approved knowledge"
+                    }]
+                }]
+            }]
+        }"#,
+    ];
+
+    for source in sources {
+        let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
+        let SlideColumnsDefinition::Definitions(columns) =
+            source.slides[0].columns.as_ref().unwrap()
+        else {
+            panic!("expected structured comparison columns");
+        };
+
+        assert_eq!(columns[0].key, "information");
+        assert_eq!(columns[0].title.as_deref(), Some("Tier 1"));
+        assert_eq!(
+            columns[0].summary.as_deref(),
+            Some("Approved product facts")
+        );
+        assert_eq!(columns[0].sections[0].label, "PRIMARY CONTROL");
+        assert_eq!(columns[0].sections[0].body, "Approved knowledge");
+    }
+}
+
+#[test]
 fn reads_json_deck_sources_from_json_paths() {
     let mut file = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
     write!(
@@ -560,7 +767,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\n  patternDefaults:\n    footer: {{showSlideNumber: true, line: rule}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    eyebrow: INTRODUCTION\n    title: Hello\n    subtitle: A concise overview\n    footer: Internal\n    statement: Measure the outcome\n    body: Explain the evidence\n    takeaway: Act on the evidence\n    owner: Product quality\n    items:\n      - title: Critical harms\n        body: No unresolved critical failures\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\n  patternDefaults:\n    footer: {{showSlideNumber: true, line: rule}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    eyebrow: INTRODUCTION\n    title: Hello\n    subtitle: A concise overview\n    footer: Internal\n    statement: Measure the outcome\n    body: Explain the evidence\n    takeaway: Act on the evidence\n    owner: Product quality\n    items:\n      - title: Critical harms\n        body: No unresolved critical failures\n    columns: 2\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -616,7 +823,8 @@ fn yaml_and_json_sources_have_semantic_parity() {
                 "items": [{{
                     "title": "Critical harms",
                     "body": "No unresolved critical failures"
-                }}]
+                }}],
+                "columns": 2
             }}]
         }}"#
     )
