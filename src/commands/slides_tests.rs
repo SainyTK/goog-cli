@@ -1,4 +1,8 @@
+use std::io::Cursor;
+use std::path::PathBuf;
+
 use chrono::{Duration, Utc};
+use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -12,6 +16,9 @@ use crate::auth::testing::MemoryStore;
 use crate::cli::{
     SlidesImageReplaceMethod, SlidesLineCategory, SlidesPredefinedLayout, SlidesShapeType,
     SlidesZOrderOperation,
+};
+use crate::slides::authoring::inspect::{
+    InspectArtifacts, InspectDeckReport, InspectDeckRequest, InspectedSlide,
 };
 use crate::slides::SLIDES_SCOPE;
 
@@ -66,6 +73,58 @@ fn write_test_state() -> (tempfile::TempDir, std::path::PathBuf) {
     )
     .unwrap();
     (state_dir, state_path)
+}
+
+fn thumbnail_png() -> Vec<u8> {
+    let image = RgbaImage::from_pixel(16, 9, Rgba([40, 90, 180, 255]));
+    let mut bytes = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(image)
+        .write_to(&mut bytes, ImageFormat::Png)
+        .unwrap();
+    bytes.into_inner()
+}
+
+#[test]
+fn deck_inspect_human_summary_lists_the_qa_bundle() {
+    let report = InspectDeckReport {
+        report_version: 1,
+        result: "success",
+        account: "alice@example.com".into(),
+        presentation_id: "presentation-123".into(),
+        presentation_url: "https://docs.google.com/presentation/d/presentation-123/edit".into(),
+        title: "Quarterly plan".into(),
+        slides: vec![InspectedSlide {
+            number: 1,
+            object_id: "slide-1".into(),
+            element_count: 2,
+            visible_text: vec![],
+            thumbnail: PathBuf::from("qa/thumbnails/slide-01.png"),
+        }],
+        artifacts: InspectArtifacts {
+            qa_dir: PathBuf::from("qa"),
+            report: PathBuf::from("qa/inspect-report.json"),
+            montage: PathBuf::from("qa/montage.png"),
+            pptx: Some(PathBuf::from("deck.pptx")),
+            pdf: Some(PathBuf::from("deck.pdf")),
+        },
+    };
+    let mut out = Vec::new();
+
+    write_deck_inspect_summary(&mut out, &report).unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Inspected deck successfully.\n\
+Account: alice@example.com\n\
+Presentation: Quarterly plan\n\
+Slides: 1\n\
+Thumbnails: qa/thumbnails\n\
+Montage: qa/montage.png\n\
+PowerPoint: deck.pptx\n\
+PDF: deck.pdf\n\
+Report: qa/inspect-report.json\n\
+Google Slides: https://docs.google.com/presentation/d/presentation-123/edit\n"
+    );
 }
 
 #[tokio::test]
@@ -205,6 +264,94 @@ async fn run_get_unified_prints_json_when_requested() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "{\"presentationId\":\"presentation-123\",\"title\":\"Deck\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_deck_inspect_uses_account_fallback_for_thumbnail_access() {
+    let server = MockServer::start().await;
+    for access_token in ["alice-access", "bob-access"] {
+        Mock::given(method("GET"))
+            .and(path("/slides/v1/presentations/presentation-123"))
+            .and(header(
+                "authorization",
+                format!("Bearer {access_token}").as_str(),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "presentationId": "presentation-123",
+                "title": "Deck",
+                "slides": [{ "objectId": "slide-1" }]
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123/pages/slide-1/thumbnail",
+        ))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/slides/v1/presentations/presentation-123/pages/slide-1/thumbnail",
+        ))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "width": 16,
+            "height": 9,
+            "contentUrl": format!("{}/thumbnail-content/slide-1", server.uri())
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/thumbnail-content/slide-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(thumbnail_png()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &slides_token("alice-access"))
+        .unwrap();
+    store
+        .save_token("bob@example.com", &slides_token("bob-access"))
+        .unwrap();
+    let config = Config {
+        oauth_app: test_config().oauth_app,
+        settings: test_config().settings,
+        accounts: vec!["alice@example.com".into(), "bob@example.com".into()],
+    };
+    let (_state_dir, state_path) = write_test_state();
+    let temp = tempfile::tempdir().unwrap();
+    let mut request = InspectDeckRequest::new("presentation-123", temp.path().join("qa"));
+    request.presentations_url = Some(format!("{}/slides/v1/presentations", server.uri()));
+    let mut out = Vec::new();
+
+    run_deck_inspect_unified_to(
+        &config,
+        &store,
+        None,
+        request,
+        true,
+        &mut out,
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["account"], "bob@example.com");
+    assert_eq!(output["slides"].as_array().unwrap().len(), 1);
+    let state = load_runtime_state_from_path(&state_path).unwrap();
+    assert_eq!(
+        state.account_for_resource(&resource_key("slides", "presentation-123")),
+        Some("bob@example.com")
     );
 }
 

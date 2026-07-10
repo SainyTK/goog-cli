@@ -10,8 +10,12 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SlidesCommand, SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand,
-    SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
+    SlidesCommand, SlidesDeckCommand, SlidesImageReplaceMethod, SlidesLineCategory,
+    SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand,
+    SlidesZOrderOperation,
+};
+use crate::slides::authoring::inspect::{
+    inspect_deck, InspectDeckError, InspectDeckReport, InspectDeckRequest,
 };
 use crate::slides::{
     batch_update_presentation, create_presentation, get_presentation,
@@ -53,6 +57,29 @@ pub fn run<S: AccountStore>(
         SlidesCommand::Create { title } => {
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             run_with_runtime(run_create_to(&client, title, &mut std::io::stdout(), None))
+        }
+        SlidesCommand::Deck {
+            command:
+                SlidesDeckCommand::Inspect {
+                    presentation_id,
+                    qa_dir,
+                    export_pptx,
+                    export_pdf,
+                    json,
+                },
+        } => {
+            let mut request = InspectDeckRequest::new(presentation_id, qa_dir);
+            request.export_pptx = export_pptx.map(Into::into);
+            request.export_pdf = export_pdf.map(Into::into);
+            run_with_runtime(run_deck_inspect_unified_to(
+                config,
+                store,
+                account_override,
+                request,
+                super::drive::should_emit_json(json, output_json_by_default),
+                &mut std::io::stdout(),
+                None,
+            ))
         }
         SlidesCommand::Get {
             presentation_id,
@@ -799,6 +826,69 @@ pub fn run<S: AccountStore>(
             None,
         )),
     }
+}
+
+pub(super) async fn run_deck_inspect_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    request: InspectDeckRequest,
+    json: bool,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("slides", &request.presentation_id);
+    let report = UnifiedAccess::run(
+        config,
+        account_override,
+        &target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, InspectDeckReport, InspectDeckError> {
+            let request = request.clone();
+            Box::pin(async move {
+                let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+                inspect_deck(&client, &request).await
+            })
+        },
+        InspectDeckError::is_target_access_failure,
+    )
+    .await
+    .context("failed to inspect Google Slides presentation")?;
+
+    if json {
+        let value = serde_json::to_value(&report)
+            .context("failed to serialize Slides inspection report")?;
+        write_json_line(out, &value, "failed to serialize Slides inspection report")
+    } else {
+        write_deck_inspect_summary(out, &report)
+    }
+}
+
+pub(super) fn write_deck_inspect_summary(
+    out: &mut impl Write,
+    report: &InspectDeckReport,
+) -> Result<()> {
+    writeln!(out, "Inspected deck successfully.").context("failed to write output")?;
+    writeln!(out, "Account: {}", report.account).context("failed to write output")?;
+    writeln!(out, "Presentation: {}", report.title).context("failed to write output")?;
+    writeln!(out, "Slides: {}", report.slides.len()).context("failed to write output")?;
+    writeln!(
+        out,
+        "Thumbnails: {}/thumbnails",
+        report.artifacts.qa_dir.display()
+    )
+    .context("failed to write output")?;
+    writeln!(out, "Montage: {}", report.artifacts.montage.display())
+        .context("failed to write output")?;
+    if let Some(pptx) = &report.artifacts.pptx {
+        writeln!(out, "PowerPoint: {}", pptx.display()).context("failed to write output")?;
+    }
+    if let Some(pdf) = &report.artifacts.pdf {
+        writeln!(out, "PDF: {}", pdf.display()).context("failed to write output")?;
+    }
+    writeln!(out, "Report: {}", report.artifacts.report.display())
+        .context("failed to write output")?;
+    writeln!(out, "Google Slides: {}", report.presentation_url).context("failed to write output")
 }
 
 fn run_with_runtime(future: impl Future<Output = Result<()>>) -> Result<()> {
