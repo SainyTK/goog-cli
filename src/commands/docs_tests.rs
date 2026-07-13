@@ -439,6 +439,16 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         "[table of contents: 1 entry]"
     );
     assert_eq!(output["entries"][0]["location"]["index"], 1);
+    assert_eq!(output["entries"][0]["textRuns"][0]["startIndex"], 2);
+    assert_eq!(output["entries"][0]["textRuns"][0]["endIndex"], 23);
+    assert_eq!(
+        output["entries"][0]["textRuns"][0]["content"],
+        "วิธีใช้งาน\t3\n"
+    );
+    assert_eq!(
+        output["entries"][0]["textRuns"][0]["textStyle"]["link"]["headingId"],
+        "h.how-to"
+    );
     assert_eq!(
         output["entries"][1]["location"]["confidence"],
         "table-of-contents"
@@ -4603,7 +4613,15 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                                         {
                                             "startIndex": 2,
                                             "endIndex": 23,
-                                            "textRun": { "content": "วิธีใช้งาน\t3\n" }
+                                            "textRun": {
+                                                "content": "วิธีใช้งาน\t3\n",
+                                                "textStyle": {
+                                                    "link": { "headingId": "h.how-to" },
+                                                    "weightedFontFamily": {
+                                                        "fontFamily": "Bai Jamjuree"
+                                                    }
+                                                }
+                                            }
                                         }
                                     ]
                                 }

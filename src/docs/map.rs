@@ -1281,9 +1281,8 @@ impl<'a> DocumentMapBuilder<'a> {
 
     fn push_table_of_contents(&mut self, element: &Value, table_of_contents: &Value) {
         self.push_content_line();
-        let entry_count = table_of_contents
-            .get("content")
-            .and_then(Value::as_array)
+        let content = table_of_contents.get("content").and_then(Value::as_array);
+        let entry_count = content
             .map(|content| {
                 content
                     .iter()
@@ -1291,12 +1290,22 @@ impl<'a> DocumentMapBuilder<'a> {
                     .count()
             })
             .unwrap_or_default();
+        let text_runs = content
+            .into_iter()
+            .flatten()
+            .filter_map(|element| element.get("paragraph"))
+            .flat_map(paragraph_text_runs)
+            .collect();
         let label = if entry_count == 1 { "entry" } else { "entries" };
-        self.push_entry(
+        self.push_entry_with_metadata(
             self.current_location(element),
             DocumentMapEntryKind::TableOfContents,
             None,
             format!("[table of contents: {entry_count} {label}]"),
+            DocumentMapEntryMetadata {
+                text_runs,
+                ..DocumentMapEntryMetadata::default()
+            },
         );
     }
 
@@ -1368,22 +1377,6 @@ impl<'a> DocumentMapBuilder<'a> {
                 },
             );
         }
-    }
-
-    fn push_entry(
-        &mut self,
-        location: DocumentLocation,
-        kind: DocumentMapEntryKind,
-        style: Option<String>,
-        preview: String,
-    ) {
-        self.push_entry_with_metadata(
-            location,
-            kind,
-            style,
-            preview,
-            DocumentMapEntryMetadata::default(),
-        );
     }
 
     fn push_entry_with_metadata(
