@@ -71,6 +71,42 @@ Named-style copying transfers the native title, subtitle, heading, and normal-te
 Page copying transfers document mode, page dimensions, margins, and supported first-page or even-page header and footer behavior.
 It does not create source header and footer segments in a blank target.
 
+## Reuse observed document styles
+
+A complete document fetch refreshes a local style template for that document:
+
+```bash
+target/debug/goog docs get DOCUMENT_ID > /tmp/document.json
+target/debug/goog docs style template DOCUMENT_ID --json
+```
+
+The template records observed named-style text and paragraph properties, the first suitable table's header and body treatment, and the document's native list preset.
+The cache is keyed by document ID and supports consistent edits within that document.
+It is not a cross-document style-copy mechanism.
+Use `copy-named`, `copy-page`, or `docs copy` when a new document must inherit a source design.
+
+After the full fetch, applying a named paragraph style also reuses the cached text and paragraph properties that were observed for that style:
+
+```bash
+target/debug/goog docs style apply DOCUMENT_ID --text 'Executive summary' --paragraph-style HEADING_1 --dry-run --json
+target/debug/goog docs style apply DOCUMENT_ID --text 'Executive summary' --paragraph-style HEADING_1
+```
+
+Explicit style flags override the corresponding cached values.
+Pass `--no-cached-style` when the edit should apply only the properties named on the command line.
+
+List formatting can reuse the cached native list preset when neither `--type` nor `--preset` is supplied:
+
+```bash
+target/debug/goog docs list-format apply DOCUMENT_ID --from-index LIST_START_INDEX --to-index LIST_END_INDEX --dry-run --json
+target/debug/goog docs list-format apply DOCUMENT_ID --from-index LIST_START_INDEX --to-index LIST_END_INDEX
+```
+
+Populated table insertion automatically reuses the cached header-row treatment when one is available.
+Pass `docs table insert --no-auto-style` to preserve Google Docs defaults for the new table.
+Run another complete `docs get` after deliberate design changes so later edits do not use stale observations.
+A partial fetch with `--fields` does not replace the cached template.
+
 ## Define a native style system
 
 When a blank document needs a new visual system instead of one copied from a source, define its native styles before authoring the body.
@@ -368,6 +404,7 @@ target/debug/goog docs --help
 target/debug/goog docs text --help
 target/debug/goog docs style --help
 target/debug/goog docs style apply --help
+target/debug/goog docs style template --help
 target/debug/goog docs table --help
 target/debug/goog docs image --help
 target/debug/goog docs list-format apply --help
