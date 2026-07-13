@@ -1511,6 +1511,7 @@ fn docs_new_high_level_editing_commands_parse() {
                         style_json,
                         from_index,
                         to_index,
+                        segment_id,
                         ..
                     },
             },
@@ -1523,6 +1524,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "1",
         "--to-index",
         "9",
+        "--segment-id",
+        "header-123",
         "--style-json",
         r#"{"textStyle":{"underline":true}}"#,
     ])
@@ -1533,6 +1536,10 @@ fn docs_new_high_level_editing_commands_parse() {
     };
     assert_eq!(from_index, Some(1));
     assert_eq!(to_index, Some(9));
+    assert_eq!(
+        segment_id.as_deref().map(String::as_str),
+        Some("header-123")
+    );
     assert_eq!(
         style_json.as_deref(),
         Some(r#"{"textStyle":{"underline":true}}"#)

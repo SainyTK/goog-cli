@@ -244,6 +244,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
         &document_map,
         &ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: Some("header-123".into()),
             selector: RangeSelector::IndexRange {
                 start_index: 1,
                 end_index: 13,
@@ -277,6 +278,14 @@ fn image_table_style_and_list_changes_build_native_requests() {
     )
     .unwrap();
     let styles = preview_json(&styles);
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["range"]["segmentId"],
+        "header-123"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["range"]["segmentId"],
+        "header-123"
+    );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["namedStyleType"],
@@ -374,6 +383,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
     let document_map = searchable_map();
     let command = ApplyStylesCommand {
         document_id: "document-123".into(),
+        segment_id: None,
         selector: RangeSelector::IndexRange {
             start_index: 1,
             end_index: 13,

@@ -2166,6 +2166,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::Text {
                 text: "matching text".into(),
                 match_number: None,
@@ -2645,6 +2646,7 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::IndexRange {
                 start_index: 17,
                 end_index: 30,
@@ -2801,6 +2803,7 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::Text {
                 text: "matching text".into(),
                 match_number: None,
@@ -2897,6 +2900,7 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::Text {
                 text: "matching text".into(),
                 match_number: None,
@@ -3035,6 +3039,7 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::Text {
                 text: "matching text".into(),
                 match_number: None,

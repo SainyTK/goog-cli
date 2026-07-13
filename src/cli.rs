@@ -2104,6 +2104,9 @@ pub enum DocsStyleCommand {
         /// Raw Google Docs UTF-16 range end
         #[arg(long)]
         to_index: Option<i64>,
+        /// Header or footer segment ID containing the explicit index range
+        #[arg(long, requires_all = ["from_index", "to_index"])]
+        segment_id: Option<Box<String>>,
         /// Document Map Entry number
         #[arg(long)]
         entry: Option<usize>,

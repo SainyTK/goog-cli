@@ -159,6 +159,7 @@ pub(crate) struct PinTableHeaderRowsCommand {
 pub(crate) struct ApplyStylesCommand {
     pub document_id: String,
     pub selector: RangeSelector,
+    pub segment_id: Option<String>,
     pub bold: bool,
     pub italic: bool,
     pub underline: bool,
@@ -1103,7 +1104,15 @@ pub(crate) fn prepare_apply_styles_change(
     command: &ApplyStylesCommand,
     style_template: Option<&StyleTemplate>,
 ) -> Result<PreparedDocsChange> {
+    let segment_id = command.segment_id.as_deref().map(str::trim);
+    if segment_id.is_some_and(str::is_empty) {
+        bail!("--segment-id cannot be empty");
+    }
+    if segment_id.is_some() && !matches!(command.selector, RangeSelector::IndexRange { .. }) {
+        bail!("style apply --segment-id requires --from-index and --to-index");
+    }
     let range = resolve_range_selector(document_map, &command.selector)?;
+    let request_range = docs_range_in_segment(&range, segment_id);
     let raw_payload = raw_style_payload(command.style_json.as_deref())?;
 
     let has_heading = command.heading.is_some();
@@ -1126,7 +1135,7 @@ pub(crate) fn prepare_apply_styles_change(
     if !paragraph_fields.is_empty() {
         requests.push(serde_json::json!({
             "updateParagraphStyle": {
-                "range": docs_range(&range),
+                "range": request_range,
                 "paragraphStyle": paragraph_style,
                 "fields": paragraph_fields.join(",")
             }
@@ -1135,7 +1144,7 @@ pub(crate) fn prepare_apply_styles_change(
     if !fields.is_empty() {
         requests.push(serde_json::json!({
             "updateTextStyle": {
-                "range": docs_range(&range),
+                "range": request_range,
                 "textStyle": text_style,
                 "fields": fields.join(",")
             }
@@ -1293,11 +1302,19 @@ pub(crate) fn request_body_with_revision(
     body
 }
 
-fn docs_range(range: &DocumentRange) -> serde_json::Value {
-    serde_json::json!({
+fn docs_range_in_segment(range: &DocumentRange, segment_id: Option<&str>) -> serde_json::Value {
+    let mut value = serde_json::json!({
         "startIndex": range.start_index,
         "endIndex": range.end_index
-    })
+    });
+    if let Some(segment_id) = segment_id {
+        value["segmentId"] = serde_json::json!(segment_id);
+    }
+    value
+}
+
+fn docs_range(range: &DocumentRange) -> serde_json::Value {
+    docs_range_in_segment(range, None)
 }
 
 #[derive(Debug, Default)]

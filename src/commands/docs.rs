@@ -591,6 +591,7 @@ pub fn run<S: AccountStore>(
                     document_id,
                     from_index,
                     to_index,
+                    segment_id,
                     entry,
                     page,
                     line,
@@ -633,6 +634,7 @@ pub fn run<S: AccountStore>(
                 ApplyStylesCommand {
                     document_id,
                     selector,
+                    segment_id: segment_id.map(|segment_id| *segment_id),
                     bold,
                     italic,
                     underline,
