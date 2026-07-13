@@ -148,6 +148,29 @@ target/debug/goog docs footer create DOCUMENT_ID --section-break-index SECTION_B
 The Docs API cannot create first-page header content or page-number auto text in a blank document.
 Copy a template when those editor-only components are required.
 
+## Page and section breaks
+
+Use an explicit page break when the following content must begin on a new page without creating a new section:
+
+```bash
+target/debug/goog docs break page DOCUMENT_ID --at before-heading:'Appendix' --dry-run --json
+target/debug/goog docs break page DOCUMENT_ID --at before-heading:'Appendix'
+target/debug/goog docs map DOCUMENT_ID --type breaks --json
+```
+
+Use a section break when later content needs independent headers, footers, or section formatting:
+
+```bash
+target/debug/goog docs break section DOCUMENT_ID --at before-heading:'Appendix' --section-type next-page --dry-run --json
+target/debug/goog docs break section DOCUMENT_ID --at before-heading:'Appendix' --section-type next-page
+target/debug/goog docs map DOCUMENT_ID --type breaks --json
+```
+
+`--section-type next-page` starts the section on a new page, while `continuous` starts it at the selected location without forcing a new page.
+Google can insert a newline while creating a section break, so use the remapped break index for later header or footer creation instead of reusing the requested insertion index.
+Use `--page-break-before` in `docs style apply` when the page boundary is an intentional property of a paragraph style rather than a standalone document element.
+Map after every break insertion because all following body indexes and entry locations can change.
+
 ## Tables
 
 ```bash
@@ -236,6 +259,7 @@ target/debug/goog docs image --help
 target/debug/goog docs list-format apply --help
 target/debug/goog docs header create --help
 target/debug/goog docs footer create --help
+target/debug/goog docs break page --help
 target/debug/goog docs break section --help
 target/debug/goog docs copy --help
 target/debug/goog docs export-pdf --help
