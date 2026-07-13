@@ -2117,6 +2117,9 @@ pub enum DocsStyleCommand {
         /// Foreground color as #RRGGBB
         #[arg(long)]
         foreground_color: Option<String>,
+        /// Paragraph alignment
+        #[arg(long, value_enum)]
+        alignment: Option<DocsParagraphAlignment>,
         /// Named paragraph style such as HEADING_1
         #[arg(long = "paragraph-style", value_name = "PARAGRAPH_STYLE")]
         heading: Option<String>,
@@ -2599,6 +2602,25 @@ pub enum DocsListType {
     Numbered,
     Dash,
     Checkbox,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsParagraphAlignment {
+    Start,
+    Center,
+    End,
+    Justified,
+}
+
+impl DocsParagraphAlignment {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            DocsParagraphAlignment::Start => "START",
+            DocsParagraphAlignment::Center => "CENTER",
+            DocsParagraphAlignment::End => "END",
+            DocsParagraphAlignment::Justified => "JUSTIFIED",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

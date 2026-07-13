@@ -7,9 +7,9 @@ use crate::cli::{
     CalendarEventsCommand, CalendarEventsOrderBy, CalendarListEntryCommand, CalendarSendUpdates,
     Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand,
     DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType, DocsMapType,
-    DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
-    DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
-    SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
+    DocsNamedRangeCommand, DocsParagraphAlignment, DocsStyleCommand, DocsTableCommand,
+    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle,
+    SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
     SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
@@ -1706,6 +1706,36 @@ fn docs_apply_styles_accepts_font_family() {
 
     assert_eq!(text.as_deref(), Some("Customer report"));
     assert_eq!(font_family.as_deref(), Some("Bai Jamjuree"));
+}
+
+#[test]
+fn docs_apply_styles_accepts_paragraph_alignment() {
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Apply {
+                        alignment, text, ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "style",
+        "apply",
+        "document-123",
+        "--text",
+        "Executive summary",
+        "--alignment",
+        "justified",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(text.as_deref(), Some("Executive summary"));
+    assert_eq!(alignment, Some(DocsParagraphAlignment::Justified));
 }
 
 #[test]

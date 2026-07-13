@@ -2038,6 +2038,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             font_size: Some(14.0),
             font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
+            alignment: Some(crate::cli::DocsParagraphAlignment::Justified),
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -2066,6 +2067,10 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["namedStyleType"],
         "HEADING_2"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["alignment"],
+        "JUSTIFIED"
     );
     assert_eq!(
         styles["requestBody"]["writeControl"]["requiredRevisionId"],
@@ -2453,6 +2458,7 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
             font_size: None,
             font_family: None,
             foreground_color: None,
+            alignment: None,
             heading: None,
             style_json: Some(
                 serde_json::json!({
@@ -2596,6 +2602,7 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
             font_size: None,
             font_family: None,
             foreground_color: None,
+            alignment: None,
             heading: Some("HEADING_1".into()),
             style_json: Some(r#"{"textStyle":{"strikethrough":true}}"#.into()),
             dry_run: false,
@@ -2679,6 +2686,7 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
             font_size: None,
             font_family: None,
             foreground_color: None,
+            alignment: None,
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -2804,6 +2812,7 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
             font_size: None,
             font_family: None,
             foreground_color: None,
+            alignment: None,
             heading: Some("HEADING_1".into()),
             style_json: None,
             dry_run: false,

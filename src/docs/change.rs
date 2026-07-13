@@ -3,7 +3,7 @@ use std::io::Write;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
-use crate::cli::{DocsListType, DocsSectionBreakType};
+use crate::cli::{DocsListType, DocsParagraphAlignment, DocsSectionBreakType};
 use crate::docs::map::{
     resolve_insert_text_location, resolve_range_selector, resolve_replace_text_ranges,
     text_block_contains_range, DocumentLocation, DocumentMap, DocumentMapEntry,
@@ -145,6 +145,7 @@ pub(crate) struct ApplyStylesCommand {
     pub font_size: Option<f64>,
     pub font_family: Option<String>,
     pub foreground_color: Option<String>,
+    pub alignment: Option<DocsParagraphAlignment>,
     pub heading: Option<String>,
     pub style_json: Option<String>,
     pub dry_run: bool,
@@ -950,6 +951,7 @@ pub(crate) fn prepare_apply_styles_change(
     )?;
     let (paragraph_style, paragraph_fields) = paragraph_style_payload(
         command.heading.as_deref(),
+        command.alignment,
         raw_payload.paragraph_style,
         cached_paragraph_style,
     )?;
@@ -1236,6 +1238,7 @@ fn text_style_payload(
 
 fn paragraph_style_payload(
     heading: Option<&str>,
+    alignment: Option<DocsParagraphAlignment>,
     raw_paragraph_style: Option<StyleObject>,
     cached_paragraph_style: Option<serde_json::Value>,
 ) -> Result<(serde_json::Value, Vec<String>)> {
@@ -1246,6 +1249,12 @@ fn paragraph_style_payload(
         StylePayloadParts::from_base_and_raw(base_paragraph_style, raw_paragraph_style);
     if let Some(heading) = heading {
         payload.set_field_first("namedStyleType", serde_json::Value::String(heading.into()));
+    }
+    if let Some(alignment) = alignment {
+        payload.set_field(
+            "alignment",
+            serde_json::Value::String(alignment.api_value().into()),
+        );
     }
     Ok(payload.into_json_parts())
 }

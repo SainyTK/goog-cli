@@ -223,6 +223,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             font_size: Some(16.0),
             font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
+            alignment: Some(crate::cli::DocsParagraphAlignment::Center),
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -238,6 +239,10 @@ fn image_table_style_and_list_changes_build_native_requests() {
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["namedStyleType"],
         "HEADING_2"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["alignment"],
+        "CENTER"
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
