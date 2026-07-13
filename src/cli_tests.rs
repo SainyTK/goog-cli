@@ -701,6 +701,7 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "https://docs.google.com/document/d/source-123/edit",
         "target-456",
         "--json",
+        "--fail-on-difference",
     ])
     .unwrap();
     let Command::Docs { command } = &mut cli.command else {
@@ -712,10 +713,12 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             source_document_id,
             target_document_id,
             json,
+            fail_on_difference,
         } => {
             assert_eq!(source_document_id, "source-123");
             assert_eq!(target_document_id, "target-456");
             assert!(*json);
+            assert!(*fail_on_difference);
         }
         _ => panic!("unexpected parse result"),
     }

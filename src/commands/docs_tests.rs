@@ -351,6 +351,7 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
         "source-123".into(),
         "target-456".into(),
         true,
+        false,
         &mut out,
         Some(&documents_url),
     )
@@ -404,16 +405,21 @@ async fn run_compare_reports_content_difference() {
     let client = test_client(&store);
     let mut out = Vec::new();
     let documents_url = format!("{}/docs/v1/documents", server.uri());
-    run_compare_to(
+    let error = run_compare_to(
         &client,
         "source-123".into(),
         "target-456".into(),
         false,
+        true,
         &mut out,
         Some(&documents_url),
     )
     .await
-    .unwrap();
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Google Docs comparison found semantic differences"
+    );
 
     let output = String::from_utf8(out).unwrap();
     assert!(output.contains("inventory        yes"));

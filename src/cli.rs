@@ -1980,6 +1980,7 @@ Notes:
     #[command(after_long_help = "Notes:
   Compares component inventory, named and page styles, and mapped content properties.
   Mismatches include up to 20 JSON Pointer paths with source and target values.
+  Use --fail-on-difference to return a nonzero exit status when any scope differs.
   Google-assigned object, heading, segment, and list IDs are ignored.
   A matching result still requires page-level visual inspection for final acceptance.
   Both document arguments accept a bare Document ID or a full Google Docs or Drive URL.")]
@@ -1991,6 +1992,9 @@ Notes:
         /// Emit structured JSON
         #[arg(long)]
         json: bool,
+        /// Return a nonzero exit status when any comparison scope differs
+        #[arg(long)]
+        fail_on_difference: bool,
     },
     /// Export a native Google Doc as a PDF file
     #[command(after_long_help = "Notes:

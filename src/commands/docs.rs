@@ -116,6 +116,7 @@ pub fn run<S: AccountStore>(
             source_document_id,
             target_document_id,
             json,
+            fail_on_difference,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -127,6 +128,7 @@ pub fn run<S: AccountStore>(
                     source_document_id,
                     target_document_id,
                     json,
+                    fail_on_difference,
                 },
                 &mut std::io::stdout(),
                 None,
@@ -1068,12 +1070,13 @@ pub(super) async fn run_compare_to<S: AccountStore>(
     source_document_id: String,
     target_document_id: String,
     json: bool,
+    fail_on_difference: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
     let source_map = get_document_map(client, source_document_id, documents_url).await?;
     let target_map = get_document_map(client, target_document_id, documents_url).await?;
-    write_document_comparison(out, &source_map, &target_map, json)
+    write_document_comparison(out, &source_map, &target_map, json, fail_on_difference)
 }
 
 pub(super) async fn run_compare_unified_to<S: AccountStore>(
@@ -1103,7 +1106,13 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
-    write_document_comparison(out, &source_map, &target_map, command.json)
+    write_document_comparison(
+        out,
+        &source_map,
+        &target_map,
+        command.json,
+        command.fail_on_difference,
+    )
 }
 
 #[cfg(test)]
@@ -3712,6 +3721,7 @@ pub(super) struct CompareDocumentsCommand {
     source_document_id: String,
     target_document_id: String,
     json: bool,
+    fail_on_difference: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -3754,6 +3764,7 @@ fn write_document_comparison(
     source_map: &DocumentMap,
     target_map: &DocumentMap,
     json: bool,
+    fail_on_difference: bool,
 ) -> Result<()> {
     let source_inventory = document_inventory(source_map);
     let target_inventory = document_inventory(target_map);
@@ -3785,48 +3796,52 @@ fn write_document_comparison(
     };
 
     if json {
-        return write_json_line(out, &report, "failed to serialize Docs comparison");
-    }
-
-    writeln!(
-        out,
-        "{:<16} {:<7} {:<64} Target SHA-256",
-        "Scope", "Match", "Source SHA-256"
-    )
-    .context("failed to write Docs comparison header")?;
-    for scope in &report.scopes {
+        write_json_line(out, &report, "failed to serialize Docs comparison")?;
+    } else {
         writeln!(
             out,
-            "{:<16} {:<7} {:<64} {}",
-            scope.scope,
-            if scope.matches { "yes" } else { "no" },
-            scope.source_fingerprint,
-            scope.target_fingerprint
+            "{:<16} {:<7} {:<64} Target SHA-256",
+            "Scope", "Match", "Source SHA-256"
         )
-        .context("failed to write Docs comparison row")?;
-        for difference in &scope.differences {
+        .context("failed to write Docs comparison header")?;
+        for scope in &report.scopes {
             writeln!(
                 out,
-                "  {}: source={}, target={}",
-                difference.path, difference.source, difference.target
+                "{:<16} {:<7} {:<64} {}",
+                scope.scope,
+                if scope.matches { "yes" } else { "no" },
+                scope.source_fingerprint,
+                scope.target_fingerprint
             )
-            .context("failed to write Docs comparison difference")?;
+            .context("failed to write Docs comparison row")?;
+            for difference in &scope.differences {
+                writeln!(
+                    out,
+                    "  {}: source={}, target={}",
+                    difference.path, difference.source, difference.target
+                )
+                .context("failed to write Docs comparison difference")?;
+            }
+            if scope.difference_count > scope.differences.len() {
+                writeln!(
+                    out,
+                    "  ... {} more differences",
+                    scope.difference_count - scope.differences.len()
+                )
+                .context("failed to write Docs comparison difference count")?;
+            }
         }
-        if scope.difference_count > scope.differences.len() {
-            writeln!(
-                out,
-                "  ... {} more differences",
-                scope.difference_count - scope.differences.len()
-            )
-            .context("failed to write Docs comparison difference count")?;
-        }
+        writeln!(
+            out,
+            "Overall: {}",
+            if report.matches { "match" } else { "different" }
+        )
+        .context("failed to write Docs comparison result")?;
     }
-    writeln!(
-        out,
-        "Overall: {}",
-        if report.matches { "match" } else { "different" }
-    )
-    .context("failed to write Docs comparison result")?;
+
+    if fail_on_difference && !report.matches {
+        bail!("Google Docs comparison found semantic differences");
+    }
     Ok(())
 }
 

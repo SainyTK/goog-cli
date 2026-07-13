@@ -66,12 +66,14 @@ Use the high-level comparison command for the complete structural acceptance che
 ```bash
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --json
+target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --fail-on-difference
 ```
 
 The command compares component inventory, the native named-style and page-style visual system, and all mapped content and component properties.
 It removes Google-assigned object, heading, segment, and list IDs before comparison while retaining tab IDs, indexes, ranges, and component order.
 An overall match proves semantic structural equivalence across all three scopes.
 It does not replace page-level visual inspection.
+Use `--fail-on-difference` in acceptance scripts that must return a nonzero status when any scope differs.
 
 When the command reports a difference, it includes up to 20 JSON Pointer paths per scope with concise source and target values.
 Use the manual map comparisons below when those paths need more context.
