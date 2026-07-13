@@ -129,6 +129,8 @@ fn image_table_style_and_list_changes_build_native_requests() {
             document_id: "document-123".into(),
             image_uri: "https://example.test/image.png".into(),
             selector: InsertTextSelector::AfterText("Project".into()),
+            width: Some(468.0),
+            height: Some(240.0),
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-image".into()),
@@ -139,6 +141,13 @@ fn image_table_style_and_list_changes_build_native_requests() {
     assert_eq!(
         image["requestBody"]["requests"][0]["insertInlineImage"]["location"]["index"],
         8
+    );
+    assert_eq!(
+        image["requestBody"]["requests"][0]["insertInlineImage"]["objectSize"],
+        json!({
+            "width": { "magnitude": 468.0, "unit": "PT" },
+            "height": { "magnitude": 240.0, "unit": "PT" }
+        })
     );
     assert_eq!(image["preview"]["after"], "Project[inline image] Plan");
 
@@ -262,6 +271,34 @@ fn image_table_style_and_list_changes_build_native_requests() {
         list["requestBody"]["requests"][0]["createParagraphBullets"]["bulletPreset"],
         "BULLET_CHECKBOX"
     );
+}
+
+#[test]
+fn image_dimensions_must_be_positive_and_finite() {
+    let command = InsertImageCommand {
+        document_id: "document-123".into(),
+        image_uri: "https://example.test/image.png".into(),
+        selector: InsertTextSelector::AfterText("Project".into()),
+        width: Some(0.0),
+        height: Some(240.0),
+        dry_run: true,
+        json: true,
+        required_revision_id: None,
+    };
+
+    let error = prepare_insert_image_change(&searchable_map(), &command).unwrap_err();
+    assert!(error.to_string().contains("--width"));
+
+    let error = prepare_insert_image_change(
+        &searchable_map(),
+        &InsertImageCommand {
+            width: Some(468.0),
+            height: Some(f64::INFINITY),
+            ..command
+        },
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("--height"));
 }
 
 #[test]

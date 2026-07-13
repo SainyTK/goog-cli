@@ -1037,6 +1037,8 @@ fn docs_new_high_level_editing_commands_parse() {
                     DocsImageCommand::Insert {
                         image_uri,
                         at,
+                        width,
+                        height,
                         dry_run,
                         json,
                         ..
@@ -1050,6 +1052,10 @@ fn docs_new_high_level_editing_commands_parse() {
         "https://example.test/image.png",
         "--at",
         "page:2,line:1",
+        "--width",
+        "468",
+        "--height",
+        "240",
         "--dry-run",
         "--json",
     ])
@@ -1060,6 +1066,8 @@ fn docs_new_high_level_editing_commands_parse() {
     };
     assert_eq!(image_uri, "https://example.test/image.png");
     assert_eq!(at, "page:2,line:1");
+    assert_eq!(width, Some(468.0));
+    assert_eq!(height, Some(240.0));
     assert!(dry_run);
     assert!(json);
 
@@ -1531,6 +1539,24 @@ fn docs_new_high_level_editing_commands_parse() {
     };
     assert_eq!(entry, Some(2));
     assert!(no_cached_style);
+}
+
+#[test]
+fn docs_image_dimensions_must_be_provided_together() {
+    let error = parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--at",
+        "index:1",
+        "--width",
+        "468",
+    ])
+    .unwrap_err();
+
+    assert!(error.to_string().contains("--height"));
 }
 
 #[test]

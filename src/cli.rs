@@ -2313,6 +2313,12 @@ pub enum DocsImageCommand {
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
         at: String,
+        /// Image width in points; requires --height
+        #[arg(long, requires = "height")]
+        width: Option<f64>,
+        /// Image height in points; requires --width
+        #[arg(long, requires = "width")]
+        height: Option<f64>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
