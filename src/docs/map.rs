@@ -1207,6 +1207,7 @@ impl<'a> DocumentMapBuilder<'a> {
         let (rows, columns) = table_dimensions(table);
         let location = self.current_location(element);
         let table_cells = table_cell_ranges(table, &location);
+        let layout_metadata = table_layout_metadata(table);
         let table_handle = format!("table-{}", self.table_count);
         self.push_entry_with_metadata(
             location,
@@ -1218,6 +1219,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 columns: Some(columns),
                 table_handle: Some(table_handle),
                 table_cells,
+                layout_metadata,
                 ..DocumentMapEntryMetadata::default()
             },
         );
@@ -1753,6 +1755,13 @@ fn table_dimensions(table: &Value) -> (usize, usize) {
         .max()
         .unwrap_or(0);
     (rows.len(), columns)
+}
+
+fn table_layout_metadata(table: &Value) -> Option<Value> {
+    table
+        .get("tableStyle")
+        .filter(|style| !style.as_object().is_some_and(serde_json::Map::is_empty))
+        .cloned()
 }
 
 fn table_cell_text(cell: &Value) -> String {

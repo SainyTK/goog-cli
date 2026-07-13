@@ -1425,6 +1425,14 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(tables[0]["rows"], 1);
     assert_eq!(tables[0]["columns"], 2);
     assert_eq!(tables[0]["preview"], "หัวข้อ | สถานะ");
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableColumnProperties"][0]["width"]["magnitude"],
+        144
+    );
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableColumnProperties"][1]["widthType"],
+        "FIXED_WIDTH"
+    );
 }
 
 #[tokio::test]
@@ -4570,6 +4578,18 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "startIndex": 74,
                     "endIndex": 103,
                     "table": {
+                        "tableStyle": {
+                            "tableColumnProperties": [
+                                {
+                                    "width": { "magnitude": 144, "unit": "PT" },
+                                    "widthType": "FIXED_WIDTH"
+                                },
+                                {
+                                    "width": { "magnitude": 324, "unit": "PT" },
+                                    "widthType": "FIXED_WIDTH"
+                                }
+                            ]
+                        },
                         "tableRows": [
                             {
                                 "tableCells": [
