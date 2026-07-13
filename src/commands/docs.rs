@@ -2967,6 +2967,7 @@ fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry)
         document_styles: document_map.document_styles.clone(),
         named_styles: document_map.named_styles.clone(),
         breaks: Vec::new(),
+        blank_paragraphs: Vec::new(),
         segments: Vec::new(),
         lists: Vec::new(),
         entries: vec![entry.clone()],

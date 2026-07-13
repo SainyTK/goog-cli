@@ -655,6 +655,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
         document_styles: Vec::new(),
         named_styles: Vec::new(),
         breaks: Vec::new(),
+        blank_paragraphs: Vec::new(),
         segments: Vec::new(),
         lists: Vec::new(),
         entries: vec![DocumentMapEntry {

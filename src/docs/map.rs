@@ -11,6 +11,7 @@ pub struct DocumentMap {
     pub document_styles: Vec<DocumentTabStyle>,
     pub named_styles: Vec<DocumentTabNamedStyles>,
     pub breaks: Vec<DocumentBreak>,
+    pub blank_paragraphs: Vec<DocumentBlankParagraph>,
     pub segments: Vec<DocumentSegment>,
     pub lists: Vec<DocumentList>,
     pub entries: Vec<DocumentMapEntry>,
@@ -54,6 +55,21 @@ pub struct DocumentBreak {
 pub enum DocumentBreakKind {
     PageBreak,
     SectionBreak,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentBlankParagraph {
+    pub location: DocumentLocation,
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paragraph_style: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bullet: Option<Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub text_runs: Vec<DocumentTextRun>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -279,6 +295,7 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
     builder.push_non_body_images(&inline_objects, &positioned_objects);
 
     let breaks = builder.breaks;
+    let blank_paragraphs = builder.blank_paragraphs;
     let entries = builder.entries;
     DocumentMap {
         document_id: string_field(document, "documentId"),
@@ -287,6 +304,7 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         document_styles: document_styles(document),
         named_styles: document_named_styles(document),
         breaks,
+        blank_paragraphs,
         segments: document_segments(document),
         lists: document_lists(document),
         document_locations: entries.iter().map(|entry| entry.location.clone()).collect(),
@@ -1113,6 +1131,7 @@ fn display_optional<T: ToString>(value: Option<T>) -> String {
 
 struct DocumentMapBuilder<'a> {
     breaks: Vec<DocumentBreak>,
+    blank_paragraphs: Vec<DocumentBlankParagraph>,
     entries: Vec<DocumentMapEntry>,
     text_blocks: Vec<DocumentTextBlock>,
     insertion_locations: Vec<DocumentLocation>,
@@ -1152,6 +1171,7 @@ impl<'a> DocumentMapBuilder<'a> {
     ) -> Self {
         Self {
             breaks: Vec::new(),
+            blank_paragraphs: Vec::new(),
             entries: Vec::new(),
             text_blocks: Vec::new(),
             insertion_locations: Vec::new(),
@@ -1239,6 +1259,19 @@ impl<'a> DocumentMapBuilder<'a> {
         let paragraph_style = paragraph.get("paragraphStyle").cloned();
         let text_runs = paragraph_text_runs(paragraph);
         let is_heading = style.as_deref().is_some_and(is_heading_style);
+
+        if trimmed_text.is_empty() {
+            let paragraph_metadata = document_paragraph(element, paragraph);
+            self.blank_paragraphs.push(DocumentBlankParagraph {
+                location: self.current_location(element),
+                start_index: paragraph_metadata.start_index,
+                end_index: paragraph_metadata.end_index,
+                content: paragraph_metadata.content,
+                paragraph_style: paragraph_metadata.paragraph_style,
+                bullet: paragraph_metadata.bullet,
+                text_runs: text_runs.clone(),
+            });
+        }
 
         if !trimmed_text.is_empty() {
             self.push_content_line();
@@ -2139,5 +2172,71 @@ mod tests {
             document_map.named_styles[0].named_styles["styles"][0]["namedStyleType"],
             "TITLE"
         );
+    }
+
+    #[test]
+    fn build_document_map_preserves_blank_paragraph_text_runs_without_adding_entries() {
+        let document_map = build_document_map(&json!({
+            "documentId": "blank-paragraph-document",
+            "body": {
+                "content": [
+                    {
+                        "startIndex": 1,
+                        "endIndex": 2,
+                        "paragraph": {
+                            "paragraphStyle": {
+                                "namedStyleType": "NORMAL_TEXT",
+                                "spaceBelow": { "magnitude": 10, "unit": "PT" }
+                            },
+                            "elements": [{
+                                "startIndex": 1,
+                                "endIndex": 2,
+                                "textRun": {
+                                    "content": "\n",
+                                    "textStyle": {
+                                        "weightedFontFamily": { "fontFamily": "Bai Jamjuree" },
+                                        "fontSize": { "magnitude": 14, "unit": "PT" }
+                                    }
+                                }
+                            }]
+                        }
+                    },
+                    {
+                        "startIndex": 2,
+                        "endIndex": 10,
+                        "paragraph": {
+                            "elements": [{
+                                "startIndex": 2,
+                                "endIndex": 10,
+                                "textRun": { "content": "Visible\n" }
+                            }]
+                        }
+                    }
+                ]
+            }
+        }));
+
+        assert_eq!(document_map.blank_paragraphs.len(), 1);
+        assert_eq!(document_map.blank_paragraphs[0].start_index, Some(1));
+        assert_eq!(document_map.blank_paragraphs[0].end_index, Some(2));
+        assert_eq!(document_map.blank_paragraphs[0].content, "\n");
+        assert_eq!(
+            document_map.blank_paragraphs[0]
+                .paragraph_style
+                .as_ref()
+                .unwrap()["spaceBelow"]["magnitude"],
+            10
+        );
+        assert_eq!(document_map.blank_paragraphs[0].text_runs.len(), 1);
+        assert_eq!(
+            document_map.blank_paragraphs[0].text_runs[0]
+                .text_style
+                .as_ref()
+                .unwrap()["weightedFontFamily"]["fontFamily"],
+            "Bai Jamjuree"
+        );
+        assert_eq!(document_map.entries.len(), 1);
+        assert_eq!(document_map.entries[0].entry, 1);
+        assert_eq!(document_map.entries[0].preview, "Visible");
     }
 }
