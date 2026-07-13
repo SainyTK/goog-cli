@@ -1,14 +1,11 @@
-use std::sync::{Arc, Mutex};
-
 use chrono::{Duration, Utc};
 use url::Url;
-use wiremock::matchers::{body_json, body_string_contains, header, method, path, query_param};
+use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
-use crate::auth::client::{AuthClient, AuthorizationCode, AuthorizationCodeFlow};
+use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
-use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 use crate::drive::DRIVE_SCOPE;
 use crate::sheets::*;
@@ -318,29 +315,6 @@ async fn sheets_operation_executes_value_range_and_structural_batch_update_disti
     assert!(structural_response["replies"].is_array());
 }
 
-struct StaticAuthorizationCodeFlow {
-    scopes_seen: Arc<Mutex<Vec<String>>>,
-}
-
-impl AuthorizationCodeFlow for StaticAuthorizationCodeFlow {
-    fn authorize(
-        &self,
-        auth_url: &str,
-        client_id: &str,
-        _state: &str,
-        scopes: &[&str],
-    ) -> Result<AuthorizationCode, AuthError> {
-        assert_eq!(auth_url, "https://example.test/auth");
-        assert_eq!(client_id, "client-123");
-        *self.scopes_seen.lock().unwrap() = scopes.iter().map(|scope| scope.to_string()).collect();
-
-        Ok(AuthorizationCode {
-            redirect_uri: "http://127.0.0.1:54321/".into(),
-            code: "sheets-code".into(),
-        })
-    }
-}
-
 #[tokio::test]
 async fn get_spreadsheet_fetches_raw_google_sheets_spreadsheet() {
     let server = MockServer::start().await;
@@ -422,94 +396,30 @@ async fn get_spreadsheet_excludes_grid_data_by_default() {
 #[tokio::test]
 async fn get_spreadsheet_requests_full_sheets_scope_when_missing() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .and(body_string_contains("code=sheets-code"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "sheets-access",
-            "expires_in": 3600,
-            "scope": SHEETS_SCOPE,
-            "token_type": "Bearer"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/sheets/v4/spreadsheets/spreadsheet-123"))
-        .and(header("authorization", "Bearer sheets-access"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(SPREADSHEET_RESPONSE))
-        .expect(1)
-        .mount(&server)
-        .await;
-
     let store = MemoryStore::default();
     store
         .save_token("alice@example.com", &profile_token())
         .unwrap();
-    let scopes_seen = Arc::new(Mutex::new(Vec::new()));
-    let client = AuthClient::from_config(test_config(), &store, None)
-        .unwrap()
-        .with_auth_urls_for_tests(
-            "https://example.test/auth",
-            format!("{}/token", server.uri()),
-        )
-        .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
-            scopes_seen: scopes_seen.clone(),
-        }));
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
     let options = spreadsheet_options(&server, "spreadsheet-123");
 
-    get_spreadsheet(&client, &options).await.unwrap();
+    let error = get_spreadsheet(&client, &options).await.unwrap_err();
 
-    assert_eq!(
-        scopes_seen.lock().unwrap().clone(),
-        vec![SHEETS_SCOPE.to_string()]
-    );
-    let saved = store.load_token("alice@example.com").unwrap().unwrap();
-    assert_eq!(
-        saved.scopes,
-        vec!["openid".to_string(), SHEETS_SCOPE.to_string()]
-    );
+    assert!(matches!(
+        error,
+        SheetsError::Auth(crate::auth::error::AuthError::MissingScopes { scopes, .. })
+            if scopes == SHEETS_SCOPE
+    ));
 }
 
 #[tokio::test]
 async fn update_values_requests_write_sheets_scope_when_missing() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .and(body_string_contains("code=sheets-code"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "sheets-write-access",
-            "expires_in": 3600,
-            "scope": SHEETS_SCOPE,
-            "token_type": "Bearer"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("PUT"))
-        .and(header("authorization", "Bearer sheets-write-access"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "spreadsheetId": "spreadsheet-123",
-            "updatedRange": "Sheet1!A1:B2"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
     let store = MemoryStore::default();
     store
         .save_token("alice@example.com", &profile_token())
         .unwrap();
-    let scopes_seen = Arc::new(Mutex::new(Vec::new()));
-    let client = AuthClient::from_config(test_config(), &store, None)
-        .unwrap()
-        .with_auth_urls_for_tests(
-            "https://example.test/auth",
-            format!("{}/token", server.uri()),
-        )
-        .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
-            scopes_seen: scopes_seen.clone(),
-        }));
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
     let options = UpdateValuesOptions::new(
         "spreadsheet-123",
         "Sheet1!A1:B2",
@@ -517,17 +427,13 @@ async fn update_values_requests_write_sheets_scope_when_missing() {
     )
     .with_spreadsheets_url(spreadsheets_url(&server));
 
-    update_values(&client, &options).await.unwrap();
+    let error = update_values(&client, &options).await.unwrap_err();
 
-    assert_eq!(
-        scopes_seen.lock().unwrap().clone(),
-        vec![SHEETS_SCOPE.to_string()]
-    );
-    let saved = store.load_token("alice@example.com").unwrap().unwrap();
-    assert_eq!(
-        saved.scopes,
-        vec!["openid".to_string(), SHEETS_SCOPE.to_string()]
-    );
+    assert!(matches!(
+        error,
+        SheetsError::Auth(crate::auth::error::AuthError::MissingScopes { scopes, .. })
+            if scopes == SHEETS_SCOPE
+    ));
 }
 
 #[tokio::test]

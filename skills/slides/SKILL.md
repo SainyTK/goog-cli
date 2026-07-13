@@ -33,9 +33,7 @@ Read [references/commands.md](references/commands.md) for native command pattern
 - Pass `--account EMAIL` for every live command when account selection must remain explicit.
 - If authorization opens an account chooser, select only the recorded active or user-specified account.
 - Never infer an account from browser order, a remembered identity, or unrelated open presentations.
-- When a command pauses for browser authorization, keep that original command running and wait for it to resume.
-- Never repeat a create or mutation command merely because authorization is still in progress.
-- Do not run `goog auth login` while an ordinary command is already handling incremental consent.
+- If a command fails because the account is missing required scopes, run `goog auth login` once and retry; do not expect the original command to pause and resume on its own.
 - Prefer `slide create`, `text-box`, `image`, `shape`, `line`, `table`, and `object` commands over `batch-update`.
 - Use `batch-update` only when no high-level command exposes a required native feature.
 - Use stable, descriptive object IDs so later edits are deterministic.

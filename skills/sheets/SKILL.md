@@ -31,8 +31,7 @@ Read [references/commands.md](references/commands.md) for command patterns and i
 - Pass `--account EMAIL` for every live command when account selection must remain explicit.
 - If authorization opens an account chooser, select only the recorded active or user-specified account.
 - Never infer an account from browser order, a remembered identity, or unrelated open workbooks.
-- When a command pauses for browser authorization, keep that original command running and wait for it to resume.
-- Never repeat a create or mutation command merely because authorization is still in progress.
+- If a command fails because the account is missing required scopes, run `goog auth login` once and retry; do not expect the original command to pause and resume on its own.
 - Keep raw inputs separate from derived views when the workbook has meaningful calculation logic.
 - Use `--value-input-option user-entered` when formulas, dates, percentages, or currencies should be parsed by Sheets.
 - Use formulas for derived values instead of pasting calculated constants.

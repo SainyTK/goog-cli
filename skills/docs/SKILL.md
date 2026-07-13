@@ -46,9 +46,7 @@ Keep any temporary JSON request body in task-local scratch space and remove it a
 - Pass `--account EMAIL` when account selection must remain explicit across a multi-step task.
 - If authorization opens an account chooser, select only the recorded active or user-specified account.
 - Never infer an account from browser order, a remembered identity, or unrelated open documents.
-- When a command pauses for browser authorization, keep that original command running and wait for it to resume.
-- Never repeat a create or mutation command merely because authorization is still in progress.
-- Do not run `goog auth login` while an ordinary command is already handling incremental consent.
+- If a command fails because the account is missing required scopes, run `goog auth login` once and retry; do not expect the original command to pause and resume on its own.
 - Use `goog auth list` for the auth preflight and do not list unrelated Drive resources.
 - Inspect with `docs map` before targeting content.
 - Prefer semantic selectors such as `heading:`, `after-heading:`, `before-text:`, or `--text` over raw indexes.

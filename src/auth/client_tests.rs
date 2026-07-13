@@ -1,11 +1,9 @@
-use std::sync::{Arc, Mutex};
-
 use chrono::{Duration, Utc};
 use wiremock::matchers::{body_string_contains, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::account::{AccountStore, Token};
-use super::client::{AuthClient, AuthorizationCode, AuthorizationCodeFlow};
+use super::client::AuthClient;
 use super::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use super::error::AuthError;
 use super::testing::MemoryStore;
@@ -51,55 +49,6 @@ fn expiring_token(access_token: &str) -> Token {
     }
 }
 
-struct StaticAuthorizationCodeFlow {
-    redirect_uri: String,
-    code: String,
-    scopes_seen: Arc<Mutex<Vec<String>>>,
-}
-
-impl StaticAuthorizationCodeFlow {
-    fn new(scopes_seen: Arc<Mutex<Vec<String>>>) -> Self {
-        Self {
-            redirect_uri: "http://127.0.0.1:54321/".into(),
-            code: "drive-code".into(),
-            scopes_seen,
-        }
-    }
-}
-
-impl AuthorizationCodeFlow for StaticAuthorizationCodeFlow {
-    fn authorize(
-        &self,
-        auth_url: &str,
-        client_id: &str,
-        _state: &str,
-        scopes: &[&str],
-    ) -> Result<AuthorizationCode, AuthError> {
-        assert_eq!(auth_url, "https://example.test/auth");
-        assert_eq!(client_id, "client-123");
-        *self.scopes_seen.lock().unwrap() = scopes.iter().map(|scope| scope.to_string()).collect();
-
-        Ok(AuthorizationCode {
-            redirect_uri: self.redirect_uri.clone(),
-            code: self.code.clone(),
-        })
-    }
-}
-
-struct UnexpectedAuthorizationCodeFlow;
-
-impl AuthorizationCodeFlow for UnexpectedAuthorizationCodeFlow {
-    fn authorize(
-        &self,
-        _auth_url: &str,
-        _client_id: &str,
-        _state: &str,
-        _scopes: &[&str],
-    ) -> Result<AuthorizationCode, AuthError> {
-        panic!("already-granted scopes must not trigger incremental authorization");
-    }
-}
-
 fn client_with_token_url<'a>(
     store: &'a MemoryStore,
     token_url: String,
@@ -134,72 +83,6 @@ async fn sends_bearer_authorization_header() {
 }
 
 #[tokio::test]
-async fn authorizes_missing_scopes_then_sends_request_and_saves_merged_token() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .and(body_string_contains("code=drive-code"))
-        .and(body_string_contains("client_id=client-123"))
-        .and(body_string_contains("client_secret=secret-456"))
-        .and(body_string_contains(
-            "redirect_uri=http%3A%2F%2F127.0.0.1%3A54321%2F",
-        ))
-        .and(body_string_contains("grant_type=authorization_code"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "drive-access",
-            "expires_in": 3600,
-            "scope": "https://www.googleapis.com/auth/drive",
-            "token_type": "Bearer",
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/drive/v3/files"))
-        .and(header("authorization", "Bearer drive-access"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let store = MemoryStore::default();
-    store
-        .save_token("alice@example.com", &test_token("profile-access"))
-        .unwrap();
-    let scopes_seen = Arc::new(Mutex::new(Vec::new()));
-
-    let mut client = AuthClient::from_config(test_config(), &store, None).unwrap();
-    client.auth_url = "https://example.test/auth".into();
-    client.token_url = format!("{}/token", server.uri());
-    client.authorization_code_flow =
-        Box::new(StaticAuthorizationCodeFlow::new(scopes_seen.clone()));
-
-    let response = client
-        .send_with_scopes(
-            client.get(format!("{}/drive/v3/files", server.uri())),
-            &["https://www.googleapis.com/auth/drive"],
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(response.status(), reqwest::StatusCode::OK);
-    assert_eq!(
-        scopes_seen.lock().unwrap().clone(),
-        vec!["https://www.googleapis.com/auth/drive".to_string()]
-    );
-    let saved = store.load_token("alice@example.com").unwrap().unwrap();
-    assert_eq!(saved.access_token, "drive-access");
-    assert_eq!(saved.refresh_token, "refresh-123");
-    assert_eq!(
-        saved.scopes,
-        vec![
-            "openid".to_string(),
-            "https://www.googleapis.com/auth/drive".to_string()
-        ]
-    );
-}
-
-#[tokio::test]
 async fn already_granted_scopes_do_not_trigger_incremental_authorization() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -224,8 +107,7 @@ async fn already_granted_scopes_do_not_trigger_incremental_authorization() {
         )
         .unwrap();
 
-    let mut client = client_with_token_url(&store, format!("{}/token", server.uri()));
-    client.authorization_code_flow = Box::new(UnexpectedAuthorizationCodeFlow);
+    let client = client_with_token_url(&store, format!("{}/token", server.uri()));
 
     let response = client
         .send_with_scopes(
@@ -243,6 +125,29 @@ async fn already_granted_scopes_do_not_trigger_incremental_authorization() {
             .unwrap()
             .access_token,
         "drive-access"
+    );
+}
+
+#[tokio::test]
+async fn missing_scopes_do_not_open_incremental_authorization() {
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &test_token("profile-access"))
+        .unwrap();
+
+    let client = client_with_token_url(&store, "https://example.test/token".into());
+
+    let error = client
+        .send_with_scopes(
+            client.get("https://example.test/drive/v3/files"),
+            &["https://www.googleapis.com/auth/drive"],
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "account alice@example.com is missing required Google scopes: https://www.googleapis.com/auth/drive; run `goog auth login` once to authorize all supported services"
     );
 }
 

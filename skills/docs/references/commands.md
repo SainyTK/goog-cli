@@ -70,6 +70,4 @@ target/debug/goog docs image --help
 
 Pass each command segment as its own shell argument.
 Do not quote an entire command path such as `"docs text insert --help"`.
-If a live command opens browser authorization, leave that command running and complete authorization once.
-The original command resumes after authorization and must not be repeated.
-Do not start a separate `goog auth login` while incremental consent is in progress.
+If a live command fails with a missing-scopes error, run `goog auth login` once, then re-run the original command.

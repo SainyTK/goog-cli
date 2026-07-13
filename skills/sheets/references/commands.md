@@ -72,5 +72,4 @@ target/debug/goog sheets sheet number-format --help
 
 Pass each command segment as its own shell argument.
 Do not quote an entire command path.
-If a live command opens browser authorization, leave that command running and complete authorization once.
-The original command resumes after authorization and must not be repeated.
+If a live command fails with a missing-scopes error, run `goog auth login` once, then re-run the original command.
