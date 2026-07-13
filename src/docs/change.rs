@@ -148,6 +148,7 @@ pub(crate) struct ApplyStylesCommand {
     pub alignment: Option<DocsParagraphAlignment>,
     pub space_above: Option<f64>,
     pub space_below: Option<f64>,
+    pub line_spacing: Option<f64>,
     pub heading: Option<String>,
     pub style_json: Option<String>,
     pub dry_run: bool,
@@ -956,6 +957,7 @@ pub(crate) fn prepare_apply_styles_change(
         command.alignment,
         command.space_above,
         command.space_below,
+        command.line_spacing,
         raw_payload.paragraph_style,
         cached_paragraph_style,
     )?;
@@ -1245,6 +1247,7 @@ fn paragraph_style_payload(
     alignment: Option<DocsParagraphAlignment>,
     space_above: Option<f64>,
     space_below: Option<f64>,
+    line_spacing: Option<f64>,
     raw_paragraph_style: Option<StyleObject>,
     cached_paragraph_style: Option<serde_json::Value>,
 ) -> Result<(serde_json::Value, Vec<String>)> {
@@ -1264,6 +1267,12 @@ fn paragraph_style_payload(
     }
     set_paragraph_spacing(&mut payload, "spaceAbove", "--space-above", space_above)?;
     set_paragraph_spacing(&mut payload, "spaceBelow", "--space-below", space_below)?;
+    if let Some(line_spacing) = line_spacing {
+        if !line_spacing.is_finite() || line_spacing <= 0.0 {
+            bail!("--line-spacing must be a finite, positive percentage");
+        }
+        payload.set_field("lineSpacing", serde_json::json!(line_spacing));
+    }
     Ok(payload.into_json_parts())
 }
 

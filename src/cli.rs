@@ -2126,6 +2126,9 @@ pub enum DocsStyleCommand {
         /// Space after the paragraph in points
         #[arg(long)]
         space_below: Option<f64>,
+        /// Line spacing as a percentage of normal, where normal is 100
+        #[arg(long)]
+        line_spacing: Option<f64>,
         /// Named paragraph style such as HEADING_1
         #[arg(long = "paragraph-style", value_name = "PARAGRAPH_STYLE")]
         heading: Option<String>,

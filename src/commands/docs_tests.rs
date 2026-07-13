@@ -2041,6 +2041,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             alignment: Some(crate::cli::DocsParagraphAlignment::Justified),
             space_above: Some(4.0),
             space_below: Some(10.0),
+            line_spacing: Some(115.0),
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -2076,7 +2077,12 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
-        "namedStyleType,alignment,spaceAbove,spaceBelow"
+        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["lineSpacing"],
+        115.0
     );
     assert_eq!(
         styles["requestBody"]["writeControl"]["requiredRevisionId"],
@@ -2467,6 +2473,7 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
             alignment: None,
             space_above: None,
             space_below: None,
+            line_spacing: None,
             heading: None,
             style_json: Some(
                 serde_json::json!({
@@ -2613,6 +2620,7 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
             alignment: None,
             space_above: None,
             space_below: None,
+            line_spacing: None,
             heading: Some("HEADING_1".into()),
             style_json: Some(r#"{"textStyle":{"strikethrough":true}}"#.into()),
             dry_run: false,
@@ -2699,6 +2707,7 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
             alignment: None,
             space_above: None,
             space_below: None,
+            line_spacing: None,
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -2827,6 +2836,7 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
             alignment: None,
             space_above: None,
             space_below: None,
+            line_spacing: None,
             heading: Some("HEADING_1".into()),
             style_json: None,
             dry_run: false,

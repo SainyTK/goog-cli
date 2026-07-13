@@ -1747,6 +1747,7 @@ fn docs_apply_styles_accepts_paragraph_spacing() {
                     DocsStyleCommand::Apply {
                         space_above,
                         space_below,
+                        line_spacing,
                         text,
                         ..
                     },
@@ -1762,6 +1763,8 @@ fn docs_apply_styles_accepts_paragraph_spacing() {
         "6",
         "--space-below",
         "10",
+        "--line-spacing",
+        "115",
     ])
     .unwrap()
     .command
@@ -1772,6 +1775,7 @@ fn docs_apply_styles_accepts_paragraph_spacing() {
     assert_eq!(text.as_deref(), Some("Executive summary"));
     assert_eq!(space_above, Some(6.0));
     assert_eq!(space_below, Some(10.0));
+    assert_eq!(line_spacing, Some(115.0));
 }
 
 #[test]

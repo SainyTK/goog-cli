@@ -226,6 +226,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             alignment: Some(crate::cli::DocsParagraphAlignment::Center),
             space_above: Some(6.0),
             space_below: Some(10.0),
+            line_spacing: Some(115.0),
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -255,6 +256,11 @@ fn image_table_style_and_list_changes_build_native_requests() {
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["spaceBelow"],
         serde_json::json!({ "magnitude": 10.0, "unit": "PT" })
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["lineSpacing"],
+        115.0
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
@@ -308,6 +314,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         alignment: None,
         space_above: Some(-1.0),
         space_below: None,
+        line_spacing: None,
         heading: None,
         style_json: None,
         dry_run: true,
@@ -327,7 +334,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         &ApplyStylesCommand {
             space_above: None,
             space_below: Some(f64::NAN),
-            ..command
+            ..command.clone()
         },
         None,
     )
@@ -335,6 +342,22 @@ fn paragraph_spacing_rejects_invalid_point_values() {
     assert_eq!(
         error.to_string(),
         "--space-below must be a finite, non-negative point value"
+    );
+
+    let error = prepare_apply_styles_change(
+        &document_map,
+        &ApplyStylesCommand {
+            space_above: None,
+            space_below: None,
+            line_spacing: Some(0.0),
+            ..command
+        },
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "--line-spacing must be a finite, positive percentage"
     );
 }
 
