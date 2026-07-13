@@ -1386,6 +1386,7 @@ async fn run_create_header_dry_run_emits_native_request() {
         &client,
         CreateHeaderCommand {
             document_id: "document-123".into(),
+            text: None,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -1426,6 +1427,7 @@ async fn run_create_footer_dry_run_emits_native_request() {
         &client,
         CreateFooterCommand {
             document_id: "document-123".into(),
+            text: None,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -1445,6 +1447,149 @@ async fn run_create_footer_dry_run_emits_native_request() {
         output["requestBody"]["writeControl"]["requiredRevisionId"],
         "rev-search"
     );
+}
+
+#[tokio::test]
+async fn run_create_header_populates_returned_segment_in_guarded_follow_up() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{ "createHeader": { "type": "DEFAULT" } }],
+            "writeControl": { "requiredRevisionId": "rev-search" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{ "createHeader": { "headerId": "header-123" } }],
+            "writeControl": { "requiredRevisionId": "rev-after-header" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{
+                "insertText": {
+                    "endOfSegmentLocation": { "segmentId": "header-123" },
+                    "text": "Confidential"
+                }
+            }],
+            "writeControl": { "requiredRevisionId": "rev-after-header" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}],
+            "writeControl": { "requiredRevisionId": "rev-after-text" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+    run_create_header_to(
+        &client,
+        CreateHeaderCommand {
+            document_id: "document-123".into(),
+            text: Some("Confidential".into()),
+            dry_run: false,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["replies"][0]["createHeader"]["headerId"],
+        "header-123"
+    );
+    assert_eq!(output["replies"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        output["writeControl"]["requiredRevisionId"],
+        "rev-after-text"
+    );
+}
+
+#[tokio::test]
+async fn run_create_footer_populates_returned_segment_in_guarded_follow_up() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{ "createFooter": { "type": "DEFAULT" } }],
+            "writeControl": { "requiredRevisionId": "rev-search" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{ "createFooter": { "footerId": "footer-123" } }],
+            "writeControl": { "requiredRevisionId": "rev-after-footer" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{
+                "insertText": {
+                    "endOfSegmentLocation": { "segmentId": "footer-123" },
+                    "text": "Customer proposal"
+                }
+            }],
+            "writeControl": { "requiredRevisionId": "rev-after-footer" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+    run_create_footer_to(
+        &client,
+        CreateFooterCommand {
+            document_id: "document-123".into(),
+            text: Some("Customer proposal".into()),
+            dry_run: false,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["replies"][0]["createFooter"]["footerId"],
+        "footer-123"
+    );
+    assert_eq!(output["replies"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -1604,10 +1749,10 @@ async fn run_insert_table_dry_run_accepts_tsv_data() {
         output["requestBody"]["requests"][0]["insertTable"]["columns"],
         2
     );
-    assert_eq!(
-        output["requestBody"]["requests"][1]["insertText"]["text"],
-        "Bottom right"
-    );
+    assert!(output["preview"]["summary"]
+        .as_str()
+        .unwrap()
+        .contains("Bottom right"));
 }
 
 #[tokio::test]

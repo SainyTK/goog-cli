@@ -1149,6 +1149,7 @@ fn docs_new_high_level_editing_commands_parse() {
                 command:
                     DocsHeaderCommand::Create {
                         document_id,
+                        text,
                         dry_run,
                         json,
                         ..
@@ -1159,6 +1160,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "header",
         "create",
         "document-123",
+        "--text",
+        "Confidential",
         "--dry-run",
         "--json",
     ])
@@ -1168,6 +1171,7 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(document_id, "document-123");
+    assert_eq!(text.as_deref(), Some("Confidential"));
     assert!(dry_run);
     assert!(json);
 
@@ -1177,6 +1181,7 @@ fn docs_new_high_level_editing_commands_parse() {
                 command:
                     DocsFooterCommand::Create {
                         document_id,
+                        text,
                         dry_run,
                         json,
                         ..
@@ -1187,6 +1192,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "footer",
         "create",
         "document-123",
+        "--text",
+        "Page footer",
         "--dry-run",
         "--json",
     ])
@@ -1196,6 +1203,7 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(document_id, "document-123");
+    assert_eq!(text.as_deref(), Some("Page footer"));
     assert!(dry_run);
     assert!(json);
 

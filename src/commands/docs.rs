@@ -306,6 +306,7 @@ pub fn run<S: AccountStore>(
             command:
                 DocsHeaderCommand::Create {
                     document_id,
+                    text,
                     dry_run,
                     json,
                     required_revision_id,
@@ -319,6 +320,7 @@ pub fn run<S: AccountStore>(
                 account_override,
                 CreateHeaderCommand {
                     document_id,
+                    text,
                     dry_run,
                     json,
                     required_revision_id,
@@ -332,6 +334,7 @@ pub fn run<S: AccountStore>(
             command:
                 DocsFooterCommand::Create {
                     document_id,
+                    text,
                     dry_run,
                     json,
                     required_revision_id,
@@ -345,6 +348,7 @@ pub fn run<S: AccountStore>(
                 account_override,
                 CreateFooterCommand {
                     document_id,
+                    text,
                     dry_run,
                     json,
                     required_revision_id,
@@ -1068,10 +1072,13 @@ pub(super) async fn run_create_header_to<S: AccountStore>(
 ) -> Result<()> {
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
     let change = prepare_create_header_change(&document_map, &command);
-    apply_or_preview_docs_change(
+    apply_or_preview_created_segment(
         client,
         command.document_id,
         change,
+        command.text.as_deref(),
+        "createHeader",
+        "headerId",
         command.dry_run,
         command.json,
         out,
@@ -1099,12 +1106,15 @@ pub(super) async fn run_create_header_unified_to<S: AccountStore>(
     )
     .await?;
     let change = prepare_create_header_change(&document_map, &command);
-    apply_or_preview_docs_change_unified(
+    apply_or_preview_created_segment_unified(
         config,
         store,
         account_override,
         command.document_id,
         change,
+        command.text.as_deref(),
+        "createHeader",
+        "headerId",
         command.dry_run,
         command.json,
         out,
@@ -1123,10 +1133,13 @@ pub(super) async fn run_create_footer_to<S: AccountStore>(
 ) -> Result<()> {
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
     let change = prepare_create_footer_change(&document_map, &command);
-    apply_or_preview_docs_change(
+    apply_or_preview_created_segment(
         client,
         command.document_id,
         change,
+        command.text.as_deref(),
+        "createFooter",
+        "footerId",
         command.dry_run,
         command.json,
         out,
@@ -1154,12 +1167,15 @@ pub(super) async fn run_create_footer_unified_to<S: AccountStore>(
     )
     .await?;
     let change = prepare_create_footer_change(&document_map, &command);
-    apply_or_preview_docs_change_unified(
+    apply_or_preview_created_segment_unified(
         config,
         store,
         account_override,
         command.document_id,
         change,
+        command.text.as_deref(),
+        "createFooter",
+        "footerId",
         command.dry_run,
         command.json,
         out,
@@ -1167,6 +1183,164 @@ pub(super) async fn run_create_footer_unified_to<S: AccountStore>(
         state_path,
     )
     .await
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+async fn apply_or_preview_created_segment<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    change: PreparedDocsChange,
+    text: Option<&str>,
+    reply_key: &str,
+    id_key: &str,
+    dry_run: bool,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    if dry_run || text.is_none() {
+        return apply_or_preview_docs_change(
+            client,
+            document_id,
+            change,
+            dry_run,
+            json,
+            out,
+            documents_url,
+        )
+        .await;
+    }
+
+    let create_response =
+        apply_docs_change_requests(client, document_id.clone(), change, documents_url).await?;
+    let segment_id = created_segment_id(&create_response, reply_key, id_key)?;
+    let request_body = segment_text_request_body(
+        segment_id,
+        text.expect("text presence checked above"),
+        request_body_required_revision_id(&create_response).as_deref(),
+    );
+    let options = batch_update_document_options(document_id, request_body, documents_url);
+    let text_response = batch_update_document(client, &options)
+        .await
+        .with_context(|| format!("failed to populate created {reply_key}"))?;
+    let response = merge_batch_update_responses(create_response, text_response);
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Docs segment create response",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn apply_or_preview_created_segment_unified<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    change: PreparedDocsChange,
+    text: Option<&str>,
+    reply_key: &str,
+    id_key: &str,
+    dry_run: bool,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    if dry_run || text.is_none() {
+        return apply_or_preview_docs_change_unified(
+            config,
+            store,
+            account_override,
+            document_id,
+            change,
+            dry_run,
+            json,
+            out,
+            documents_url,
+            state_path,
+        )
+        .await;
+    }
+
+    let create_response = apply_docs_change_requests_unified(
+        config,
+        store,
+        account_override,
+        document_id.clone(),
+        change,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let segment_id = created_segment_id(&create_response, reply_key, id_key)?;
+    let request_body = segment_text_request_body(
+        segment_id,
+        text.expect("text presence checked above"),
+        request_body_required_revision_id(&create_response).as_deref(),
+    );
+    let options = batch_update_document_options(document_id.clone(), request_body, documents_url);
+    let resource_key = resource_key("docs", &document_id);
+    let text_response = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::BatchUpdate(&options),
+        state_path,
+    )
+    .await
+    .with_context(|| format!("failed to populate created {reply_key}"))?;
+    let response = merge_batch_update_responses(create_response, text_response);
+    write_json_line(
+        out,
+        &response,
+        "failed to serialize Docs segment create response",
+    )
+}
+
+fn created_segment_id<'a>(
+    response: &'a serde_json::Value,
+    reply_key: &str,
+    id_key: &str,
+) -> Result<&'a str> {
+    response["replies"][0][reply_key][id_key]
+        .as_str()
+        .with_context(|| format!("Google Docs did not return {id_key} after {reply_key}"))
+}
+
+fn segment_text_request_body(
+    segment_id: &str,
+    text: &str,
+    required_revision_id: Option<&str>,
+) -> serde_json::Value {
+    let mut request_body = serde_json::json!({
+        "requests": [{
+            "insertText": {
+                "endOfSegmentLocation": { "segmentId": segment_id },
+                "text": text
+            }
+        }]
+    });
+    set_request_body_required_revision_id(&mut request_body, required_revision_id);
+    request_body
+}
+
+fn merge_batch_update_responses(
+    mut create_response: serde_json::Value,
+    text_response: serde_json::Value,
+) -> serde_json::Value {
+    if let (Some(create_replies), Some(text_replies)) = (
+        create_response["replies"].as_array_mut(),
+        text_response["replies"].as_array(),
+    ) {
+        create_replies.extend(text_replies.iter().cloned());
+    }
+    if let Some(write_control) = text_response.get("writeControl") {
+        create_response["writeControl"] = write_control.clone();
+    }
+    create_response
 }
 
 #[cfg(test)]

@@ -2209,10 +2209,13 @@ pub enum DocsHeaderCommand {
 
 Notes:
   Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
-  Edit the header's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
+  Pass --text to populate the new header without a raw batch-update request.")]
     Create {
         /// Document ID or URL to update
         document_id: String,
+        /// Text to insert into the new header
+        #[arg(long)]
+        text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2233,10 +2236,13 @@ pub enum DocsFooterCommand {
 
 Notes:
   Always creates the DEFAULT footer for the document's first section; there is no per-section footer support today.
-  Edit the footer's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footerId segment.")]
+  Pass --text to populate the new footer without a raw batch-update request.")]
     Create {
         /// Document ID or URL to update
         document_id: String,
+        /// Text to insert into the new footer
+        #[arg(long)]
+        text: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,

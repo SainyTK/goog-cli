@@ -65,6 +65,7 @@ pub(crate) struct InsertSectionBreakCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CreateHeaderCommand {
     pub document_id: String,
+    pub text: Option<String>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -73,6 +74,7 @@ pub(crate) struct CreateHeaderCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CreateFooterCommand {
     pub document_id: String,
+    pub text: Option<String>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -531,15 +533,16 @@ pub(crate) fn prepare_create_header_change(
         })],
         command.required_revision_id.as_deref(),
     );
+    let summary = command.text.as_ref().map_or_else(
+        || "Create the document's DEFAULT header".to_string(),
+        |text| format!("Create the document's DEFAULT header and insert {text:?}"),
+    );
     PreparedDocsChange::HighLevel(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
         location: None,
         range: None,
         request_body,
-        preview: DocsChangePreview::new(
-            "header create",
-            "Create the document's DEFAULT header".to_string(),
-        ),
+        preview: DocsChangePreview::new("header create", summary),
     })
 }
 
@@ -555,15 +558,16 @@ pub(crate) fn prepare_create_footer_change(
         })],
         command.required_revision_id.as_deref(),
     );
+    let summary = command.text.as_ref().map_or_else(
+        || "Create the document's DEFAULT footer".to_string(),
+        |text| format!("Create the document's DEFAULT footer and insert {text:?}"),
+    );
     PreparedDocsChange::HighLevel(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
         location: None,
         range: None,
         request_body,
-        preview: DocsChangePreview::new(
-            "footer create",
-            "Create the document's DEFAULT footer".to_string(),
-        ),
+        preview: DocsChangePreview::new("footer create", summary),
     })
 }
 
