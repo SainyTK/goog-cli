@@ -1758,10 +1758,28 @@ fn table_dimensions(table: &Value) -> (usize, usize) {
 }
 
 fn table_layout_metadata(table: &Value) -> Option<Value> {
-    table
+    let mut metadata = table
         .get("tableStyle")
-        .filter(|style| !style.as_object().is_some_and(serde_json::Map::is_empty))
+        .and_then(Value::as_object)
         .cloned()
+        .unwrap_or_default();
+    let pinned_header_rows_count = table
+        .get("tableRows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take_while(|row| {
+            row.get("tableRowStyle")
+                .and_then(|style| style.get("tableHeader"))
+                .and_then(Value::as_bool)
+                == Some(true)
+        })
+        .count();
+    metadata.insert(
+        "pinnedHeaderRowsCount".into(),
+        Value::from(pinned_header_rows_count),
+    );
+    Some(Value::Object(metadata))
 }
 
 fn table_cell_text(cell: &Value) -> String {
