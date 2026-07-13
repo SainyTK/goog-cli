@@ -127,6 +127,16 @@ pub(crate) struct StyleTableRowCommand {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SetTableColumnWidthsCommand {
+    pub document_id: String,
+    pub table_id: String,
+    pub widths: Vec<f64>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ApplyStylesCommand {
     pub document_id: String,
     pub selector: RangeSelector,
@@ -812,6 +822,80 @@ pub(crate) fn prepare_style_table_row_change(
             format!(
                 "Apply {} background to row {} of {}",
                 command.background_color, command.row, command.table_id
+            ),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_set_table_column_widths_change(
+    document_map: &DocumentMap,
+    command: &SetTableColumnWidthsCommand,
+) -> Result<PreparedDocsChange> {
+    let table = resolve_table_handle(document_map, &command.table_id)?;
+    let column_count = table
+        .columns
+        .context("selected table does not expose its column count")?;
+    if command.widths.len() != column_count {
+        bail!(
+            "table columns --widths requires {} values for {}, but received {}",
+            column_count,
+            command.table_id,
+            command.widths.len()
+        );
+    }
+    if let Some((column_index, width)) = command
+        .widths
+        .iter()
+        .enumerate()
+        .find(|(_, width)| !width.is_finite() || **width < 5.0)
+    {
+        bail!(
+            "table columns width {} must be a finite value of at least 5 points, but received {}",
+            column_index + 1,
+            width
+        );
+    }
+    let table_start_index = table
+        .location
+        .index
+        .context("selected table does not expose a Google Docs index")?;
+    let requests = command
+        .widths
+        .iter()
+        .enumerate()
+        .map(|(column_index, width)| {
+            serde_json::json!({
+                "updateTableColumnProperties": {
+                    "tableStartLocation": { "index": table_start_index },
+                    "columnIndices": [column_index],
+                    "tableColumnProperties": {
+                        "widthType": "FIXED_WIDTH",
+                        "width": { "magnitude": width, "unit": "PT" }
+                    },
+                    "fields": "width,widthType"
+                }
+            })
+        })
+        .collect();
+    let request_body =
+        request_body_with_revision(requests, command.required_revision_id.as_deref());
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(table.location.clone()),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "table columns",
+            format!(
+                "Set {} column widths on {} to {} points",
+                column_count,
+                command.table_id,
+                command
+                    .widths
+                    .iter()
+                    .map(|width| width.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
         ),
     }))

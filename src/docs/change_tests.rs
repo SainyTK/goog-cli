@@ -3,10 +3,11 @@ use serde_json::json;
 use super::change::{
     prepare_apply_list_change, prepare_apply_styles_change, prepare_edit_table_change,
     prepare_insert_image_change, prepare_insert_table_change, prepare_insert_text_change,
-    prepare_replace_text_change, prepare_style_table_row_change, request_body_required_revision_id,
+    prepare_replace_text_change, prepare_set_table_column_widths_change,
+    prepare_style_table_row_change, request_body_required_revision_id,
     set_request_body_required_revision_id, split_docs_request_bodies, write_docs_change_preview,
     ApplyListCommand, ApplyStylesCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
-    InsertTextCommand, ReplaceTextCommand, StyleTableRowCommand,
+    InsertTextCommand, ReplaceTextCommand, SetTableColumnWidthsCommand, StyleTableRowCommand,
 };
 use super::map::{
     build_document_map, DocumentLocation, DocumentMap, DocumentMapEntry, DocumentMapEntryKind,
@@ -386,6 +387,66 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             "blue": 247.0 / 255.0
         })
     );
+
+    let columns = prepare_set_table_column_widths_change(
+        &table_map,
+        &SetTableColumnWidthsCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            widths: vec![104.25, 363.75],
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-required".into()),
+        },
+    )
+    .unwrap();
+    let columns = preview_json(&columns);
+    let requests = columns["requestBody"]["requests"].as_array().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]["updateTableColumnProperties"]["columnIndices"],
+        json!([0])
+    );
+    assert_eq!(
+        requests[0]["updateTableColumnProperties"]["tableColumnProperties"]["width"],
+        json!({ "magnitude": 104.25, "unit": "PT" })
+    );
+    assert_eq!(
+        requests[1]["updateTableColumnProperties"]["tableColumnProperties"]["widthType"],
+        "FIXED_WIDTH"
+    );
+    assert_eq!(
+        requests[1]["updateTableColumnProperties"]["fields"],
+        "width,widthType"
+    );
+
+    let wrong_count = prepare_set_table_column_widths_change(
+        &table_map,
+        &SetTableColumnWidthsCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            widths: vec![468.0],
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap_err();
+    assert!(wrong_count.to_string().contains("requires 2 values"));
+
+    let too_narrow = prepare_set_table_column_widths_change(
+        &table_map,
+        &SetTableColumnWidthsCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            widths: vec![4.99, 463.01],
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap_err();
+    assert!(too_narrow.to_string().contains("at least 5 points"));
 
     let style_body = json!({
         "requests": [

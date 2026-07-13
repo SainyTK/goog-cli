@@ -1073,6 +1073,49 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
+            DocsCommand::Table {
+                command:
+                    DocsTableCommand::Columns {
+                        table_id,
+                        widths,
+                        dry_run,
+                        json,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "table",
+        "columns",
+        "document-123",
+        "--table-id",
+        "table-1",
+        "--widths",
+        "104.25,363.75",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(table_id, "table-1");
+    assert_eq!(widths, vec![104.25, 363.75]);
+    assert!(dry_run);
+    assert!(json);
+    assert!(parse(&[
+        "docs",
+        "table",
+        "columns",
+        "document-123",
+        "--table-id",
+        "table-1",
+    ])
+    .is_err());
+
+    let Command::Docs {
+        command:
             DocsCommand::Footnote {
                 command:
                     DocsFootnoteCommand::Insert {
