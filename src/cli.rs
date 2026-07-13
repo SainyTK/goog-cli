@@ -2147,6 +2147,9 @@ pub enum DocsStyleCommand {
         /// Paragraph alignment
         #[arg(long, value_enum)]
         alignment: Option<DocsParagraphAlignment>,
+        /// Paragraph text direction
+        #[arg(long, value_enum)]
+        direction: Option<DocsParagraphDirection>,
         /// Space before the paragraph in points
         #[arg(long)]
         space_above: Option<f64>,
@@ -2761,6 +2764,21 @@ pub enum DocsParagraphAlignment {
     Center,
     End,
     Justified,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsParagraphDirection {
+    LeftToRight,
+    RightToLeft,
+}
+
+impl DocsParagraphDirection {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            DocsParagraphDirection::LeftToRight => "LEFT_TO_RIGHT",
+            DocsParagraphDirection::RightToLeft => "RIGHT_TO_LEFT",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

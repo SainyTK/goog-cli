@@ -4,7 +4,8 @@ use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
 use crate::cli::{
-    DocsListType, DocsParagraphAlignment, DocsSectionBreakType, DocsTableCellAlignment,
+    DocsListType, DocsParagraphAlignment, DocsParagraphDirection, DocsSectionBreakType,
+    DocsTableCellAlignment,
 };
 use crate::docs::map::{
     resolve_insert_text_location, resolve_range_selector, resolve_replace_text_ranges,
@@ -168,6 +169,7 @@ pub(crate) struct ApplyStylesCommand {
     pub foreground_color: Option<String>,
     pub link_heading_id: Option<String>,
     pub alignment: Option<DocsParagraphAlignment>,
+    pub direction: Option<DocsParagraphDirection>,
     pub space_above: Option<f64>,
     pub space_below: Option<f64>,
     pub line_spacing: Option<f64>,
@@ -1535,6 +1537,12 @@ fn paragraph_style_payload(
         payload.set_field(
             "alignment",
             serde_json::Value::String(alignment.api_value().into()),
+        );
+    }
+    if let Some(direction) = command.direction {
+        payload.set_field(
+            "direction",
+            serde_json::Value::String(direction.api_value().into()),
         );
     }
     set_paragraph_spacing(

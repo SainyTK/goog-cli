@@ -257,6 +257,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             foreground_color: Some("#336699".into()),
             link_heading_id: Some("h.target-heading".into()),
             alignment: Some(crate::cli::DocsParagraphAlignment::Center),
+            direction: Some(crate::cli::DocsParagraphDirection::LeftToRight),
             space_above: Some(6.0),
             space_below: Some(10.0),
             line_spacing: Some(115.0),
@@ -295,6 +296,10 @@ fn image_table_style_and_list_changes_build_native_requests() {
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["alignment"],
         "CENTER"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["direction"],
+        "LEFT_TO_RIGHT"
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
@@ -338,7 +343,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
-        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,spacingMode,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,avoidWidowAndOrphan,pageBreakBefore"
+        "namedStyleType,alignment,direction,spaceAbove,spaceBelow,lineSpacing,spacingMode,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,avoidWidowAndOrphan,pageBreakBefore"
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
@@ -401,6 +406,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         foreground_color: None,
         link_heading_id: None,
         alignment: None,
+        direction: None,
         space_above: Some(-1.0),
         space_below: None,
         line_spacing: None,
