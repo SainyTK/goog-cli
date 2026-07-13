@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
@@ -50,6 +50,9 @@ use crate::docs::{
     style_template::{load_style_template_in, save_style_template_in},
     BatchUpdateDocumentOptions, CopyDocumentOptions, CreateDocumentOptions, DocsError,
     GetDocumentOptions, StyleTemplate,
+};
+use crate::drive::{
+    export_google_file, DownloadedFile, DriveError, ExportGoogleFileOptions, GoogleFileExportFormat,
 };
 use anyhow::{bail, Context, Result};
 
@@ -104,6 +107,23 @@ pub fn run<S: AccountStore>(
                 source_document_id,
                 title,
                 &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DocsCommand::ExportPdf {
+            document_id,
+            output,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_export_pdf_unified_to(
+                config,
+                store,
+                account_override,
+                document_id,
+                PathBuf::from(output),
+                &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -2677,6 +2697,77 @@ pub(super) async fn run_copy_to<S: AccountStore>(
     )
     .context("failed to write output")?;
     Ok(())
+}
+
+#[cfg(test)]
+pub(super) async fn run_export_pdf_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    output: PathBuf,
+    out: &mut impl Write,
+    drive_files_url: Option<&str>,
+) -> Result<()> {
+    let mut options =
+        ExportGoogleFileOptions::new(document_id, GoogleFileExportFormat::Pdf, &output);
+    if let Some(drive_files_url) = drive_files_url {
+        options = options.with_files_url(drive_files_url);
+    }
+
+    let exported = export_google_file(client, &options, |_| {})
+        .await
+        .context("failed to export Google Docs Document as PDF")?;
+    writeln!(out, "{}\t{}", exported.path.display(), exported.bytes)
+        .context("failed to write output")?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn run_export_pdf_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    output: PathBuf,
+    out: &mut impl Write,
+    drive_files_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let mut options =
+        ExportGoogleFileOptions::new(&document_id, GoogleFileExportFormat::Pdf, &output);
+    if let Some(drive_files_url) = drive_files_url {
+        options = options.with_files_url(drive_files_url);
+    }
+    let target_resource_key = resource_key("docs", &document_id);
+    let exported = UnifiedAccess::run(
+        config,
+        account_override,
+        &target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DownloadedFile, DriveError> {
+            Box::pin(export_pdf_as_account(config, store, &options, account))
+        },
+        is_drive_target_access_failure,
+    )
+    .await
+    .context("failed to export Google Docs Document as PDF")?;
+
+    writeln!(out, "{}\t{}", exported.path.display(), exported.bytes)
+        .context("failed to write output")?;
+    Ok(())
+}
+
+async fn export_pdf_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &ExportGoogleFileOptions,
+    account: String,
+) -> Result<DownloadedFile, DriveError> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    export_google_file(&client, options, |_| {}).await
+}
+
+fn is_drive_target_access_failure(error: &DriveError) -> bool {
+    matches!(error, DriveError::NotFound | DriveError::PermissionDenied)
 }
 
 #[cfg(test)]

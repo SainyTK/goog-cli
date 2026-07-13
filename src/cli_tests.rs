@@ -1042,6 +1042,33 @@ fn docs_copy_parses_and_normalizes_source_url() {
 }
 
 #[test]
+fn docs_export_pdf_parses_and_normalizes_document_url() {
+    let Command::Docs { mut command } = parse(&[
+        "docs",
+        "export-pdf",
+        "https://docs.google.com/document/d/document-123/edit?tab=t.0",
+        "--output",
+        "./document.pdf",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    command.normalize_document_id();
+    let DocsCommand::ExportPdf {
+        document_id,
+        output,
+    } = command
+    else {
+        panic!("unexpected Docs command");
+    };
+    assert_eq!(document_id, "document-123");
+    assert_eq!(output, "./document.pdf");
+}
+
+#[test]
 fn docs_flat_footnote_commands_are_removed() {
     assert!(parse(&["docs", "insert-footnote", "document-123", "--at", "index:1",]).is_err());
 }

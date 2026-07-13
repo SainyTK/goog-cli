@@ -1860,7 +1860,8 @@ impl DocsCommand {
             DocsCommand::Copy {
                 source_document_id, ..
             } => source_document_id,
-            DocsCommand::Map { document_id, .. }
+            DocsCommand::ExportPdf { document_id, .. }
+            | DocsCommand::Map { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. } => document_id,
             DocsCommand::ListFormat { command } => match command {
@@ -1964,6 +1965,14 @@ Notes:
         source_document_id: String,
         /// Title for the copied Google Doc
         title: String,
+    },
+    /// Export a native Google Doc as a PDF file
+    ExportPdf {
+        /// Document ID or URL to export
+        document_id: String,
+        /// Destination PDF path
+        #[arg(long, short)]
+        output: String,
     },
     /// Print a high-level map of editable Google Docs content, or retrieve one selected block
     #[command(after_long_help = DOCS_CONTENT_SELECTOR_HELP)]

@@ -3661,6 +3661,56 @@ async fn run_copy_preserves_template_through_drive_and_prints_edit_url() {
 }
 
 #[tokio::test]
+async fn run_export_pdf_writes_a_native_drive_export() {
+    let server = MockServer::start().await;
+    let pdf = b"%PDF-1.7\ndocument";
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/export"))
+        .and(wiremock::matchers::query_param(
+            "mimeType",
+            "application/pdf",
+        ))
+        .and(header("authorization", "Bearer drive-read-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(pdf.to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "drive-read-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("document.pdf");
+    let mut out = Vec::new();
+
+    run_export_pdf_to(
+        &client,
+        "document-123".into(),
+        output.clone(),
+        &mut out,
+        Some(&format!("{}/drive/v3/files", server.uri())),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(&output).unwrap(), pdf);
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        format!("{}\t{}\n", output.display(), pdf.len())
+    );
+}
+
+#[tokio::test]
 async fn run_batch_update_reads_requests_from_file_and_prints_response_json() {
     let server = MockServer::start().await;
     let request_body = serde_json::json!({
