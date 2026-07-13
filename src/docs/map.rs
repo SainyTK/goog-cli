@@ -220,6 +220,7 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
     let positioned_objects = document_object_maps(document, "positionedObjects");
     let mut builder = DocumentMapBuilder::new(
         collect_table_of_contents_page_hints(document),
+        inline_objects.clone(),
         positioned_objects.clone(),
     );
 
@@ -998,6 +999,7 @@ struct DocumentMapBuilder<'a> {
     table_count: usize,
     image_count: usize,
     toc_page_hints: Vec<TableOfContentsPageHint>,
+    inline_objects: Vec<&'a Value>,
     positioned_objects: Vec<&'a Value>,
 }
 
@@ -1016,6 +1018,7 @@ struct DocumentMapEntryMetadata {
 impl<'a> DocumentMapBuilder<'a> {
     fn new(
         toc_page_hints: Vec<TableOfContentsPageHint>,
+        inline_objects: Vec<&'a Value>,
         positioned_objects: Vec<&'a Value>,
     ) -> Self {
         Self {
@@ -1029,6 +1032,7 @@ impl<'a> DocumentMapBuilder<'a> {
             table_count: 0,
             image_count: 0,
             toc_page_hints,
+            inline_objects,
             positioned_objects,
         }
     }
@@ -1146,6 +1150,8 @@ impl<'a> DocumentMapBuilder<'a> {
             let image_handle = self.next_image_handle();
             let mut location = self.current_location(element);
             location.index = image.start_index;
+            let layout_metadata =
+                inline_image_layout_metadata(&self.inline_objects, &image.object_id);
             self.push_entry_with_metadata(
                 location,
                 DocumentMapEntryKind::InlineImage,
@@ -1154,6 +1160,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 DocumentMapEntryMetadata {
                     image_handle: Some(image_handle),
                     object_id: Some(image.object_id),
+                    layout_metadata,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -1254,6 +1261,7 @@ impl<'a> DocumentMapBuilder<'a> {
 
         for object_id in non_body_inline_ids {
             let image_handle = self.next_image_handle();
+            let layout_metadata = inline_image_layout_metadata(inline_objects, &object_id);
             self.push_entry_with_metadata(
                 non_body_image_location(),
                 DocumentMapEntryKind::InlineImage,
@@ -1262,6 +1270,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 DocumentMapEntryMetadata {
                     image_handle: Some(image_handle),
                     object_id: Some(object_id),
+                    layout_metadata,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -1528,6 +1537,36 @@ const POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS: [&str; 5] = [
     "marginBottom",
 ];
 
+fn inline_image_layout_metadata(inline_objects: &[&Value], object_id: &str) -> Option<Value> {
+    let embedded_object = inline_objects
+        .iter()
+        .find_map(|objects| objects.get(object_id))?
+        .get("inlineObjectProperties")?
+        .get("embeddedObject")?;
+    embedded_image_layout_metadata(embedded_object)
+}
+
+fn embedded_image_layout_metadata(embedded_object: &Value) -> Option<Value> {
+    let mut metadata = serde_json::Map::new();
+    for field in POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS {
+        if let Some(value) = embedded_object.get(field) {
+            metadata.insert(field.into(), value.clone());
+        }
+    }
+    if let Some(crop_properties) = embedded_object
+        .get("imageProperties")
+        .and_then(|properties| properties.get("cropProperties"))
+    {
+        metadata.insert("cropProperties".into(), crop_properties.clone());
+    }
+
+    if metadata.is_empty() {
+        None
+    } else {
+        Some(Value::Object(metadata))
+    }
+}
+
 fn positioned_image_layout_metadata(
     positioned_objects: &[&Value],
     object_id: &str,
@@ -1542,11 +1581,12 @@ fn positioned_image_layout_metadata(
         metadata.insert("positioning".into(), positioning.clone());
     }
 
-    if let Some(embedded_object) = properties.get("embeddedObject") {
-        for field in POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS {
-            if let Some(value) = embedded_object.get(field) {
-                metadata.insert(field.into(), value.clone());
-            }
+    if let Some(Value::Object(embedded_metadata)) = properties
+        .get("embeddedObject")
+        .and_then(embedded_image_layout_metadata)
+    {
+        for (field, value) in embedded_metadata {
+            metadata.insert(field, value);
         }
     }
 

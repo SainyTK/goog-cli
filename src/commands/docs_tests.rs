@@ -1333,7 +1333,15 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(images[0]["kind"], "inline-image");
     assert_eq!(images[0]["imageHandle"], "image-1");
     assert_eq!(images[0]["objectId"], "inline-image-1");
-    assert!(images[0].get("layoutMetadata").is_none());
+    assert_eq!(
+        images[0]["layoutMetadata"]["size"]["width"]["magnitude"],
+        144
+    );
+    assert_eq!(images[0]["layoutMetadata"]["marginLeft"]["magnitude"], 9);
+    assert_eq!(
+        images[0]["layoutMetadata"]["cropProperties"]["cropLeft"],
+        0.1
+    );
     assert_eq!(images[1]["kind"], "positioned-image");
     assert_eq!(images[1]["imageHandle"], "image-2");
     assert_eq!(images[1]["objectId"], "positioned-image-1");
@@ -1354,6 +1362,10 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(images[2]["objectId"], "header-inline-image");
     assert!(images[2]["location"]["index"].is_null());
     assert_eq!(images[2]["preview"], "[non-body inline image]");
+    assert_eq!(
+        images[2]["layoutMetadata"]["size"]["height"]["magnitude"],
+        24
+    );
     assert_eq!(images[3]["kind"], "positioned-image");
     assert_eq!(images[3]["objectId"], "footer-positioned-image");
     assert!(images[3]["location"]["index"].is_null());
@@ -4650,7 +4662,14 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
             "inline-image-1": {
                 "inlineObjectProperties": {
                     "embeddedObject": {
-                        "imageProperties": {}
+                        "size": {
+                            "height": { "magnitude": 81, "unit": "PT" },
+                            "width": { "magnitude": 144, "unit": "PT" }
+                        },
+                        "marginLeft": { "magnitude": 9, "unit": "PT" },
+                        "imageProperties": {
+                            "cropProperties": { "cropLeft": 0.1 }
+                        }
                     }
                 }
             }
@@ -4745,6 +4764,10 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "header-inline-image": {
                         "inlineObjectProperties": {
                             "embeddedObject": {
+                                "size": {
+                                    "height": { "magnitude": 24, "unit": "PT" },
+                                    "width": { "magnitude": 48, "unit": "PT" }
+                                },
                                 "imageProperties": {}
                             }
                         }
