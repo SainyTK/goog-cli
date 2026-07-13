@@ -64,6 +64,36 @@ target/debug/goog docs style apply DOCUMENT_ID --text 'Decision required' --bold
 
 Run `target/debug/goog docs style apply --help` before using a paragraph style that has not already been observed in the document.
 
+## Images
+
+Insert body images from a publicly reachable URI.
+Provide both dimensions in points when the layout needs a predictable image footprint:
+
+```bash
+target/debug/goog docs image insert DOCUMENT_ID 'https://example.com/report-chart.png' --at after-heading:'Key metrics' --width 360 --height 203 --dry-run --json
+target/debug/goog docs image insert DOCUMENT_ID 'https://example.com/report-chart.png' --at after-heading:'Key metrics' --width 360 --height 203
+target/debug/goog docs map DOCUMENT_ID --type images --json
+```
+
+Google treats the requested width and height as a bounding box and preserves the source image's aspect ratio.
+Use the mapped native size for layout verification instead of assuming both requested dimensions were stored exactly.
+The image belongs to its containing paragraph, so map again after insertion and style the returned image entry when the paragraph needs deliberate alignment or spacing:
+
+```bash
+target/debug/goog docs style apply DOCUMENT_ID --entry IMAGE_ENTRY --alignment center --space-above 6 --space-below 6 --dry-run --json
+target/debug/goog docs style apply DOCUMENT_ID --entry IMAGE_ENTRY --alignment center --space-above 6 --space-below 6
+```
+
+Header and footer images require a segment ID from `docs map --type segments --json`, `docs get`, or a header or footer creation result:
+
+```bash
+target/debug/goog docs image insert DOCUMENT_ID 'https://example.com/company-mark.png' --segment-id HEADER_SEGMENT_ID --width 72 --height 24 --dry-run --json
+target/debug/goog docs image insert DOCUMENT_ID 'https://example.com/company-mark.png' --segment-id HEADER_SEGMENT_ID --width 72 --height 24
+```
+
+Inline image insertion cannot create positioned or floating images.
+Copy a template when those editor-only image components are required.
+
 ## Tables
 
 ```bash
