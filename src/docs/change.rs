@@ -201,6 +201,17 @@ pub(crate) struct UpdateNamedStyleCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CopyNamedStylesCommand {
+    pub source_document_id: String,
+    pub target_document_id: String,
+    pub source_tab_id: Option<String>,
+    pub target_tab_id: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ApplyListCommand {
     pub document_id: String,
     pub selector: RangeSelector,
@@ -1288,6 +1299,113 @@ pub(crate) fn prepare_update_named_style_change(
         preview: DocsChangePreview::new(
             "style named",
             format!("Update native named style {named_style}"),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_copy_named_styles_change(
+    source_map: &DocumentMap,
+    target_map: &DocumentMap,
+    command: &CopyNamedStylesCommand,
+) -> Result<PreparedDocsChange> {
+    let source_tab_id = command.source_tab_id.as_deref().map(str::trim);
+    let target_tab_id = command.target_tab_id.as_deref().map(str::trim);
+    if source_tab_id.is_some_and(str::is_empty) {
+        bail!("--source-tab-id cannot be empty");
+    }
+    if target_tab_id.is_some_and(str::is_empty) {
+        bail!("--target-tab-id cannot be empty");
+    }
+    let source = if let Some(tab_id) = source_tab_id {
+        source_map
+            .named_styles
+            .iter()
+            .find(|styles| styles.tab_id.as_deref() == Some(tab_id))
+            .with_context(|| format!("source document has no named styles for tab {tab_id}"))?
+    } else {
+        source_map
+            .named_styles
+            .first()
+            .context("source document has no native named styles")?
+    };
+    let styles = source
+        .named_styles
+        .get("styles")
+        .and_then(serde_json::Value::as_array)
+        .context("source document returned malformed native named styles")?;
+
+    let mut requests = Vec::new();
+    for source_style in styles {
+        let Some(named_style) = source_style
+            .get("namedStyleType")
+            .and_then(serde_json::Value::as_str)
+        else {
+            continue;
+        };
+        let mut payload = serde_json::Map::new();
+        if let Some(text_style) = source_style
+            .get("textStyle")
+            .and_then(serde_json::Value::as_object)
+        {
+            payload.insert(
+                "textStyle".into(),
+                serde_json::Value::Object(text_style.clone()),
+            );
+        }
+        if let Some(paragraph_style) = source_style
+            .get("paragraphStyle")
+            .and_then(serde_json::Value::as_object)
+        {
+            let mut paragraph_style = paragraph_style.clone();
+            paragraph_style.remove("namedStyleType");
+            paragraph_style.remove("headingId");
+            if !paragraph_style.is_empty() {
+                payload.insert(
+                    "paragraphStyle".into(),
+                    serde_json::Value::Object(paragraph_style),
+                );
+            }
+        }
+        if payload.is_empty() {
+            continue;
+        }
+        let single = prepare_update_named_style_change(
+            target_map,
+            &UpdateNamedStyleCommand {
+                document_id: command.target_document_id.clone(),
+                named_style: named_style.into(),
+                style_json: serde_json::Value::Object(payload).to_string(),
+                tab_id: target_tab_id.map(str::to_string),
+                dry_run: command.dry_run,
+                json: command.json,
+                required_revision_id: None,
+            },
+        )?;
+        let PreparedDocsChange::HighLevel(single) = single else {
+            unreachable!("named style updates are always high-level changes")
+        };
+        requests.extend(
+            single.request_body["requests"]
+                .as_array()
+                .expect("named style request list")
+                .iter()
+                .cloned(),
+        );
+    }
+    if requests.is_empty() {
+        bail!("source document has no copyable native named styles");
+    }
+    let copied_count = requests.len();
+    let request_body =
+        request_body_with_revision(requests, command.required_revision_id.as_deref());
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: target_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "style copy-named",
+            format!("Copy {copied_count} native named styles from the source document"),
         ),
     }))
 }

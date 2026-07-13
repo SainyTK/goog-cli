@@ -2,18 +2,19 @@ use serde_json::json;
 
 use super::change::{
     prepare_apply_list_change, prepare_apply_styles_change, prepare_configure_page_change,
-    prepare_edit_table_change, prepare_insert_image_change, prepare_insert_table_change,
-    prepare_insert_text_change, prepare_pin_table_header_rows_change, prepare_replace_text_change,
-    prepare_set_table_column_widths_change, prepare_style_table_row_change,
-    prepare_update_named_style_change, request_body_required_revision_id,
-    set_request_body_required_revision_id, split_docs_request_bodies, write_docs_change_preview,
-    ApplyListCommand, ApplyStylesCommand, ConfigurePageCommand, EditTableCommand,
-    InsertImageCommand, InsertTableCommand, InsertTextCommand, PinTableHeaderRowsCommand,
-    ReplaceTextCommand, SetTableColumnWidthsCommand, StyleTableRowCommand, UpdateNamedStyleCommand,
+    prepare_copy_named_styles_change, prepare_edit_table_change, prepare_insert_image_change,
+    prepare_insert_table_change, prepare_insert_text_change, prepare_pin_table_header_rows_change,
+    prepare_replace_text_change, prepare_set_table_column_widths_change,
+    prepare_style_table_row_change, prepare_update_named_style_change,
+    request_body_required_revision_id, set_request_body_required_revision_id,
+    split_docs_request_bodies, write_docs_change_preview, ApplyListCommand, ApplyStylesCommand,
+    ConfigurePageCommand, CopyNamedStylesCommand, EditTableCommand, InsertImageCommand,
+    InsertTableCommand, InsertTextCommand, PinTableHeaderRowsCommand, ReplaceTextCommand,
+    SetTableColumnWidthsCommand, StyleTableRowCommand, UpdateNamedStyleCommand,
 };
 use super::map::{
     build_document_map, DocumentLocation, DocumentMap, DocumentMapEntry, DocumentMapEntryKind,
-    DocumentRange, InsertTextSelector, LocationConfidence, RangeSelector,
+    DocumentRange, DocumentTabNamedStyles, InsertTextSelector, LocationConfidence, RangeSelector,
 };
 use crate::cli::DocsListType;
 
@@ -143,6 +144,67 @@ fn update_named_style_rejects_invalid_inputs() {
         None
     )
     .contains("paragraphStyle.namedStyleType cannot be updated"));
+}
+
+#[test]
+fn copy_named_styles_builds_one_sanitized_update_per_native_style() {
+    let mut source_map = searchable_map();
+    source_map.named_styles = vec![DocumentTabNamedStyles {
+        tab_id: Some("source-tab".into()),
+        named_styles: json!({
+            "styles": [
+                {
+                    "namedStyleType": "NORMAL_TEXT",
+                    "textStyle": { "fontSize": { "magnitude": 11, "unit": "PT" } },
+                    "paragraphStyle": {
+                        "namedStyleType": "NORMAL_TEXT",
+                        "direction": "LEFT_TO_RIGHT"
+                    }
+                },
+                {
+                    "namedStyleType": "HEADING_1",
+                    "textStyle": { "weightedFontFamily": { "fontFamily": "Bai Jamjuree" } },
+                    "paragraphStyle": {
+                        "namedStyleType": "HEADING_1",
+                        "headingId": "h.read-only",
+                        "keepWithNext": true
+                    }
+                }
+            ]
+        }),
+    }];
+    let change = prepare_copy_named_styles_change(
+        &source_map,
+        &searchable_map(),
+        &CopyNamedStylesCommand {
+            source_document_id: "source-document".into(),
+            target_document_id: "target-document".into(),
+            source_tab_id: Some("source-tab".into()),
+            target_tab_id: Some("target-tab".into()),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("target-revision".into()),
+        },
+    )
+    .unwrap();
+    let output = preview_json(&change);
+    let requests = output["requestBody"]["requests"].as_array().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[1]["updateNamedStyle"]["namedStyle"]["textStyle"]["weightedFontFamily"]
+            ["fontFamily"],
+        "Bai Jamjuree"
+    );
+    assert_eq!(requests[1]["updateNamedStyle"]["tabId"], "target-tab");
+    assert!(
+        requests[1]["updateNamedStyle"]["namedStyle"]["paragraphStyle"]
+            .get("headingId")
+            .is_none()
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "target-revision"
+    );
 }
 
 fn preview_json(change: &super::change::PreparedDocsChange) -> serde_json::Value {

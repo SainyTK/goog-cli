@@ -1962,6 +1962,52 @@ fn docs_named_style_accepts_native_style_payload_and_safety_options() {
 }
 
 #[test]
+fn docs_copy_named_styles_accepts_source_target_tabs_and_safety_options() {
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::CopyNamed {
+                        source_document_id,
+                        target_document_id,
+                        source_tab_id,
+                        target_tab_id,
+                        dry_run,
+                        json,
+                        required_revision_id,
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "style",
+        "copy-named",
+        "source-document",
+        "target-document",
+        "--source-tab-id",
+        "source-tab",
+        "--target-tab-id",
+        "target-tab",
+        "--dry-run",
+        "--json",
+        "--required-revision-id",
+        "target-revision",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(source_document_id, "source-document");
+    assert_eq!(target_document_id, "target-document");
+    assert_eq!(source_tab_id.as_deref(), Some("source-tab"));
+    assert_eq!(target_tab_id.as_deref(), Some("target-tab"));
+    assert!(dry_run);
+    assert!(json);
+    assert_eq!(required_revision_id.as_deref(), Some("target-revision"));
+}
+
+#[test]
 fn docs_apply_styles_accepts_underline() {
     let Command::Docs {
         command:

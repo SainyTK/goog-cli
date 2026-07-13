@@ -1871,6 +1871,15 @@ impl DocsCommand {
                 | DocsStyleCommand::Named { document_id, .. }
                 | DocsStyleCommand::Page { document_id, .. }
                 | DocsStyleCommand::Template { document_id, .. } => document_id,
+                DocsStyleCommand::CopyNamed {
+                    source_document_id,
+                    target_document_id,
+                    ..
+                } => {
+                    *source_document_id = crate::docs::extract_document_id(source_document_id);
+                    *target_document_id = crate::docs::extract_document_id(target_document_id);
+                    return;
+                }
             },
             DocsCommand::Header { command } => match command {
                 DocsHeaderCommand::Create { document_id, .. } => document_id,
@@ -2222,6 +2231,28 @@ pub enum DocsStyleCommand {
         #[arg(long)]
         json: bool,
         /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Copy all native named styles from one Google Doc to another
+    CopyNamed {
+        /// Source Document ID or URL whose named styles should be copied
+        source_document_id: String,
+        /// Target Document ID or URL to update
+        target_document_id: String,
+        /// Source document tab containing the named styles; defaults to the first tab
+        #[arg(long)]
+        source_tab_id: Option<String>,
+        /// Target document tab to update; defaults to the first tab
+        #[arg(long)]
+        target_tab_id: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the target document to still be at this revision before applying the edit
         #[arg(long)]
         required_revision_id: Option<String>,
     },
