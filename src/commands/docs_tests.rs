@@ -2042,6 +2042,9 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             space_above: Some(4.0),
             space_below: Some(10.0),
             line_spacing: Some(115.0),
+            indent_start: Some(36.0),
+            indent_end: Some(12.0),
+            indent_first_line: Some(18.0),
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -2077,12 +2080,26 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
-        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing"
+        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,indentStart,indentEnd,indentFirstLine"
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["lineSpacing"],
         115.0
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["indentStart"],
+        serde_json::json!({ "magnitude": 36.0, "unit": "PT" })
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["indentEnd"],
+        serde_json::json!({ "magnitude": 12.0, "unit": "PT" })
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["indentFirstLine"],
+        serde_json::json!({ "magnitude": 18.0, "unit": "PT" })
     );
     assert_eq!(
         styles["requestBody"]["writeControl"]["requiredRevisionId"],
@@ -2474,6 +2491,9 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
             space_above: None,
             space_below: None,
             line_spacing: None,
+            indent_start: None,
+            indent_end: None,
+            indent_first_line: None,
             heading: None,
             style_json: Some(
                 serde_json::json!({
@@ -2621,6 +2641,9 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
             space_above: None,
             space_below: None,
             line_spacing: None,
+            indent_start: None,
+            indent_end: None,
+            indent_first_line: None,
             heading: Some("HEADING_1".into()),
             style_json: Some(r#"{"textStyle":{"strikethrough":true}}"#.into()),
             dry_run: false,
@@ -2708,6 +2731,9 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
             space_above: None,
             space_below: None,
             line_spacing: None,
+            indent_start: None,
+            indent_end: None,
+            indent_first_line: None,
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -2837,6 +2863,9 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
             space_above: None,
             space_below: None,
             line_spacing: None,
+            indent_start: None,
+            indent_end: None,
+            indent_first_line: None,
             heading: Some("HEADING_1".into()),
             style_json: None,
             dry_run: false,

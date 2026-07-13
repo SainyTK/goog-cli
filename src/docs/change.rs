@@ -149,6 +149,9 @@ pub(crate) struct ApplyStylesCommand {
     pub space_above: Option<f64>,
     pub space_below: Option<f64>,
     pub line_spacing: Option<f64>,
+    pub indent_start: Option<f64>,
+    pub indent_end: Option<f64>,
+    pub indent_first_line: Option<f64>,
     pub heading: Option<String>,
     pub style_json: Option<String>,
     pub dry_run: bool,
@@ -952,15 +955,8 @@ pub(crate) fn prepare_apply_styles_change(
         has_heading,
         cached_text_style,
     )?;
-    let (paragraph_style, paragraph_fields) = paragraph_style_payload(
-        command.heading.as_deref(),
-        command.alignment,
-        command.space_above,
-        command.space_below,
-        command.line_spacing,
-        raw_payload.paragraph_style,
-        cached_paragraph_style,
-    )?;
+    let (paragraph_style, paragraph_fields) =
+        paragraph_style_payload(command, raw_payload.paragraph_style, cached_paragraph_style)?;
     let mut requests = Vec::new();
     if !paragraph_fields.is_empty() {
         requests.push(serde_json::json!({
@@ -1243,11 +1239,7 @@ fn text_style_payload(
 }
 
 fn paragraph_style_payload(
-    heading: Option<&str>,
-    alignment: Option<DocsParagraphAlignment>,
-    space_above: Option<f64>,
-    space_below: Option<f64>,
-    line_spacing: Option<f64>,
+    command: &ApplyStylesCommand,
     raw_paragraph_style: Option<StyleObject>,
     cached_paragraph_style: Option<serde_json::Value>,
 ) -> Result<(serde_json::Value, Vec<String>)> {
@@ -1256,24 +1248,71 @@ fn paragraph_style_payload(
         .transpose()?;
     let mut payload =
         StylePayloadParts::from_base_and_raw(base_paragraph_style, raw_paragraph_style);
-    if let Some(heading) = heading {
+    if let Some(heading) = &command.heading {
         payload.set_field_first("namedStyleType", serde_json::Value::String(heading.into()));
     }
-    if let Some(alignment) = alignment {
+    if let Some(alignment) = command.alignment {
         payload.set_field(
             "alignment",
             serde_json::Value::String(alignment.api_value().into()),
         );
     }
-    set_paragraph_spacing(&mut payload, "spaceAbove", "--space-above", space_above)?;
-    set_paragraph_spacing(&mut payload, "spaceBelow", "--space-below", space_below)?;
-    if let Some(line_spacing) = line_spacing {
+    set_paragraph_spacing(
+        &mut payload,
+        "spaceAbove",
+        "--space-above",
+        command.space_above,
+    )?;
+    set_paragraph_spacing(
+        &mut payload,
+        "spaceBelow",
+        "--space-below",
+        command.space_below,
+    )?;
+    if let Some(line_spacing) = command.line_spacing {
         if !line_spacing.is_finite() || line_spacing <= 0.0 {
             bail!("--line-spacing must be a finite, positive percentage");
         }
         payload.set_field("lineSpacing", serde_json::json!(line_spacing));
     }
+    set_paragraph_dimension(
+        &mut payload,
+        "indentStart",
+        "--indent-start",
+        command.indent_start,
+    )?;
+    set_paragraph_dimension(
+        &mut payload,
+        "indentEnd",
+        "--indent-end",
+        command.indent_end,
+    )?;
+    set_paragraph_dimension(
+        &mut payload,
+        "indentFirstLine",
+        "--indent-first-line",
+        command.indent_first_line,
+    )?;
     Ok(payload.into_json_parts())
+}
+
+fn set_paragraph_dimension(
+    payload: &mut StylePayloadParts,
+    field: &str,
+    flag: &str,
+    value: Option<f64>,
+) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if !value.is_finite() || value < 0.0 {
+        bail!("{flag} must be a finite, non-negative point value");
+    }
+    payload.set_field(
+        field,
+        serde_json::json!({ "magnitude": value, "unit": "PT" }),
+    );
+    Ok(())
 }
 
 fn set_paragraph_spacing(

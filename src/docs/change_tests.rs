@@ -227,6 +227,9 @@ fn image_table_style_and_list_changes_build_native_requests() {
             space_above: Some(6.0),
             space_below: Some(10.0),
             line_spacing: Some(115.0),
+            indent_start: Some(36.0),
+            indent_end: Some(12.0),
+            indent_first_line: Some(18.0),
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -315,6 +318,9 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         space_above: Some(-1.0),
         space_below: None,
         line_spacing: None,
+        indent_start: None,
+        indent_end: None,
+        indent_first_line: None,
         heading: None,
         style_json: None,
         dry_run: true,
@@ -350,7 +356,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
             space_above: None,
             space_below: None,
             line_spacing: Some(0.0),
-            ..command
+            ..command.clone()
         },
         None,
     )
@@ -358,6 +364,36 @@ fn paragraph_spacing_rejects_invalid_point_values() {
     assert_eq!(
         error.to_string(),
         "--line-spacing must be a finite, positive percentage"
+    );
+
+    let error = prepare_apply_styles_change(
+        &document_map,
+        &ApplyStylesCommand {
+            space_above: None,
+            indent_start: Some(-1.0),
+            ..command.clone()
+        },
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "--indent-start must be a finite, non-negative point value"
+    );
+
+    let error = prepare_apply_styles_change(
+        &document_map,
+        &ApplyStylesCommand {
+            space_above: None,
+            indent_first_line: Some(f64::INFINITY),
+            ..command
+        },
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "--indent-first-line must be a finite, non-negative point value"
     );
 }
 

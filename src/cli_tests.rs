@@ -1748,6 +1748,9 @@ fn docs_apply_styles_accepts_paragraph_spacing() {
                         space_above,
                         space_below,
                         line_spacing,
+                        indent_start,
+                        indent_end,
+                        indent_first_line,
                         text,
                         ..
                     },
@@ -1765,6 +1768,12 @@ fn docs_apply_styles_accepts_paragraph_spacing() {
         "10",
         "--line-spacing",
         "115",
+        "--indent-start",
+        "36",
+        "--indent-end",
+        "12",
+        "--indent-first-line",
+        "18",
     ])
     .unwrap()
     .command
@@ -1776,6 +1785,9 @@ fn docs_apply_styles_accepts_paragraph_spacing() {
     assert_eq!(space_above, Some(6.0));
     assert_eq!(space_below, Some(10.0));
     assert_eq!(line_spacing, Some(115.0));
+    assert_eq!(indent_start, Some(36.0));
+    assert_eq!(indent_end, Some(12.0));
+    assert_eq!(indent_first_line, Some(18.0));
 }
 
 #[test]
