@@ -521,6 +521,13 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         "Customer contact [page number]"
     );
     assert_eq!(output["segments"][0]["autoTextTypes"][0], "PAGE_NUMBER");
+    assert_eq!(output["segments"][0]["autoTexts"][0]["startIndex"], 16);
+    assert_eq!(output["segments"][0]["autoTexts"][0]["endIndex"], 17);
+    assert_eq!(output["segments"][0]["autoTexts"][0]["type"], "PAGE_NUMBER");
+    assert_eq!(
+        output["segments"][0]["autoTexts"][0]["textStyle"]["fontSize"]["magnitude"],
+        10
+    );
     assert_eq!(output["segments"][0]["textRuns"][0]["startIndex"], 0);
     assert_eq!(output["segments"][0]["textRuns"][0]["endIndex"], 16);
     assert_eq!(
@@ -4993,7 +5000,12 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                                     {
                                         "startIndex": 16,
                                         "endIndex": 17,
-                                        "autoText": { "type": "PAGE_NUMBER" }
+                                        "autoText": {
+                                            "type": "PAGE_NUMBER",
+                                            "textStyle": {
+                                                "fontSize": { "magnitude": 10, "unit": "PT" }
+                                            }
+                                        }
                                     }
                                 ]
                             }

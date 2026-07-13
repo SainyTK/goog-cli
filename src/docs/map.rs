@@ -109,9 +109,21 @@ pub struct DocumentSegment {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub auto_text_types: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub auto_texts: Vec<DocumentAutoText>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub text_runs: Vec<DocumentTextRun>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub paragraphs: Vec<DocumentParagraph>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentAutoText {
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub type_: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_style: Option<Value>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -533,6 +545,8 @@ fn document_segments(document: &Value) -> Vec<DocumentSegment> {
                 collect_auto_text_types(segment, &mut auto_text_types);
                 auto_text_types.sort();
                 auto_text_types.dedup();
+                let mut auto_texts = Vec::new();
+                collect_auto_texts(segment, &mut auto_texts);
                 let mut text_runs = Vec::new();
                 collect_text_runs(segment, &mut text_runs);
                 let mut paragraphs = Vec::new();
@@ -546,6 +560,7 @@ fn document_segments(document: &Value) -> Vec<DocumentSegment> {
                     end_index,
                     preview,
                     auto_text_types,
+                    auto_texts,
                     text_runs,
                     paragraphs,
                 });
@@ -557,6 +572,33 @@ fn document_segments(document: &Value) -> Vec<DocumentSegment> {
     });
     segments.dedup_by(|left, right| left.kind == right.kind && left.segment_id == right.segment_id);
     segments
+}
+
+fn collect_auto_texts(value: &Value, auto_texts: &mut Vec<DocumentAutoText>) {
+    if let Some(auto_text) = value.get("autoText") {
+        if let Some(type_) = auto_text.get("type").and_then(Value::as_str) {
+            auto_texts.push(DocumentAutoText {
+                start_index: value.get("startIndex").and_then(Value::as_i64),
+                end_index: value.get("endIndex").and_then(Value::as_i64),
+                type_: type_.to_string(),
+                text_style: auto_text.get("textStyle").cloned(),
+            });
+        }
+        return;
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_auto_texts(value, auto_texts);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_auto_texts(value, auto_texts);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn document_segment_maps<'a>(document: &'a Value, field: &str) -> Vec<&'a Value> {
