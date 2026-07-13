@@ -1578,6 +1578,8 @@ pub(crate) fn prepare_copy_page_style_change(
         "marginRight",
         "marginHeader",
         "marginFooter",
+        "useFirstPageHeaderFooter",
+        "useEvenPageHeaderFooter",
     ] {
         if let Some(value) = source_style.get(field) {
             style.insert(field.into(), value.clone());
@@ -1606,7 +1608,7 @@ pub(crate) fn prepare_copy_page_style_change(
         preview: DocsChangePreview::new(
             "style copy-page",
             format!(
-                "Copy {} page style fields from the source document",
+                "Copy {} page layout fields from the source document",
                 fields.len()
             ),
         ),

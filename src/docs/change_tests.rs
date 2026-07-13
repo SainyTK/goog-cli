@@ -711,6 +711,8 @@ fn copy_page_style_builds_tab_aware_document_style_request() {
             "marginRight": { "magnitude": 72, "unit": "PT" },
             "marginHeader": { "magnitude": 36, "unit": "PT" },
             "marginFooter": { "magnitude": 36, "unit": "PT" },
+            "useFirstPageHeaderFooter": true,
+            "useEvenPageHeaderFooter": false,
             "defaultHeaderId": "read-only-header"
         }),
     }];
@@ -733,12 +735,14 @@ fn copy_page_style_builds_tab_aware_document_style_request() {
     assert_eq!(update["tabId"], "target-tab");
     assert_eq!(
         update["fields"],
-        "pageSize,marginTop,marginBottom,marginLeft,marginRight,marginHeader,marginFooter"
+        "pageSize,marginTop,marginBottom,marginLeft,marginRight,marginHeader,marginFooter,useFirstPageHeaderFooter,useEvenPageHeaderFooter"
     );
     assert_eq!(
         update["documentStyle"]["pageSize"]["width"]["magnitude"],
         612
     );
+    assert_eq!(update["documentStyle"]["useFirstPageHeaderFooter"], true);
+    assert_eq!(update["documentStyle"]["useEvenPageHeaderFooter"], false);
     assert!(update["documentStyle"].get("defaultHeaderId").is_none());
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
