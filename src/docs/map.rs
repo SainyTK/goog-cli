@@ -110,6 +110,8 @@ pub struct DocumentMapEntry {
     pub style: Option<String>,
     pub preview: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub paragraph_style: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub heading_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_handle: Option<String>,
@@ -1016,6 +1018,7 @@ struct DocumentMapBuilder<'a> {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct DocumentMapEntryMetadata {
+    paragraph_style: Option<Value>,
     heading_id: Option<String>,
     image_handle: Option<String>,
     object_id: Option<String>,
@@ -1119,6 +1122,7 @@ impl<'a> DocumentMapBuilder<'a> {
         let inline_images = paragraph_inline_images(paragraph);
         let positioned_object_ids = paragraph_positioned_object_ids(paragraph);
         let style = paragraph_style(paragraph);
+        let paragraph_style = paragraph.get("paragraphStyle").cloned();
         let is_heading = style.as_deref().is_some_and(is_heading_style);
 
         if !trimmed_text.is_empty() {
@@ -1149,6 +1153,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 style.clone(),
                 preview,
                 DocumentMapEntryMetadata {
+                    paragraph_style: paragraph_style.clone(),
                     heading_id,
                     ..DocumentMapEntryMetadata::default()
                 },
@@ -1171,6 +1176,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 style.clone(),
                 inline_image_preview(image_index, inline_image_count),
                 DocumentMapEntryMetadata {
+                    paragraph_style: paragraph_style.clone(),
                     image_handle: Some(image_handle),
                     object_id: Some(image.object_id),
                     layout_metadata,
@@ -1191,6 +1197,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 style.clone(),
                 format!("[positioned image {}]", object_index + 1),
                 DocumentMapEntryMetadata {
+                    paragraph_style: paragraph_style.clone(),
                     image_handle: Some(image_handle),
                     object_id: Some(object_id),
                     layout_metadata,
@@ -1346,6 +1353,7 @@ impl<'a> DocumentMapBuilder<'a> {
             kind,
             style,
             preview,
+            paragraph_style: metadata.paragraph_style,
             heading_id: metadata.heading_id,
             image_handle: metadata.image_handle,
             object_id: metadata.object_id,

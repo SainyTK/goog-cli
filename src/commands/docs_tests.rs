@@ -446,6 +446,15 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
     assert_eq!(output["entries"][1]["location"]["page"], 3);
     assert_eq!(output["entries"][1]["preview"], "วิธีใช้งาน");
     assert_eq!(output["entries"][1]["headingId"], "h.how-to");
+    assert_eq!(
+        output["entries"][1]["paragraphStyle"]["alignment"],
+        "CENTER"
+    );
+    assert_eq!(
+        output["entries"][1]["paragraphStyle"]["spaceBelow"]["magnitude"],
+        10
+    );
+    assert_eq!(output["entries"][1]["paragraphStyle"]["keepWithNext"], true);
     assert_eq!(output["entries"][2]["location"]["confidence"], "unknown");
     assert!(output["entries"][2]["location"]["page"].is_null());
     assert_eq!(output["entries"][3]["kind"], "table");
@@ -1334,6 +1343,7 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(images[0]["imageHandle"], "image-1");
     assert_eq!(images[0]["objectId"], "inline-image-1");
     assert_eq!(images[0]["imageAltText"]["title"], "Process overview");
+    assert_eq!(images[0]["paragraphStyle"]["alignment"], "CENTER");
     assert_eq!(
         images[0]["imageAltText"]["description"],
         "Workflow from intake to delivery"
@@ -4566,7 +4576,10 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "paragraph": {
                         "paragraphStyle": {
                             "namedStyleType": "HEADING_1",
-                            "headingId": "h.how-to"
+                            "headingId": "h.how-to",
+                            "alignment": "CENTER",
+                            "spaceBelow": { "magnitude": 10, "unit": "PT" },
+                            "keepWithNext": true
                         },
                         "elements": [
                             {
@@ -4668,6 +4681,7 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "startIndex": 103,
                     "endIndex": 104,
                     "paragraph": {
+                        "paragraphStyle": { "alignment": "CENTER" },
                         "elements": [
                             {
                                 "startIndex": 103,
