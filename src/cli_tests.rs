@@ -1065,11 +1065,53 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(image_uri, "https://example.test/image.png");
-    assert_eq!(at, "page:2,line:1");
+    assert_eq!(at.as_deref(), Some("page:2,line:1"));
     assert_eq!(width, Some(468.0));
     assert_eq!(height, Some(240.0));
     assert!(dry_run);
     assert!(json);
+
+    let Command::Docs {
+        command:
+            DocsCommand::Image {
+                command: DocsImageCommand::Insert { at, segment_id, .. },
+            },
+    } = parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/logo.png",
+        "--segment-id",
+        "header-123",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(at, None);
+    assert_eq!(segment_id.as_deref(), Some("header-123"));
+    assert!(parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/logo.png",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/logo.png",
+        "--at",
+        "index:1",
+        "--segment-id",
+        "header-123",
+    ])
+    .is_err());
 
     let Command::Docs {
         command:
@@ -2075,7 +2117,6 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
 
     for command in [
         &["docs", "text", "insert", "--help"][..],
-        &["docs", "image", "insert", "--help"],
         &["docs", "break", "page", "--help"],
         &["docs", "break", "section", "--help"],
         &["docs", "footnote", "insert", "--help"],
@@ -2088,6 +2129,14 @@ fn docs_selector_help_explains_exactly_one_selector_rule() {
         assert!(command_help.contains("--at before-text:TEXT"));
         assert!(!command_help.contains("--after-heading <AFTER_HEADING>"));
     }
+
+    let image_help = help(&["docs", "image", "insert", "--help"]);
+    assert!(image_help.contains("Provide exactly one of --at or --segment-id."));
+    assert!(image_help.contains("--at <SELECTOR>"));
+    assert!(image_help.contains("--segment-id <SEGMENT_ID>"));
+    assert!(image_help.contains("--at heading:TEXT"));
+    assert!(image_help.contains("--at before-text:TEXT"));
+    assert!(!image_help.contains("--after-heading <AFTER_HEADING>"));
 
     for command in [
         &["docs", "style", "apply", "--help"][..],

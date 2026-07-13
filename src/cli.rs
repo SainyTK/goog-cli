@@ -2352,8 +2352,18 @@ pub enum DocsBreakCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsImageCommand {
-    /// Insert an Inline Image through a high-level Document Map location selector
-    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
+    /// Insert an Inline Image through a body selector or at the end of a header/footer segment
+    #[command(
+        group(ArgGroup::new("image_location").required(true).multiple(false).args(["at", "segment_id"])),
+        after_long_help = "Location rules:
+  Provide exactly one of --at or --segment-id.
+  For a body location, use --at index:N, --at entry:N, --at page:P,line:L, --at heading:TEXT, --at after-heading:TEXT, --at before-heading:TEXT, --at after-text:TEXT, or --at before-text:TEXT.
+  Use --segment-id with a headerId or footerId returned by `docs header create`, `docs footer create`, or `docs get`; the image is inserted at the end of that segment.
+
+Write safety:
+  Use --dry-run to preview without calling documents.batchUpdate.
+  Use --required-revision-id REVISION_ID to reject writes against a changed document."
+    )]
     Insert {
         /// Document ID or URL to update
         document_id: String,
@@ -2361,7 +2371,10 @@ pub enum DocsImageCommand {
         image_uri: String,
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
-        at: String,
+        at: Option<String>,
+        /// Header or footer segment ID; inserts the image at the end of that segment
+        #[arg(long)]
+        segment_id: Option<String>,
         /// Image width in points; requires --height
         #[arg(long, requires = "height")]
         width: Option<f64>,

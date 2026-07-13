@@ -1237,7 +1237,8 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
         InsertImageCommand {
             document_id: "document-123".into(),
             image_uri: "https://example.test/image.png".into(),
-            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            selector: Some(InsertTextSelector::PageLine { page: 2, line: 1 }),
+            segment_id: None,
             width: Some(468.0),
             height: Some(240.0),
             dry_run: true,
@@ -1812,7 +1813,8 @@ async fn run_insert_image_dry_run_human_shows_placeholder_in_context() {
         InsertImageCommand {
             document_id: "document-123".into(),
             image_uri: "https://example.test/image.png".into(),
-            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            selector: Some(InsertTextSelector::PageLine { page: 2, line: 1 }),
+            segment_id: None,
             width: None,
             height: None,
             dry_run: true,
@@ -1833,6 +1835,53 @@ async fn run_insert_image_dry_run_human_shows_placeholder_in_context() {
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
+async fn run_insert_image_dry_run_targets_header_or_footer_segment_end() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_image_to(
+        &client,
+        InsertImageCommand {
+            document_id: "document-123".into(),
+            image_uri: "https://example.test/logo.png".into(),
+            selector: None,
+            segment_id: Some("header-123".into()),
+            width: Some(72.0),
+            height: Some(24.0),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["location"], serde_json::Value::Null);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertInlineImage"]["endOfSegmentLocation"]
+            ["segmentId"],
+        "header-123"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
 }
 
 #[tokio::test]

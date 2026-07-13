@@ -129,7 +129,8 @@ fn image_table_style_and_list_changes_build_native_requests() {
         &InsertImageCommand {
             document_id: "document-123".into(),
             image_uri: "https://example.test/image.png".into(),
-            selector: InsertTextSelector::AfterText("Project".into()),
+            selector: Some(InsertTextSelector::AfterText("Project".into())),
+            segment_id: None,
             width: Some(468.0),
             height: Some(240.0),
             dry_run: true,
@@ -151,6 +152,33 @@ fn image_table_style_and_list_changes_build_native_requests() {
         })
     );
     assert_eq!(image["preview"]["after"], "Project[inline image] Plan");
+
+    let segment_image = prepare_insert_image_change(
+        &document_map,
+        &InsertImageCommand {
+            document_id: "document-123".into(),
+            image_uri: "https://example.test/logo.png".into(),
+            selector: None,
+            segment_id: Some("header-123".into()),
+            width: Some(72.0),
+            height: Some(24.0),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-image".into()),
+        },
+    )
+    .unwrap();
+    let segment_image = preview_json(&segment_image);
+    assert_eq!(segment_image["location"], serde_json::Value::Null);
+    assert_eq!(
+        segment_image["requestBody"]["requests"][0]["insertInlineImage"]["endOfSegmentLocation"]
+            ["segmentId"],
+        "header-123"
+    );
+    assert_eq!(
+        segment_image["preview"]["summary"],
+        "Insert inline image at end of segment header-123 from https://example.test/logo.png"
+    );
 
     let temp_dir = tempfile::tempdir().unwrap();
     let table_data = temp_dir.path().join("table.csv");
@@ -447,7 +475,8 @@ fn image_dimensions_must_be_positive_and_finite() {
     let command = InsertImageCommand {
         document_id: "document-123".into(),
         image_uri: "https://example.test/image.png".into(),
-        selector: InsertTextSelector::AfterText("Project".into()),
+        selector: Some(InsertTextSelector::AfterText("Project".into())),
+        segment_id: None,
         width: Some(0.0),
         height: Some(240.0),
         dry_run: true,
@@ -468,6 +497,35 @@ fn image_dimensions_must_be_positive_and_finite() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("--height"));
+}
+
+#[test]
+fn image_location_requires_exactly_one_body_selector_or_segment() {
+    let command = InsertImageCommand {
+        document_id: "document-123".into(),
+        image_uri: "https://example.test/image.png".into(),
+        selector: None,
+        segment_id: None,
+        width: None,
+        height: None,
+        dry_run: true,
+        json: true,
+        required_revision_id: None,
+    };
+
+    let error = prepare_insert_image_change(&searchable_map(), &command).unwrap_err();
+    assert!(error.to_string().contains("exactly one image location"));
+
+    let error = prepare_insert_image_change(
+        &searchable_map(),
+        &InsertImageCommand {
+            selector: Some(InsertTextSelector::Index(1)),
+            segment_id: Some("header-123".into()),
+            ..command
+        },
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("exactly one image location"));
 }
 
 #[test]

@@ -39,7 +39,8 @@ pub(crate) struct ReplaceTextCommand {
 pub(crate) struct InsertImageCommand {
     pub document_id: String,
     pub image_uri: String,
-    pub selector: InsertTextSelector,
+    pub selector: Option<InsertTextSelector>,
+    pub segment_id: Option<String>,
     pub width: Option<f64>,
     pub height: Option<f64>,
     pub dry_run: bool,
@@ -459,10 +460,14 @@ pub(crate) fn prepare_insert_image_change(
     document_map: &DocumentMap,
     command: &InsertImageCommand,
 ) -> Result<PreparedDocsChange> {
-    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
-    let Some(index) = resolved.location.index else {
-        bail!("image insert selector resolved without a Google Docs index");
-    };
+    let resolved = command
+        .selector
+        .as_ref()
+        .map(|selector| resolve_insert_text_location(document_map, selector))
+        .transpose()?;
+    if resolved.is_some() == command.segment_id.is_some() {
+        bail!("provide exactly one image location: a body selector or --segment-id");
+    }
     let object_size = match (command.width, command.height) {
         (Some(width), Some(height)) => {
             if !width.is_finite() || width <= 0.0 {
@@ -479,10 +484,48 @@ pub(crate) fn prepare_insert_image_change(
         (None, None) => None,
         _ => bail!("--width and --height must be provided together"),
     };
-    let mut insert_inline_image = serde_json::json!({
-        "location": { "index": index },
-        "uri": command.image_uri
-    });
+    let (location_field, location_value, location, preview) = if let Some(resolved) = resolved {
+        let Some(index) = resolved.location.index else {
+            bail!("image insert selector resolved without a Google Docs index");
+        };
+        (
+            "location",
+            serde_json::json!({ "index": index }),
+            Some(resolved.location),
+            DocsChangePreview::with_context(
+                "image insert",
+                format!(
+                    "Insert inline image at index {index} from {}",
+                    command.image_uri
+                ),
+                resolved.preview_before.clone(),
+                insert_preview_text(
+                    &resolved.preview_before,
+                    resolved.preview_offset,
+                    "[inline image]",
+                ),
+            ),
+        )
+    } else {
+        let segment_id = command.segment_id.as_deref().unwrap().trim();
+        if segment_id.is_empty() {
+            bail!("--segment-id cannot be empty");
+        }
+        (
+            "endOfSegmentLocation",
+            serde_json::json!({ "segmentId": segment_id }),
+            None,
+            DocsChangePreview::new(
+                "image insert",
+                format!(
+                    "Insert inline image at end of segment {segment_id} from {}",
+                    command.image_uri
+                ),
+            ),
+        )
+    };
+    let mut insert_inline_image = serde_json::json!({ "uri": command.image_uri });
+    insert_inline_image[location_field] = location_value;
     if let Some(object_size) = object_size {
         insert_inline_image["objectSize"] = object_size;
     }
@@ -492,25 +535,12 @@ pub(crate) fn prepare_insert_image_change(
         })],
         command.required_revision_id.as_deref(),
     );
-    let preview_after = insert_preview_text(
-        &resolved.preview_before,
-        resolved.preview_offset,
-        "[inline image]",
-    );
     Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
-        location: Some(resolved.location),
+        location,
         range: None,
         request_body,
-        preview: DocsChangePreview::with_context(
-            "image insert",
-            format!(
-                "Insert inline image at index {index} from {}",
-                command.image_uri
-            ),
-            resolved.preview_before,
-            preview_after,
-        ),
+        preview,
     }))
 }
 

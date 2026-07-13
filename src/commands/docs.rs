@@ -219,6 +219,7 @@ pub fn run<S: AccountStore>(
                     document_id,
                     image_uri,
                     at,
+                    segment_id,
                     width,
                     height,
                     dry_run,
@@ -226,7 +227,7 @@ pub fn run<S: AccountStore>(
                     required_revision_id,
                 },
         } => {
-            let selector = insert_text_selector(at)?;
+            let selector = at.map(insert_text_selector).transpose()?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_image_unified_to(
@@ -237,6 +238,7 @@ pub fn run<S: AccountStore>(
                     document_id,
                     image_uri,
                     selector,
+                    segment_id,
                     width,
                     height,
                     dry_run,
