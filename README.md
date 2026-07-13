@@ -8,7 +8,7 @@ It is built first for power users and AI agents who want terminal-native access 
 Human-readable terminal workflows are the default experience.
 JSON is also supported for programmatic use, but it is not the primary product surface.
 
-The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account, Tokens, and Resource Account Mappings in `~/.goog/auth.json`, and requests API scopes incrementally when commands need them.
+The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account, Tokens, and Resource Account Mappings in `~/.goog/auth.json`, and requests every supported scope up front during `goog auth login` instead of acquiring them incrementally per command.
 
 ## Current API Coverage
 
