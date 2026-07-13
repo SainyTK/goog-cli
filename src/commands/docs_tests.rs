@@ -420,6 +420,17 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         output["documentStyles"][0]["documentStyle"]["marginTop"]["magnitude"],
         72
     );
+    assert_eq!(output["namedStyles"].as_array().unwrap().len(), 1);
+    assert_eq!(output["namedStyles"][0]["tabId"], "tab-1");
+    assert_eq!(
+        output["namedStyles"][0]["namedStyles"]["styles"][0]["namedStyleType"],
+        "NORMAL_TEXT"
+    );
+    assert_eq!(
+        output["namedStyles"][0]["namedStyles"]["styles"][0]["textStyle"]["weightedFontFamily"]
+            ["fontFamily"],
+        "Bai Jamjuree"
+    );
     assert_eq!(output["documentLocations"].as_array().unwrap().len(), 9);
     assert_eq!(output["breaks"].as_array().unwrap().len(), 1);
     assert_eq!(output["entries"][0]["kind"], "table-of-contents");
@@ -4670,6 +4681,17 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                         "height": { "magnitude": 792, "unit": "PT" }
                     },
                     "marginTop": { "magnitude": 72, "unit": "PT" }
+                },
+                "namedStyles": {
+                    "styles": [{
+                        "namedStyleType": "NORMAL_TEXT",
+                        "textStyle": {
+                            "weightedFontFamily": {
+                                "fontFamily": "Bai Jamjuree",
+                                "weight": 400
+                            }
+                        }
+                    }]
                 },
                 "headers": {
                     "header-123": {

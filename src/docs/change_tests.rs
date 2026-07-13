@@ -635,6 +635,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
         title: Some("Table".into()),
         revision_id: Some("rev-table".into()),
         document_styles: Vec::new(),
+        named_styles: Vec::new(),
         breaks: Vec::new(),
         segments: Vec::new(),
         lists: Vec::new(),

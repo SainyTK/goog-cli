@@ -9,6 +9,7 @@ pub struct DocumentMap {
     pub title: Option<String>,
     pub revision_id: Option<String>,
     pub document_styles: Vec<DocumentTabStyle>,
+    pub named_styles: Vec<DocumentTabNamedStyles>,
     pub breaks: Vec<DocumentBreak>,
     pub segments: Vec<DocumentSegment>,
     pub lists: Vec<DocumentList>,
@@ -26,6 +27,14 @@ pub struct DocumentTabStyle {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tab_id: Option<String>,
     pub document_style: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentTabNamedStyles {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<String>,
+    pub named_styles: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -224,6 +233,7 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         title: string_field(document, "title"),
         revision_id: string_field(document, "revisionId"),
         document_styles: document_styles(document),
+        named_styles: document_named_styles(document),
         breaks,
         segments: document_segments(document),
         lists: document_lists(document),
@@ -232,6 +242,41 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         text_blocks: builder.text_blocks,
         insertion_locations: builder.insertion_locations,
     }
+}
+
+fn document_named_styles(document: &Value) -> Vec<DocumentTabNamedStyles> {
+    let tab_named_styles = document
+        .get("tabs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|tab| {
+            let named_styles = tab.get("documentTab")?.get("namedStyles")?.clone();
+            let tab_id = tab
+                .get("tabProperties")
+                .and_then(|properties| properties.get("tabId"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            Some(DocumentTabNamedStyles {
+                tab_id,
+                named_styles,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if !tab_named_styles.is_empty() {
+        return tab_named_styles;
+    }
+
+    document
+        .get("namedStyles")
+        .cloned()
+        .map(|named_styles| DocumentTabNamedStyles {
+            tab_id: None,
+            named_styles,
+        })
+        .into_iter()
+        .collect()
 }
 
 fn document_styles(document: &Value) -> Vec<DocumentTabStyle> {
@@ -1694,4 +1739,32 @@ fn preview(text: &str) -> String {
 
 fn string_field(value: &Value, field: &str) -> Option<String> {
     value.get(field).and_then(Value::as_str).map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::build_document_map;
+
+    #[test]
+    fn build_document_map_preserves_legacy_named_styles() {
+        let document_map = build_document_map(&json!({
+            "documentId": "legacy-document",
+            "namedStyles": {
+                "styles": [{
+                    "namedStyleType": "TITLE",
+                    "textStyle": { "fontSize": { "magnitude": 26, "unit": "PT" } }
+                }]
+            },
+            "body": { "content": [] }
+        }));
+
+        assert_eq!(document_map.named_styles.len(), 1);
+        assert_eq!(document_map.named_styles[0].tab_id, None);
+        assert_eq!(
+            document_map.named_styles[0].named_styles["styles"][0]["namedStyleType"],
+            "TITLE"
+        );
+    }
 }

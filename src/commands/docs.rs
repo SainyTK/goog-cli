@@ -2962,6 +2962,7 @@ fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry)
         title: document_map.title.clone(),
         revision_id: document_map.revision_id.clone(),
         document_styles: document_map.document_styles.clone(),
+        named_styles: document_map.named_styles.clone(),
         breaks: Vec::new(),
         segments: Vec::new(),
         lists: Vec::new(),
