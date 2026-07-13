@@ -1572,6 +1572,36 @@ fn docs_apply_styles_uses_paragraph_style_flag() {
 }
 
 #[test]
+fn docs_apply_styles_accepts_font_family() {
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Apply {
+                        font_family, text, ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "style",
+        "apply",
+        "document-123",
+        "--text",
+        "Customer report",
+        "--font-family",
+        "Bai Jamjuree",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(text.as_deref(), Some("Customer report"));
+    assert_eq!(font_family.as_deref(), Some("Bai Jamjuree"));
+}
+
+#[test]
 fn docs_apply_commands_reject_no_auto_style() {
     assert!(parse(&[
         "docs",

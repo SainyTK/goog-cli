@@ -120,6 +120,7 @@ pub(crate) struct ApplyStylesCommand {
     pub bold: bool,
     pub italic: bool,
     pub font_size: Option<f64>,
+    pub font_family: Option<String>,
     pub foreground_color: Option<String>,
     pub heading: Option<String>,
     pub style_json: Option<String>,
@@ -1042,6 +1043,15 @@ fn text_style_payload(
                 serde_json::json!({ "magnitude": font_size, "unit": "PT" }),
             );
         }
+    }
+    if let Some(font_family) = &command.font_family {
+        if font_family.trim().is_empty() {
+            bail!("--font-family cannot be empty");
+        }
+        payload.set_field(
+            "weightedFontFamily",
+            serde_json::json!({ "fontFamily": font_family }),
+        );
     }
     if let Some(color) = &command.foreground_color {
         payload.set_field("foregroundColor", foreground_color_payload(color)?);

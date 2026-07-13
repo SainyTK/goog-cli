@@ -2109,6 +2109,9 @@ pub enum DocsStyleCommand {
         /// Font size in points
         #[arg(long)]
         font_size: Option<f64>,
+        /// Font family name such as Arial or Bai Jamjuree
+        #[arg(long)]
+        font_family: Option<String>,
         /// Foreground color as #RRGGBB
         #[arg(long)]
         foreground_color: Option<String>,

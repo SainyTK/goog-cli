@@ -1935,6 +1935,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             bold: true,
             italic: true,
             font_size: Some(14.0),
+            font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
             heading: Some("HEADING_2".into()),
             style_json: None,
@@ -1953,7 +1954,12 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     assert_eq!(styles["range"]["startIndex"], 17);
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
-        "bold,italic,fontSize,foregroundColor"
+        "bold,italic,fontSize,weightedFontFamily,foregroundColor"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["weightedFontFamily"]
+            ["fontFamily"],
+        "Bai Jamjuree"
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
@@ -2344,6 +2350,7 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
             bold: false,
             italic: false,
             font_size: None,
+            font_family: None,
             foreground_color: None,
             heading: None,
             style_json: Some(
@@ -2486,6 +2493,7 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
             bold: true,
             italic: false,
             font_size: None,
+            font_family: None,
             foreground_color: None,
             heading: Some("HEADING_1".into()),
             style_json: Some(r#"{"textStyle":{"strikethrough":true}}"#.into()),
@@ -2568,6 +2576,7 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
             bold: false,
             italic: false,
             font_size: None,
+            font_family: None,
             foreground_color: None,
             heading: Some("HEADING_2".into()),
             style_json: None,
@@ -2692,6 +2701,7 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
             bold: false,
             italic: false,
             font_size: None,
+            font_family: None,
             foreground_color: None,
             heading: Some("HEADING_1".into()),
             style_json: None,

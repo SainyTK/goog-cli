@@ -211,6 +211,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             bold: true,
             italic: false,
             font_size: Some(16.0),
+            font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
             heading: Some("HEADING_2".into()),
             style_json: None,
@@ -230,7 +231,12 @@ fn image_table_style_and_list_changes_build_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
-        "bold,fontSize,foregroundColor"
+        "bold,fontSize,weightedFontFamily,foregroundColor"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["weightedFontFamily"]
+            ["fontFamily"],
+        "Bai Jamjuree"
     );
 
     let list = prepare_apply_list_change(
