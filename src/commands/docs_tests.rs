@@ -497,8 +497,22 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         "Customer contact [page number]"
     );
     assert_eq!(output["segments"][0]["autoTextTypes"][0], "PAGE_NUMBER");
+    assert_eq!(output["segments"][0]["textRuns"][0]["startIndex"], 0);
+    assert_eq!(output["segments"][0]["textRuns"][0]["endIndex"], 16);
+    assert_eq!(
+        output["segments"][0]["textRuns"][0]["content"],
+        "Customer contact"
+    );
+    assert_eq!(
+        output["segments"][0]["textRuns"][0]["textStyle"]["weightedFontFamily"]["fontFamily"],
+        "Bai Jamjuree"
+    );
     assert_eq!(output["segments"][1]["segmentId"], "legacy-header");
     assert_eq!(output["segments"][1]["preview"], "Legacy header");
+    assert_eq!(
+        output["segments"][1]["textRuns"][0]["content"],
+        "Legacy header\n"
+    );
     assert_eq!(output["segments"][2]["kind"], "footer");
     assert_eq!(output["segments"][2]["preview"], "[empty footer]");
     assert_eq!(output["lists"].as_array().unwrap().len(), 1);
@@ -4888,8 +4902,17 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                             "paragraph": {
                                 "elements": [
                                     {
+                                        "startIndex": 0,
                                         "endIndex": 16,
-                                        "textRun": { "content": "Customer contact" }
+                                        "textRun": {
+                                            "content": "Customer contact",
+                                            "textStyle": {
+                                                "weightedFontFamily": {
+                                                    "fontFamily": "Bai Jamjuree",
+                                                    "weight": 400
+                                                }
+                                            }
+                                        }
                                     },
                                     {
                                         "startIndex": 16,

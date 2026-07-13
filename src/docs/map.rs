@@ -92,6 +92,8 @@ pub struct DocumentSegment {
     pub preview: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub auto_text_types: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub text_runs: Vec<DocumentTextRun>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -493,6 +495,8 @@ fn document_segments(document: &Value) -> Vec<DocumentSegment> {
                 collect_auto_text_types(segment, &mut auto_text_types);
                 auto_text_types.sort();
                 auto_text_types.dedup();
+                let mut text_runs = Vec::new();
+                collect_text_runs(segment, &mut text_runs);
                 let end_index = max_i64_field(segment, "endIndex").unwrap_or_default();
                 let preview = segment_preview(kind, &text, &auto_text_types);
                 segments.push(DocumentSegment {
@@ -502,6 +506,7 @@ fn document_segments(document: &Value) -> Vec<DocumentSegment> {
                     end_index,
                     preview,
                     auto_text_types,
+                    text_runs,
                 });
             }
         }
@@ -570,6 +575,28 @@ fn collect_auto_text_types(value: &Value, types: &mut Vec<String>) {
         Value::Object(values) => {
             for value in values.values() {
                 collect_auto_text_types(value, types);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_text_runs(value: &Value, text_runs: &mut Vec<DocumentTextRun>) {
+    if value.get("textRun").is_some() {
+        if let Some(text_run) = document_text_run(value) {
+            text_runs.push(text_run);
+        }
+        return;
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_text_runs(value, text_runs);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_text_runs(value, text_runs);
             }
         }
         _ => {}
@@ -1536,16 +1563,18 @@ fn paragraph_text_runs(paragraph: &Value) -> Vec<DocumentTextRun> {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|element| {
-            let text_run = element.get("textRun")?;
-            Some(DocumentTextRun {
-                start_index: element.get("startIndex").and_then(Value::as_i64),
-                end_index: element.get("endIndex").and_then(Value::as_i64),
-                content: text_run.get("content")?.as_str()?.to_string(),
-                text_style: text_run.get("textStyle").cloned(),
-            })
-        })
+        .filter_map(document_text_run)
         .collect()
+}
+
+fn document_text_run(element: &Value) -> Option<DocumentTextRun> {
+    let text_run = element.get("textRun")?;
+    Some(DocumentTextRun {
+        start_index: element.get("startIndex").and_then(Value::as_i64),
+        end_index: element.get("endIndex").and_then(Value::as_i64),
+        content: text_run.get("content")?.as_str()?.to_string(),
+        text_style: text_run.get("textStyle").cloned(),
+    })
 }
 
 fn paragraph_style(paragraph: &Value) -> Option<String> {
