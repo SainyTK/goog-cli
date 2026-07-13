@@ -1790,6 +1790,7 @@ fn docs_apply_styles_accepts_paragraph_layout() {
                         indent_first_line,
                         keep_with_next,
                         keep_lines_together,
+                        page_break_before,
                         text,
                         ..
                     },
@@ -1815,6 +1816,7 @@ fn docs_apply_styles_accepts_paragraph_layout() {
         "18",
         "--keep-with-next",
         "--keep-lines-together",
+        "--page-break-before",
     ])
     .unwrap()
     .command
@@ -1831,6 +1833,7 @@ fn docs_apply_styles_accepts_paragraph_layout() {
     assert_eq!(indent_first_line, Some(18.0));
     assert!(keep_with_next);
     assert!(keep_lines_together);
+    assert!(page_break_before);
 }
 
 #[test]

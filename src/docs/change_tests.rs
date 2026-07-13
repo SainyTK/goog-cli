@@ -233,6 +233,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             indent_first_line: Some(18.0),
             keep_with_next: true,
             keep_lines_together: true,
+            page_break_before: true,
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -279,8 +280,13 @@ fn image_table_style_and_list_changes_build_native_requests() {
         true
     );
     assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["pageBreakBefore"],
+        true
+    );
+    assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
-        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether"
+        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,pageBreakBefore"
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
@@ -345,6 +351,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         indent_first_line: None,
         keep_with_next: false,
         keep_lines_together: false,
+        page_break_before: false,
         heading: None,
         style_json: None,
         dry_run: true,

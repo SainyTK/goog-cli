@@ -2147,6 +2147,9 @@ pub enum DocsStyleCommand {
         /// Prevent page breaks within each selected paragraph
         #[arg(long)]
         keep_lines_together: bool,
+        /// Start each selected paragraph on a new page
+        #[arg(long)]
+        page_break_before: bool,
         /// Named paragraph style such as HEADING_1
         #[arg(long = "paragraph-style", value_name = "PARAGRAPH_STYLE")]
         heading: Option<String>,
