@@ -56,13 +56,31 @@ Use ANSI-C shell quoting for intentional newlines.
 
 ## Apply styles
 
+Build the document hierarchy with native paragraph styles, then add only the explicit typography and layout properties the design requires:
+
 ```bash
-target/debug/goog docs style apply DOCUMENT_ID --text 'Quarterly operating review' --paragraph-style TITLE --font-size 26 --foreground-color '#202124' --dry-run
-target/debug/goog docs style apply DOCUMENT_ID --text 'Executive summary' --paragraph-style HEADING_1 --dry-run
-target/debug/goog docs style apply DOCUMENT_ID --text 'Decision required' --bold --foreground-color '#174EA6' --dry-run
+target/debug/goog docs style apply DOCUMENT_ID --text 'Quarterly operating review' --paragraph-style TITLE --font-family 'Bai Jamjuree' --font-size 26 --foreground-color '#202124' --alignment center --space-below 10 --dry-run --json
+target/debug/goog docs style apply DOCUMENT_ID --text 'Quarterly operating review' --paragraph-style TITLE --font-family 'Bai Jamjuree' --font-size 26 --foreground-color '#202124' --alignment center --space-below 10
+target/debug/goog docs style apply DOCUMENT_ID --text 'Executive summary' --paragraph-style HEADING_1 --keep-with-next --keep-lines-together --dry-run --json
+target/debug/goog docs style apply DOCUMENT_ID --text 'Executive summary' --paragraph-style HEADING_1 --keep-with-next --keep-lines-together
+target/debug/goog docs style apply DOCUMENT_ID --entry BODY_ENTRY --font-family 'Bai Jamjuree' --font-size 11 --alignment justified --direction left-to-right --line-spacing 115 --space-below 10 --spacing-mode never-collapse --dry-run --json
+target/debug/goog docs style apply DOCUMENT_ID --entry BODY_ENTRY --font-family 'Bai Jamjuree' --font-size 11 --alignment justified --direction left-to-right --line-spacing 115 --space-below 10 --spacing-mode never-collapse
 ```
 
+Use `--entry` after mapping when the same text appears more than once or when the complete paragraph must receive spacing and pagination properties.
+Use `--text` for a unique text span and `--match N` for an intentional repeated match.
+Paragraph layout options also include `--space-above`, `--indent-start`, `--indent-end`, `--indent-first-line`, `--avoid-widow-and-orphan`, and `--page-break-before`.
+Text styling also supports `--bold`, `--italic`, `--underline`, and internal heading links through `--link-heading-id`.
 Run `target/debug/goog docs style apply --help` before using a paragraph style that has not already been observed in the document.
+
+Map again after applying styles and inspect both `paragraphStyle` and `textRuns` in JSON output:
+
+```bash
+target/debug/goog docs map DOCUMENT_ID --json
+```
+
+The customer reference uses explicit paragraph spacing, line spacing, alignment, indentation, direction, custom fonts, and pagination controls.
+Do not rely on visual similarity alone when these native properties can be verified through the map.
 
 ## Images
 
