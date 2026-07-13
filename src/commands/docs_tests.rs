@@ -347,12 +347,18 @@ async fn run_map_filters_page_and_section_breaks() {
     assert_eq!(breaks[0]["kind"], "section-break");
     assert_eq!(breaks[0]["location"]["index"], 0);
     assert_eq!(breaks[0]["sectionType"], "CONTINUOUS");
+    assert_eq!(
+        breaks[0]["sectionStyle"]["contentDirection"],
+        "LEFT_TO_RIGHT"
+    );
     assert_eq!(breaks[1]["kind"], "page-break");
     assert_eq!(breaks[1]["location"]["index"], 14);
     assert_eq!(breaks[1]["preview"], "[page break]");
     assert_eq!(breaks[2]["kind"], "section-break");
     assert_eq!(breaks[2]["location"]["index"], 27);
     assert_eq!(breaks[2]["sectionType"], "NEXT_PAGE");
+    assert_eq!(breaks[2]["sectionStyle"]["defaultHeaderId"], "header-2");
+    assert_eq!(breaks[2]["sectionStyle"]["defaultFooterId"], "footer-2");
     assert_eq!(breaks[2]["preview"], "[section break: next page]");
 
     let mut human_out = Vec::new();
@@ -368,6 +374,7 @@ async fn run_map_filters_page_and_section_breaks() {
     .unwrap();
     let human = String::from_utf8(human_out).unwrap();
     assert!(human.contains("PageBreak"));
+    assert!(human.contains("header:header-2,footer:footer-2"));
     assert!(human.contains("SectionBreak"));
     assert!(human.contains("NEXT_PAGE"));
 }
@@ -4195,7 +4202,11 @@ fn short_document_with_page_break() -> serde_json::Value {
                     "startIndex": 27,
                     "endIndex": 28,
                     "sectionBreak": {
-                        "sectionStyle": { "sectionType": "NEXT_PAGE" }
+                        "sectionStyle": {
+                            "sectionType": "NEXT_PAGE",
+                            "defaultHeaderId": "header-2",
+                            "defaultFooterId": "footer-2"
+                        }
                     }
                 }
             ]
@@ -4211,7 +4222,10 @@ fn document_with_initial_section_and_page_breaks() -> serde_json::Value {
         serde_json::json!({
             "endIndex": 1,
             "sectionBreak": {
-                "sectionStyle": { "sectionType": "CONTINUOUS" }
+                "sectionStyle": {
+                    "sectionType": "CONTINUOUS",
+                    "contentDirection": "LEFT_TO_RIGHT"
+                }
             }
         }),
     );

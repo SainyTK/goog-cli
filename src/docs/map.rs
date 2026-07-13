@@ -26,6 +26,8 @@ pub struct DocumentBreak {
     pub location: DocumentLocation,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub section_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section_style: Option<Value>,
     pub preview: String,
 }
 
@@ -969,17 +971,20 @@ impl<'a> DocumentMapBuilder<'a> {
                 kind: DocumentBreakKind::PageBreak,
                 location: self.current_location(element),
                 section_type: None,
+                section_style: None,
                 preview: "[page break]".into(),
             });
         }
     }
 
     fn push_section_break(&mut self, element: &Value, section_break: &Value) {
-        let section_type = section_break
-            .get("sectionStyle")
+        let section_style = section_break.get("sectionStyle").cloned();
+        let section_type = section_style
+            .as_ref()
             .and_then(|style| style.get("sectionType"))
             .and_then(Value::as_str)
-            .unwrap_or("UNSPECIFIED");
+            .unwrap_or("UNSPECIFIED")
+            .to_string();
         let mut location = self.current_location(element);
         if location.index.is_none() {
             location.index = element
@@ -990,7 +995,8 @@ impl<'a> DocumentMapBuilder<'a> {
         self.breaks.push(DocumentBreak {
             kind: DocumentBreakKind::SectionBreak,
             location,
-            section_type: Some(section_type.into()),
+            section_type: Some(section_type.clone()),
+            section_style,
             preview: format!(
                 "[section break: {}]",
                 section_type.to_ascii_lowercase().replace('_', " ")

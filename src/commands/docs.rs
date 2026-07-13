@@ -3151,23 +3151,52 @@ fn write_document_breaks(out: &mut impl Write, breaks: &[DocumentBreak], json: b
     } else {
         writeln!(
             out,
-            "{:<15} {:<7} {:<5} {:<16} Preview",
-            "Break", "Index", "Page", "Section type"
+            "{:<15} {:<7} {:<5} {:<16} {:<30} Preview",
+            "Break", "Index", "Page", "Section type", "Header/footer"
         )
         .context("failed to write Docs break map header")?;
         for document_break in breaks {
             writeln!(
                 out,
-                "{:<15} {:<7} {:<5} {:<16} {}",
+                "{:<15} {:<7} {:<5} {:<16} {:<30} {}",
                 format!("{:?}", document_break.kind),
                 display_optional(document_break.location.index),
                 display_optional(document_break.location.page),
                 document_break.section_type.as_deref().unwrap_or("-"),
+                section_header_footer_summary(document_break.section_style.as_ref()),
                 document_break.preview
             )
             .context("failed to write Docs break map row")?;
         }
         Ok(())
+    }
+}
+
+fn section_header_footer_summary(section_style: Option<&serde_json::Value>) -> String {
+    let Some(section_style) = section_style else {
+        return "-".into();
+    };
+    let references = [
+        ("defaultHeaderId", "header"),
+        ("defaultFooterId", "footer"),
+        ("firstPageHeaderId", "first-header"),
+        ("firstPageFooterId", "first-footer"),
+        ("evenPageHeaderId", "even-header"),
+        ("evenPageFooterId", "even-footer"),
+    ]
+    .into_iter()
+    .filter_map(|(field, label)| {
+        section_style
+            .get(field)
+            .and_then(serde_json::Value::as_str)
+            .map(|id| format!("{label}:{id}"))
+    })
+    .collect::<Vec<_>>();
+
+    if references.is_empty() {
+        "-".into()
+    } else {
+        references.join(",")
     }
 }
 
