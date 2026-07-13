@@ -212,6 +212,17 @@ pub(crate) struct CopyNamedStylesCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CopyPageStyleCommand {
+    pub source_document_id: String,
+    pub target_document_id: String,
+    pub source_tab_id: Option<String>,
+    pub target_tab_id: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ApplyListCommand {
     pub document_id: String,
     pub selector: RangeSelector,
@@ -1523,6 +1534,81 @@ pub(crate) fn prepare_configure_page_change(
         preview: DocsChangePreview::new(
             "style page",
             format!("Configure document page fields: {}", fields.join(", ")),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_copy_page_style_change(
+    source_map: &DocumentMap,
+    target_map: &DocumentMap,
+    command: &CopyPageStyleCommand,
+) -> Result<PreparedDocsChange> {
+    let source_tab_id = command.source_tab_id.as_deref().map(str::trim);
+    let target_tab_id = command.target_tab_id.as_deref().map(str::trim);
+    if source_tab_id.is_some_and(str::is_empty) {
+        bail!("--source-tab-id cannot be empty");
+    }
+    if target_tab_id.is_some_and(str::is_empty) {
+        bail!("--target-tab-id cannot be empty");
+    }
+    let source = if let Some(tab_id) = source_tab_id {
+        source_map
+            .document_styles
+            .iter()
+            .find(|style| style.tab_id.as_deref() == Some(tab_id))
+            .with_context(|| format!("source document has no page style for tab {tab_id}"))?
+    } else {
+        source_map
+            .document_styles
+            .first()
+            .context("source document has no page style")?
+    };
+
+    let source_style = source
+        .document_style
+        .as_object()
+        .context("source document returned malformed page style")?;
+    let mut style = serde_json::Map::new();
+    let mut fields = Vec::new();
+    for field in [
+        "pageSize",
+        "marginTop",
+        "marginBottom",
+        "marginLeft",
+        "marginRight",
+        "marginHeader",
+        "marginFooter",
+    ] {
+        if let Some(value) = source_style.get(field) {
+            style.insert(field.into(), value.clone());
+            fields.push(field);
+        }
+    }
+    if fields.is_empty() {
+        bail!("source document has no copyable page size or margins");
+    }
+    let mut update = serde_json::json!({
+        "documentStyle": style,
+        "fields": fields.join(",")
+    });
+    if let Some(tab_id) = target_tab_id {
+        update["tabId"] = serde_json::Value::String(tab_id.into());
+    }
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({ "updateDocumentStyle": update })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: target_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "style copy-page",
+            format!(
+                "Copy {} page style fields from the source document",
+                fields.len()
+            ),
         ),
     }))
 }

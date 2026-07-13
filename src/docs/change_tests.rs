@@ -2,15 +2,16 @@ use serde_json::json;
 
 use super::change::{
     prepare_apply_list_change, prepare_apply_styles_change, prepare_configure_page_change,
-    prepare_copy_named_styles_change, prepare_edit_table_change, prepare_insert_image_change,
-    prepare_insert_table_change, prepare_insert_text_change, prepare_pin_table_header_rows_change,
-    prepare_replace_text_change, prepare_set_table_column_widths_change,
-    prepare_style_table_row_change, prepare_update_named_style_change,
-    request_body_required_revision_id, set_request_body_required_revision_id,
-    split_docs_request_bodies, write_docs_change_preview, ApplyListCommand, ApplyStylesCommand,
-    ConfigurePageCommand, CopyNamedStylesCommand, EditTableCommand, InsertImageCommand,
-    InsertTableCommand, InsertTextCommand, PinTableHeaderRowsCommand, ReplaceTextCommand,
-    SetTableColumnWidthsCommand, StyleTableRowCommand, UpdateNamedStyleCommand,
+    prepare_copy_named_styles_change, prepare_copy_page_style_change, prepare_edit_table_change,
+    prepare_insert_image_change, prepare_insert_table_change, prepare_insert_text_change,
+    prepare_pin_table_header_rows_change, prepare_replace_text_change,
+    prepare_set_table_column_widths_change, prepare_style_table_row_change,
+    prepare_update_named_style_change, request_body_required_revision_id,
+    set_request_body_required_revision_id, split_docs_request_bodies, write_docs_change_preview,
+    ApplyListCommand, ApplyStylesCommand, ConfigurePageCommand, CopyNamedStylesCommand,
+    CopyPageStyleCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
+    InsertTextCommand, PinTableHeaderRowsCommand, ReplaceTextCommand, SetTableColumnWidthsCommand,
+    StyleTableRowCommand, UpdateNamedStyleCommand,
 };
 use super::map::{
     build_document_map, DocumentLocation, DocumentMap, DocumentMapEntry, DocumentMapEntryKind,
@@ -691,6 +692,57 @@ fn page_configuration_builds_native_document_style_request() {
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
         "rev-required"
+    );
+}
+
+#[test]
+fn copy_page_style_builds_tab_aware_document_style_request() {
+    let mut source_map = searchable_map();
+    source_map.document_styles = vec![crate::docs::map::DocumentTabStyle {
+        tab_id: Some("source-tab".into()),
+        document_style: json!({
+            "pageSize": {
+                "width": { "magnitude": 612, "unit": "PT" },
+                "height": { "magnitude": 792, "unit": "PT" }
+            },
+            "marginTop": { "magnitude": 72, "unit": "PT" },
+            "marginBottom": { "magnitude": 72, "unit": "PT" },
+            "marginLeft": { "magnitude": 72, "unit": "PT" },
+            "marginRight": { "magnitude": 72, "unit": "PT" },
+            "marginHeader": { "magnitude": 36, "unit": "PT" },
+            "marginFooter": { "magnitude": 36, "unit": "PT" },
+            "defaultHeaderId": "read-only-header"
+        }),
+    }];
+    let change = prepare_copy_page_style_change(
+        &source_map,
+        &searchable_map(),
+        &CopyPageStyleCommand {
+            source_document_id: "source-document".into(),
+            target_document_id: "target-document".into(),
+            source_tab_id: Some("source-tab".into()),
+            target_tab_id: Some("target-tab".into()),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("target-revision".into()),
+        },
+    )
+    .unwrap();
+    let output = preview_json(&change);
+    let update = &output["requestBody"]["requests"][0]["updateDocumentStyle"];
+    assert_eq!(update["tabId"], "target-tab");
+    assert_eq!(
+        update["fields"],
+        "pageSize,marginTop,marginBottom,marginLeft,marginRight,marginHeader,marginFooter"
+    );
+    assert_eq!(
+        update["documentStyle"]["pageSize"]["width"]["magnitude"],
+        612
+    );
+    assert!(update["documentStyle"].get("defaultHeaderId").is_none());
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "target-revision"
     );
 }
 

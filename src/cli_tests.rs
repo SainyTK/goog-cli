@@ -2263,6 +2263,52 @@ fn docs_style_page_parse() {
 }
 
 #[test]
+fn docs_copy_page_style_accepts_source_target_tabs_and_safety_options() {
+    let cli = parse(&[
+        "docs",
+        "style",
+        "copy-page",
+        "source-document",
+        "target-document",
+        "--source-tab-id",
+        "source-tab",
+        "--target-tab-id",
+        "target-tab",
+        "--required-revision-id",
+        "target-revision",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap();
+
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::CopyPage {
+                        source_document_id,
+                        target_document_id,
+                        source_tab_id,
+                        target_tab_id,
+                        required_revision_id,
+                        dry_run,
+                        json,
+                    },
+            },
+    } = cli.command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(source_document_id, "source-document");
+    assert_eq!(target_document_id, "target-document");
+    assert_eq!(source_tab_id.as_deref(), Some("source-tab"));
+    assert_eq!(target_tab_id.as_deref(), Some("target-tab"));
+    assert_eq!(required_revision_id.as_deref(), Some("target-revision"));
+    assert!(dry_run);
+    assert!(json);
+}
+
+#[test]
 fn docs_show_style_template_is_removed() {
     assert!(parse(&["docs", "show-style-template", "document-123"]).is_err());
     assert!(parse(&["docs", "style-template", "document-123"]).is_err());

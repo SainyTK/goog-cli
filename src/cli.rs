@@ -1875,6 +1875,11 @@ impl DocsCommand {
                     source_document_id,
                     target_document_id,
                     ..
+                }
+                | DocsStyleCommand::CopyPage {
+                    source_document_id,
+                    target_document_id,
+                    ..
                 } => {
                     *source_document_id = crate::docs::extract_document_id(source_document_id);
                     *target_document_id = crate::docs::extract_document_id(target_document_id);
@@ -2241,6 +2246,28 @@ pub enum DocsStyleCommand {
         /// Target Document ID or URL to update
         target_document_id: String,
         /// Source document tab containing the named styles; defaults to the first tab
+        #[arg(long)]
+        source_tab_id: Option<String>,
+        /// Target document tab to update; defaults to the first tab
+        #[arg(long)]
+        target_tab_id: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the target document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Copy page size and margins from one Google Doc to another
+    CopyPage {
+        /// Source Document ID or URL whose page style should be copied
+        source_document_id: String,
+        /// Target Document ID or URL to update
+        target_document_id: String,
+        /// Source document tab containing the page style; defaults to the first tab
         #[arg(long)]
         source_tab_id: Option<String>,
         /// Target document tab to update; defaults to the first tab

@@ -15,8 +15,8 @@ use crate::docs::{
     batch_update_document,
     change::{
         prepare_apply_list_change, prepare_apply_styles_change, prepare_configure_page_change,
-        prepare_copy_named_styles_change, prepare_create_footer_change,
-        prepare_create_footnote_change, prepare_create_header_change,
+        prepare_copy_named_styles_change, prepare_copy_page_style_change,
+        prepare_create_footer_change, prepare_create_footnote_change, prepare_create_header_change,
         prepare_create_named_range_change, prepare_delete_named_range_change,
         prepare_edit_table_change, prepare_insert_image_change, prepare_insert_page_break_change,
         prepare_insert_section_break_change, prepare_insert_table_change,
@@ -26,8 +26,8 @@ use crate::docs::{
         request_body_required_revision_id, request_body_with_revision,
         set_request_body_required_revision_id, split_docs_request_bodies,
         table_header_style_requests, write_docs_change_preview, ApplyListCommand,
-        ApplyStylesCommand, ConfigurePageCommand, CopyNamedStylesCommand, CreateFooterCommand,
-        CreateFootnoteCommand, CreateHeaderCommand, CreateNamedRangeCommand,
+        ApplyStylesCommand, ConfigurePageCommand, CopyNamedStylesCommand, CopyPageStyleCommand,
+        CreateFooterCommand, CreateFootnoteCommand, CreateHeaderCommand, CreateNamedRangeCommand,
         DeleteNamedRangeCommand, EditTableCommand, InsertImageCommand, InsertPageBreakCommand,
         InsertSectionBreakCommand, InsertTableCommand, InsertTextCommand,
         PinTableHeaderRowsCommand, PreparedDocsChange, ReplaceTextCommand,
@@ -774,6 +774,38 @@ pub fn run<S: AccountStore>(
                     margin_right,
                     margin_header,
                     margin_footer,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::Style {
+            command:
+                DocsStyleCommand::CopyPage {
+                    source_document_id,
+                    target_document_id,
+                    source_tab_id,
+                    target_tab_id,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_copy_page_style_unified_to(
+                config,
+                store,
+                account_override,
+                CopyPageStyleCommand {
+                    source_document_id,
+                    target_document_id,
+                    source_tab_id,
+                    target_tab_id,
                     dry_run,
                     json,
                     required_revision_id,
@@ -2422,6 +2454,49 @@ pub(super) async fn run_copy_named_styles_unified_to<S: AccountStore>(
     )
     .await?;
     let change = prepare_copy_named_styles_change(&source_map, &target_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.target_document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+pub(super) async fn run_copy_page_style_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CopyPageStyleCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let source_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.source_document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let target_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.target_document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_copy_page_style_change(&source_map, &target_map, &command)?;
     apply_or_preview_docs_change_unified(
         config,
         store,
