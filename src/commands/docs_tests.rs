@@ -23,7 +23,7 @@ use crate::docs::style_template::{
     StyleTemplate, TextStyleTemplate,
 };
 use crate::docs::DOCS_SCOPE;
-use crate::drive::DRIVE_SCOPE;
+use crate::drive::{DriveError, DRIVE_SCOPE};
 
 use super::docs::*;
 
@@ -3708,6 +3708,17 @@ async fn run_export_pdf_writes_a_native_drive_export() {
         String::from_utf8(out).unwrap(),
         format!("{}\t{}\n", output.display(), pdf.len())
     );
+}
+
+#[test]
+fn pdf_export_access_failures_include_account_and_policy_guidance() {
+    for error in [DriveError::NotFound, DriveError::PermissionDenied] {
+        let message = format!("{:#}", with_pdf_export_context(error));
+
+        assert!(message.contains("confirm the selected account can access the document"));
+        assert!(message.contains("Workspace policies allow downloading, printing, and copying"));
+        assert!(message.contains("use --account EMAIL"));
+    }
 }
 
 #[tokio::test]

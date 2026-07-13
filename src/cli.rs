@@ -1968,6 +1968,9 @@ Notes:
         title: String,
     },
     /// Export a native Google Doc as a PDF file
+    #[command(after_long_help = "Notes:
+  Google Drive can deny export when the selected account cannot access the document or when file or Workspace policies disable downloading, printing, or copying.
+  Use --account EMAIL when multiple accounts are authorized and the document belongs to a specific account.")]
     ExportPdf {
         /// Document ID or URL to export
         document_id: String,

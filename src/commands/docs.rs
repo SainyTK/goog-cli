@@ -2715,7 +2715,7 @@ pub(super) async fn run_export_pdf_to<S: AccountStore>(
 
     let exported = export_google_file(client, &options, |_| {})
         .await
-        .context("failed to export Google Docs Document as PDF")?;
+        .map_err(with_pdf_export_context)?;
     writeln!(out, "{}\t{}", exported.path.display(), exported.bytes)
         .context("failed to write output")?;
     Ok(())
@@ -2749,7 +2749,7 @@ pub(super) async fn run_export_pdf_unified_to<S: AccountStore>(
         is_drive_target_access_failure,
     )
     .await
-    .context("failed to export Google Docs Document as PDF")?;
+    .map_err(with_pdf_export_context)?;
 
     writeln!(out, "{}\t{}", exported.path.display(), exported.bytes)
         .context("failed to write output")?;
@@ -2764,6 +2764,15 @@ async fn export_pdf_as_account<S: AccountStore>(
 ) -> Result<DownloadedFile, DriveError> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     export_google_file(&client, options, |_| {}).await
+}
+
+pub(super) fn with_pdf_export_context(error: DriveError) -> anyhow::Error {
+    match error {
+        DriveError::NotFound | DriveError::PermissionDenied => anyhow::Error::new(error).context(
+            "failed to export Google Docs Document as PDF; confirm the selected account can access the document and that file and Workspace policies allow downloading, printing, and copying; use --account EMAIL when multiple accounts are authorized",
+        ),
+        error => anyhow::Error::new(error).context("failed to export Google Docs Document as PDF"),
+    }
 }
 
 fn is_drive_target_access_failure(error: &DriveError) -> bool {
