@@ -1512,6 +1512,16 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
         tables[0]["tableCellTextRuns"][0][1][0]["textStyle"],
         serde_json::json!({"italic": true})
     );
+    assert_eq!(tables[0]["tableCellParagraphs"][0][0][0]["startIndex"], 77);
+    assert_eq!(tables[0]["tableCellParagraphs"][0][0][0]["endIndex"], 84);
+    assert_eq!(
+        tables[0]["tableCellParagraphs"][0][0][0]["content"],
+        "หัวข้อ\n"
+    );
+    assert_eq!(
+        tables[0]["tableCellParagraphs"][0][0][0]["paragraphStyle"]["alignment"],
+        "CENTER"
+    );
 }
 
 #[tokio::test]
@@ -4584,7 +4594,7 @@ fn editable_table_document() -> serde_json::Value {
 }
 
 fn long_document_with_toc_and_objects() -> serde_json::Value {
-    serde_json::json!({
+    let mut document = serde_json::json!({
         "documentId": "document-123",
         "title": "คู่มือ Sandcastle",
         "revisionId": "rev-long",
@@ -4995,7 +5005,17 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                 }
             }
         }]
-    })
+    });
+    let table_paragraph = document
+        .pointer_mut("/body/content/3/table/tableRows/0/tableCells/0/content/0")
+        .unwrap();
+    table_paragraph["startIndex"] = serde_json::json!(77);
+    table_paragraph["endIndex"] = serde_json::json!(84);
+    table_paragraph["paragraph"]["paragraphStyle"] = serde_json::json!({
+        "namedStyleType": "NORMAL_TEXT",
+        "alignment": "CENTER"
+    });
+    document
 }
 
 fn document_with_multiple_inline_images() -> serde_json::Value {

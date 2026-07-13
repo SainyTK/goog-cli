@@ -135,6 +135,8 @@ pub struct DocumentMapEntry {
     pub table_cells: Vec<Vec<DocumentRange>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub table_cell_text_runs: Vec<Vec<Vec<DocumentTextRun>>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub table_cell_paragraphs: Vec<Vec<Vec<DocumentTableCellParagraph>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -145,6 +147,18 @@ pub struct DocumentTextRun {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_style: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentTableCellParagraph {
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paragraph_style: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bullet: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1071,6 +1085,7 @@ struct DocumentMapEntryMetadata {
     table_handle: Option<String>,
     table_cells: Vec<Vec<DocumentRange>>,
     table_cell_text_runs: Vec<Vec<Vec<DocumentTextRun>>>,
+    table_cell_paragraphs: Vec<Vec<Vec<DocumentTableCellParagraph>>>,
 }
 
 impl<'a> DocumentMapBuilder<'a> {
@@ -1260,6 +1275,7 @@ impl<'a> DocumentMapBuilder<'a> {
         let location = self.current_location(element);
         let table_cells = table_cell_ranges(table, &location);
         let table_cell_text_runs = table_cell_text_runs(table);
+        let table_cell_paragraphs = table_cell_paragraphs(table);
         let layout_metadata = table_layout_metadata(table);
         let table_handle = format!("table-{}", self.table_count);
         self.push_entry_with_metadata(
@@ -1273,6 +1289,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 table_handle: Some(table_handle),
                 table_cells,
                 table_cell_text_runs,
+                table_cell_paragraphs,
                 layout_metadata,
                 ..DocumentMapEntryMetadata::default()
             },
@@ -1405,6 +1422,7 @@ impl<'a> DocumentMapBuilder<'a> {
             table_handle: metadata.table_handle,
             table_cells: metadata.table_cells,
             table_cell_text_runs: metadata.table_cell_text_runs,
+            table_cell_paragraphs: metadata.table_cell_paragraphs,
         });
     }
 
@@ -1901,6 +1919,39 @@ fn table_cell_text_runs(table: &Value) -> Vec<Vec<Vec<DocumentTextRun>>> {
                         .flatten()
                         .filter_map(|element| element.get("paragraph"))
                         .flat_map(paragraph_text_runs)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn table_cell_paragraphs(table: &Value) -> Vec<Vec<Vec<DocumentTableCellParagraph>>> {
+    table
+        .get("tableRows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|row| {
+            row.get("tableCells")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|cell| {
+                    cell.get("content")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|element| {
+                            let paragraph = element.get("paragraph")?;
+                            Some(DocumentTableCellParagraph {
+                                start_index: element.get("startIndex").and_then(Value::as_i64),
+                                end_index: element.get("endIndex").and_then(Value::as_i64),
+                                content: paragraph_text(paragraph),
+                                paragraph_style: paragraph.get("paragraphStyle").cloned(),
+                                bullet: paragraph.get("bullet").cloned(),
+                            })
+                        })
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>()

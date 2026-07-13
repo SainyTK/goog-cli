@@ -683,6 +683,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
                 vec![range(12, 13), range(16, 17)],
             ],
             table_cell_text_runs: Vec::new(),
+            table_cell_paragraphs: Vec::new(),
         }],
         document_locations: Vec::new(),
         text_blocks: Vec::new(),
