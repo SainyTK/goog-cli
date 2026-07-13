@@ -1474,6 +1474,20 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
         tables[0]["layoutMetadata"]["tableCellStyles"][0][1],
         serde_json::json!({})
     );
+    assert_eq!(tables[0]["tableCellTextRuns"][0][0][0]["startIndex"], 77);
+    assert_eq!(tables[0]["tableCellTextRuns"][0][0][0]["endIndex"], 84);
+    assert_eq!(
+        tables[0]["tableCellTextRuns"][0][0][0]["textStyle"]["bold"],
+        true
+    );
+    assert_eq!(
+        tables[0]["tableCellTextRuns"][0][1][0]["content"],
+        "สถานะ\n"
+    );
+    assert_eq!(
+        tables[0]["tableCellTextRuns"][0][1][0]["textStyle"],
+        serde_json::json!({"italic": true})
+    );
 }
 
 #[tokio::test]
@@ -4683,11 +4697,18 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                                                 }
                                             }
                                         },
-                                        "content": [
+                                                "content": [
                                             {
                                                 "paragraph": {
                                                     "elements": [
-                                                        { "textRun": { "content": "หัวข้อ\n" } }
+                                                        {
+                                                            "startIndex": 77,
+                                                            "endIndex": 84,
+                                                            "textRun": {
+                                                                "content": "หัวข้อ\n",
+                                                                "textStyle": { "bold": true }
+                                                            }
+                                                        }
                                                     ]
                                                 }
                                             }
@@ -4698,7 +4719,14 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                                             {
                                                 "paragraph": {
                                                     "elements": [
-                                                        { "textRun": { "content": "สถานะ\n" } }
+                                                        {
+                                                            "startIndex": 85,
+                                                            "endIndex": 91,
+                                                            "textRun": {
+                                                                "content": "สถานะ\n",
+                                                                "textStyle": { "italic": true }
+                                                            }
+                                                        }
                                                     ]
                                                 }
                                             }

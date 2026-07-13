@@ -131,6 +131,8 @@ pub struct DocumentMapEntry {
     pub table_handle: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub table_cells: Vec<Vec<DocumentRange>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub table_cell_text_runs: Vec<Vec<Vec<DocumentTextRun>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1041,6 +1043,7 @@ struct DocumentMapEntryMetadata {
     columns: Option<usize>,
     table_handle: Option<String>,
     table_cells: Vec<Vec<DocumentRange>>,
+    table_cell_text_runs: Vec<Vec<Vec<DocumentTextRun>>>,
 }
 
 impl<'a> DocumentMapBuilder<'a> {
@@ -1229,6 +1232,7 @@ impl<'a> DocumentMapBuilder<'a> {
         let (rows, columns) = table_dimensions(table);
         let location = self.current_location(element);
         let table_cells = table_cell_ranges(table, &location);
+        let table_cell_text_runs = table_cell_text_runs(table);
         let layout_metadata = table_layout_metadata(table);
         let table_handle = format!("table-{}", self.table_count);
         self.push_entry_with_metadata(
@@ -1241,6 +1245,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 columns: Some(columns),
                 table_handle: Some(table_handle),
                 table_cells,
+                table_cell_text_runs,
                 layout_metadata,
                 ..DocumentMapEntryMetadata::default()
             },
@@ -1379,6 +1384,7 @@ impl<'a> DocumentMapBuilder<'a> {
             columns: metadata.columns,
             table_handle: metadata.table_handle,
             table_cells: metadata.table_cells,
+            table_cell_text_runs: metadata.table_cell_text_runs,
         });
     }
 
@@ -1853,6 +1859,31 @@ fn table_cell_text(cell: &Value) -> String {
         .collect::<String>()
         .trim()
         .to_string()
+}
+
+fn table_cell_text_runs(table: &Value) -> Vec<Vec<Vec<DocumentTextRun>>> {
+    table
+        .get("tableRows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|row| {
+            row.get("tableCells")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|cell| {
+                    cell.get("content")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|element| element.get("paragraph"))
+                        .flat_map(paragraph_text_runs)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 fn table_cell_ranges(table: &Value, table_location: &DocumentLocation) -> Vec<Vec<DocumentRange>> {
