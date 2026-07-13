@@ -2120,6 +2120,12 @@ pub enum DocsStyleCommand {
         /// Paragraph alignment
         #[arg(long, value_enum)]
         alignment: Option<DocsParagraphAlignment>,
+        /// Space before the paragraph in points
+        #[arg(long)]
+        space_above: Option<f64>,
+        /// Space after the paragraph in points
+        #[arg(long)]
+        space_below: Option<f64>,
         /// Named paragraph style such as HEADING_1
         #[arg(long = "paragraph-style", value_name = "PARAGRAPH_STYLE")]
         heading: Option<String>,

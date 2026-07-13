@@ -224,6 +224,8 @@ fn image_table_style_and_list_changes_build_native_requests() {
             font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
             alignment: Some(crate::cli::DocsParagraphAlignment::Center),
+            space_above: Some(6.0),
+            space_below: Some(10.0),
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -243,6 +245,16 @@ fn image_table_style_and_list_changes_build_native_requests() {
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["alignment"],
         "CENTER"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["spaceAbove"],
+        serde_json::json!({ "magnitude": 6.0, "unit": "PT" })
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["spaceBelow"],
+        serde_json::json!({ "magnitude": 10.0, "unit": "PT" })
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
@@ -276,6 +288,53 @@ fn image_table_style_and_list_changes_build_native_requests() {
     assert_eq!(
         list["requestBody"]["requests"][0]["createParagraphBullets"]["bulletPreset"],
         "BULLET_CHECKBOX"
+    );
+}
+
+#[test]
+fn paragraph_spacing_rejects_invalid_point_values() {
+    let document_map = searchable_map();
+    let command = ApplyStylesCommand {
+        document_id: "document-123".into(),
+        selector: RangeSelector::IndexRange {
+            start_index: 1,
+            end_index: 13,
+        },
+        bold: false,
+        italic: false,
+        font_size: None,
+        font_family: None,
+        foreground_color: None,
+        alignment: None,
+        space_above: Some(-1.0),
+        space_below: None,
+        heading: None,
+        style_json: None,
+        dry_run: true,
+        json: true,
+        required_revision_id: None,
+        no_auto_style: false,
+    };
+
+    let error = prepare_apply_styles_change(&document_map, &command, None).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "--space-above must be a finite, non-negative point value"
+    );
+
+    let error = prepare_apply_styles_change(
+        &document_map,
+        &ApplyStylesCommand {
+            space_above: None,
+            space_below: Some(f64::NAN),
+            ..command
+        },
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "--space-below must be a finite, non-negative point value"
     );
 }
 

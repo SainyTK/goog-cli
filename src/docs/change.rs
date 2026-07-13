@@ -146,6 +146,8 @@ pub(crate) struct ApplyStylesCommand {
     pub font_family: Option<String>,
     pub foreground_color: Option<String>,
     pub alignment: Option<DocsParagraphAlignment>,
+    pub space_above: Option<f64>,
+    pub space_below: Option<f64>,
     pub heading: Option<String>,
     pub style_json: Option<String>,
     pub dry_run: bool,
@@ -952,6 +954,8 @@ pub(crate) fn prepare_apply_styles_change(
     let (paragraph_style, paragraph_fields) = paragraph_style_payload(
         command.heading.as_deref(),
         command.alignment,
+        command.space_above,
+        command.space_below,
         raw_payload.paragraph_style,
         cached_paragraph_style,
     )?;
@@ -1239,6 +1243,8 @@ fn text_style_payload(
 fn paragraph_style_payload(
     heading: Option<&str>,
     alignment: Option<DocsParagraphAlignment>,
+    space_above: Option<f64>,
+    space_below: Option<f64>,
     raw_paragraph_style: Option<StyleObject>,
     cached_paragraph_style: Option<serde_json::Value>,
 ) -> Result<(serde_json::Value, Vec<String>)> {
@@ -1256,7 +1262,28 @@ fn paragraph_style_payload(
             serde_json::Value::String(alignment.api_value().into()),
         );
     }
+    set_paragraph_spacing(&mut payload, "spaceAbove", "--space-above", space_above)?;
+    set_paragraph_spacing(&mut payload, "spaceBelow", "--space-below", space_below)?;
     Ok(payload.into_json_parts())
+}
+
+fn set_paragraph_spacing(
+    payload: &mut StylePayloadParts,
+    field: &str,
+    flag: &str,
+    value: Option<f64>,
+) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if !value.is_finite() || value < 0.0 {
+        bail!("{flag} must be a finite, non-negative point value");
+    }
+    payload.set_field(
+        field,
+        serde_json::json!({ "magnitude": value, "unit": "PT" }),
+    );
+    Ok(())
 }
 
 struct StylePayloadParts {

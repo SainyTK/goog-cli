@@ -1739,6 +1739,42 @@ fn docs_apply_styles_accepts_paragraph_alignment() {
 }
 
 #[test]
+fn docs_apply_styles_accepts_paragraph_spacing() {
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Apply {
+                        space_above,
+                        space_below,
+                        text,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "style",
+        "apply",
+        "document-123",
+        "--text",
+        "Executive summary",
+        "--space-above",
+        "6",
+        "--space-below",
+        "10",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(text.as_deref(), Some("Executive summary"));
+    assert_eq!(space_above, Some(6.0));
+    assert_eq!(space_below, Some(10.0));
+}
+
+#[test]
 fn docs_apply_commands_reject_no_auto_style() {
     assert!(parse(&[
         "docs",
