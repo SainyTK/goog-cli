@@ -90,6 +90,24 @@ Use `--tab-id` for a non-default document tab and `--required-revision-id` when 
 After defining the style system, apply the native paragraph style to content with `docs style apply --paragraph-style` so later changes propagate consistently.
 Use `copy-named` instead when an approved source document already contains the intended visual system.
 
+## Configure page geometry
+
+Set page dimensions and margins before adding layout-sensitive content to a blank document.
+Preview the complete geometry first, then apply the same values:
+
+```bash
+target/debug/goog docs style page DOCUMENT_ID --page-width 612 --page-height 792 --margin-top 72 --margin-bottom 72 --margin-left 72 --margin-right 72 --margin-header 36 --margin-footer 36 --dry-run --json
+target/debug/goog docs style page DOCUMENT_ID --page-width 612 --page-height 792 --margin-top 72 --margin-bottom 72 --margin-left 72 --margin-right 72 --margin-header 36 --margin-footer 36
+target/debug/goog docs map DOCUMENT_ID --json
+```
+
+The example configures US Letter pages with one-inch body margins and half-inch header and footer margins.
+Page width and height are measured in points and must be supplied together.
+Margins can be changed independently when the existing page size should remain unchanged.
+Use the map's tab-scoped `documentStyles` metadata to verify the stored page size, margins, and document mode.
+Use `--required-revision-id` when concurrent edits are possible.
+Use `copy-page` instead when the target must inherit an approved source document's page mode, geometry, margins, and supported header or footer behavior.
+
 ## Insert and replace text
 
 ```bash
@@ -339,6 +357,7 @@ target/debug/goog docs break section --help
 target/debug/goog docs copy --help
 target/debug/goog docs export-pdf --help
 target/debug/goog docs style named --help
+target/debug/goog docs style page --help
 target/debug/goog docs style copy-named --help
 target/debug/goog docs style copy-page --help
 ```
