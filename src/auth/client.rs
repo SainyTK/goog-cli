@@ -4,10 +4,7 @@ use reqwest::{IntoUrl, Method, RequestBuilder, Response, StatusCode};
 use super::account::{AccountStore, Token};
 use super::config::{Config, OAuthAppConfig};
 use super::error::AuthError;
-use super::login::{
-    build_authorize_url, exchange_code_for_scopes, random_state, LoopbackServer, GOOGLE_AUTH_URL,
-    GOOGLE_TOKEN_URL,
-};
+use super::login::GOOGLE_TOKEN_URL;
 
 const DEFAULT_REFRESH_THRESHOLD_SECS: i64 = 60;
 
@@ -17,10 +14,8 @@ pub struct AuthClient<'a, S> {
     pub(super) store: &'a S,
     pub(super) account_email: String,
     pub(super) oauth_app: OAuthAppConfig,
-    pub(super) auth_url: String,
     pub(super) token_url: String,
     pub(super) refresh_threshold: Duration,
-    pub(super) authorization_code_flow: Box<dyn AuthorizationCodeFlow + 'a>,
 }
 
 #[allow(dead_code)]
@@ -38,10 +33,8 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
             store,
             account_email,
             oauth_app,
-            auth_url: GOOGLE_AUTH_URL.to_string(),
             token_url: GOOGLE_TOKEN_URL.to_string(),
             refresh_threshold: Duration::seconds(DEFAULT_REFRESH_THRESHOLD_SECS),
-            authorization_code_flow: Box::new(LoopbackAuthorizationCodeFlow),
         })
     }
 
@@ -52,26 +45,6 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
 
     pub(crate) fn account_email(&self) -> &str {
         &self.account_email
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_auth_urls_for_tests(
-        mut self,
-        auth_url: impl Into<String>,
-        token_url: impl Into<String>,
-    ) -> Self {
-        self.auth_url = auth_url.into();
-        self.token_url = token_url.into();
-        self
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_authorization_code_flow_for_tests(
-        mut self,
-        authorization_code_flow: Box<dyn AuthorizationCodeFlow + 'a>,
-    ) -> Self {
-        self.authorization_code_flow = authorization_code_flow;
-        self
     }
 
     pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
@@ -161,33 +134,10 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
             return Ok(token);
         }
 
-        let state = random_state();
-        let authorization = self.authorization_code_flow.authorize(
-            &self.auth_url,
-            &self.oauth_app.client_id,
-            &state,
-            &missing_scopes,
-        )?;
-
-        let granted = exchange_code_for_scopes(
-            &self.token_url,
-            &self.oauth_app.client_id,
-            &self.oauth_app.client_secret,
-            &authorization.redirect_uri,
-            &authorization.code,
-        )
-        .await?;
-
-        let mut merged = token;
-        merged.access_token = granted.access_token;
-        if let Some(refresh_token) = granted.refresh_token {
-            merged.refresh_token = refresh_token;
-        }
-        merged.expiry = granted.expiry;
-        merge_scopes(&mut merged.scopes, granted.scopes);
-
-        self.store.save_token(&self.account_email, &merged)?;
-        Ok(merged)
+        Err(AuthError::MissingScopes {
+            email: self.account_email.clone(),
+            scopes: missing_scopes.join(", "),
+        })
     }
 
     async fn refresh_token(&self, token: &Token) -> Result<Token, AuthError> {
@@ -247,53 +197,6 @@ fn new_http_client() -> Result<reqwest::Client, AuthError> {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| AuthError::Network(e.to_string()))
-}
-
-pub trait AuthorizationCodeFlow {
-    fn authorize(
-        &self,
-        auth_url: &str,
-        client_id: &str,
-        state: &str,
-        scopes: &[&str],
-    ) -> Result<AuthorizationCode, AuthError>;
-}
-
-pub struct AuthorizationCode {
-    pub redirect_uri: String,
-    pub code: String,
-}
-
-struct LoopbackAuthorizationCodeFlow;
-
-impl AuthorizationCodeFlow for LoopbackAuthorizationCodeFlow {
-    fn authorize(
-        &self,
-        auth_url: &str,
-        client_id: &str,
-        state: &str,
-        scopes: &[&str],
-    ) -> Result<AuthorizationCode, AuthError> {
-        let server = LoopbackServer::bind()?;
-        let redirect_uri = server.redirect_uri();
-        let authorize_url = build_authorize_url(auth_url, client_id, &redirect_uri, scopes, state)?;
-
-        println!("Opening browser for additional Google consent...");
-        if webbrowser::open(&authorize_url).is_err() {
-            println!("Could not open a browser automatically. Open this URL manually:\n  {authorize_url}");
-        }
-
-        let code = server.wait_for_callback(state)?;
-        Ok(AuthorizationCode { redirect_uri, code })
-    }
-}
-
-fn merge_scopes(existing: &mut Vec<String>, granted: Vec<String>) {
-    for scope in granted {
-        if !existing.iter().any(|known| known == &scope) {
-            existing.push(scope);
-        }
-    }
 }
 
 async fn send_with_access_token(

@@ -44,6 +44,11 @@ pub enum AuthError {
     #[error("token for account {email} was not found -- run `goog auth login` again")]
     TokenNotFound { email: String },
 
+    #[error(
+        "account {email} is missing required Google scopes: {scopes}; run `goog auth login` once to authorize all supported services"
+    )]
+    MissingScopes { email: String, scopes: String },
+
     #[error("no active account configured -- run `goog auth login` or pass `--account`")]
     ActiveAccountNotConfigured,
 
