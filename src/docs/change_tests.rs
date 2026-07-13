@@ -170,6 +170,37 @@ fn image_table_style_and_list_changes_build_native_requests() {
         "B2"
     );
 
+    let wide_table_data = temp_dir.path().join("wide-table.tsv");
+    std::fs::write(
+        &wide_table_data,
+        "Time\tEvent\tOutcome\n09:12\tDeployment completed\tTimeout changed\n09:18\tAlert fired\tRetries increased\n09:30\tMitigation applied\tAccess restored\n",
+    )
+    .unwrap();
+    let wide_table = prepare_insert_table_change(
+        &document_map,
+        &InsertTableCommand {
+            document_id: "document-123".into(),
+            data: Some(wide_table_data.to_string_lossy().into_owned()),
+            rows: None,
+            columns: None,
+            selector: InsertTextSelector::Index(438),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+            no_auto_style: false,
+        },
+    )
+    .unwrap();
+    let wide_table = preview_json(&wide_table);
+    assert_eq!(
+        wide_table["requestBody"]["requests"][1]["insertText"]["location"]["index"],
+        467
+    );
+    assert_eq!(
+        wide_table["requestBody"]["requests"][1]["insertText"]["text"],
+        "Access restored"
+    );
+
     let styles = prepare_apply_styles_change(
         &document_map,
         &ApplyStylesCommand {

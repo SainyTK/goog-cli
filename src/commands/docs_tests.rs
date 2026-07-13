@@ -1538,7 +1538,7 @@ async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
     );
     assert_eq!(
         output["requestBody"]["requests"][1]["insertText"]["location"]["index"],
-        59
+        63
     );
     assert_eq!(
         output["requestBody"]["requests"][1]["insertText"]["text"],
