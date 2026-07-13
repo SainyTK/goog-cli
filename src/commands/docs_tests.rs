@@ -314,6 +314,110 @@ async fn run_map_prints_human_document_map_for_manual_page_breaks() {
 }
 
 #[tokio::test]
+async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-123");
+    source["body"]["content"][3]["paragraph"]["paragraphStyle"]["headingId"] =
+        serde_json::json!("source-heading");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["title"] = serde_json::json!("Copied title");
+    target["revisionId"] = serde_json::json!("target-revision");
+    target["body"]["content"][3]["paragraph"]["paragraphStyle"]["headingId"] =
+        serde_json::json!("target-heading");
+
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/target-456"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(target))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    run_compare_to(
+        &client,
+        "source-123".into(),
+        "target-456".into(),
+        true,
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["sourceDocumentId"], "source-123");
+    assert_eq!(output["targetDocumentId"], "target-456");
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["scopes"][0]["scope"], "inventory");
+    assert_eq!(output["scopes"][0]["sourceInventory"]["breaks"], 1);
+    assert_eq!(output["scopes"][1]["scope"], "visual-system");
+    assert_eq!(output["scopes"][2]["scope"], "content");
+    assert!(output["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|scope| scope["matches"] == true));
+}
+
+#[tokio::test]
+async fn run_compare_reports_content_difference() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-123");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["content"] =
+        serde_json::json!("Changed title\n");
+
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/target-456"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(target))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    run_compare_to(
+        &client,
+        "source-123".into(),
+        "target-456".into(),
+        false,
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("inventory        yes"));
+    assert!(output.contains("visual-system    yes"));
+    assert!(output.contains("content          no"));
+    assert!(output.contains("Overall: different"));
+}
+
+#[tokio::test]
 async fn run_map_filters_page_and_section_breaks() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

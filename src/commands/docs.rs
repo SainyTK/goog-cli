@@ -55,6 +55,8 @@ use crate::drive::{
     export_google_file, DownloadedFile, DriveError, ExportGoogleFileOptions, GoogleFileExportFormat,
 };
 use anyhow::{bail, Context, Result};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 pub fn run<S: AccountStore>(
     mut cmd: DocsCommand,
@@ -107,6 +109,27 @@ pub fn run<S: AccountStore>(
                 source_document_id,
                 title,
                 &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DocsCommand::Compare {
+            source_document_id,
+            target_document_id,
+            json,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_compare_unified_to(
+                config,
+                store,
+                account_override,
+                CompareDocumentsCommand {
+                    source_document_id,
+                    target_document_id,
+                    json,
+                },
+                &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -1037,6 +1060,50 @@ pub(super) async fn run_map_unified_to<S: AccountStore>(
     )
     .await?;
     write_document_map(out, &document_map, map_type, json)
+}
+
+#[cfg(test)]
+pub(super) async fn run_compare_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    source_document_id: String,
+    target_document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let source_map = get_document_map(client, source_document_id, documents_url).await?;
+    let target_map = get_document_map(client, target_document_id, documents_url).await?;
+    write_document_comparison(out, &source_map, &target_map, json)
+}
+
+pub(super) async fn run_compare_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CompareDocumentsCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let source_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.source_document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let target_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.target_document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    write_document_comparison(out, &source_map, &target_map, command.json)
 }
 
 #[cfg(test)]
@@ -3637,6 +3704,200 @@ fn write_content_entry(
 
 fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) -> Result<()> {
     write_document_entries_table(out, &document_map.entries)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct CompareDocumentsCommand {
+    source_document_id: String,
+    target_document_id: String,
+    json: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentComparisonReport {
+    source_document_id: Option<String>,
+    target_document_id: Option<String>,
+    matches: bool,
+    scopes: Vec<DocumentComparisonScope>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentComparisonScope {
+    scope: &'static str,
+    matches: bool,
+    source_fingerprint: String,
+    target_fingerprint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_inventory: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_inventory: Option<serde_json::Value>,
+}
+
+fn write_document_comparison(
+    out: &mut impl Write,
+    source_map: &DocumentMap,
+    target_map: &DocumentMap,
+    json: bool,
+) -> Result<()> {
+    let source_inventory = document_inventory(source_map);
+    let target_inventory = document_inventory(target_map);
+    let source_visual_system = canonical_visual_system(source_map)?;
+    let target_visual_system = canonical_visual_system(target_map)?;
+    let source_content = canonical_content(source_map)?;
+    let target_content = canonical_content(target_map)?;
+
+    let scopes = vec![
+        comparison_scope(
+            "inventory",
+            source_inventory.clone(),
+            target_inventory.clone(),
+            true,
+        )?,
+        comparison_scope(
+            "visual-system",
+            source_visual_system,
+            target_visual_system,
+            false,
+        )?,
+        comparison_scope("content", source_content, target_content, false)?,
+    ];
+    let report = DocumentComparisonReport {
+        source_document_id: source_map.document_id.clone(),
+        target_document_id: target_map.document_id.clone(),
+        matches: scopes.iter().all(|scope| scope.matches),
+        scopes,
+    };
+
+    if json {
+        return write_json_line(out, &report, "failed to serialize Docs comparison");
+    }
+
+    writeln!(
+        out,
+        "{:<16} {:<7} {:<64} Target SHA-256",
+        "Scope", "Match", "Source SHA-256"
+    )
+    .context("failed to write Docs comparison header")?;
+    for scope in &report.scopes {
+        writeln!(
+            out,
+            "{:<16} {:<7} {:<64} {}",
+            scope.scope,
+            if scope.matches { "yes" } else { "no" },
+            scope.source_fingerprint,
+            scope.target_fingerprint
+        )
+        .context("failed to write Docs comparison row")?;
+    }
+    writeln!(
+        out,
+        "Overall: {}",
+        if report.matches { "match" } else { "different" }
+    )
+    .context("failed to write Docs comparison result")?;
+    Ok(())
+}
+
+fn comparison_scope(
+    scope: &'static str,
+    source: serde_json::Value,
+    target: serde_json::Value,
+    include_inventory: bool,
+) -> Result<DocumentComparisonScope> {
+    let matches = source == target;
+    Ok(DocumentComparisonScope {
+        scope,
+        matches,
+        source_fingerprint: json_fingerprint(&source)?,
+        target_fingerprint: json_fingerprint(&target)?,
+        source_inventory: include_inventory.then_some(source),
+        target_inventory: include_inventory.then_some(target),
+    })
+}
+
+fn document_inventory(document_map: &DocumentMap) -> serde_json::Value {
+    let mut entry_counts = std::collections::BTreeMap::<String, usize>::new();
+    for entry in &document_map.entries {
+        let kind = serde_json::to_value(entry.kind)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| format!("{:?}", entry.kind));
+        *entry_counts.entry(kind).or_default() += 1;
+    }
+
+    serde_json::json!({
+        "entriesByKind": entry_counts,
+        "lists": document_map.lists.len(),
+        "breaks": document_map.breaks.len(),
+        "segments": document_map.segments.len(),
+        "blankParagraphs": document_map.blank_paragraphs.len(),
+        "namedStyleTabs": document_map.named_styles.len(),
+        "documentStyleTabs": document_map.document_styles.len(),
+    })
+}
+
+fn canonical_visual_system(document_map: &DocumentMap) -> Result<serde_json::Value> {
+    let mut value = serde_json::json!({
+        "namedStyles": document_map.named_styles,
+        "documentStyles": document_map.document_styles,
+    });
+    remove_generated_ids(&mut value);
+    Ok(value)
+}
+
+fn canonical_content(document_map: &DocumentMap) -> Result<serde_json::Value> {
+    let mut value = serde_json::json!({
+        "entries": document_map.entries,
+        "blankParagraphs": document_map.blank_paragraphs,
+        "lists": document_map.lists,
+        "breaks": document_map.breaks,
+        "segments": document_map.segments,
+        "documentLocations": document_map.document_locations,
+    });
+    remove_generated_ids(&mut value);
+    Ok(value)
+}
+
+fn remove_generated_ids(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Array(values) => {
+            for value in values {
+                remove_generated_ids(value);
+            }
+        }
+        serde_json::Value::Object(object) => {
+            for field in [
+                "objectId",
+                "headingId",
+                "segmentId",
+                "listId",
+                "defaultHeaderId",
+                "defaultFooterId",
+                "firstPageHeaderId",
+                "firstPageFooterId",
+                "evenPageHeaderId",
+                "evenPageFooterId",
+            ] {
+                object.remove(field);
+            }
+            if let Some(serde_json::Value::Object(heading)) = object.get_mut("heading") {
+                heading.remove("id");
+            }
+            for child in object.values_mut() {
+                remove_generated_ids(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn json_fingerprint(value: &serde_json::Value) -> Result<String> {
+    let bytes = serde_json::to_vec(value).context("failed to serialize Docs comparison scope")?;
+    let digest = Sha256::digest(bytes);
+    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntry]) -> Result<()> {

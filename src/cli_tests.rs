@@ -694,6 +694,34 @@ fn docs_map_with_document_id_and_json_flag() {
 }
 
 #[test]
+fn docs_compare_accepts_document_ids_urls_and_json() {
+    let mut cli = parse(&[
+        "docs",
+        "compare",
+        "https://docs.google.com/document/d/source-123/edit",
+        "target-456",
+        "--json",
+    ])
+    .unwrap();
+    let Command::Docs { command } = &mut cli.command else {
+        panic!("unexpected parse result");
+    };
+    command.normalize_document_id();
+    match command {
+        DocsCommand::Compare {
+            source_document_id,
+            target_document_id,
+            json,
+        } => {
+            assert_eq!(source_document_id, "source-123");
+            assert_eq!(target_document_id, "target-456");
+            assert!(*json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn docs_map_rejects_removed_list_object_verbs() {
     assert!(parse(&["docs", "list-images", "document-123", "--json"]).is_err());
     assert!(parse(&["docs", "list-tables", "document-123", "--json"]).is_err());

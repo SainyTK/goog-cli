@@ -1860,6 +1860,15 @@ impl DocsCommand {
             DocsCommand::Copy {
                 source_document_id, ..
             } => source_document_id,
+            DocsCommand::Compare {
+                source_document_id,
+                target_document_id,
+                ..
+            } => {
+                *source_document_id = crate::docs::extract_document_id(source_document_id);
+                *target_document_id = crate::docs::extract_document_id(target_document_id);
+                return;
+            }
             DocsCommand::ExportPdf { document_id, .. }
             | DocsCommand::Map { document_id, .. }
             | DocsCommand::Get { document_id, .. }
@@ -1966,6 +1975,21 @@ Notes:
         source_document_id: String,
         /// Title for the copied Google Doc
         title: String,
+    },
+    /// Compare the semantic fidelity of two Google Docs
+    #[command(after_long_help = "Notes:
+  Compares component inventory, named and page styles, and mapped content properties.
+  Google-assigned object, heading, segment, and list IDs are ignored.
+  A matching result still requires page-level visual inspection for final acceptance.
+  Both document arguments accept a bare Document ID or a full Google Docs or Drive URL.")]
+    Compare {
+        /// Source Google Doc to use as the fidelity reference
+        source_document_id: String,
+        /// Target Google Doc to validate
+        target_document_id: String,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Export a native Google Doc as a PDF file
     #[command(after_long_help = "Notes:

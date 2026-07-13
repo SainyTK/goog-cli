@@ -32,6 +32,7 @@ Use these surfaces first:
 
 - `goog docs create` for a blank native document.
 - `goog docs copy` when a source document contains native tables of contents, page-number auto text, positioned images, first-page headers, or other components that the Docs API cannot create.
+- `goog docs compare` for source-to-target inventory, visual-system, and mapped-content acceptance checks.
 - `goog docs get` for raw structure and revision metadata.
 - `goog docs map` for readable content locations, headings, tables, and images.
 - `goog docs text` for search, insertion, and replacement.
@@ -80,8 +81,7 @@ Do not call the document finished until all of these are true:
 - No placeholder, instruction text, or duplicated content remains.
 - Styles are consistent and readable.
 - The native document or its exported PDF has been visually inspected at 100% zoom, including every page edge and any requested page-count limit.
-- When reproducing a source document, source and target component inventories have been compared and every intentional difference is understood.
-- When reproducing a source document, named styles and page styles have been compared after generated IDs are removed.
-- When reproducing a source document, mapped content and component properties have been compared after generated IDs are removed.
+- When reproducing a source document, `goog docs compare SOURCE TARGET` has checked component inventory, named and page styles, and mapped content properties after generated IDs are removed.
+- Every reported difference is understood and intentional.
 - The live document has been fetched again after the last write.
 - The final URL opens the intended native Google Doc.

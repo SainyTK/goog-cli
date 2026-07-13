@@ -61,6 +61,19 @@ Build supported components with high-level commands, copy the source as a templa
 ## Compare a source and target
 
 When reproducing an existing document, compare fresh source and target maps after the last write.
+Use the high-level comparison command for the complete structural acceptance check:
+
+```bash
+target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID
+target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --json
+```
+
+The command compares component inventory, the native named-style and page-style visual system, and all mapped content and component properties.
+It removes Google-assigned object, heading, segment, and list IDs before comparison while retaining tab IDs, indexes, ranges, and component order.
+An overall match proves semantic structural equivalence across all three scopes.
+It does not replace page-level visual inspection.
+
+When the command reports a difference, use the manual map comparisons below to isolate the affected properties.
 Generate the same compact inventory for each document:
 
 ```bash
@@ -466,6 +479,7 @@ target/debug/goog docs footer create --help
 target/debug/goog docs break page --help
 target/debug/goog docs break section --help
 target/debug/goog docs copy --help
+target/debug/goog docs compare --help
 target/debug/goog docs export-pdf --help
 target/debug/goog docs style named --help
 target/debug/goog docs style page --help
