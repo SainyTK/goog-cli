@@ -992,6 +992,32 @@ fn docs_flat_image_commands_are_removed() {
 }
 
 #[test]
+fn docs_copy_parses_and_normalizes_source_url() {
+    let Command::Docs { mut command } = parse(&[
+        "docs",
+        "copy",
+        "https://docs.google.com/document/d/source-document-123/edit?tab=t.0",
+        "Customer proposal copy",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    command.normalize_document_id();
+    let DocsCommand::Copy {
+        source_document_id,
+        title,
+    } = command
+    else {
+        panic!("unexpected Docs command");
+    };
+    assert_eq!(source_document_id, "source-document-123");
+    assert_eq!(title, "Customer proposal copy");
+}
+
+#[test]
 fn docs_flat_footnote_commands_are_removed() {
     assert!(parse(&["docs", "insert-footnote", "document-123", "--at", "index:1",]).is_err());
 }

@@ -29,7 +29,7 @@ use crate::docs::{
         InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand, InsertTextCommand,
         PreparedDocsChange, ReplaceTextCommand, SetTableColumnWidthsCommand, StyleTableRowCommand,
     },
-    create_document, extract_style_template, get_document,
+    copy_document, create_document, extract_style_template, get_document,
     map::build_document_map,
     map::resolve_content_entry,
     map::search_document_text,
@@ -41,8 +41,8 @@ use crate::docs::{
     map::InsertTextSelector,
     map::RangeSelector,
     style_template::{load_style_template_in, save_style_template_in},
-    BatchUpdateDocumentOptions, CreateDocumentOptions, DocsError, GetDocumentOptions,
-    StyleTemplate,
+    BatchUpdateDocumentOptions, CopyDocumentOptions, CreateDocumentOptions, DocsError,
+    GetDocumentOptions, StyleTemplate,
 };
 use anyhow::{bail, Context, Result};
 
@@ -84,6 +84,21 @@ pub fn run<S: AccountStore>(
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_create_to(&client, title, &mut std::io::stdout(), None))
+        }
+        DocsCommand::Copy {
+            source_document_id,
+            title,
+        } => {
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_copy_to(
+                &client,
+                source_document_id,
+                title,
+                &mut std::io::stdout(),
+                None,
+            ))
         }
         DocsCommand::Map {
             document_id,
@@ -2234,6 +2249,35 @@ pub(super) async fn run_create_to<S: AccountStore>(
         .get("documentId")
         .and_then(serde_json::Value::as_str)
         .context("Google Docs create response did not include a documentId")?;
+
+    writeln!(
+        out,
+        "{}\thttps://docs.google.com/document/d/{}/edit",
+        document_id, document_id
+    )
+    .context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_copy_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    source_document_id: String,
+    title: String,
+    out: &mut impl Write,
+    drive_files_url: Option<&str>,
+) -> Result<()> {
+    let mut options = CopyDocumentOptions::new(source_document_id, title);
+    if let Some(drive_files_url) = drive_files_url {
+        options = options.with_drive_files_url(drive_files_url);
+    }
+
+    let document = copy_document(client, &options)
+        .await
+        .context("failed to copy Google Docs Document")?;
+    let document_id = document
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .context("Google Drive copy response did not include an id")?;
 
     writeln!(
         out,

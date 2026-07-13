@@ -1857,6 +1857,9 @@ impl DocsCommand {
     pub fn normalize_document_id(&mut self) {
         let document_id = match self {
             DocsCommand::Create { .. } | DocsCommand::List { .. } => return,
+            DocsCommand::Copy {
+                source_document_id, ..
+            } => source_document_id,
             DocsCommand::Map { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. } => document_id,
@@ -1930,6 +1933,19 @@ Notes:
   Follow up with `goog docs batch-update` or the other `goog docs` editing commands to add content.")]
     Create {
         /// Title for the new Google Docs Document
+        title: String,
+    },
+    /// Copy an existing Google Doc as a reusable template
+    #[command(after_long_help = "Output shape:
+  Prints the copied Document ID and its Google Docs edit URL, tab-separated.
+
+Notes:
+  Copying preserves document components that the Google Docs API cannot create directly, including native tables of contents, page-number auto text, positioned images, and first-page header content.
+  SOURCE_DOCUMENT_ID accepts either a bare Document ID or a full Google Docs or Drive URL.")]
+    Copy {
+        /// Existing Google Doc to copy, as a Document ID or URL
+        source_document_id: String,
+        /// Title for the copied Google Doc
         title: String,
     },
     /// Print a high-level map of editable Google Docs content, or retrieve one selected block

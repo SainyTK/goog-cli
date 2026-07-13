@@ -22,6 +22,7 @@ use crate::docs::style_template::{
     StyleTemplate, TextStyleTemplate,
 };
 use crate::docs::DOCS_SCOPE;
+use crate::drive::DRIVE_SCOPE;
 
 use super::docs::*;
 
@@ -3186,6 +3187,62 @@ async fn run_create_prints_document_id_and_edit_url() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "document-456\thttps://docs.google.com/document/d/document-456/edit\n"
+    );
+}
+
+#[tokio::test]
+async fn run_copy_preserves_template_through_drive_and_prints_edit_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .and(wiremock::matchers::query_param(
+            "fields",
+            "id,name,mimeType,webViewLink",
+        ))
+        .and(wiremock::matchers::query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-write-access"))
+        .and(body_json(serde_json::json!({
+            "name": "Customer proposal copy"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "copied-document-456",
+            "name": "Customer proposal copy",
+            "mimeType": "application/vnd.google-apps.document",
+            "webViewLink": "https://docs.google.com/document/d/copied-document-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "drive-write-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let mut out = Vec::new();
+    let drive_files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_copy_to(
+        &client,
+        "source-document-123".into(),
+        "Customer proposal copy".into(),
+        &mut out,
+        Some(&drive_files_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit\n"
     );
 }
 
