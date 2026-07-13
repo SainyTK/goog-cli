@@ -410,6 +410,16 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(output["revisionId"], "rev-long");
+    assert_eq!(output["documentStyles"].as_array().unwrap().len(), 1);
+    assert_eq!(output["documentStyles"][0]["tabId"], "tab-1");
+    assert_eq!(
+        output["documentStyles"][0]["documentStyle"]["pageSize"]["width"]["magnitude"],
+        612
+    );
+    assert_eq!(
+        output["documentStyles"][0]["documentStyle"]["marginTop"]["magnitude"],
+        72
+    );
     assert_eq!(output["documentLocations"].as_array().unwrap().len(), 9);
     assert_eq!(output["breaks"].as_array().unwrap().len(), 1);
     assert_eq!(output["entries"][0]["kind"], "table-of-contents");
@@ -4652,7 +4662,15 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
             }
         },
         "tabs": [{
+            "tabProperties": { "tabId": "tab-1" },
             "documentTab": {
+                "documentStyle": {
+                    "pageSize": {
+                        "width": { "magnitude": 612, "unit": "PT" },
+                        "height": { "magnitude": 792, "unit": "PT" }
+                    },
+                    "marginTop": { "magnitude": 72, "unit": "PT" }
+                },
                 "headers": {
                     "header-123": {
                         "headerId": "header-123",

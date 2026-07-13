@@ -8,6 +8,7 @@ pub struct DocumentMap {
     pub document_id: Option<String>,
     pub title: Option<String>,
     pub revision_id: Option<String>,
+    pub document_styles: Vec<DocumentTabStyle>,
     pub breaks: Vec<DocumentBreak>,
     pub segments: Vec<DocumentSegment>,
     pub lists: Vec<DocumentList>,
@@ -17,6 +18,14 @@ pub struct DocumentMap {
     pub text_blocks: Vec<DocumentTextBlock>,
     #[serde(skip)]
     pub insertion_locations: Vec<DocumentLocation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentTabStyle {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<String>,
+    pub document_style: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -214,6 +223,7 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         document_id: string_field(document, "documentId"),
         title: string_field(document, "title"),
         revision_id: string_field(document, "revisionId"),
+        document_styles: document_styles(document),
         breaks,
         segments: document_segments(document),
         lists: document_lists(document),
@@ -222,6 +232,41 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         text_blocks: builder.text_blocks,
         insertion_locations: builder.insertion_locations,
     }
+}
+
+fn document_styles(document: &Value) -> Vec<DocumentTabStyle> {
+    let tab_styles = document
+        .get("tabs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|tab| {
+            let document_style = tab.get("documentTab")?.get("documentStyle")?.clone();
+            let tab_id = tab
+                .get("tabProperties")
+                .and_then(|properties| properties.get("tabId"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            Some(DocumentTabStyle {
+                tab_id,
+                document_style,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if !tab_styles.is_empty() {
+        return tab_styles;
+    }
+
+    document
+        .get("documentStyle")
+        .cloned()
+        .map(|document_style| DocumentTabStyle {
+            tab_id: None,
+            document_style,
+        })
+        .into_iter()
+        .collect()
 }
 
 fn document_lists(document: &Value) -> Vec<DocumentList> {
