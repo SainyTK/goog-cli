@@ -528,7 +528,9 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             document_id: "document-123".into(),
             table_id: "table-1".into(),
             row: 1,
-            background_color: "#D9EAF7".into(),
+            column: None,
+            background_color: Some("#D9EAF7".into()),
+            content_alignment: None,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-required".into()),
@@ -548,6 +550,67 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             "blue": 247.0 / 255.0
         })
     );
+
+    let cell_alignment = prepare_style_table_row_change(
+        &table_map,
+        &StyleTableRowCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            row: 2,
+            column: Some(2),
+            background_color: None,
+            content_alignment: Some(crate::cli::DocsTableCellAlignment::Middle),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap();
+    let cell_alignment = preview_json(&cell_alignment);
+    let update = &cell_alignment["requestBody"]["requests"][0]["updateTableCellStyle"];
+    assert_eq!(update["tableRange"]["tableCellLocation"]["rowIndex"], 1);
+    assert_eq!(update["tableRange"]["tableCellLocation"]["columnIndex"], 1);
+    assert_eq!(update["tableRange"]["columnSpan"], 1);
+    assert_eq!(update["tableCellStyle"]["contentAlignment"], "MIDDLE");
+    assert_eq!(update["fields"], "contentAlignment");
+
+    let missing_style = prepare_style_table_row_change(
+        &table_map,
+        &StyleTableRowCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            row: 1,
+            column: None,
+            background_color: None,
+            content_alignment: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap_err();
+    assert!(missing_style
+        .to_string()
+        .contains("requires --background-color or --content-alignment"));
+
+    let invalid_column = prepare_style_table_row_change(
+        &table_map,
+        &StyleTableRowCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            row: 1,
+            column: Some(3),
+            background_color: None,
+            content_alignment: Some(crate::cli::DocsTableCellAlignment::Top),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap_err();
+    assert!(invalid_column
+        .to_string()
+        .contains("--column must be between 1 and 2"));
 
     let columns = prepare_set_table_column_widths_change(
         &table_map,

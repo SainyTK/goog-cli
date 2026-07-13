@@ -3,7 +3,9 @@ use std::io::Write;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
-use crate::cli::{DocsListType, DocsParagraphAlignment, DocsSectionBreakType};
+use crate::cli::{
+    DocsListType, DocsParagraphAlignment, DocsSectionBreakType, DocsTableCellAlignment,
+};
 use crate::docs::map::{
     resolve_insert_text_location, resolve_range_selector, resolve_replace_text_ranges,
     text_block_contains_range, DocumentLocation, DocumentMap, DocumentMapEntry,
@@ -122,7 +124,9 @@ pub(crate) struct StyleTableRowCommand {
     pub document_id: String,
     pub table_id: String,
     pub row: usize,
-    pub background_color: String,
+    pub column: Option<usize>,
+    pub background_color: Option<String>,
+    pub content_alignment: Option<DocsTableCellAlignment>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -815,25 +819,53 @@ pub(crate) fn prepare_style_table_row_change(
     if column_span == 0 {
         bail!("selected table row does not expose editable cells");
     }
+    let (column_index, column_span) = match command.column {
+        Some(column) if column == 0 || column > column_span => bail!(
+            "table style --column must be between 1 and {} for row {} of {}",
+            column_span,
+            command.row,
+            command.table_id
+        ),
+        Some(column) => (column - 1, 1),
+        None => (0, column_span),
+    };
+    if command.background_color.is_none() && command.content_alignment.is_none() {
+        bail!("table style requires --background-color or --content-alignment");
+    }
     let table_start_index = table
         .location
         .index
         .context("selected table does not expose a Google Docs index")?;
-    let background_color = foreground_color_payload(&command.background_color)?;
+    let mut table_cell_style = serde_json::Map::new();
+    let mut fields = Vec::new();
+    if let Some(background_color) = command.background_color.as_deref() {
+        table_cell_style.insert(
+            "backgroundColor".into(),
+            foreground_color_payload(background_color)?,
+        );
+        fields.push("backgroundColor");
+    }
+    if let Some(content_alignment) = command.content_alignment {
+        table_cell_style.insert(
+            "contentAlignment".into(),
+            serde_json::json!(content_alignment.api_value()),
+        );
+        fields.push("contentAlignment");
+    }
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
             "updateTableCellStyle": {
-                "tableCellStyle": { "backgroundColor": background_color },
+                "tableCellStyle": table_cell_style,
                 "tableRange": {
                     "tableCellLocation": {
                         "tableStartLocation": { "index": table_start_index },
                         "rowIndex": command.row - 1,
-                        "columnIndex": 0
+                        "columnIndex": column_index
                     },
                     "rowSpan": 1,
                     "columnSpan": column_span
                 },
-                "fields": "backgroundColor"
+                "fields": fields.join(",")
             }
         })],
         command.required_revision_id.as_deref(),
@@ -845,10 +877,13 @@ pub(crate) fn prepare_style_table_row_change(
         request_body,
         preview: DocsChangePreview::new(
             "table style",
-            format!(
-                "Apply {} background to row {} of {}",
-                command.background_color, command.row, command.table_id
-            ),
+            match command.column {
+                Some(column) => format!(
+                    "Style cell at row {}, column {} of {}",
+                    command.row, column, command.table_id
+                ),
+                None => format!("Style row {} of {}", command.row, command.table_id),
+            },
         ),
     }))
 }

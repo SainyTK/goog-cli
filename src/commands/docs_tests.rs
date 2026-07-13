@@ -1950,7 +1950,9 @@ async fn run_style_table_row_dry_run_targets_the_selected_native_row() {
             document_id: "document-123".into(),
             table_id: "table-1".into(),
             row: 2,
-            background_color: "#D9EAF7".into(),
+            column: Some(1),
+            background_color: None,
+            content_alignment: Some(crate::cli::DocsTableCellAlignment::Middle),
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-table".into()),
@@ -1964,7 +1966,9 @@ async fn run_style_table_row_dry_run_targets_the_selected_native_row() {
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     let update = &output["requestBody"]["requests"][0]["updateTableCellStyle"];
     assert_eq!(update["tableRange"]["tableCellLocation"]["rowIndex"], 1);
-    assert_eq!(update["tableRange"]["columnSpan"], 2);
+    assert_eq!(update["tableRange"]["tableCellLocation"]["columnIndex"], 0);
+    assert_eq!(update["tableRange"]["columnSpan"], 1);
+    assert_eq!(update["tableCellStyle"]["contentAlignment"], "MIDDLE");
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
         "rev-table"

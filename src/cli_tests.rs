@@ -1540,7 +1540,9 @@ fn docs_new_high_level_editing_commands_parse() {
                     DocsTableCommand::Style {
                         table_id,
                         row,
+                        column,
                         background_color,
+                        content_alignment,
                         dry_run,
                         json,
                         ..
@@ -1555,8 +1557,12 @@ fn docs_new_high_level_editing_commands_parse() {
         "table-1",
         "--row",
         "1",
+        "--column",
+        "2",
         "--background-color",
         "#D9EAF7",
+        "--content-alignment",
+        "middle",
         "--dry-run",
         "--json",
     ])
@@ -1567,7 +1573,12 @@ fn docs_new_high_level_editing_commands_parse() {
     };
     assert_eq!(table_id, "table-1");
     assert_eq!(row, 1);
-    assert_eq!(background_color, "#D9EAF7");
+    assert_eq!(column, Some(2));
+    assert_eq!(background_color.as_deref(), Some("#D9EAF7"));
+    assert_eq!(
+        content_alignment,
+        Some(crate::cli::DocsTableCellAlignment::Middle)
+    );
     assert!(dry_run);
     assert!(json);
 

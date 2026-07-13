@@ -2481,7 +2481,7 @@ pub enum DocsTableCommand {
         #[arg(long)]
         required_revision_id: Option<String>,
     },
-    /// Apply visual styling to one table row
+    /// Apply visual styling to one table row or cell
     Style {
         /// Document ID or URL to update
         document_id: String,
@@ -2491,9 +2491,15 @@ pub enum DocsTableCommand {
         /// One-based table row number to style
         #[arg(long)]
         row: usize,
+        /// Optional one-based column number to target a single cell
+        #[arg(long)]
+        column: Option<usize>,
         /// Cell background color as #RRGGBB
         #[arg(long)]
-        background_color: String,
+        background_color: Option<String>,
+        /// Vertical alignment for cell content
+        #[arg(long)]
+        content_alignment: Option<DocsTableCellAlignment>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2651,6 +2657,23 @@ pub enum DocsParagraphAlignment {
     Center,
     End,
     Justified,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsTableCellAlignment {
+    Top,
+    Middle,
+    Bottom,
+}
+
+impl DocsTableCellAlignment {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            DocsTableCellAlignment::Top => "TOP",
+            DocsTableCellAlignment::Middle => "MIDDLE",
+            DocsTableCellAlignment::Bottom => "BOTTOM",
+        }
+    }
 }
 
 impl DocsParagraphAlignment {
