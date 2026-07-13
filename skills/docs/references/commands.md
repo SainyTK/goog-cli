@@ -161,11 +161,32 @@ Omit `--column` to style a complete row, or include it to target one cell.
 Cell styling also supports `--content-alignment top|middle|bottom` and paired `--border-color` plus `--border-width` controls.
 Map the document again after table changes and inspect the resulting `layoutMetadata`, `pinnedHeaderRowsCount`, and cell styles.
 
-Apply one numbering operation over the complete contiguous action range so all items share one native list:
+## Lists
+
+Insert list items as separate paragraphs, then apply one formatting operation over the complete contiguous range so the items share one native list:
 
 ```bash
-target/debug/goog docs list-format apply DOCUMENT_ID --from-index START --to-index END --type numbered --dry-run --json
+target/debug/goog docs text insert DOCUMENT_ID $'Confirm scope\nCollect evidence\nRecord the decision\n' --at after-heading:'Next steps' --dry-run --json
+target/debug/goog docs text insert DOCUMENT_ID $'Confirm scope\nCollect evidence\nRecord the decision\n' --at after-heading:'Next steps'
+target/debug/goog docs map DOCUMENT_ID --json
+target/debug/goog docs list-format apply DOCUMENT_ID --from-index LIST_START_INDEX --to-index LIST_END_INDEX --type numbered --dry-run --json
+target/debug/goog docs list-format apply DOCUMENT_ID --from-index LIST_START_INDEX --to-index LIST_END_INDEX --type numbered
+target/debug/goog docs map DOCUMENT_ID --type lists --json
 ```
+
+The supported shorthand types are `bullet`, `numbered`, `dash`, and `checkbox`.
+Use `--preset` instead of `--type` when an existing document requires a specific raw Google Docs bullet preset.
+Do not pass both options.
+
+For a nested list, put one leading tab on each second-level paragraph and two leading tabs on each third-level paragraph before applying list formatting to the complete range:
+
+```bash
+target/debug/goog docs text insert DOCUMENT_ID $'Prepare delivery\n\tReview content\n\tReview layout\nPublish\n' --at after-heading:'Delivery plan' --dry-run --json
+target/debug/goog docs text insert DOCUMENT_ID $'Prepare delivery\n\tReview content\n\tReview layout\nPublish\n' --at after-heading:'Delivery plan'
+```
+
+Google removes those leading tabs when it creates the native list and uses them to determine nesting levels.
+Map again after formatting and inspect the list's item count, nesting levels, and glyph metadata.
 
 ## Visual verification
 
@@ -194,6 +215,7 @@ target/debug/goog docs text --help
 target/debug/goog docs style --help
 target/debug/goog docs table --help
 target/debug/goog docs image --help
+target/debug/goog docs list-format apply --help
 target/debug/goog docs header create --help
 target/debug/goog docs footer create --help
 target/debug/goog docs break section --help
