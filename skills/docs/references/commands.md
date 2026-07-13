@@ -78,6 +78,23 @@ Use either `--data FILE` or `--rows N --columns N`, never both.
 Style a text anchor as a heading before using `after-heading:` or `before-heading:`.
 Map again after insertion to obtain the actual table handle.
 
+For a report table that needs deliberate geometry and a repeating header, preview each operation before applying it:
+
+```bash
+target/debug/goog docs table columns DOCUMENT_ID --table-id table-1 --widths 120,348 --dry-run --json
+target/debug/goog docs table columns DOCUMENT_ID --table-id table-1 --widths 120,348
+target/debug/goog docs table header-rows DOCUMENT_ID --table-id table-1 --rows 1 --dry-run --json
+target/debug/goog docs table header-rows DOCUMENT_ID --table-id table-1 --rows 1
+target/debug/goog docs table style DOCUMENT_ID --table-id table-1 --row 1 --background-color '#D9EAF7' --dry-run --json
+target/debug/goog docs table style DOCUMENT_ID --table-id table-1 --row 1 --background-color '#D9EAF7'
+```
+
+Column widths are comma-separated points and must match the table's column count.
+Row and column arguments are one-based.
+Omit `--column` to style a complete row, or include it to target one cell.
+Cell styling also supports `--content-alignment top|middle|bottom` and paired `--border-color` plus `--border-width` controls.
+Map the document again after table changes and inspect the resulting `layoutMetadata`, `pinnedHeaderRowsCount`, and cell styles.
+
 Apply one numbering operation over the complete contiguous action range so all items share one native list:
 
 ```bash
