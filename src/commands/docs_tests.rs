@@ -517,11 +517,33 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         output["segments"][0]["textRuns"][0]["textStyle"]["weightedFontFamily"]["fontFamily"],
         "Bai Jamjuree"
     );
+    assert_eq!(output["segments"][0]["paragraphs"][0]["startIndex"], 0);
+    assert_eq!(output["segments"][0]["paragraphs"][0]["endIndex"], 17);
+    assert_eq!(
+        output["segments"][0]["paragraphs"][0]["content"],
+        "Customer contact"
+    );
+    assert_eq!(
+        output["segments"][0]["paragraphs"][0]["paragraphStyle"]["alignment"],
+        "CENTER"
+    );
+    assert_eq!(
+        output["segments"][0]["paragraphs"][0]["paragraphStyle"]["lineSpacing"],
+        100
+    );
     assert_eq!(output["segments"][1]["segmentId"], "legacy-header");
     assert_eq!(output["segments"][1]["preview"], "Legacy header");
     assert_eq!(
         output["segments"][1]["textRuns"][0]["content"],
         "Legacy header\n"
+    );
+    assert_eq!(
+        output["segments"][1]["paragraphs"][0]["paragraphStyle"]["alignment"],
+        "END"
+    );
+    assert_eq!(
+        output["segments"][1]["paragraphs"][0]["paragraphStyle"]["spaceBelow"]["magnitude"],
+        4
     );
     assert_eq!(output["segments"][2]["kind"], "footer");
     assert_eq!(output["segments"][2]["preview"], "[empty footer]");
@@ -4844,6 +4866,10 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                 "content": [{
                     "endIndex": 14,
                     "paragraph": {
+                        "paragraphStyle": {
+                            "alignment": "END",
+                            "spaceBelow": { "magnitude": 4, "unit": "PT" }
+                        },
                         "elements": [{
                             "endIndex": 14,
                             "textRun": { "content": "Legacy header\n" }
@@ -4928,6 +4954,10 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                         "content": [{
                             "endIndex": 17,
                             "paragraph": {
+                                "paragraphStyle": {
+                                    "alignment": "CENTER",
+                                    "lineSpacing": 100
+                                },
                                 "elements": [
                                     {
                                         "startIndex": 0,

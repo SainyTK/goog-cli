@@ -94,6 +94,8 @@ pub struct DocumentSegment {
     pub auto_text_types: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub text_runs: Vec<DocumentTextRun>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub paragraphs: Vec<DocumentParagraph>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -151,7 +153,7 @@ pub struct DocumentTextRun {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DocumentTableCellParagraph {
+pub struct DocumentParagraph {
     pub start_index: Option<i64>,
     pub end_index: Option<i64>,
     pub content: String,
@@ -160,6 +162,8 @@ pub struct DocumentTableCellParagraph {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bullet: Option<Value>,
 }
+
+pub type DocumentTableCellParagraph = DocumentParagraph;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -511,6 +515,8 @@ fn document_segments(document: &Value) -> Vec<DocumentSegment> {
                 auto_text_types.dedup();
                 let mut text_runs = Vec::new();
                 collect_text_runs(segment, &mut text_runs);
+                let mut paragraphs = Vec::new();
+                collect_paragraphs(segment, &mut paragraphs);
                 let end_index = max_i64_field(segment, "endIndex").unwrap_or_default();
                 let preview = segment_preview(kind, &text, &auto_text_types);
                 segments.push(DocumentSegment {
@@ -521,6 +527,7 @@ fn document_segments(document: &Value) -> Vec<DocumentSegment> {
                     preview,
                     auto_text_types,
                     text_runs,
+                    paragraphs,
                 });
             }
         }
@@ -617,6 +624,36 @@ fn collect_text_runs(value: &Value, text_runs: &mut Vec<DocumentTextRun>) {
     }
 }
 
+fn collect_paragraphs(value: &Value, paragraphs: &mut Vec<DocumentParagraph>) {
+    if let Some(paragraph) = value.get("paragraph") {
+        paragraphs.push(document_paragraph(value, paragraph));
+        return;
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_paragraphs(value, paragraphs);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_paragraphs(value, paragraphs);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn document_paragraph(element: &Value, paragraph: &Value) -> DocumentParagraph {
+    DocumentParagraph {
+        start_index: min_i64_field(element, "startIndex"),
+        end_index: max_i64_field(element, "endIndex"),
+        content: paragraph_text(paragraph),
+        paragraph_style: paragraph.get("paragraphStyle").cloned(),
+        bullet: paragraph.get("bullet").cloned(),
+    }
+}
+
 fn max_i64_field(value: &Value, field: &str) -> Option<i64> {
     let own = value.get(field).and_then(Value::as_i64);
     let descendant = match value {
@@ -631,6 +668,22 @@ fn max_i64_field(value: &Value, field: &str) -> Option<i64> {
         _ => None,
     };
     own.into_iter().chain(descendant).max()
+}
+
+fn min_i64_field(value: &Value, field: &str) -> Option<i64> {
+    let own = value.get(field).and_then(Value::as_i64);
+    let descendant = match value {
+        Value::Array(values) => values
+            .iter()
+            .filter_map(|value| min_i64_field(value, field))
+            .min(),
+        Value::Object(values) => values
+            .values()
+            .filter_map(|value| min_i64_field(value, field))
+            .min(),
+        _ => None,
+    };
+    own.into_iter().chain(descendant).min()
 }
 
 fn segment_preview(kind: DocumentSegmentKind, text: &str, auto_text_types: &[String]) -> String {
@@ -1944,13 +1997,7 @@ fn table_cell_paragraphs(table: &Value) -> Vec<Vec<Vec<DocumentTableCellParagrap
                         .flatten()
                         .filter_map(|element| {
                             let paragraph = element.get("paragraph")?;
-                            Some(DocumentTableCellParagraph {
-                                start_index: element.get("startIndex").and_then(Value::as_i64),
-                                end_index: element.get("endIndex").and_then(Value::as_i64),
-                                content: paragraph_text(paragraph),
-                                paragraph_style: paragraph.get("paragraphStyle").cloned(),
-                                bullet: paragraph.get("bullet").cloned(),
-                            })
+                            Some(document_paragraph(element, paragraph))
                         })
                         .collect::<Vec<_>>()
                 })
