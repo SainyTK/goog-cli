@@ -1747,7 +1747,7 @@ fn docs_apply_styles_accepts_paragraph_alignment() {
 }
 
 #[test]
-fn docs_apply_styles_accepts_paragraph_spacing() {
+fn docs_apply_styles_accepts_paragraph_layout() {
     let Command::Docs {
         command:
             DocsCommand::Style {
@@ -1759,6 +1759,8 @@ fn docs_apply_styles_accepts_paragraph_spacing() {
                         indent_start,
                         indent_end,
                         indent_first_line,
+                        keep_with_next,
+                        keep_lines_together,
                         text,
                         ..
                     },
@@ -1782,6 +1784,8 @@ fn docs_apply_styles_accepts_paragraph_spacing() {
         "12",
         "--indent-first-line",
         "18",
+        "--keep-with-next",
+        "--keep-lines-together",
     ])
     .unwrap()
     .command
@@ -1796,6 +1800,8 @@ fn docs_apply_styles_accepts_paragraph_spacing() {
     assert_eq!(indent_start, Some(36.0));
     assert_eq!(indent_end, Some(12.0));
     assert_eq!(indent_first_line, Some(18.0));
+    assert!(keep_with_next);
+    assert!(keep_lines_together);
 }
 
 #[test]

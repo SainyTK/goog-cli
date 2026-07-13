@@ -230,6 +230,8 @@ fn image_table_style_and_list_changes_build_native_requests() {
             indent_start: Some(36.0),
             indent_end: Some(12.0),
             indent_first_line: Some(18.0),
+            keep_with_next: true,
+            keep_lines_together: true,
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -264,6 +266,20 @@ fn image_table_style_and_list_changes_build_native_requests() {
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["lineSpacing"],
         115.0
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["keepWithNext"],
+        true
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["keepLinesTogether"],
+        true
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
+        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether"
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
@@ -321,6 +337,8 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         indent_start: None,
         indent_end: None,
         indent_first_line: None,
+        keep_with_next: false,
+        keep_lines_together: false,
         heading: None,
         style_json: None,
         dry_run: true,

@@ -2138,6 +2138,12 @@ pub enum DocsStyleCommand {
         /// Paragraph first-line indent in points
         #[arg(long)]
         indent_first_line: Option<f64>,
+        /// Keep each selected paragraph on the same page as the following paragraph
+        #[arg(long)]
+        keep_with_next: bool,
+        /// Prevent page breaks within each selected paragraph
+        #[arg(long)]
+        keep_lines_together: bool,
         /// Named paragraph style such as HEADING_1
         #[arg(long = "paragraph-style", value_name = "PARAGRAPH_STYLE")]
         heading: Option<String>,

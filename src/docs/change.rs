@@ -154,6 +154,8 @@ pub(crate) struct ApplyStylesCommand {
     pub indent_start: Option<f64>,
     pub indent_end: Option<f64>,
     pub indent_first_line: Option<f64>,
+    pub keep_with_next: bool,
+    pub keep_lines_together: bool,
     pub heading: Option<String>,
     pub style_json: Option<String>,
     pub dry_run: bool,
@@ -1307,6 +1309,12 @@ fn paragraph_style_payload(
         "--indent-first-line",
         command.indent_first_line,
     )?;
+    if command.keep_with_next {
+        payload.set_field("keepWithNext", serde_json::Value::Bool(true));
+    }
+    if command.keep_lines_together {
+        payload.set_field("keepLinesTogether", serde_json::Value::Bool(true));
+    }
     Ok(payload.into_json_parts())
 }
 
