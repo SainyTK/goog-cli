@@ -255,6 +255,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             font_size: Some(16.0),
             font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
+            link_heading_id: Some("h.target-heading".into()),
             alignment: Some(crate::cli::DocsParagraphAlignment::Center),
             space_above: Some(6.0),
             space_below: Some(10.0),
@@ -341,7 +342,11 @@ fn image_table_style_and_list_changes_build_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
-        "bold,underline,fontSize,weightedFontFamily,foregroundColor"
+        "bold,underline,fontSize,weightedFontFamily,foregroundColor,link"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["link"]["headingId"],
+        "h.target-heading"
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["underline"],
@@ -394,6 +399,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         font_size: None,
         font_family: None,
         foreground_color: None,
+        link_heading_id: None,
         alignment: None,
         space_above: Some(-1.0),
         space_below: None,
@@ -471,7 +477,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         &ApplyStylesCommand {
             space_above: None,
             indent_first_line: Some(f64::INFINITY),
-            ..command
+            ..command.clone()
         },
         None,
     )
@@ -480,6 +486,18 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         error.to_string(),
         "--indent-first-line must be a finite, non-negative point value"
     );
+
+    let error = prepare_apply_styles_change(
+        &document_map,
+        &ApplyStylesCommand {
+            space_above: None,
+            link_heading_id: Some("  ".into()),
+            ..command
+        },
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(error.to_string(), "--link-heading-id cannot be empty");
 }
 
 #[test]
@@ -650,6 +668,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             kind: DocumentMapEntryKind::Table,
             style: None,
             preview: "A | B / C | D".into(),
+            heading_id: None,
             image_handle: None,
             object_id: None,
             layout_metadata: None,

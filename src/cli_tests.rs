@@ -1536,6 +1536,7 @@ fn docs_new_high_level_editing_commands_parse() {
                         from_index,
                         to_index,
                         segment_id,
+                        link_heading_id,
                         ..
                     },
             },
@@ -1552,6 +1553,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "header-123",
         "--style-json",
         r#"{"textStyle":{"underline":true}}"#,
+        "--link-heading-id",
+        "h.target-heading",
     ])
     .unwrap()
     .command
@@ -1565,8 +1568,12 @@ fn docs_new_high_level_editing_commands_parse() {
         Some("header-123")
     );
     assert_eq!(
-        style_json.as_deref(),
+        style_json.as_deref().map(String::as_str),
         Some(r#"{"textStyle":{"underline":true}}"#)
+    );
+    assert_eq!(
+        link_heading_id.as_deref().map(String::as_str),
+        Some("h.target-heading")
     );
 
     let Command::Docs {

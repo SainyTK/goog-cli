@@ -110,6 +110,8 @@ pub struct DocumentMapEntry {
     pub style: Option<String>,
     pub preview: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub heading_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub image_handle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub object_id: Option<String>,
@@ -1001,6 +1003,7 @@ struct DocumentMapBuilder<'a> {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct DocumentMapEntryMetadata {
+    heading_id: Option<String>,
     image_handle: Option<String>,
     object_id: Option<String>,
     layout_metadata: Option<Value>,
@@ -1119,7 +1122,21 @@ impl<'a> DocumentMapBuilder<'a> {
                     preview: preview.clone(),
                 });
             }
-            self.push_entry(location, kind, style.clone(), preview);
+            let heading_id = paragraph
+                .get("paragraphStyle")
+                .and_then(|style| style.get("headingId"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            self.push_entry_with_metadata(
+                location,
+                kind,
+                style.clone(),
+                preview,
+                DocumentMapEntryMetadata {
+                    heading_id,
+                    ..DocumentMapEntryMetadata::default()
+                },
+            );
         } else if !inline_images.is_empty() || !positioned_object_ids.is_empty() {
             self.push_content_line();
         }
@@ -1298,6 +1315,7 @@ impl<'a> DocumentMapBuilder<'a> {
             kind,
             style,
             preview,
+            heading_id: metadata.heading_id,
             image_handle: metadata.image_handle,
             object_id: metadata.object_id,
             layout_metadata: metadata.layout_metadata,

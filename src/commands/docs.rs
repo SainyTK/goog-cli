@@ -607,6 +607,7 @@ pub fn run<S: AccountStore>(
                     font_size,
                     font_family,
                     foreground_color,
+                    link_heading_id,
                     alignment,
                     space_above,
                     space_below,
@@ -645,6 +646,7 @@ pub fn run<S: AccountStore>(
                     font_size,
                     font_family,
                     foreground_color,
+                    link_heading_id: link_heading_id.map(|heading_id| *heading_id),
                     alignment,
                     space_above,
                     space_below,
@@ -658,10 +660,11 @@ pub fn run<S: AccountStore>(
                     avoid_widow_and_orphan,
                     page_break_before,
                     heading,
-                    style_json,
+                    style_json: style_json.map(|style_json| *style_json),
                     dry_run,
                     json,
-                    required_revision_id,
+                    required_revision_id: required_revision_id
+                        .map(|required_revision_id| *required_revision_id),
                     no_auto_style: no_cached_style,
                 },
                 &mut std::io::stdout(),
@@ -3318,16 +3321,17 @@ fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) ->
 fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntry]) -> Result<()> {
     writeln!(
         out,
-        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<10} {:<18} {:<15} Preview",
+        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<16} {:<10} {:<10} {:<18} {:<15} Preview",
         "Entry", "Index", "Page", "Line", "Kind", "Handle", "Object", "Size", "Style", "Confidence"
     )
     .context("failed to write Docs Document Map header")?;
 
     for entry in entries {
         let style = entry.style.as_deref().unwrap_or("-");
-        let handle = entry
-            .image_handle
+        let target = entry
+            .heading_id
             .as_deref()
+            .or(entry.image_handle.as_deref())
             .or(entry.table_handle.as_deref())
             .unwrap_or("-");
         let object = entry.object_id.as_deref().unwrap_or("-");
@@ -3337,13 +3341,13 @@ fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntr
         };
         writeln!(
             out,
-            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<10} {:<10} {:<10} {:<18} {:<15} {}",
+            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<16} {:<10} {:<10} {:<18} {:<15} {}",
             entry.entry,
             display_optional(entry.location.index),
             display_optional(entry.location.page),
             entry.location.content_line,
             format!("{:?}", entry.kind),
-            handle,
+            target,
             object,
             size,
             style,

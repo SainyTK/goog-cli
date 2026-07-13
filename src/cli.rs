@@ -2141,6 +2141,9 @@ pub enum DocsStyleCommand {
         /// Foreground color as #RRGGBB
         #[arg(long)]
         foreground_color: Option<String>,
+        /// Link the selected text to a Google Docs heading ID
+        #[arg(long)]
+        link_heading_id: Option<Box<String>>,
         /// Paragraph alignment
         #[arg(long, value_enum)]
         alignment: Option<DocsParagraphAlignment>,
@@ -2182,7 +2185,7 @@ pub enum DocsStyleCommand {
         heading: Option<String>,
         /// Raw Google Docs style JSON with optional textStyle and paragraphStyle objects
         #[arg(long)]
-        style_json: Option<String>,
+        style_json: Option<Box<String>>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2191,7 +2194,7 @@ pub enum DocsStyleCommand {
         json: bool,
         /// Require the document to still be at this revision before applying the edit
         #[arg(long)]
-        required_revision_id: Option<String>,
+        required_revision_id: Option<Box<String>>,
         /// Ignore the cached style template for this document
         #[arg(long)]
         no_cached_style: bool,

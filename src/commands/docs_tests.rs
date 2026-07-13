@@ -445,6 +445,7 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
     );
     assert_eq!(output["entries"][1]["location"]["page"], 3);
     assert_eq!(output["entries"][1]["preview"], "วิธีใช้งาน");
+    assert_eq!(output["entries"][1]["headingId"], "h.how-to");
     assert_eq!(output["entries"][2]["location"]["confidence"], "unknown");
     assert!(output["entries"][2]["location"]["page"].is_null());
     assert_eq!(output["entries"][3]["kind"], "table");
@@ -2352,6 +2353,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             font_size: Some(14.0),
             font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
+            link_heading_id: Some("h.target-heading".into()),
             alignment: Some(crate::cli::DocsParagraphAlignment::Justified),
             space_above: Some(4.0),
             space_below: Some(10.0),
@@ -2381,7 +2383,11 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     assert_eq!(styles["range"]["startIndex"], 17);
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
-        "bold,italic,underline,fontSize,weightedFontFamily,foregroundColor"
+        "bold,italic,underline,fontSize,weightedFontFamily,foregroundColor,link"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["link"]["headingId"],
+        "h.target-heading"
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["underline"],
@@ -2832,6 +2838,7 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
             font_size: None,
             font_family: None,
             foreground_color: None,
+            link_heading_id: None,
             alignment: None,
             space_above: None,
             space_below: None,
@@ -2989,6 +2996,7 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
             font_size: None,
             font_family: None,
             foreground_color: None,
+            link_heading_id: None,
             alignment: None,
             space_above: None,
             space_below: None,
@@ -3086,6 +3094,7 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
             font_size: None,
             font_family: None,
             foreground_color: None,
+            link_heading_id: None,
             alignment: None,
             space_above: None,
             space_below: None,
@@ -3225,6 +3234,7 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
             font_size: None,
             font_family: None,
             foreground_color: None,
+            link_heading_id: None,
             alignment: None,
             space_above: None,
             space_below: None,
@@ -4502,7 +4512,10 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "startIndex": 24,
                     "endIndex": 35,
                     "paragraph": {
-                        "paragraphStyle": { "namedStyleType": "HEADING_1" },
+                        "paragraphStyle": {
+                            "namedStyleType": "HEADING_1",
+                            "headingId": "h.how-to"
+                        },
                         "elements": [
                             {
                                 "startIndex": 24,

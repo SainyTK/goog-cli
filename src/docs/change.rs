@@ -166,6 +166,7 @@ pub(crate) struct ApplyStylesCommand {
     pub font_size: Option<f64>,
     pub font_family: Option<String>,
     pub foreground_color: Option<String>,
+    pub link_heading_id: Option<String>,
     pub alignment: Option<DocsParagraphAlignment>,
     pub space_above: Option<f64>,
     pub space_below: Option<f64>,
@@ -1507,6 +1508,12 @@ fn text_style_payload(
         if let Some(color) = cached_text_style.and_then(|style| style.foreground_color.as_deref()) {
             payload.set_field("foregroundColor", foreground_color_payload(color)?);
         }
+    }
+    if let Some(heading_id) = &command.link_heading_id {
+        if heading_id.trim().is_empty() {
+            bail!("--link-heading-id cannot be empty");
+        }
+        payload.set_field("link", serde_json::json!({ "headingId": heading_id }));
     }
     Ok(payload.into_json_parts())
 }
