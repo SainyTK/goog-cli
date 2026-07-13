@@ -1543,6 +1543,8 @@ fn docs_new_high_level_editing_commands_parse() {
                         column,
                         background_color,
                         content_alignment,
+                        border_color,
+                        border_width,
                         dry_run,
                         json,
                         ..
@@ -1563,6 +1565,10 @@ fn docs_new_high_level_editing_commands_parse() {
         "#D9EAF7",
         "--content-alignment",
         "middle",
+        "--border-color",
+        "#FFFFFF",
+        "--border-width",
+        "1",
         "--dry-run",
         "--json",
     ])
@@ -1575,6 +1581,8 @@ fn docs_new_high_level_editing_commands_parse() {
     assert_eq!(row, 1);
     assert_eq!(column, Some(2));
     assert_eq!(background_color.as_deref(), Some("#D9EAF7"));
+    assert_eq!(border_color.as_deref(), Some("#FFFFFF"));
+    assert_eq!(border_width, Some(1.0));
     assert_eq!(
         content_alignment,
         Some(crate::cli::DocsTableCellAlignment::Middle)
@@ -1657,6 +1665,39 @@ fn docs_image_dimensions_must_be_provided_together() {
     .unwrap_err();
 
     assert!(error.to_string().contains("--height"));
+}
+
+#[test]
+fn docs_table_border_color_and_width_must_be_provided_together() {
+    let missing_width = parse(&[
+        "docs",
+        "table",
+        "style",
+        "document-123",
+        "--table-id",
+        "table-1",
+        "--row",
+        "1",
+        "--border-color",
+        "#FFFFFF",
+    ])
+    .unwrap_err();
+    assert!(missing_width.to_string().contains("--border-width"));
+
+    let missing_color = parse(&[
+        "docs",
+        "table",
+        "style",
+        "document-123",
+        "--table-id",
+        "table-1",
+        "--row",
+        "1",
+        "--border-width",
+        "1",
+    ])
+    .unwrap_err();
+    assert!(missing_color.to_string().contains("--border-color"));
 }
 
 #[test]

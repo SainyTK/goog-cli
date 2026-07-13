@@ -531,6 +531,8 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             column: None,
             background_color: Some("#D9EAF7".into()),
             content_alignment: None,
+            border_color: None,
+            border_width: None,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-required".into()),
@@ -560,6 +562,8 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             column: Some(2),
             background_color: None,
             content_alignment: Some(crate::cli::DocsTableCellAlignment::Middle),
+            border_color: Some("#FFFFFF".into()),
+            border_width: Some(1.0),
             dry_run: true,
             json: true,
             required_revision_id: None,
@@ -572,7 +576,22 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
     assert_eq!(update["tableRange"]["tableCellLocation"]["columnIndex"], 1);
     assert_eq!(update["tableRange"]["columnSpan"], 1);
     assert_eq!(update["tableCellStyle"]["contentAlignment"], "MIDDLE");
-    assert_eq!(update["fields"], "contentAlignment");
+    assert_eq!(
+        update["tableCellStyle"]["borderTop"],
+        json!({
+            "color": {
+                "color": {
+                    "rgbColor": { "red": 1.0, "green": 1.0, "blue": 1.0 }
+                }
+            },
+            "dashStyle": "SOLID",
+            "width": { "magnitude": 1.0, "unit": "PT" }
+        })
+    );
+    assert_eq!(
+        update["fields"],
+        "contentAlignment,borderTop,borderBottom,borderLeft,borderRight"
+    );
 
     let missing_style = prepare_style_table_row_change(
         &table_map,
@@ -583,6 +602,8 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             column: None,
             background_color: None,
             content_alignment: None,
+            border_color: None,
+            border_width: None,
             dry_run: true,
             json: true,
             required_revision_id: None,
@@ -591,7 +612,49 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
     .unwrap_err();
     assert!(missing_style
         .to_string()
-        .contains("requires --background-color or --content-alignment"));
+        .contains("requires --background-color, --content-alignment"));
+
+    let incomplete_border = prepare_style_table_row_change(
+        &table_map,
+        &StyleTableRowCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            row: 1,
+            column: None,
+            background_color: None,
+            content_alignment: None,
+            border_color: Some("#FFFFFF".into()),
+            border_width: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap_err();
+    assert!(incomplete_border
+        .to_string()
+        .contains("must be provided together"));
+
+    let invalid_border_width = prepare_style_table_row_change(
+        &table_map,
+        &StyleTableRowCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            row: 1,
+            column: None,
+            background_color: None,
+            content_alignment: None,
+            border_color: Some("#FFFFFF".into()),
+            border_width: Some(-1.0),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap_err();
+    assert!(invalid_border_width
+        .to_string()
+        .contains("finite, non-negative"));
 
     let invalid_column = prepare_style_table_row_change(
         &table_map,
@@ -602,6 +665,8 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             column: Some(3),
             background_color: None,
             content_alignment: Some(crate::cli::DocsTableCellAlignment::Top),
+            border_color: None,
+            border_width: None,
             dry_run: true,
             json: true,
             required_revision_id: None,

@@ -119,7 +119,7 @@ pub(crate) struct EditTableCommand {
     pub required_revision_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct StyleTableRowCommand {
     pub document_id: String,
     pub table_id: String,
@@ -127,6 +127,8 @@ pub(crate) struct StyleTableRowCommand {
     pub column: Option<usize>,
     pub background_color: Option<String>,
     pub content_alignment: Option<DocsTableCellAlignment>,
+    pub border_color: Option<String>,
+    pub border_width: Option<f64>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -829,8 +831,16 @@ pub(crate) fn prepare_style_table_row_change(
         Some(column) => (column - 1, 1),
         None => (0, column_span),
     };
-    if command.background_color.is_none() && command.content_alignment.is_none() {
-        bail!("table style requires --background-color or --content-alignment");
+    if command.border_color.is_some() != command.border_width.is_some() {
+        bail!("--border-color and --border-width must be provided together");
+    }
+    if command.background_color.is_none()
+        && command.content_alignment.is_none()
+        && command.border_color.is_none()
+    {
+        bail!(
+            "table style requires --background-color, --content-alignment, or paired --border-color and --border-width"
+        );
     }
     let table_start_index = table
         .location
@@ -851,6 +861,22 @@ pub(crate) fn prepare_style_table_row_change(
             serde_json::json!(content_alignment.api_value()),
         );
         fields.push("contentAlignment");
+    }
+    if let (Some(border_color), Some(border_width)) =
+        (command.border_color.as_deref(), command.border_width)
+    {
+        if !border_width.is_finite() || border_width < 0.0 {
+            bail!("--border-width must be a finite, non-negative point value");
+        }
+        let border = serde_json::json!({
+            "color": foreground_color_payload(border_color)?,
+            "dashStyle": "SOLID",
+            "width": { "magnitude": border_width, "unit": "PT" }
+        });
+        for side in ["borderTop", "borderBottom", "borderLeft", "borderRight"] {
+            table_cell_style.insert(side.into(), border.clone());
+            fields.push(side);
+        }
     }
     let request_body = request_body_with_revision(
         vec![serde_json::json!({

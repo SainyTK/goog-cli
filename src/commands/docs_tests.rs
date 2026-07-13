@@ -1953,6 +1953,8 @@ async fn run_style_table_row_dry_run_targets_the_selected_native_row() {
             column: Some(1),
             background_color: None,
             content_alignment: Some(crate::cli::DocsTableCellAlignment::Middle),
+            border_color: Some("#FFFFFF".into()),
+            border_width: Some(1.0),
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-table".into()),
@@ -1969,6 +1971,10 @@ async fn run_style_table_row_dry_run_targets_the_selected_native_row() {
     assert_eq!(update["tableRange"]["tableCellLocation"]["columnIndex"], 0);
     assert_eq!(update["tableRange"]["columnSpan"], 1);
     assert_eq!(update["tableCellStyle"]["contentAlignment"], "MIDDLE");
+    assert_eq!(
+        update["tableCellStyle"]["borderTop"]["width"]["magnitude"],
+        1.0
+    );
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
         "rev-table"

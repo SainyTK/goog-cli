@@ -2500,6 +2500,12 @@ pub enum DocsTableCommand {
         /// Vertical alignment for cell content
         #[arg(long)]
         content_alignment: Option<DocsTableCellAlignment>,
+        /// Color for all four cell borders as #RRGGBB; requires --border-width
+        #[arg(long, requires = "border_width")]
+        border_color: Option<String>,
+        /// Width for all four cell borders in points; requires --border-color
+        #[arg(long, requires = "border_color")]
+        border_width: Option<f64>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
