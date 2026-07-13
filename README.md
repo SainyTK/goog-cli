@@ -492,19 +492,18 @@ Install local dependencies:
 
 ```sh
 cargo fetch
-npm install
 ```
 
 Run checks before opening a pull request:
 
 ```sh
 cargo fmt --check
+cargo check
 cargo test
-npm run typecheck
 ```
 
-Issues live in GitHub Issues.
-Pick work labeled `ready-for-agent` or `bug` (there is no separate `Sandcastle` label), keep changes scoped to the issue, and link the issue from the pull request.
+Substantial autonomous work uses the [GnHF workflow](docs/agents/gnhf-workflow.md).
+Run GnHF from a clean base branch with its own worktree and pushed branch, then review and test the resulting pull request before merging.
 
 Pull requests should include:
 

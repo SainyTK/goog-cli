@@ -17,7 +17,6 @@ mod drive_tests;
 #[cfg(test)]
 mod mail_tests;
 #[cfg(test)]
-mod sandcastle_tests;
 #[cfg(test)]
 mod sheets_tests;
 #[cfg(test)]

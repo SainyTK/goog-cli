@@ -3690,7 +3690,7 @@ fn editable_table_document() -> serde_json::Value {
 fn long_document_with_toc_and_objects() -> serde_json::Value {
     serde_json::json!({
         "documentId": "document-123",
-        "title": "คู่มือ Sandcastle",
+        "title": "คู่มือการใช้งาน",
         "revisionId": "rev-long",
         "body": {
             "content": [
