@@ -3321,8 +3321,18 @@ fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) ->
 fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntry]) -> Result<()> {
     writeln!(
         out,
-        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<16} {:<10} {:<10} {:<18} {:<15} Preview",
-        "Entry", "Index", "Page", "Line", "Kind", "Handle", "Object", "Size", "Style", "Confidence"
+        "{:<5} {:<7} {:<5} {:<4} {:<20} {:<16} {:<10} {:<10} {:<18} {:<15} {:<20} Preview",
+        "Entry",
+        "Index",
+        "Page",
+        "Line",
+        "Kind",
+        "Handle",
+        "Object",
+        "Size",
+        "Style",
+        "Confidence",
+        "Image alt text"
     )
     .context("failed to write Docs Document Map header")?;
 
@@ -3339,9 +3349,21 @@ fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntr
             (Some(rows), Some(columns)) => format!("{rows}x{columns}"),
             _ => "-".into(),
         };
+        let image_alt_text = entry
+            .image_alt_text
+            .as_ref()
+            .map(|alt_text| match (&alt_text.title, &alt_text.description) {
+                (Some(title), Some(description)) => {
+                    format!("title: {title}; description: {description}")
+                }
+                (Some(title), None) => title.clone(),
+                (None, Some(description)) => description.clone(),
+                (None, None) => "-".into(),
+            })
+            .unwrap_or_else(|| "-".into());
         writeln!(
             out,
-            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<16} {:<10} {:<10} {:<18} {:<15} {}",
+            "{:<5} {:<7} {:<5} {:<4} {:<20} {:<16} {:<10} {:<10} {:<18} {:<15} {:<20} {}",
             entry.entry,
             display_optional(entry.location.index),
             display_optional(entry.location.page),
@@ -3352,6 +3374,7 @@ fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntr
             size,
             style,
             format!("{:?}", entry.location.confidence),
+            image_alt_text,
             entry.preview
         )
         .context("failed to write Docs Document Map row")?;

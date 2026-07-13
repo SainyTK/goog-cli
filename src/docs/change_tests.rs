@@ -672,6 +672,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             image_handle: None,
             object_id: None,
             layout_metadata: None,
+            image_alt_text: None,
             rows: Some(2),
             columns: Some(2),
             table_handle: Some("table-1".into()),

@@ -118,6 +118,8 @@ pub struct DocumentMapEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout_metadata: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_alt_text: Option<DocumentImageAltText>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rows: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub columns: Option<usize>,
@@ -125,6 +127,15 @@ pub struct DocumentMapEntry {
     pub table_handle: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub table_cells: Vec<Vec<DocumentRange>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentImageAltText {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1009,6 +1020,7 @@ struct DocumentMapEntryMetadata {
     image_handle: Option<String>,
     object_id: Option<String>,
     layout_metadata: Option<Value>,
+    image_alt_text: Option<DocumentImageAltText>,
     rows: Option<usize>,
     columns: Option<usize>,
     table_handle: Option<String>,
@@ -1152,6 +1164,7 @@ impl<'a> DocumentMapBuilder<'a> {
             location.index = image.start_index;
             let layout_metadata =
                 inline_image_layout_metadata(&self.inline_objects, &image.object_id);
+            let image_alt_text = inline_image_alt_text(&self.inline_objects, &image.object_id);
             self.push_entry_with_metadata(
                 location,
                 DocumentMapEntryKind::InlineImage,
@@ -1161,6 +1174,7 @@ impl<'a> DocumentMapBuilder<'a> {
                     image_handle: Some(image_handle),
                     object_id: Some(image.object_id),
                     layout_metadata,
+                    image_alt_text,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -1170,6 +1184,7 @@ impl<'a> DocumentMapBuilder<'a> {
             let image_handle = self.next_image_handle();
             let layout_metadata =
                 positioned_image_layout_metadata(&self.positioned_objects, &object_id);
+            let image_alt_text = positioned_image_alt_text(&self.positioned_objects, &object_id);
             self.push_entry_with_metadata(
                 self.current_location(element),
                 DocumentMapEntryKind::PositionedImage,
@@ -1179,6 +1194,7 @@ impl<'a> DocumentMapBuilder<'a> {
                     image_handle: Some(image_handle),
                     object_id: Some(object_id),
                     layout_metadata,
+                    image_alt_text,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -1262,6 +1278,7 @@ impl<'a> DocumentMapBuilder<'a> {
         for object_id in non_body_inline_ids {
             let image_handle = self.next_image_handle();
             let layout_metadata = inline_image_layout_metadata(inline_objects, &object_id);
+            let image_alt_text = inline_image_alt_text(inline_objects, &object_id);
             self.push_entry_with_metadata(
                 non_body_image_location(),
                 DocumentMapEntryKind::InlineImage,
@@ -1271,6 +1288,7 @@ impl<'a> DocumentMapBuilder<'a> {
                     image_handle: Some(image_handle),
                     object_id: Some(object_id),
                     layout_metadata,
+                    image_alt_text,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -1279,6 +1297,7 @@ impl<'a> DocumentMapBuilder<'a> {
         for object_id in non_body_positioned_ids {
             let image_handle = self.next_image_handle();
             let layout_metadata = positioned_image_layout_metadata(positioned_objects, &object_id);
+            let image_alt_text = positioned_image_alt_text(positioned_objects, &object_id);
             self.push_entry_with_metadata(
                 non_body_image_location(),
                 DocumentMapEntryKind::PositionedImage,
@@ -1288,6 +1307,7 @@ impl<'a> DocumentMapBuilder<'a> {
                     image_handle: Some(image_handle),
                     object_id: Some(object_id),
                     layout_metadata,
+                    image_alt_text,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -1328,6 +1348,7 @@ impl<'a> DocumentMapBuilder<'a> {
             image_handle: metadata.image_handle,
             object_id: metadata.object_id,
             layout_metadata: metadata.layout_metadata,
+            image_alt_text: metadata.image_alt_text,
             rows: metadata.rows,
             columns: metadata.columns,
             table_handle: metadata.table_handle,
@@ -1546,6 +1567,18 @@ fn inline_image_layout_metadata(inline_objects: &[&Value], object_id: &str) -> O
     embedded_image_layout_metadata(embedded_object)
 }
 
+fn inline_image_alt_text(
+    inline_objects: &[&Value],
+    object_id: &str,
+) -> Option<DocumentImageAltText> {
+    let embedded_object = inline_objects
+        .iter()
+        .find_map(|objects| objects.get(object_id))?
+        .get("inlineObjectProperties")?
+        .get("embeddedObject")?;
+    embedded_image_alt_text(embedded_object)
+}
+
 fn embedded_image_layout_metadata(embedded_object: &Value) -> Option<Value> {
     let mut metadata = serde_json::Map::new();
     for field in POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS {
@@ -1595,6 +1628,36 @@ fn positioned_image_layout_metadata(
     } else {
         Some(Value::Object(metadata))
     }
+}
+
+fn positioned_image_alt_text(
+    positioned_objects: &[&Value],
+    object_id: &str,
+) -> Option<DocumentImageAltText> {
+    let embedded_object = positioned_objects
+        .iter()
+        .find_map(|objects| objects.get(object_id))?
+        .get("positionedObjectProperties")?
+        .get("embeddedObject")?;
+    embedded_image_alt_text(embedded_object)
+}
+
+fn embedded_image_alt_text(embedded_object: &Value) -> Option<DocumentImageAltText> {
+    let title = nonempty_string_field(embedded_object, "title");
+    let description = nonempty_string_field(embedded_object, "description");
+    if title.is_none() && description.is_none() {
+        None
+    } else {
+        Some(DocumentImageAltText { title, description })
+    }
+}
+
+fn nonempty_string_field(value: &Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn object_ids_not_in_body(

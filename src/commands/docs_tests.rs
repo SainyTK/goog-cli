@@ -1333,6 +1333,11 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(images[0]["kind"], "inline-image");
     assert_eq!(images[0]["imageHandle"], "image-1");
     assert_eq!(images[0]["objectId"], "inline-image-1");
+    assert_eq!(images[0]["imageAltText"]["title"], "Process overview");
+    assert_eq!(
+        images[0]["imageAltText"]["description"],
+        "Workflow from intake to delivery"
+    );
     assert_eq!(
         images[0]["layoutMetadata"]["size"]["width"]["magnitude"],
         144
@@ -1345,6 +1350,7 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(images[1]["kind"], "positioned-image");
     assert_eq!(images[1]["imageHandle"], "image-2");
     assert_eq!(images[1]["objectId"], "positioned-image-1");
+    assert_eq!(images[1]["imageAltText"]["title"], "Page decoration");
     assert!(images[1]["location"]["index"].is_number());
     assert_eq!(
         images[1]["layoutMetadata"]["positioning"]["layout"],
@@ -1363,6 +1369,10 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert!(images[2]["location"]["index"].is_null());
     assert_eq!(images[2]["preview"], "[non-body inline image]");
     assert_eq!(
+        images[2]["imageAltText"]["description"],
+        "Customer header logo"
+    );
+    assert_eq!(
         images[2]["layoutMetadata"]["size"]["height"]["magnitude"],
         24
     );
@@ -1370,6 +1380,7 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(images[3]["objectId"], "footer-positioned-image");
     assert!(images[3]["location"]["index"].is_null());
     assert_eq!(images[3]["preview"], "[non-body positioned image]");
+    assert_eq!(images[3]["imageAltText"]["title"], "Footer decoration");
     assert_eq!(
         images[3]["layoutMetadata"]["positioning"]["layout"],
         "BEHIND_TEXT"
@@ -1392,6 +1403,9 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert!(human_images.contains("inline-image-1"));
     assert!(human_images.contains("image-2"));
     assert!(human_images.contains("positioned-image-1"));
+    assert!(human_images.contains("Image alt text"));
+    assert!(human_images.contains("Process overview"));
+    assert!(human_images.contains("Page decoration"));
 
     let mut tables = Vec::new();
     run_map_to(
@@ -4662,6 +4676,8 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
             "inline-image-1": {
                 "inlineObjectProperties": {
                     "embeddedObject": {
+                        "title": "Process overview",
+                        "description": "Workflow from intake to delivery",
                         "size": {
                             "height": { "magnitude": 81, "unit": "PT" },
                             "width": { "magnitude": 144, "unit": "PT" }
@@ -4689,6 +4705,7 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                         }
                     },
                     "embeddedObject": {
+                        "title": "Page decoration",
                         "size": {
                             "height": {
                                 "magnitude": 72,
@@ -4764,6 +4781,7 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "header-inline-image": {
                         "inlineObjectProperties": {
                             "embeddedObject": {
+                                "description": "Customer header logo",
                                 "size": {
                                     "height": { "magnitude": 24, "unit": "PT" },
                                     "width": { "magnitude": 48, "unit": "PT" }
@@ -4780,6 +4798,7 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                                 "layout": "BEHIND_TEXT"
                             },
                             "embeddedObject": {
+                                "title": "Footer decoration",
                                 "size": {
                                     "height": {
                                         "magnitude": 24,
