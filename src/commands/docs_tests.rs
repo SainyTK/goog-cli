@@ -455,6 +455,19 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         10
     );
     assert_eq!(output["entries"][1]["paragraphStyle"]["keepWithNext"], true);
+    assert_eq!(output["entries"][1]["textRuns"][0]["startIndex"], 24);
+    assert_eq!(output["entries"][1]["textRuns"][0]["endIndex"], 28);
+    assert_eq!(
+        output["entries"][1]["textRuns"][0]["textStyle"]["weightedFontFamily"]["fontFamily"],
+        "Bai Jamjuree"
+    );
+    assert_eq!(output["entries"][1]["textRuns"][1]["startIndex"], 28);
+    assert_eq!(output["entries"][1]["textRuns"][1]["endIndex"], 35);
+    assert_eq!(output["entries"][1]["textRuns"][1]["content"], "ใช้งาน\n");
+    assert_eq!(
+        output["entries"][1]["textRuns"][1]["textStyle"]["underline"],
+        true
+    );
     assert_eq!(output["entries"][2]["location"]["confidence"], "unknown");
     assert!(output["entries"][2]["location"]["page"].is_null());
     assert_eq!(output["entries"][3]["kind"], "table");
@@ -4584,8 +4597,27 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                         "elements": [
                             {
                                 "startIndex": 24,
+                                "endIndex": 28,
+                                "textRun": {
+                                    "content": "วิธี",
+                                    "textStyle": {
+                                        "bold": true,
+                                        "weightedFontFamily": { "fontFamily": "Bai Jamjuree" }
+                                    }
+                                }
+                            },
+                            {
+                                "startIndex": 28,
                                 "endIndex": 35,
-                                "textRun": { "content": "วิธีใช้งาน\n" }
+                                "textRun": {
+                                    "content": "ใช้งาน\n",
+                                    "textStyle": {
+                                        "underline": true,
+                                        "foregroundColor": {
+                                            "color": { "rgbColor": { "red": 0.2 } }
+                                        }
+                                    }
+                                }
                             }
                         ]
                     }

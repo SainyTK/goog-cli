@@ -111,6 +111,8 @@ pub struct DocumentMapEntry {
     pub preview: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paragraph_style: Option<Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub text_runs: Vec<DocumentTextRun>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heading_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -129,6 +131,16 @@ pub struct DocumentMapEntry {
     pub table_handle: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub table_cells: Vec<Vec<DocumentRange>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentTextRun {
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_style: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1019,6 +1031,7 @@ struct DocumentMapBuilder<'a> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct DocumentMapEntryMetadata {
     paragraph_style: Option<Value>,
+    text_runs: Vec<DocumentTextRun>,
     heading_id: Option<String>,
     image_handle: Option<String>,
     object_id: Option<String>,
@@ -1123,6 +1136,7 @@ impl<'a> DocumentMapBuilder<'a> {
         let positioned_object_ids = paragraph_positioned_object_ids(paragraph);
         let style = paragraph_style(paragraph);
         let paragraph_style = paragraph.get("paragraphStyle").cloned();
+        let text_runs = paragraph_text_runs(paragraph);
         let is_heading = style.as_deref().is_some_and(is_heading_style);
 
         if !trimmed_text.is_empty() {
@@ -1154,6 +1168,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 preview,
                 DocumentMapEntryMetadata {
                     paragraph_style: paragraph_style.clone(),
+                    text_runs,
                     heading_id,
                     ..DocumentMapEntryMetadata::default()
                 },
@@ -1354,6 +1369,7 @@ impl<'a> DocumentMapBuilder<'a> {
             style,
             preview,
             paragraph_style: metadata.paragraph_style,
+            text_runs: metadata.text_runs,
             heading_id: metadata.heading_id,
             image_handle: metadata.image_handle,
             object_id: metadata.object_id,
@@ -1506,6 +1522,24 @@ fn paragraph_text(paragraph: &Value) -> String {
                 .and_then(Value::as_str)
         })
         .collect::<String>()
+}
+
+fn paragraph_text_runs(paragraph: &Value) -> Vec<DocumentTextRun> {
+    paragraph
+        .get("elements")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|element| {
+            let text_run = element.get("textRun")?;
+            Some(DocumentTextRun {
+                start_index: element.get("startIndex").and_then(Value::as_i64),
+                end_index: element.get("endIndex").and_then(Value::as_i64),
+                content: text_run.get("content")?.as_str()?.to_string(),
+                text_style: text_run.get("textStyle").cloned(),
+            })
+        })
+        .collect()
 }
 
 fn paragraph_style(paragraph: &Value) -> Option<String> {
