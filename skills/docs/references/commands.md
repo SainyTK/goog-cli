@@ -76,6 +76,27 @@ Do not compare generated object IDs, heading IDs, segment IDs, or revision IDs b
 Complete the comparison with page-level visual inspection of the target PDF or native document.
 Remove the temporary inventory files after verification.
 
+Compare the native visual systems directly after the inventory check.
+Canonicalize named styles by removing generated heading IDs, and canonicalize page styles by removing generated header and footer segment IDs:
+
+```bash
+target/debug/goog docs map SOURCE_DOCUMENT_ID --json > /tmp/source-doc-map.json
+target/debug/goog docs map TARGET_DOCUMENT_ID --json > /tmp/target-doc-map.json
+
+jq '[.namedStyles[] | {tabId, styles: [.namedStyles.styles[] | del(.paragraphStyle.headingId)]}] | sort_by(.tabId)' /tmp/source-doc-map.json > /tmp/source-doc-named-styles.json
+jq '[.namedStyles[] | {tabId, styles: [.namedStyles.styles[] | del(.paragraphStyle.headingId)]}] | sort_by(.tabId)' /tmp/target-doc-map.json > /tmp/target-doc-named-styles.json
+diff -u /tmp/source-doc-named-styles.json /tmp/target-doc-named-styles.json
+
+jq '[.documentStyles[] | {tabId, documentStyle: (.documentStyle | del(.defaultHeaderId, .defaultFooterId, .firstPageHeaderId, .firstPageFooterId, .evenPageHeaderId, .evenPageFooterId))}] | sort_by(.tabId)' /tmp/source-doc-map.json > /tmp/source-doc-page-styles.json
+jq '[.documentStyles[] | {tabId, documentStyle: (.documentStyle | del(.defaultHeaderId, .defaultFooterId, .firstPageHeaderId, .firstPageFooterId, .evenPageHeaderId, .evenPageFooterId))}] | sort_by(.tabId)' /tmp/target-doc-map.json > /tmp/target-doc-page-styles.json
+diff -u /tmp/source-doc-page-styles.json /tmp/target-doc-page-styles.json
+```
+
+An empty named-style diff proves that source-defined title, heading, subtitle, and body typography and paragraph properties match.
+An empty page-style diff proves that document mode, page geometry, margins, and supported header and footer behavior match.
+These semantic comparisons deliberately retain tab IDs because a multi-tab reproduction should preserve the intended tab-level style assignment.
+Remove all six temporary map and style files after verification.
+
 For a blank target that should inherit an existing visual system, preview and then copy its named styles and page layout:
 
 ```bash
