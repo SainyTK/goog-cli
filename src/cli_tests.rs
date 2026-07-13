@@ -1201,6 +1201,7 @@ fn docs_new_high_level_editing_commands_parse() {
                     DocsHeaderCommand::Create {
                         document_id,
                         text,
+                        section_break_index,
                         dry_run,
                         json,
                         ..
@@ -1213,6 +1214,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "document-123",
         "--text",
         "Confidential",
+        "--section-break-index",
+        "16",
         "--dry-run",
         "--json",
     ])
@@ -1223,6 +1226,7 @@ fn docs_new_high_level_editing_commands_parse() {
     };
     assert_eq!(document_id, "document-123");
     assert_eq!(text.as_deref(), Some("Confidential"));
+    assert_eq!(section_break_index, Some(16));
     assert!(dry_run);
     assert!(json);
 
@@ -1233,6 +1237,7 @@ fn docs_new_high_level_editing_commands_parse() {
                     DocsFooterCommand::Create {
                         document_id,
                         text,
+                        section_break_index,
                         dry_run,
                         json,
                         ..
@@ -1245,6 +1250,8 @@ fn docs_new_high_level_editing_commands_parse() {
         "document-123",
         "--text",
         "Page footer",
+        "--section-break-index",
+        "16",
         "--dry-run",
         "--json",
     ])
@@ -1255,6 +1262,7 @@ fn docs_new_high_level_editing_commands_parse() {
     };
     assert_eq!(document_id, "document-123");
     assert_eq!(text.as_deref(), Some("Page footer"));
+    assert_eq!(section_break_index, Some(16));
     assert!(dry_run);
     assert!(json);
 

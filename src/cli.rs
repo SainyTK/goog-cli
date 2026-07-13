@@ -2229,12 +2229,13 @@ pub enum DocsTextCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsHeaderCommand {
-    /// Create the document's default header, returning its headerId
+    /// Create a default header, returning its headerId
     #[command(after_long_help = "Output shape:
   Prints the raw documents.batchUpdate response JSON, which includes the new headerId under replies[0].createHeader.headerId.
 
 Notes:
-  Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
+  Omitting --section-break-index creates the DEFAULT header for the document's first section.
+  Use a section break startIndex from docs get to create a header for a later section.
   Pass --text to populate the new header without a raw batch-update request.")]
     Create {
         /// Document ID or URL to update
@@ -2242,6 +2243,9 @@ Notes:
         /// Text to insert into the new header
         #[arg(long)]
         text: Option<String>,
+        /// Section break startIndex for the section that should own the header
+        #[arg(long)]
+        section_break_index: Option<usize>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2256,12 +2260,13 @@ Notes:
 
 #[derive(Debug, Subcommand)]
 pub enum DocsFooterCommand {
-    /// Create the document's default footer, returning its footerId
+    /// Create a default footer, returning its footerId
     #[command(after_long_help = "Output shape:
   Prints the raw documents.batchUpdate response JSON, which includes the new footerId under replies[0].createFooter.footerId.
 
 Notes:
-  Always creates the DEFAULT footer for the document's first section; there is no per-section footer support today.
+  Omitting --section-break-index creates the DEFAULT footer for the document's first section.
+  Use a section break startIndex from docs get to create a footer for a later section.
   Pass --text to populate the new footer without a raw batch-update request.")]
     Create {
         /// Document ID or URL to update
@@ -2269,6 +2274,9 @@ Notes:
         /// Text to insert into the new footer
         #[arg(long)]
         text: Option<String>,
+        /// Section break startIndex for the section that should own the footer
+        #[arg(long)]
+        section_break_index: Option<usize>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,

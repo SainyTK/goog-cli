@@ -313,6 +313,7 @@ pub fn run<S: AccountStore>(
                 DocsHeaderCommand::Create {
                     document_id,
                     text,
+                    section_break_index,
                     dry_run,
                     json,
                     required_revision_id,
@@ -327,6 +328,7 @@ pub fn run<S: AccountStore>(
                 CreateHeaderCommand {
                     document_id,
                     text,
+                    section_break_index,
                     dry_run,
                     json,
                     required_revision_id,
@@ -341,6 +343,7 @@ pub fn run<S: AccountStore>(
                 DocsFooterCommand::Create {
                     document_id,
                     text,
+                    section_break_index,
                     dry_run,
                     json,
                     required_revision_id,
@@ -355,6 +358,7 @@ pub fn run<S: AccountStore>(
                 CreateFooterCommand {
                     document_id,
                     text,
+                    section_break_index,
                     dry_run,
                     json,
                     required_revision_id,

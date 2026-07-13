@@ -68,6 +68,7 @@ pub(crate) struct InsertSectionBreakCommand {
 pub(crate) struct CreateHeaderCommand {
     pub document_id: String,
     pub text: Option<String>,
+    pub section_break_index: Option<usize>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -77,6 +78,7 @@ pub(crate) struct CreateHeaderCommand {
 pub(crate) struct CreateFooterCommand {
     pub document_id: String,
     pub text: Option<String>,
+    pub section_break_index: Option<usize>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -576,17 +578,23 @@ pub(crate) fn prepare_create_header_change(
     document_map: &DocumentMap,
     command: &CreateHeaderCommand,
 ) -> PreparedDocsChange {
+    let mut create_header = serde_json::json!({ "type": "DEFAULT" });
+    if let Some(index) = command.section_break_index {
+        create_header["sectionBreakLocation"] = serde_json::json!({ "index": index });
+    }
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
-            "createHeader": {
-                "type": "DEFAULT"
-            }
+            "createHeader": create_header
         })],
         command.required_revision_id.as_deref(),
     );
+    let target = command.section_break_index.map_or_else(
+        || "the document's first section".to_string(),
+        |index| format!("the section beginning at section break index {index}"),
+    );
     let summary = command.text.as_ref().map_or_else(
-        || "Create the document's DEFAULT header".to_string(),
-        |text| format!("Create the document's DEFAULT header and insert {text:?}"),
+        || format!("Create the DEFAULT header for {target}"),
+        |text| format!("Create the DEFAULT header for {target} and insert {text:?}"),
     );
     PreparedDocsChange::HighLevel(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
@@ -601,17 +609,23 @@ pub(crate) fn prepare_create_footer_change(
     document_map: &DocumentMap,
     command: &CreateFooterCommand,
 ) -> PreparedDocsChange {
+    let mut create_footer = serde_json::json!({ "type": "DEFAULT" });
+    if let Some(index) = command.section_break_index {
+        create_footer["sectionBreakLocation"] = serde_json::json!({ "index": index });
+    }
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
-            "createFooter": {
-                "type": "DEFAULT"
-            }
+            "createFooter": create_footer
         })],
         command.required_revision_id.as_deref(),
     );
+    let target = command.section_break_index.map_or_else(
+        || "the document's first section".to_string(),
+        |index| format!("the section beginning at section break index {index}"),
+    );
     let summary = command.text.as_ref().map_or_else(
-        || "Create the document's DEFAULT footer".to_string(),
-        |text| format!("Create the document's DEFAULT footer and insert {text:?}"),
+        || format!("Create the DEFAULT footer for {target}"),
+        |text| format!("Create the DEFAULT footer for {target} and insert {text:?}"),
     );
     PreparedDocsChange::HighLevel(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),

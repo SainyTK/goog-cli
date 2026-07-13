@@ -1396,6 +1396,7 @@ async fn run_create_header_dry_run_emits_native_request() {
         CreateHeaderCommand {
             document_id: "document-123".into(),
             text: None,
+            section_break_index: Some(16),
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -1410,6 +1411,10 @@ async fn run_create_header_dry_run_emits_native_request() {
     assert_eq!(
         output["requestBody"]["requests"][0]["createHeader"]["type"],
         "DEFAULT"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createHeader"]["sectionBreakLocation"]["index"],
+        16
     );
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
@@ -1437,6 +1442,7 @@ async fn run_create_footer_dry_run_emits_native_request() {
         CreateFooterCommand {
             document_id: "document-123".into(),
             text: None,
+            section_break_index: None,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -1452,6 +1458,7 @@ async fn run_create_footer_dry_run_emits_native_request() {
         output["requestBody"]["requests"][0]["createFooter"]["type"],
         "DEFAULT"
     );
+    assert!(output["requestBody"]["requests"][0]["createFooter"]["sectionBreakLocation"].is_null());
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
         "rev-search"
@@ -1510,6 +1517,7 @@ async fn run_create_header_populates_returned_segment_in_guarded_follow_up() {
         CreateHeaderCommand {
             document_id: "document-123".into(),
             text: Some("Confidential".into()),
+            section_break_index: None,
             dry_run: false,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -1583,6 +1591,7 @@ async fn run_create_footer_populates_returned_segment_in_guarded_follow_up() {
         CreateFooterCommand {
             document_id: "document-123".into(),
             text: Some("Customer proposal".into()),
+            section_break_index: None,
             dry_run: false,
             json: true,
             required_revision_id: Some("rev-search".into()),
