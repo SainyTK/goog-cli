@@ -97,6 +97,20 @@ An empty page-style diff proves that document mode, page geometry, margins, and 
 These semantic comparisons deliberately retain tab IDs because a multi-tab reproduction should preserve the intended tab-level style assignment.
 Remove all six temporary map and style files after verification.
 
+Compare mapped content and component properties after the visual-system check.
+Keep content order, ranges, tab assignment, text and paragraph styles, table geometry, image geometry, list formatting, breaks, and header or footer content while removing IDs that Google can assign independently:
+
+```bash
+jq '{entries, blankParagraphs, lists, breaks, segments, documentLocations} | walk(if type == "object" then del(.objectId, .headingId, .segmentId, .listId, .defaultHeaderId, .defaultFooterId, .firstPageHeaderId, .firstPageFooterId, .evenPageHeaderId, .evenPageFooterId) else . end) | walk(if type == "object" and (.heading? | type) == "object" then .heading |= del(.id) else . end)' /tmp/source-doc-map.json > /tmp/source-doc-content.json
+jq '{entries, blankParagraphs, lists, breaks, segments, documentLocations} | walk(if type == "object" then del(.objectId, .headingId, .segmentId, .listId, .defaultHeaderId, .defaultFooterId, .firstPageHeaderId, .firstPageFooterId, .evenPageHeaderId, .evenPageFooterId) else . end) | walk(if type == "object" and (.heading? | type) == "object" then .heading |= del(.id) else . end)' /tmp/target-doc-map.json > /tmp/target-doc-content.json
+diff -u /tmp/source-doc-content.json /tmp/target-doc-content.json
+```
+
+An empty content diff proves that every mapped body, table, image, list, break, and header or footer property matches in document order.
+For a blank-document recreation, review each difference and record whether it is intentional, unsupported by the Docs API, or a defect to correct.
+Do not remove tab IDs, indexes, ranges, or component order because differences in those fields can reveal misplaced content or a changed document structure.
+Remove the two temporary content files with the other comparison files after verification.
+
 For a blank target that should inherit an existing visual system, preview and then copy its named styles and page layout:
 
 ```bash

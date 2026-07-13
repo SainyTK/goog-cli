@@ -82,5 +82,6 @@ Do not call the document finished until all of these are true:
 - The native document or its exported PDF has been visually inspected at 100% zoom, including every page edge and any requested page-count limit.
 - When reproducing a source document, source and target component inventories have been compared and every intentional difference is understood.
 - When reproducing a source document, named styles and page styles have been compared after generated IDs are removed.
+- When reproducing a source document, mapped content and component properties have been compared after generated IDs are removed.
 - The live document has been fetched again after the last write.
 - The final URL opens the intended native Google Doc.
