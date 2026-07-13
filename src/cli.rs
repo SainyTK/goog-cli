@@ -245,7 +245,13 @@ impl SlidesCommand {
     pub fn normalize_presentation_id(&mut self) {
         let presentation_id = match self {
             SlidesCommand::Create { .. } | SlidesCommand::List { .. } => return,
-            SlidesCommand::Get {
+            SlidesCommand::Deck {
+                command:
+                    SlidesDeckCommand::Inspect {
+                        presentation_id, ..
+                    },
+            }
+            | SlidesCommand::Get {
                 presentation_id, ..
             }
             | SlidesCommand::BatchUpdate {
@@ -376,6 +382,11 @@ pub enum SlidesCommand {
     Create {
         /// Title for the new Google Slides presentation
         title: String,
+    },
+    /// Author, inspect, and verify complete presentations
+    Deck {
+        #[command(subcommand)]
+        command: SlidesDeckCommand,
     },
     /// Read a Google Slides presentation
     Get {
@@ -702,6 +713,27 @@ pub enum SlidesCommand {
         /// Slide page object ID to limit replacement to. Repeat for multiple slides.
         #[arg(long = "page-id")]
         page_ids: Vec<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SlidesDeckCommand {
+    /// Create a local QA bundle from a live Google Slides presentation
+    Inspect {
+        /// Presentation ID or URL to inspect
+        presentation_id: String,
+        /// Directory for the inspection report, thumbnails, and montage
+        #[arg(long)]
+        qa_dir: String,
+        /// Export the live presentation as a PowerPoint file
+        #[arg(long)]
+        export_pptx: Option<String>,
+        /// Export the live presentation as a PDF file
+        #[arg(long)]
+        export_pdf: Option<String>,
+        /// Emit the inspection report as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 

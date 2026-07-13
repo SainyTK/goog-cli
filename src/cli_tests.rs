@@ -14,8 +14,8 @@ use crate::cli::{
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
-    SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout,
-    SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
+    SlidesDeckCommand, SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand,
+    SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -2368,6 +2368,50 @@ fn slides_create_with_title() {
             command: SlidesCommand::Create { title },
         } => {
             assert_eq!(title, "Quarterly Deck");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_deck_inspect_accepts_qa_and_export_paths() {
+    let cli = parse(&[
+        "slides",
+        "deck",
+        "inspect",
+        "https://docs.google.com/presentation/d/presentation-123/edit",
+        "--qa-dir",
+        "./qa",
+        "--export-pptx",
+        "./deck.pptx",
+        "--export-pdf",
+        "./deck.pdf",
+        "--json",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Deck {
+                    command:
+                        SlidesDeckCommand::Inspect {
+                            presentation_id,
+                            qa_dir,
+                            export_pptx,
+                            export_pdf,
+                            json,
+                        },
+                },
+        } => {
+            assert_eq!(
+                presentation_id,
+                "https://docs.google.com/presentation/d/presentation-123/edit"
+            );
+            assert_eq!(qa_dir, "./qa");
+            assert_eq!(export_pptx.as_deref(), Some("./deck.pptx"));
+            assert_eq!(export_pdf.as_deref(), Some("./deck.pdf"));
+            assert!(json);
         }
         _ => panic!("unexpected parse result"),
     }

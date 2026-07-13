@@ -666,6 +666,125 @@ async fn download_returns_drive_error_for_permission_denied_response() {
     assert!(matches!(err, DriveError::PermissionDenied));
 }
 
+#[tokio::test]
+async fn export_google_file_streams_a_valid_powerpoint_to_the_requested_path() {
+    let server = MockServer::start().await;
+    let powerpoint = b"PK\x03\x04powerpoint";
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/presentation-1/export"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param(
+            "mimeType",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(powerpoint.to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("presentation.pptx");
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ExportGoogleFileOptions::new(
+        "presentation-1",
+        GoogleFileExportFormat::PowerPoint,
+        &output,
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let exported = export_google_file(&client, &options, |_| {}).await.unwrap();
+
+    assert_eq!(exported.path, output);
+    assert_eq!(exported.bytes, powerpoint.len() as u64);
+    assert_eq!(std::fs::read(exported.path).unwrap(), powerpoint);
+}
+
+#[tokio::test]
+async fn export_google_file_supports_pdf_with_its_native_mime_type() {
+    let server = MockServer::start().await;
+    let pdf = b"%PDF-1.7\npresentation";
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/presentation-1/export"))
+        .and(query_param("mimeType", "application/pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(pdf.to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("presentation.pdf");
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ExportGoogleFileOptions::new("presentation-1", GoogleFileExportFormat::Pdf, &output)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let exported = export_google_file(&client, &options, |_| {}).await.unwrap();
+
+    assert_eq!(exported.path, output);
+    assert_eq!(std::fs::read(exported.path).unwrap(), pdf);
+}
+
+#[tokio::test]
+async fn export_google_file_rejects_an_invalid_signature_without_replacing_the_output() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/presentation-1/export"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not a PowerPoint file"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("presentation.pptx");
+    std::fs::write(&output, b"previous export").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ExportGoogleFileOptions::new(
+        "presentation-1",
+        GoogleFileExportFormat::PowerPoint,
+        &output,
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let error = export_google_file(&client, &options, |_| {})
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, DriveError::InvalidResponse(_)));
+    assert_eq!(std::fs::read(&output).unwrap(), b"previous export");
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+}
+
+#[tokio::test]
+async fn export_google_file_rejects_content_over_the_configured_byte_limit() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/presentation-1/export"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"%PDF-1234".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("presentation.pdf");
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ExportGoogleFileOptions::new("presentation-1", GoogleFileExportFormat::Pdf, &output)
+            .with_max_download_bytes(8)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let error = export_google_file(&client, &options, |_| {})
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, DriveError::InvalidResponse(_)));
+    assert!(!output.exists());
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
+}
+
 struct BodyContains(&'static [u8]);
 
 impl Match for BodyContains {

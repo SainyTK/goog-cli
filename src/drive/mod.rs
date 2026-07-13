@@ -34,6 +34,7 @@ const JSON_CONTENT_TYPE: &str = "application/json; charset=UTF-8";
 const MULTIPART_UPLOAD_BOUNDARY: &str = "goog-drive-upload-boundary";
 const UPLOAD_CONTENT_TYPE_HEADER: &str = "X-Upload-Content-Type";
 const UPLOAD_CONTENT_LENGTH_HEADER: &str = "X-Upload-Content-Length";
+const DEFAULT_MAX_EXPORT_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 enum UploadType {
@@ -74,6 +75,37 @@ pub struct FilesPage {
 pub struct DownloadedFile {
     pub path: PathBuf,
     pub bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GoogleFileExportFormat {
+    PowerPoint,
+    Pdf,
+}
+
+impl GoogleFileExportFormat {
+    fn mime_type(self) -> &'static str {
+        match self {
+            Self::PowerPoint => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
+            Self::Pdf => "application/pdf",
+        }
+    }
+
+    fn has_valid_signature(self, signature: &[u8]) -> bool {
+        match self {
+            Self::PowerPoint => signature.starts_with(b"PK\x03\x04"),
+            Self::Pdf => signature.starts_with(b"%PDF-"),
+        }
+    }
+
+    fn display_name(self) -> &'static str {
+        match self {
+            Self::PowerPoint => "PowerPoint",
+            Self::Pdf => "PDF",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -166,6 +198,55 @@ impl DownloadFileOptions {
             .push(&self.file_id);
         url.query_pairs_mut()
             .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExportGoogleFileOptions {
+    pub file_id: String,
+    pub format: GoogleFileExportFormat,
+    pub output: PathBuf,
+    max_download_bytes: usize,
+    files_url: String,
+}
+
+impl ExportGoogleFileOptions {
+    pub fn new(
+        file_id: impl Into<String>,
+        format: GoogleFileExportFormat,
+        output: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            file_id: file_id.into(),
+            format,
+            output: output.into(),
+            max_download_bytes: DEFAULT_MAX_EXPORT_BYTES,
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub fn with_max_download_bytes(mut self, max_download_bytes: usize) -> Self {
+        self.max_download_bytes = max_download_bytes;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn export_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("export");
+        url.query_pairs_mut()
+            .append_pair("mimeType", self.format.mime_type());
         Ok(url)
     }
 }
@@ -389,6 +470,77 @@ where
 
     file.flush().await.map_err(DriveError::Io)?;
     Ok(DownloadedFile { path, bytes })
+}
+
+pub async fn export_google_file<S, F>(
+    client: &AuthClient<'_, S>,
+    options: &ExportGoogleFileOptions,
+    mut progress: F,
+) -> Result<DownloadedFile, DriveError>
+where
+    S: AccountStore,
+    F: FnMut(u64),
+{
+    let response = client
+        .send_with_scopes(client.get(options.export_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+
+    let mut response = ensure_success_response(response).await?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > options.max_download_bytes as u64)
+    {
+        return Err(export_size_error(options.max_download_bytes));
+    }
+    let output_parent = options
+        .output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let temporary_file = tempfile::NamedTempFile::new_in(output_parent).map_err(DriveError::Io)?;
+    let (temporary_file, temporary_path) = temporary_file.into_parts();
+    let mut file = tokio::fs::File::from_std(temporary_file);
+    let mut bytes = 0_u64;
+    let mut signature = Vec::with_capacity(5);
+
+    while let Some(chunk) = response.chunk().await.map_err(DriveError::Network)? {
+        let next_bytes = bytes
+            .checked_add(chunk.len() as u64)
+            .ok_or_else(|| DriveError::InvalidResponse("export size overflow".into()))?;
+        if next_bytes > options.max_download_bytes as u64 {
+            return Err(export_size_error(options.max_download_bytes));
+        }
+        file.write_all(&chunk).await.map_err(DriveError::Io)?;
+        let remaining_signature_bytes = 5_usize.saturating_sub(signature.len());
+        signature.extend_from_slice(&chunk[..chunk.len().min(remaining_signature_bytes)]);
+        bytes = next_bytes;
+        progress(bytes);
+    }
+
+    file.flush().await.map_err(DriveError::Io)?;
+    if !options.format.has_valid_signature(&signature) {
+        return Err(DriveError::InvalidResponse(format!(
+            "Google Drive returned an invalid {} export",
+            options.format.display_name()
+        )));
+    }
+    file.sync_all().await.map_err(DriveError::Io)?;
+    drop(file);
+    temporary_path
+        .persist(&options.output)
+        .map_err(|error| DriveError::Io(error.error))?;
+
+    Ok(DownloadedFile {
+        path: options.output.clone(),
+        bytes,
+    })
+}
+
+fn export_size_error(max_download_bytes: usize) -> DriveError {
+    DriveError::InvalidResponse(format!(
+        "Google Drive export exceeds the {max_download_bytes}-byte download limit"
+    ))
 }
 
 pub async fn upload<S, F>(

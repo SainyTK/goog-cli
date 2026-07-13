@@ -1,8 +1,13 @@
+pub(crate) mod authoring;
 pub mod error;
+
+#[cfg(test)]
+mod tests;
 
 pub use error::SlidesError;
 
 use reqwest::{Response, StatusCode};
+use serde::Deserialize;
 use serde_json::Value;
 use url::Url;
 
@@ -12,10 +17,104 @@ use crate::auth::client::AuthClient;
 pub const SLIDES_SCOPE: &str = "https://www.googleapis.com/auth/presentations";
 pub const SLIDES_SCOPES: &[&str] = &[SLIDES_SCOPE];
 const SLIDES_PRESENTATIONS_URL: &str = "https://slides.googleapis.com/v1/presentations";
+const DEFAULT_MAX_THUMBNAIL_BYTES: usize = 16 * 1024 * 1024;
+const DEFAULT_MAX_THUMBNAIL_PIXELS: u64 = 16_000_000;
 
 pub type Presentation = Value;
 pub type CreatePresentationResponse = Value;
 pub type BatchUpdatePresentationResponse = Value;
+
+#[derive(Debug, Clone)]
+pub struct GetPageThumbnailOptions {
+    pub presentation_id: String,
+    pub page_object_id: String,
+    max_download_bytes: usize,
+    max_pixel_count: u64,
+    presentations_url: String,
+    #[cfg(test)]
+    allow_insecure_content_url: bool,
+}
+
+impl GetPageThumbnailOptions {
+    pub fn new(presentation_id: impl Into<String>, page_object_id: impl Into<String>) -> Self {
+        Self {
+            presentation_id: presentation_id.into(),
+            page_object_id: page_object_id.into(),
+            max_download_bytes: DEFAULT_MAX_THUMBNAIL_BYTES,
+            max_pixel_count: DEFAULT_MAX_THUMBNAIL_PIXELS,
+            presentations_url: SLIDES_PRESENTATIONS_URL.to_string(),
+            #[cfg(test)]
+            allow_insecure_content_url: false,
+        }
+    }
+
+    pub fn with_max_download_bytes(mut self, max_download_bytes: usize) -> Self {
+        self.max_download_bytes = max_download_bytes;
+        self
+    }
+
+    pub fn with_max_pixel_count(mut self, max_pixel_count: u64) -> Self {
+        self.max_pixel_count = max_pixel_count;
+        self
+    }
+
+    #[cfg(test)]
+    fn with_presentations_url(mut self, presentations_url: impl Into<String>) -> Self {
+        self.presentations_url = presentations_url.into();
+        self
+    }
+
+    #[cfg(test)]
+    fn allow_insecure_content_url_for_tests(mut self) -> Self {
+        self.allow_insecure_content_url = true;
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, SlidesError> {
+        let mut url = Url::parse(&self.presentations_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                SlidesError::InvalidResponse("Google Slides API URL cannot be a base".into())
+            })?
+            .push(&self.presentation_id)
+            .push("pages")
+            .push(&self.page_object_id)
+            .push("thumbnail");
+        url.query_pairs_mut()
+            .append_pair("thumbnailProperties.mimeType", "PNG")
+            .append_pair("thumbnailProperties.thumbnailSize", "LARGE");
+        Ok(url)
+    }
+
+    fn content_url(&self, content_url: &str) -> Result<Url, SlidesError> {
+        let url = Url::parse(content_url)?;
+        if url.scheme() == "https" {
+            return Ok(url);
+        }
+        #[cfg(test)]
+        if self.allow_insecure_content_url {
+            return Ok(url);
+        }
+        Err(SlidesError::InvalidResponse(
+            "Google Slides thumbnail content URL must use HTTPS".into(),
+        ))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageThumbnail {
+    pub width: u32,
+    pub height: u32,
+    pub bytes: bytes::Bytes,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageThumbnailMetadata {
+    width: u32,
+    height: u32,
+    content_url: String,
+}
 
 /// Accepts either a bare Google Slides Presentation ID or a Google
 /// Slides/Drive URL pointing at one, and returns the extracted Presentation ID.
@@ -174,6 +273,89 @@ pub async fn batch_update_presentation<S: AccountStore>(
     .await
 }
 
+/// Fetches one LARGE PNG thumbnail attempt.
+///
+/// Deck inspection owns retry timing because it coordinates the expected slide
+/// set and the presentation-wide consistency deadline.
+pub async fn fetch_page_thumbnail_once<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &GetPageThumbnailOptions,
+) -> Result<PageThumbnail, SlidesError> {
+    let metadata_response = client
+        .send_with_scopes(client.get(options.request_url()?), SLIDES_SCOPES)
+        .await
+        .map_err(SlidesError::Auth)?;
+    let metadata = parse_thumbnail_metadata(metadata_response).await?;
+    validate_thumbnail_metadata(&metadata, options.max_pixel_count)?;
+    let content_url = options.content_url(&metadata.content_url)?;
+
+    let image_response = client
+        .get(content_url)
+        .send()
+        .await
+        .map_err(|error| SlidesError::Network(error.to_string()))?;
+    let image_response = ensure_success_response(image_response).await?;
+    let bytes = read_bounded_bytes(image_response, options.max_download_bytes).await?;
+    if bytes.is_empty() {
+        return Err(SlidesError::InvalidResponse(
+            "Google Slides returned an empty page thumbnail".into(),
+        ));
+    }
+
+    Ok(PageThumbnail {
+        width: metadata.width,
+        height: metadata.height,
+        bytes,
+    })
+}
+
+fn validate_thumbnail_metadata(
+    metadata: &PageThumbnailMetadata,
+    max_pixel_count: u64,
+) -> Result<(), SlidesError> {
+    let pixel_count = u64::from(metadata.width) * u64::from(metadata.height);
+    if metadata.width == 0 || metadata.height == 0 || pixel_count > max_pixel_count {
+        return Err(SlidesError::InvalidResponse(format!(
+            "Google Slides returned unsupported thumbnail dimensions {}x{}",
+            metadata.width, metadata.height
+        )));
+    }
+    Ok(())
+}
+
+async fn read_bounded_bytes(
+    mut response: Response,
+    max_download_bytes: usize,
+) -> Result<bytes::Bytes, SlidesError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_download_bytes as u64)
+    {
+        return Err(SlidesError::InvalidResponse(format!(
+            "Google Slides thumbnail exceeds the {max_download_bytes}-byte download limit"
+        )));
+    }
+
+    let mut bytes = bytes::BytesMut::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| SlidesError::Network(error.to_string()))?
+    {
+        let next_length = bytes
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| SlidesError::InvalidResponse("thumbnail size overflow".into()))?;
+        if next_length > max_download_bytes {
+            return Err(SlidesError::InvalidResponse(format!(
+                "Google Slides thumbnail exceeds the {max_download_bytes}-byte download limit"
+            )));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes.freeze())
+}
+
 async fn send_json_request<S: AccountStore>(
     client: &AuthClient<'_, S>,
     request: reqwest::RequestBuilder,
@@ -187,12 +369,27 @@ async fn send_json_request<S: AccountStore>(
 }
 
 async fn parse_json_response(response: Response) -> Result<Value, SlidesError> {
+    let response = ensure_success_response(response).await?;
+    response
+        .json()
+        .await
+        .map_err(|e| SlidesError::InvalidResponse(e.to_string()))
+}
+
+async fn parse_thumbnail_metadata(
+    response: Response,
+) -> Result<PageThumbnailMetadata, SlidesError> {
+    let response = ensure_success_response(response).await?;
+    response
+        .json()
+        .await
+        .map_err(|error| SlidesError::InvalidResponse(error.to_string()))
+}
+
+async fn ensure_success_response(response: Response) -> Result<Response, SlidesError> {
     let status = response.status();
     if status.is_success() {
-        return response
-            .json()
-            .await
-            .map_err(|e| SlidesError::InvalidResponse(e.to_string()));
+        return Ok(response);
     }
 
     let body = response.text().await.unwrap_or_default();
