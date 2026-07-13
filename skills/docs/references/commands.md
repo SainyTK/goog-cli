@@ -28,6 +28,36 @@ target/debug/goog docs map DOCUMENT_ID
 target/debug/goog docs map DOCUMENT_ID --json
 ```
 
+## Audit a source document
+
+Before reproducing an existing document, inventory every mapped component instead of sampling only its visible body text:
+
+```bash
+target/debug/goog docs map SOURCE_DOCUMENT_ID --json | jq '{entriesByKind: (.entries | group_by(.kind) | map({kind: .[0].kind, count: length})), lists: (.lists | length), breaks: (.breaks | length), segments: (.segments | length), blankParagraphs: (.blankParagraphs | length), documentLocations: (.documentLocations | length), namedStyles: (.namedStyles | length), documentStyles: (.documentStyles | length)}'
+```
+
+The entry summary distinguishes headings, paragraphs, tables, inline images, positioned images, and native tables of contents.
+The separate arrays cover native lists, explicit page and section breaks, header and footer segments, blank paragraphs, and tab-scoped page and named-style metadata.
+Use the focused maps to inspect the components that need to be reproduced:
+
+```bash
+target/debug/goog docs map SOURCE_DOCUMENT_ID --type tables --json
+target/debug/goog docs map SOURCE_DOCUMENT_ID --type images --json
+target/debug/goog docs map SOURCE_DOCUMENT_ID --type lists --json
+target/debug/goog docs map SOURCE_DOCUMENT_ID --type breaks --json
+target/debug/goog docs map SOURCE_DOCUMENT_ID --type segments --json
+```
+
+Inspect `paragraphStyle`, `textRuns`, table-cell paragraphs and runs, image geometry, break section styles, segment auto text, named styles, and document styles rather than comparing text counts alone.
+Use the raw tab-aware document only when the map exposes a component whose source metadata needs deeper inspection:
+
+```bash
+target/debug/goog docs get SOURCE_DOCUMENT_ID --include-tabs-content
+```
+
+Classify each source component before choosing the creation path.
+Build supported components with high-level commands, copy the source as a template for editor-only components, and record any policy-limited visual verification separately from structural fidelity.
+
 For a blank target that should inherit an existing visual system, preview and then copy its named styles and page layout:
 
 ```bash
