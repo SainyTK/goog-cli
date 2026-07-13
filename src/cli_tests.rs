@@ -1790,6 +1790,7 @@ fn docs_apply_styles_accepts_paragraph_layout() {
                         indent_first_line,
                         keep_with_next,
                         keep_lines_together,
+                        avoid_widow_and_orphan,
                         page_break_before,
                         text,
                         ..
@@ -1816,6 +1817,7 @@ fn docs_apply_styles_accepts_paragraph_layout() {
         "18",
         "--keep-with-next",
         "--keep-lines-together",
+        "--avoid-widow-and-orphan",
         "--page-break-before",
     ])
     .unwrap()
@@ -1833,6 +1835,7 @@ fn docs_apply_styles_accepts_paragraph_layout() {
     assert_eq!(indent_first_line, Some(18.0));
     assert!(keep_with_next);
     assert!(keep_lines_together);
+    assert!(avoid_widow_and_orphan);
     assert!(page_break_before);
 }
 

@@ -2147,6 +2147,9 @@ pub enum DocsStyleCommand {
         /// Prevent page breaks within each selected paragraph
         #[arg(long)]
         keep_lines_together: bool,
+        /// Prevent a single line from being stranded at the top or bottom of a page
+        #[arg(long)]
+        avoid_widow_and_orphan: bool,
         /// Start each selected paragraph on a new page
         #[arg(long)]
         page_break_before: bool,

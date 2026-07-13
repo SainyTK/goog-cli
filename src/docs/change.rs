@@ -157,6 +157,7 @@ pub(crate) struct ApplyStylesCommand {
     pub indent_first_line: Option<f64>,
     pub keep_with_next: bool,
     pub keep_lines_together: bool,
+    pub avoid_widow_and_orphan: bool,
     pub page_break_before: bool,
     pub heading: Option<String>,
     pub style_json: Option<String>,
@@ -1319,6 +1320,9 @@ fn paragraph_style_payload(
     }
     if command.keep_lines_together {
         payload.set_field("keepLinesTogether", serde_json::Value::Bool(true));
+    }
+    if command.avoid_widow_and_orphan {
+        payload.set_field("avoidWidowAndOrphan", serde_json::Value::Bool(true));
     }
     if command.page_break_before {
         payload.set_field("pageBreakBefore", serde_json::Value::Bool(true));

@@ -2057,6 +2057,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             indent_first_line: Some(18.0),
             keep_with_next: true,
             keep_lines_together: true,
+            avoid_widow_and_orphan: true,
             page_break_before: true,
             heading: Some("HEADING_2".into()),
             style_json: None,
@@ -2097,7 +2098,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
-        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,pageBreakBefore"
+        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,avoidWidowAndOrphan,pageBreakBefore"
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
@@ -2529,6 +2530,7 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
             indent_first_line: None,
             keep_with_next: false,
             keep_lines_together: false,
+            avoid_widow_and_orphan: false,
             page_break_before: false,
             heading: None,
             style_json: Some(
@@ -2683,6 +2685,7 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
             indent_first_line: None,
             keep_with_next: false,
             keep_lines_together: false,
+            avoid_widow_and_orphan: false,
             page_break_before: false,
             heading: Some("HEADING_1".into()),
             style_json: Some(r#"{"textStyle":{"strikethrough":true}}"#.into()),
@@ -2777,6 +2780,7 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
             indent_first_line: None,
             keep_with_next: false,
             keep_lines_together: false,
+            avoid_widow_and_orphan: false,
             page_break_before: false,
             heading: Some("HEADING_2".into()),
             style_json: None,
@@ -2913,6 +2917,7 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
             indent_first_line: None,
             keep_with_next: false,
             keep_lines_together: false,
+            avoid_widow_and_orphan: false,
             page_break_before: false,
             heading: Some("HEADING_1".into()),
             style_json: None,
