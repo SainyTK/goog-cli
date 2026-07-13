@@ -344,32 +344,38 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(output["revisionId"], "rev-long");
-    assert_eq!(output["documentLocations"].as_array().unwrap().len(), 8);
+    assert_eq!(output["documentLocations"].as_array().unwrap().len(), 9);
+    assert_eq!(output["entries"][0]["kind"], "table-of-contents");
     assert_eq!(
-        output["entries"][0]["location"]["confidence"],
+        output["entries"][0]["preview"],
+        "[table of contents: 1 entry]"
+    );
+    assert_eq!(output["entries"][0]["location"]["index"], 1);
+    assert_eq!(
+        output["entries"][1]["location"]["confidence"],
         "table-of-contents"
     );
-    assert_eq!(output["entries"][0]["location"]["page"], 3);
-    assert_eq!(output["entries"][0]["preview"], "วิธีใช้งาน");
-    assert_eq!(output["entries"][1]["location"]["confidence"], "unknown");
-    assert!(output["entries"][1]["location"]["page"].is_null());
-    assert_eq!(output["entries"][2]["kind"], "table");
-    assert_eq!(output["entries"][2]["preview"], "หัวข้อ | สถานะ");
-    assert_eq!(output["entries"][3]["kind"], "inline-image");
-    assert_eq!(output["entries"][4]["kind"], "positioned-image");
+    assert_eq!(output["entries"][1]["location"]["page"], 3);
+    assert_eq!(output["entries"][1]["preview"], "วิธีใช้งาน");
+    assert_eq!(output["entries"][2]["location"]["confidence"], "unknown");
+    assert!(output["entries"][2]["location"]["page"].is_null());
+    assert_eq!(output["entries"][3]["kind"], "table");
+    assert_eq!(output["entries"][3]["preview"], "หัวข้อ | สถานะ");
+    assert_eq!(output["entries"][4]["kind"], "inline-image");
+    assert_eq!(output["entries"][5]["kind"], "positioned-image");
     assert_eq!(
-        output["entries"][5]["location"]["confidence"],
+        output["entries"][6]["location"]["confidence"],
         "explicit-page-break"
     );
-    assert_eq!(output["entries"][5]["location"]["page"], 2);
-    assert_eq!(output["entries"][5]["location"]["contentLine"], 1);
-    assert_eq!(output["entries"][6]["preview"], "[non-body inline image]");
-    assert!(output["entries"][6]["location"]["index"].is_null());
+    assert_eq!(output["entries"][6]["location"]["page"], 2);
+    assert_eq!(output["entries"][6]["location"]["contentLine"], 1);
+    assert_eq!(output["entries"][7]["preview"], "[non-body inline image]");
+    assert!(output["entries"][7]["location"]["index"].is_null());
     assert_eq!(
-        output["entries"][7]["preview"],
+        output["entries"][8]["preview"],
         "[non-body positioned image]"
     );
-    assert!(output["entries"][7]["location"]["index"].is_null());
+    assert!(output["entries"][8]["location"]["index"].is_null());
 }
 
 #[tokio::test]

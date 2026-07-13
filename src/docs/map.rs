@@ -79,6 +79,7 @@ pub enum LocationConfidence {
 pub enum DocumentMapEntryKind {
     Heading,
     Paragraph,
+    TableOfContents,
     Table,
     InlineImage,
     PositionedImage,
@@ -606,6 +607,8 @@ impl<'a> DocumentMapBuilder<'a> {
 
         if let Some(paragraph) = element.get("paragraph") {
             self.push_paragraph(element, paragraph);
+        } else if let Some(table_of_contents) = element.get("tableOfContents") {
+            self.push_table_of_contents(element, table_of_contents);
         } else if let Some(table) = element.get("table") {
             self.push_table(element, table);
         }
@@ -697,6 +700,27 @@ impl<'a> DocumentMapBuilder<'a> {
                 table_cells,
                 ..DocumentMapEntryMetadata::default()
             },
+        );
+    }
+
+    fn push_table_of_contents(&mut self, element: &Value, table_of_contents: &Value) {
+        self.push_content_line();
+        let entry_count = table_of_contents
+            .get("content")
+            .and_then(Value::as_array)
+            .map(|content| {
+                content
+                    .iter()
+                    .filter(|element| element.get("paragraph").is_some())
+                    .count()
+            })
+            .unwrap_or_default();
+        let label = if entry_count == 1 { "entry" } else { "entries" };
+        self.push_entry(
+            self.current_location(element),
+            DocumentMapEntryKind::TableOfContents,
+            None,
+            format!("[table of contents: {entry_count} {label}]"),
         );
     }
 
