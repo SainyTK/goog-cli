@@ -71,6 +71,25 @@ Named-style copying transfers the native title, subtitle, heading, and normal-te
 Page copying transfers document mode, page dimensions, margins, and supported first-page or even-page header and footer behavior.
 It does not create source header and footer segments in a blank target.
 
+## Define a native style system
+
+When a blank document needs a new visual system instead of one copied from a source, define its native styles before authoring the body.
+Preview each named-style update before applying it:
+
+```bash
+target/debug/goog docs style named DOCUMENT_ID HEADING_1 --style-json '{"textStyle":{"weightedFontFamily":{"fontFamily":"Bai Jamjuree"},"fontSize":{"magnitude":20,"unit":"PT"},"foregroundColor":{"color":{"rgbColor":{"red":0.85,"green":0.33,"blue":0.10}}}},"paragraphStyle":{"spaceAbove":{"magnitude":14,"unit":"PT"},"spaceBelow":{"magnitude":6,"unit":"PT"},"keepWithNext":true,"keepLinesTogether":true}}' --dry-run --json
+target/debug/goog docs style named DOCUMENT_ID HEADING_1 --style-json '{"textStyle":{"weightedFontFamily":{"fontFamily":"Bai Jamjuree"},"fontSize":{"magnitude":20,"unit":"PT"},"foregroundColor":{"color":{"rgbColor":{"red":0.85,"green":0.33,"blue":0.10}}}},"paragraphStyle":{"spaceAbove":{"magnitude":14,"unit":"PT"},"spaceBelow":{"magnitude":6,"unit":"PT"},"keepWithNext":true,"keepLinesTogether":true}}'
+target/debug/goog docs map DOCUMENT_ID --json
+```
+
+`--style-json` uses native Google Docs `textStyle` and `paragraphStyle` objects.
+Select the style with the `NAMED_STYLE` argument and do not include the read-only `paragraphStyle.namedStyleType` field in the JSON.
+The supported styles are `NORMAL_TEXT`, `TITLE`, `SUBTITLE`, and `HEADING_1` through `HEADING_6`.
+Repeat the operation only for styles the document will use, then inspect the matching entry in the map's tab-scoped `namedStyles` metadata.
+Use `--tab-id` for a non-default document tab and `--required-revision-id` when concurrent edits are possible.
+After defining the style system, apply the native paragraph style to content with `docs style apply --paragraph-style` so later changes propagate consistently.
+Use `copy-named` instead when an approved source document already contains the intended visual system.
+
 ## Insert and replace text
 
 ```bash
@@ -319,6 +338,7 @@ target/debug/goog docs break page --help
 target/debug/goog docs break section --help
 target/debug/goog docs copy --help
 target/debug/goog docs export-pdf --help
+target/debug/goog docs style named --help
 target/debug/goog docs style copy-named --help
 target/debug/goog docs style copy-page --help
 ```

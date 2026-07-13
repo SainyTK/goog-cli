@@ -36,7 +36,8 @@ Use these surfaces first:
 - `goog docs map` for readable content locations, headings, tables, and images.
 - `goog docs text` for search, insertion, and replacement.
 - `goog docs style apply` for text and paragraph styling.
-- `goog docs style copy-named` and `copy-page` for transferring a document's visual system to a blank target.
+- `goog docs style named` for defining a blank document's native style system.
+- `goog docs style copy-named` and `copy-page` for transferring an existing document's visual system to a blank target.
 - `goog docs table` for inserting and populating tables.
 - `goog docs image`, `break`, `footnote`, `header`, `footer`, `list-format`, and `named-range` for their named document features.
 - `goog docs export-pdf` for page-level visual QA.
