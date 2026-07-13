@@ -144,6 +144,7 @@ pub(crate) struct ApplyStylesCommand {
     pub selector: RangeSelector,
     pub bold: bool,
     pub italic: bool,
+    pub underline: bool,
     pub font_size: Option<f64>,
     pub font_family: Option<String>,
     pub foreground_color: Option<String>,
@@ -1221,6 +1222,9 @@ fn text_style_payload(
         if let Some(italic) = cached_text_style.and_then(|style| style.italic) {
             payload.set_field("italic", serde_json::Value::Bool(italic));
         }
+    }
+    if command.underline {
+        payload.set_field("underline", serde_json::Value::Bool(true));
     }
     if let Some(font_size) = command.font_size {
         payload.set_field(

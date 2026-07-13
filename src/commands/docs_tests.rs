@@ -2044,6 +2044,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             },
             bold: true,
             italic: true,
+            underline: true,
             font_size: Some(14.0),
             font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
@@ -2073,7 +2074,11 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     assert_eq!(styles["range"]["startIndex"], 17);
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
-        "bold,italic,fontSize,weightedFontFamily,foregroundColor"
+        "bold,italic,underline,fontSize,weightedFontFamily,foregroundColor"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["underline"],
+        true
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["weightedFontFamily"]
@@ -2505,6 +2510,7 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
             },
             bold: false,
             italic: false,
+            underline: false,
             font_size: None,
             font_family: None,
             foreground_color: None,
@@ -2657,6 +2663,7 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
             },
             bold: true,
             italic: false,
+            underline: false,
             font_size: None,
             font_family: None,
             foreground_color: None,
@@ -2749,6 +2756,7 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
             },
             bold: false,
             italic: false,
+            underline: false,
             font_size: None,
             font_family: None,
             foreground_color: None,
@@ -2883,6 +2891,7 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
             },
             bold: false,
             italic: false,
+            underline: false,
             font_size: None,
             font_family: None,
             foreground_color: None,

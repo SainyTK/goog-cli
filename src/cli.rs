@@ -2108,6 +2108,9 @@ pub enum DocsStyleCommand {
         /// Apply italic text style
         #[arg(long)]
         italic: bool,
+        /// Apply underline text style
+        #[arg(long)]
+        underline: bool,
         /// Font size in points
         #[arg(long)]
         font_size: Option<f64>,

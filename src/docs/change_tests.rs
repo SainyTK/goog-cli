@@ -220,6 +220,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             },
             bold: true,
             italic: false,
+            underline: true,
             font_size: Some(16.0),
             font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
@@ -283,7 +284,11 @@ fn image_table_style_and_list_changes_build_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
-        "bold,fontSize,weightedFontFamily,foregroundColor"
+        "bold,underline,fontSize,weightedFontFamily,foregroundColor"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["underline"],
+        true
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["weightedFontFamily"]
@@ -327,6 +332,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         },
         bold: false,
         italic: false,
+        underline: false,
         font_size: None,
         font_family: None,
         foreground_color: None,

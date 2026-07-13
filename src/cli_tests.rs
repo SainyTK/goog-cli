@@ -1717,6 +1717,35 @@ fn docs_apply_styles_accepts_font_family() {
 }
 
 #[test]
+fn docs_apply_styles_accepts_underline() {
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Apply {
+                        underline, text, ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "style",
+        "apply",
+        "document-123",
+        "--text",
+        "Expected result:",
+        "--underline",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(text.as_deref(), Some("Expected result:"));
+    assert!(underline);
+}
+
+#[test]
 fn docs_apply_styles_accepts_paragraph_alignment() {
     let Command::Docs {
         command:
