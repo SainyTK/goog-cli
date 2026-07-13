@@ -94,6 +94,42 @@ target/debug/goog docs image insert DOCUMENT_ID 'https://example.com/company-mar
 Inline image insertion cannot create positioned or floating images.
 Copy a template when those editor-only image components are required.
 
+## Headers and footers
+
+Create and populate the default header and footer for the first section, previewing each write before applying it:
+
+```bash
+target/debug/goog docs header create DOCUMENT_ID --text 'Customer delivery report' --dry-run --json
+target/debug/goog docs header create DOCUMENT_ID --text 'Customer delivery report'
+target/debug/goog docs footer create DOCUMENT_ID --text 'Confidential' --dry-run --json
+target/debug/goog docs footer create DOCUMENT_ID --text 'Confidential'
+target/debug/goog docs map DOCUMENT_ID --type segments --json
+```
+
+The create responses return a header ID or footer ID.
+Use the segment map to confirm the editable range because header and footer indexes begin at zero and are separate from body indexes.
+Apply text and paragraph formatting with that segment ID and the mapped range:
+
+```bash
+target/debug/goog docs style apply DOCUMENT_ID --segment-id HEADER_SEGMENT_ID --from-index 0 --to-index HEADER_END_INDEX --font-family 'Bai Jamjuree' --font-size 10 --foreground-color '#666666' --alignment end --dry-run --json
+target/debug/goog docs style apply DOCUMENT_ID --segment-id HEADER_SEGMENT_ID --from-index 0 --to-index HEADER_END_INDEX --font-family 'Bai Jamjuree' --font-size 10 --foreground-color '#666666' --alignment end
+```
+
+For a later section, insert the section break, map again to get its actual start index, then target that index when creating the new segments:
+
+```bash
+target/debug/goog docs break section DOCUMENT_ID --at before-heading:'Appendix' --section-type next-page --dry-run --json
+target/debug/goog docs break section DOCUMENT_ID --at before-heading:'Appendix' --section-type next-page
+target/debug/goog docs map DOCUMENT_ID --type breaks --json
+target/debug/goog docs header create DOCUMENT_ID --section-break-index SECTION_BREAK_INDEX --text 'Appendix' --dry-run --json
+target/debug/goog docs header create DOCUMENT_ID --section-break-index SECTION_BREAK_INDEX --text 'Appendix'
+target/debug/goog docs footer create DOCUMENT_ID --section-break-index SECTION_BREAK_INDEX --text 'Confidential' --dry-run --json
+target/debug/goog docs footer create DOCUMENT_ID --section-break-index SECTION_BREAK_INDEX --text 'Confidential'
+```
+
+The Docs API cannot create first-page header content or page-number auto text in a blank document.
+Copy a template when those editor-only components are required.
+
 ## Tables
 
 ```bash
@@ -158,6 +194,9 @@ target/debug/goog docs text --help
 target/debug/goog docs style --help
 target/debug/goog docs table --help
 target/debug/goog docs image --help
+target/debug/goog docs header create --help
+target/debug/goog docs footer create --help
+target/debug/goog docs break section --help
 target/debug/goog docs copy --help
 target/debug/goog docs export-pdf --help
 target/debug/goog docs style copy-named --help
