@@ -2807,6 +2807,8 @@ impl DocsParagraphAlignment {
 pub enum DocsMapType {
     /// All map entries
     All,
+    /// Explicit page and section breaks
+    Breaks,
     /// Inline and positioned images
     Images,
     /// Native paragraph lists

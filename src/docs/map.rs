@@ -8,6 +8,7 @@ pub struct DocumentMap {
     pub document_id: Option<String>,
     pub title: Option<String>,
     pub revision_id: Option<String>,
+    pub breaks: Vec<DocumentBreak>,
     pub segments: Vec<DocumentSegment>,
     pub lists: Vec<DocumentList>,
     pub entries: Vec<DocumentMapEntry>,
@@ -16,6 +17,23 @@ pub struct DocumentMap {
     pub text_blocks: Vec<DocumentTextBlock>,
     #[serde(skip)]
     pub insertion_locations: Vec<DocumentLocation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentBreak {
+    pub kind: DocumentBreakKind,
+    pub location: DocumentLocation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section_type: Option<String>,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DocumentBreakKind {
+    PageBreak,
+    SectionBreak,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -188,11 +206,13 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
     }
     builder.push_non_body_images(&inline_objects, &positioned_objects);
 
+    let breaks = builder.breaks;
     let entries = builder.entries;
     DocumentMap {
         document_id: string_field(document, "documentId"),
         title: string_field(document, "title"),
         revision_id: string_field(document, "revisionId"),
+        breaks,
         segments: document_segments(document),
         lists: document_lists(document),
         document_locations: entries.iter().map(|entry| entry.location.clone()).collect(),
@@ -874,6 +894,7 @@ fn display_optional<T: ToString>(value: Option<T>) -> String {
 }
 
 struct DocumentMapBuilder<'a> {
+    breaks: Vec<DocumentBreak>,
     entries: Vec<DocumentMapEntry>,
     text_blocks: Vec<DocumentTextBlock>,
     insertion_locations: Vec<DocumentLocation>,
@@ -903,6 +924,7 @@ impl<'a> DocumentMapBuilder<'a> {
         positioned_objects: Vec<&'a Value>,
     ) -> Self {
         Self {
+            breaks: Vec::new(),
             entries: Vec::new(),
             text_blocks: Vec::new(),
             insertion_locations: Vec::new(),
@@ -924,12 +946,56 @@ impl<'a> DocumentMapBuilder<'a> {
         self.push_insertion_location(element);
 
         if let Some(paragraph) = element.get("paragraph") {
+            self.push_page_breaks(paragraph);
             self.push_paragraph(element, paragraph);
+        } else if let Some(section_break) = element.get("sectionBreak") {
+            self.push_section_break(element, section_break);
         } else if let Some(table_of_contents) = element.get("tableOfContents") {
             self.push_table_of_contents(element, table_of_contents);
         } else if let Some(table) = element.get("table") {
             self.push_table(element, table);
         }
+    }
+
+    fn push_page_breaks(&mut self, paragraph: &Value) {
+        let Some(elements) = paragraph.get("elements").and_then(Value::as_array) else {
+            return;
+        };
+        for element in elements
+            .iter()
+            .filter(|element| element.get("pageBreak").is_some())
+        {
+            self.breaks.push(DocumentBreak {
+                kind: DocumentBreakKind::PageBreak,
+                location: self.current_location(element),
+                section_type: None,
+                preview: "[page break]".into(),
+            });
+        }
+    }
+
+    fn push_section_break(&mut self, element: &Value, section_break: &Value) {
+        let section_type = section_break
+            .get("sectionStyle")
+            .and_then(|style| style.get("sectionType"))
+            .and_then(Value::as_str)
+            .unwrap_or("UNSPECIFIED");
+        let mut location = self.current_location(element);
+        if location.index.is_none() {
+            location.index = element
+                .get("endIndex")
+                .and_then(Value::as_i64)
+                .map(|end_index| end_index.saturating_sub(1));
+        }
+        self.breaks.push(DocumentBreak {
+            kind: DocumentBreakKind::SectionBreak,
+            location,
+            section_type: Some(section_type.into()),
+            preview: format!(
+                "[section break: {}]",
+                section_type.to_ascii_lowercase().replace('_', " ")
+            ),
+        });
     }
 
     fn push_paragraph(&mut self, element: &Value, paragraph: &Value) {

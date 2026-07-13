@@ -36,6 +36,7 @@ use crate::docs::{
     map::resolve_content_entry,
     map::search_document_text,
     map::ContentSelector,
+    map::DocumentBreak,
     map::DocumentList,
     map::DocumentMap,
     map::DocumentMapEntry,
@@ -2960,6 +2961,7 @@ fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry)
         document_id: document_map.document_id.clone(),
         title: document_map.title.clone(),
         revision_id: document_map.revision_id.clone(),
+        breaks: Vec::new(),
         segments: Vec::new(),
         lists: Vec::new(),
         entries: vec![entry.clone()],
@@ -3101,6 +3103,9 @@ fn write_document_map(
     if map_type == DocsMapType::Segments {
         return write_document_segments(out, &document_map.segments, json);
     }
+    if map_type == DocsMapType::Breaks {
+        return write_document_breaks(out, &document_map.breaks, json);
+    }
     if map_type == DocsMapType::Lists {
         return write_document_lists(out, &document_map.lists, json);
     }
@@ -3110,6 +3115,10 @@ fn write_document_map(
         write_json_line(out, document_map, "failed to serialize Docs Document Map")
     } else {
         write_document_map_table(out, document_map)?;
+        if !document_map.breaks.is_empty() {
+            writeln!(out).context("failed to separate Docs break map")?;
+            write_document_breaks(out, &document_map.breaks, false)?;
+        }
         if !document_map.lists.is_empty() {
             writeln!(out).context("failed to separate Docs list map")?;
             write_document_lists_table(out, &document_map.lists)?;
@@ -3130,9 +3139,35 @@ fn map_type_entry_kinds(map_type: DocsMapType) -> Option<&'static [DocumentMapEn
             DocumentMapEntryKind::PositionedImage,
         ]),
         DocsMapType::Tables => Some(&[DocumentMapEntryKind::Table]),
-        DocsMapType::Lists | DocsMapType::Segments => {
+        DocsMapType::Breaks | DocsMapType::Lists | DocsMapType::Segments => {
             unreachable!("list and segment maps are handled separately")
         }
+    }
+}
+
+fn write_document_breaks(out: &mut impl Write, breaks: &[DocumentBreak], json: bool) -> Result<()> {
+    if json {
+        write_json_line(out, breaks, "failed to serialize Docs breaks")
+    } else {
+        writeln!(
+            out,
+            "{:<15} {:<7} {:<5} {:<16} Preview",
+            "Break", "Index", "Page", "Section type"
+        )
+        .context("failed to write Docs break map header")?;
+        for document_break in breaks {
+            writeln!(
+                out,
+                "{:<15} {:<7} {:<5} {:<16} {}",
+                format!("{:?}", document_break.kind),
+                display_optional(document_break.location.index),
+                display_optional(document_break.location.page),
+                document_break.section_type.as_deref().unwrap_or("-"),
+                document_break.preview
+            )
+            .context("failed to write Docs break map row")?;
+        }
+        Ok(())
     }
 }
 

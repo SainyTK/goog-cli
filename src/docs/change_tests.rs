@@ -634,6 +634,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
         document_id: Some("document-123".into()),
         title: Some("Table".into()),
         revision_id: Some("rev-table".into()),
+        breaks: Vec::new(),
         segments: Vec::new(),
         lists: Vec::new(),
         entries: vec![DocumentMapEntry {

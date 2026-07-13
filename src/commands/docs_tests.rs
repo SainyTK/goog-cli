@@ -314,6 +314,65 @@ async fn run_map_prints_human_document_map_for_manual_page_breaks() {
 }
 
 #[tokio::test]
+async fn run_map_filters_page_and_section_breaks() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(document_with_initial_section_and_page_breaks()),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut json_out = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Breaks,
+        true,
+        &mut json_out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let breaks: serde_json::Value = serde_json::from_slice(&json_out).unwrap();
+    assert_eq!(breaks.as_array().unwrap().len(), 3);
+    assert_eq!(breaks[0]["kind"], "section-break");
+    assert_eq!(breaks[0]["location"]["index"], 0);
+    assert_eq!(breaks[0]["sectionType"], "CONTINUOUS");
+    assert_eq!(breaks[1]["kind"], "page-break");
+    assert_eq!(breaks[1]["location"]["index"], 14);
+    assert_eq!(breaks[1]["preview"], "[page break]");
+    assert_eq!(breaks[2]["kind"], "section-break");
+    assert_eq!(breaks[2]["location"]["index"], 27);
+    assert_eq!(breaks[2]["sectionType"], "NEXT_PAGE");
+    assert_eq!(breaks[2]["preview"], "[section break: next page]");
+
+    let mut human_out = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Breaks,
+        false,
+        &mut human_out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let human = String::from_utf8(human_out).unwrap();
+    assert!(human.contains("PageBreak"));
+    assert!(human.contains("SectionBreak"));
+    assert!(human.contains("NEXT_PAGE"));
+}
+
+#[tokio::test]
 async fn run_map_json_emits_structured_locations_for_long_document_shape() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -345,6 +404,7 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(output["revisionId"], "rev-long");
     assert_eq!(output["documentLocations"].as_array().unwrap().len(), 9);
+    assert_eq!(output["breaks"].as_array().unwrap().len(), 1);
     assert_eq!(output["entries"][0]["kind"], "table-of-contents");
     assert_eq!(
         output["entries"][0]["preview"],
@@ -4130,10 +4190,32 @@ fn short_document_with_page_break() -> serde_json::Value {
                             }
                         ]
                     }
+                },
+                {
+                    "startIndex": 27,
+                    "endIndex": 28,
+                    "sectionBreak": {
+                        "sectionStyle": { "sectionType": "NEXT_PAGE" }
+                    }
                 }
             ]
         }
     })
+}
+
+fn document_with_initial_section_and_page_breaks() -> serde_json::Value {
+    let mut document = short_document_with_page_break();
+    let content = document["body"]["content"].as_array_mut().unwrap();
+    content.insert(
+        0,
+        serde_json::json!({
+            "endIndex": 1,
+            "sectionBreak": {
+                "sectionStyle": { "sectionType": "CONTINUOUS" }
+            }
+        }),
+    );
+    document
 }
 
 fn searchable_document() -> serde_json::Value {
