@@ -169,11 +169,15 @@ goog drive download FILE_ID --output ./report.pdf
 ```sh
 goog docs list --limit 20
 goog docs create "Q3 Report"
+goog docs copy SOURCE_DOCUMENT_ID "Q3 Report from template"
+goog docs export-pdf DOCUMENT_ID --output ./q3-report.pdf
 goog docs map DOCUMENT_ID
 goog docs map DOCUMENT_ID --type images
 goog docs map DOCUMENT_ID --type tables
 goog docs map DOCUMENT_ID --heading "Summary"
 goog docs text search DOCUMENT_ID "quarterly plan"
+goog docs style copy-named SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
+goog docs style copy-page SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
 goog docs break page DOCUMENT_ID --at 'heading:Summary'
 goog docs break section DOCUMENT_ID --section-type next-page --at 'heading:Appendix'
