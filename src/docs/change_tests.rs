@@ -1,14 +1,14 @@
 use serde_json::json;
 
 use super::change::{
-    prepare_apply_list_change, prepare_apply_styles_change, prepare_edit_table_change,
-    prepare_insert_image_change, prepare_insert_table_change, prepare_insert_text_change,
-    prepare_pin_table_header_rows_change, prepare_replace_text_change,
+    prepare_apply_list_change, prepare_apply_styles_change, prepare_configure_page_change,
+    prepare_edit_table_change, prepare_insert_image_change, prepare_insert_table_change,
+    prepare_insert_text_change, prepare_pin_table_header_rows_change, prepare_replace_text_change,
     prepare_set_table_column_widths_change, prepare_style_table_row_change,
     request_body_required_revision_id, set_request_body_required_revision_id,
     split_docs_request_bodies, write_docs_change_preview, ApplyListCommand, ApplyStylesCommand,
-    EditTableCommand, InsertImageCommand, InsertTableCommand, InsertTextCommand,
-    PinTableHeaderRowsCommand, ReplaceTextCommand, SetTableColumnWidthsCommand,
+    ConfigurePageCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
+    InsertTextCommand, PinTableHeaderRowsCommand, ReplaceTextCommand, SetTableColumnWidthsCommand,
     StyleTableRowCommand,
 };
 use super::map::{
@@ -479,6 +479,94 @@ fn paragraph_spacing_rejects_invalid_point_values() {
     assert_eq!(
         error.to_string(),
         "--indent-first-line must be a finite, non-negative point value"
+    );
+}
+
+#[test]
+fn page_configuration_builds_native_document_style_request() {
+    let document_map = searchable_map();
+    let change = prepare_configure_page_change(
+        &document_map,
+        &ConfigurePageCommand {
+            document_id: "document-123".into(),
+            page_width: Some(612.0),
+            page_height: Some(792.0),
+            margin_top: Some(72.0),
+            margin_bottom: Some(72.0),
+            margin_left: Some(54.0),
+            margin_right: Some(54.0),
+            margin_header: Some(36.0),
+            margin_footer: Some(36.0),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-required".into()),
+        },
+    )
+    .unwrap();
+    let output = preview_json(&change);
+    let update = &output["requestBody"]["requests"][0]["updateDocumentStyle"];
+    assert_eq!(
+        update["fields"],
+        "pageSize,marginTop,marginBottom,marginLeft,marginRight,marginHeader,marginFooter"
+    );
+    assert_eq!(
+        update["documentStyle"]["pageSize"]["width"]["magnitude"],
+        612.0
+    );
+    assert_eq!(update["documentStyle"]["marginHeader"]["magnitude"], 36.0);
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-required"
+    );
+}
+
+#[test]
+fn page_configuration_rejects_empty_and_invalid_dimensions() {
+    let document_map = searchable_map();
+    let base = ConfigurePageCommand {
+        document_id: "document-123".into(),
+        page_width: None,
+        page_height: None,
+        margin_top: None,
+        margin_bottom: None,
+        margin_left: None,
+        margin_right: None,
+        margin_header: None,
+        margin_footer: None,
+        dry_run: true,
+        json: true,
+        required_revision_id: None,
+    };
+
+    assert_eq!(
+        prepare_configure_page_change(&document_map, &base)
+            .unwrap_err()
+            .to_string(),
+        "style page requires a page size or at least one margin"
+    );
+    assert_eq!(
+        prepare_configure_page_change(
+            &document_map,
+            &ConfigurePageCommand {
+                page_width: Some(612.0),
+                ..base.clone()
+            }
+        )
+        .unwrap_err()
+        .to_string(),
+        "--page-width and --page-height must be provided together"
+    );
+    assert_eq!(
+        prepare_configure_page_change(
+            &document_map,
+            &ConfigurePageCommand {
+                margin_left: Some(-1.0),
+                ..base
+            }
+        )
+        .unwrap_err()
+        .to_string(),
+        "--margin-left must be a finite, non-negative point value"
     );
 }
 

@@ -1868,6 +1868,7 @@ impl DocsCommand {
             },
             DocsCommand::Style { command } => match command {
                 DocsStyleCommand::Apply { document_id, .. }
+                | DocsStyleCommand::Page { document_id, .. }
                 | DocsStyleCommand::Template { document_id, .. } => document_id,
             },
             DocsCommand::Header { command } => match command {
@@ -2194,6 +2195,44 @@ pub enum DocsStyleCommand {
         /// Ignore the cached style template for this document
         #[arg(long)]
         no_cached_style: bool,
+    },
+    /// Configure page size and document margins in points
+    Page {
+        /// Document ID or URL to update
+        document_id: String,
+        /// Page width in points; requires --page-height
+        #[arg(long, requires = "page_height")]
+        page_width: Option<f64>,
+        /// Page height in points; requires --page-width
+        #[arg(long, requires = "page_width")]
+        page_height: Option<f64>,
+        /// Top page margin in points
+        #[arg(long)]
+        margin_top: Option<f64>,
+        /// Bottom page margin in points
+        #[arg(long)]
+        margin_bottom: Option<f64>,
+        /// Left page margin in points
+        #[arg(long)]
+        margin_left: Option<f64>,
+        /// Right page margin in points
+        #[arg(long)]
+        margin_right: Option<f64>,
+        /// Header margin in points
+        #[arg(long)]
+        margin_header: Option<f64>,
+        /// Footer margin in points
+        #[arg(long)]
+        margin_footer: Option<f64>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
     },
     /// Read the locally cached style template for a Google Doc
     Template {

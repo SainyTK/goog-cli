@@ -198,6 +198,22 @@ pub(crate) struct ApplyListCommand {
     pub no_auto_style: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ConfigurePageCommand {
+    pub document_id: String,
+    pub page_width: Option<f64>,
+    pub page_height: Option<f64>,
+    pub margin_top: Option<f64>,
+    pub margin_bottom: Option<f64>,
+    pub margin_left: Option<f64>,
+    pub margin_right: Option<f64>,
+    pub margin_header: Option<f64>,
+    pub margin_footer: Option<f64>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CreateNamedRangeCommand {
     pub document_id: String,
@@ -1211,6 +1227,78 @@ pub(crate) fn prepare_apply_list_change(
                 "Apply list preset to range {}..{}",
                 range.start_index, range.end_index
             ),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_configure_page_change(
+    document_map: &DocumentMap,
+    command: &ConfigurePageCommand,
+) -> Result<PreparedDocsChange> {
+    if command.page_width.is_some() != command.page_height.is_some() {
+        bail!("--page-width and --page-height must be provided together");
+    }
+
+    let mut style = serde_json::Map::new();
+    let mut fields = Vec::new();
+    if let (Some(width), Some(height)) = (command.page_width, command.page_height) {
+        if !width.is_finite() || width <= 0.0 {
+            bail!("--page-width must be a finite, positive point value");
+        }
+        if !height.is_finite() || height <= 0.0 {
+            bail!("--page-height must be a finite, positive point value");
+        }
+        style.insert(
+            "pageSize".into(),
+            serde_json::json!({
+                "width": { "magnitude": width, "unit": "PT" },
+                "height": { "magnitude": height, "unit": "PT" }
+            }),
+        );
+        fields.push("pageSize");
+    }
+
+    for (field, flag, value) in [
+        ("marginTop", "--margin-top", command.margin_top),
+        ("marginBottom", "--margin-bottom", command.margin_bottom),
+        ("marginLeft", "--margin-left", command.margin_left),
+        ("marginRight", "--margin-right", command.margin_right),
+        ("marginHeader", "--margin-header", command.margin_header),
+        ("marginFooter", "--margin-footer", command.margin_footer),
+    ] {
+        let Some(value) = value else {
+            continue;
+        };
+        if !value.is_finite() || value < 0.0 {
+            bail!("{flag} must be a finite, non-negative point value");
+        }
+        style.insert(
+            field.into(),
+            serde_json::json!({ "magnitude": value, "unit": "PT" }),
+        );
+        fields.push(field);
+    }
+
+    if fields.is_empty() {
+        bail!("style page requires a page size or at least one margin");
+    }
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "updateDocumentStyle": {
+                "documentStyle": style,
+                "fields": fields.join(",")
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "style page",
+            format!("Configure document page fields: {}", fields.join(", ")),
         ),
     }))
 }

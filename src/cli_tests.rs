@@ -2088,6 +2088,64 @@ fn docs_style_template_parse() {
 }
 
 #[test]
+fn docs_style_page_parse() {
+    let cli = parse(&[
+        "docs",
+        "style",
+        "page",
+        "document-123",
+        "--page-width",
+        "612",
+        "--page-height",
+        "792",
+        "--margin-top",
+        "72",
+        "--margin-header",
+        "36",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap();
+
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Page {
+                        document_id,
+                        page_width,
+                        page_height,
+                        margin_top,
+                        margin_header,
+                        dry_run,
+                        json,
+                        ..
+                    },
+            },
+    } = cli.command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(document_id, "document-123");
+    assert_eq!(page_width, Some(612.0));
+    assert_eq!(page_height, Some(792.0));
+    assert_eq!(margin_top, Some(72.0));
+    assert_eq!(margin_header, Some(36.0));
+    assert!(dry_run);
+    assert!(json);
+
+    assert!(parse(&[
+        "docs",
+        "style",
+        "page",
+        "document-123",
+        "--page-width",
+        "612"
+    ])
+    .is_err());
+}
+
+#[test]
 fn docs_show_style_template_is_removed() {
     assert!(parse(&["docs", "show-style-template", "document-123"]).is_err());
     assert!(parse(&["docs", "style-template", "document-123"]).is_err());
