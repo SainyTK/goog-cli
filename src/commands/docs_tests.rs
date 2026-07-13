@@ -1434,6 +1434,23 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
         "FIXED_WIDTH"
     );
     assert_eq!(tables[0]["layoutMetadata"]["pinnedHeaderRowsCount"], 1);
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableCellStyles"][0][0]["contentAlignment"],
+        "MIDDLE"
+    );
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableCellStyles"][0][0]["backgroundColor"]["color"]
+            ["rgbColor"]["blue"],
+        0.9
+    );
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableCellStyles"][0][0]["borderBottom"]["width"]["magnitude"],
+        1
+    );
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableCellStyles"][0][1],
+        serde_json::json!({})
+    );
 }
 
 #[tokio::test]
@@ -4596,6 +4613,31 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                                 "tableRowStyle": { "tableHeader": true },
                                 "tableCells": [
                                     {
+                                        "tableCellStyle": {
+                                            "contentAlignment": "MIDDLE",
+                                            "backgroundColor": {
+                                                "color": {
+                                                    "rgbColor": {
+                                                        "red": 0.7,
+                                                        "green": 0.8,
+                                                        "blue": 0.9
+                                                    }
+                                                }
+                                            },
+                                            "borderBottom": {
+                                                "width": { "magnitude": 1, "unit": "PT" },
+                                                "dashStyle": "SOLID",
+                                                "color": {
+                                                    "color": {
+                                                        "rgbColor": {
+                                                            "red": 1,
+                                                            "green": 1,
+                                                            "blue": 1
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
                                         "content": [
                                             {
                                                 "paragraph": {

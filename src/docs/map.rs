@@ -1763,6 +1763,25 @@ fn table_layout_metadata(table: &Value) -> Option<Value> {
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
+    let table_cell_styles = table
+        .get("tableRows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|row| {
+            row.get("tableCells")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|cell| {
+                    cell.get("tableCellStyle")
+                        .cloned()
+                        .unwrap_or_else(|| Value::Object(serde_json::Map::new()))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    metadata.insert("tableCellStyles".into(), Value::from(table_cell_styles));
     let pinned_header_rows_count = table
         .get("tableRows")
         .and_then(Value::as_array)
