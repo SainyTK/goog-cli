@@ -19,13 +19,14 @@ use crate::docs::{
         prepare_create_named_range_change, prepare_delete_named_range_change,
         prepare_edit_table_change, prepare_insert_image_change, prepare_insert_page_break_change,
         prepare_insert_section_break_change, prepare_insert_table_change,
-        prepare_insert_text_change, prepare_replace_text_change, request_body_required_revision_id,
-        request_body_with_revision, set_request_body_required_revision_id,
-        split_docs_request_bodies, table_header_style_requests, write_docs_change_preview,
-        ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
-        CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
-        InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
-        InsertTextCommand, PreparedDocsChange, ReplaceTextCommand,
+        prepare_insert_text_change, prepare_replace_text_change, prepare_style_table_row_change,
+        request_body_required_revision_id, request_body_with_revision,
+        set_request_body_required_revision_id, split_docs_request_bodies,
+        table_header_style_requests, write_docs_change_preview, ApplyListCommand,
+        ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand, CreateHeaderCommand,
+        CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand, InsertImageCommand,
+        InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand, InsertTextCommand,
+        PreparedDocsChange, ReplaceTextCommand, StyleTableRowCommand,
     },
     create_document, extract_style_template, get_document,
     map::build_document_map,
@@ -425,6 +426,38 @@ pub fn run<S: AccountStore>(
                 },
                 &mut std::io::stdout(),
                 None,
+                None,
+                None,
+            ))
+        }
+        DocsCommand::Table {
+            command:
+                DocsTableCommand::Style {
+                    document_id,
+                    table_id,
+                    row,
+                    background_color,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_style_table_row_unified_to(
+                config,
+                store,
+                account_override,
+                StyleTableRowCommand {
+                    document_id,
+                    table_id,
+                    row,
+                    background_color,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
                 None,
                 None,
             ))
@@ -1743,6 +1776,61 @@ pub(super) async fn run_edit_table_unified_to<S: AccountStore>(
     )
     .await?;
     let change = prepare_edit_table_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_style_table_row_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: StyleTableRowCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_style_table_row_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+    )
+    .await
+}
+
+pub(super) async fn run_style_table_row_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: StyleTableRowCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_style_table_row_change(&document_map, &command)?;
     apply_or_preview_docs_change_unified(
         config,
         store,

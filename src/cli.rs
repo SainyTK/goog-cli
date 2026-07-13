@@ -1885,7 +1885,8 @@ impl DocsCommand {
             },
             DocsCommand::Table { command } => match command {
                 DocsTableCommand::Insert { document_id, .. }
-                | DocsTableCommand::Edit { document_id, .. } => document_id,
+                | DocsTableCommand::Edit { document_id, .. }
+                | DocsTableCommand::Style { document_id, .. } => document_id,
             },
             DocsCommand::NamedRange { command } => match command {
                 DocsNamedRangeCommand::Create { document_id, .. }
@@ -2405,6 +2406,29 @@ pub enum DocsTableCommand {
         /// Allow future structural table resizing
         #[arg(long)]
         resize: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Apply visual styling to one table row
+    Style {
+        /// Document ID or URL to update
+        document_id: String,
+        /// Table handle from `docs map --type tables`, such as table-3
+        #[arg(long)]
+        table_id: String,
+        /// One-based table row number to style
+        #[arg(long)]
+        row: usize,
+        /// Cell background color as #RRGGBB
+        #[arg(long)]
+        background_color: String,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,

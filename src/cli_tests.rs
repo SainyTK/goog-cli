@@ -1484,6 +1484,44 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
+            DocsCommand::Table {
+                command:
+                    DocsTableCommand::Style {
+                        table_id,
+                        row,
+                        background_color,
+                        dry_run,
+                        json,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "table",
+        "style",
+        "document-123",
+        "--table-id",
+        "table-1",
+        "--row",
+        "1",
+        "--background-color",
+        "#D9EAF7",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(table_id, "table-1");
+    assert_eq!(row, 1);
+    assert_eq!(background_color, "#D9EAF7");
+    assert!(dry_run);
+    assert!(json);
+
+    let Command::Docs {
+        command:
             DocsCommand::Style {
                 command:
                     DocsStyleCommand::Apply {

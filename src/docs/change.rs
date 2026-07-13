@@ -115,6 +115,17 @@ pub(crate) struct EditTableCommand {
     pub required_revision_id: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StyleTableRowCommand {
+    pub document_id: String,
+    pub table_id: String,
+    pub row: usize,
+    pub background_color: String,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ApplyStylesCommand {
     pub document_id: String,
@@ -747,6 +758,60 @@ pub(crate) fn prepare_edit_table_change(
             format!(
                 "Replace {} with {}x{} table data",
                 command.table_id, table_dimensions.rows, table_dimensions.columns
+            ),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_style_table_row_change(
+    document_map: &DocumentMap,
+    command: &StyleTableRowCommand,
+) -> Result<PreparedDocsChange> {
+    let table = resolve_table_handle(document_map, &command.table_id)?;
+    if command.row == 0 || command.row > table.table_cells.len() {
+        bail!(
+            "table style --row must be between 1 and {} for {}",
+            table.table_cells.len(),
+            command.table_id
+        );
+    }
+    let column_span = table.table_cells[command.row - 1].len();
+    if column_span == 0 {
+        bail!("selected table row does not expose editable cells");
+    }
+    let table_start_index = table
+        .location
+        .index
+        .context("selected table does not expose a Google Docs index")?;
+    let background_color = foreground_color_payload(&command.background_color)?;
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "updateTableCellStyle": {
+                "tableCellStyle": { "backgroundColor": background_color },
+                "tableRange": {
+                    "tableCellLocation": {
+                        "tableStartLocation": { "index": table_start_index },
+                        "rowIndex": command.row - 1,
+                        "columnIndex": 0
+                    },
+                    "rowSpan": 1,
+                    "columnSpan": column_span
+                },
+                "fields": "backgroundColor"
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(table.location.clone()),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "table style",
+            format!(
+                "Apply {} background to row {} of {}",
+                command.background_color, command.row, command.table_id
             ),
         ),
     }))

@@ -14,7 +14,7 @@ use crate::docs::change::{
     ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
     CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
     InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
-    InsertTextCommand, ReplaceTextCommand,
+    InsertTextCommand, ReplaceTextCommand, StyleTableRowCommand,
 };
 use crate::docs::map::{build_document_map, ContentSelector, InsertTextSelector, RangeSelector};
 use crate::docs::style_template::{
@@ -1918,6 +1918,48 @@ async fn run_edit_table_rejects_dimension_changes_without_supported_resize() {
 
     let message = format!("{:#}", resize.unwrap_err());
     assert!(message.contains("table edit --resize is not supported yet"));
+}
+
+#[tokio::test]
+async fn run_style_table_row_dry_run_targets_the_selected_native_row() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_table_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_style_table_row_to(
+        &client,
+        StyleTableRowCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            row: 2,
+            background_color: "#D9EAF7".into(),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-table".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let update = &output["requestBody"]["requests"][0]["updateTableCellStyle"];
+    assert_eq!(update["tableRange"]["tableCellLocation"]["rowIndex"], 1);
+    assert_eq!(update["tableRange"]["columnSpan"], 2);
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-table"
+    );
 }
 
 #[tokio::test]
