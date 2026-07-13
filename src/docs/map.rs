@@ -117,6 +117,8 @@ pub struct DocumentMapEntry {
     pub paragraph_style: Option<Value>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub text_runs: Vec<DocumentTextRun>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub paragraphs: Vec<DocumentParagraph>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heading_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1128,6 +1130,7 @@ struct DocumentMapBuilder<'a> {
 struct DocumentMapEntryMetadata {
     paragraph_style: Option<Value>,
     text_runs: Vec<DocumentTextRun>,
+    paragraphs: Vec<DocumentParagraph>,
     heading_id: Option<String>,
     image_handle: Option<String>,
     object_id: Option<String>,
@@ -1366,6 +1369,14 @@ impl<'a> DocumentMapBuilder<'a> {
             .filter_map(|element| element.get("paragraph"))
             .flat_map(paragraph_text_runs)
             .collect();
+        let paragraphs = content
+            .into_iter()
+            .flatten()
+            .filter_map(|element| {
+                let paragraph = element.get("paragraph")?;
+                Some(document_paragraph(element, paragraph))
+            })
+            .collect();
         let label = if entry_count == 1 { "entry" } else { "entries" };
         self.push_entry_with_metadata(
             self.current_location(element),
@@ -1374,6 +1385,7 @@ impl<'a> DocumentMapBuilder<'a> {
             format!("[table of contents: {entry_count} {label}]"),
             DocumentMapEntryMetadata {
                 text_runs,
+                paragraphs,
                 ..DocumentMapEntryMetadata::default()
             },
         );
@@ -1465,6 +1477,7 @@ impl<'a> DocumentMapBuilder<'a> {
             preview,
             paragraph_style: metadata.paragraph_style,
             text_runs: metadata.text_runs,
+            paragraphs: metadata.paragraphs,
             heading_id: metadata.heading_id,
             image_handle: metadata.image_handle,
             object_id: metadata.object_id,

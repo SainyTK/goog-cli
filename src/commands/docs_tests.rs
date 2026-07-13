@@ -449,6 +449,20 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         output["entries"][0]["textRuns"][0]["textStyle"]["link"]["headingId"],
         "h.how-to"
     );
+    assert_eq!(output["entries"][0]["paragraphs"][0]["startIndex"], 2);
+    assert_eq!(output["entries"][0]["paragraphs"][0]["endIndex"], 23);
+    assert_eq!(
+        output["entries"][0]["paragraphs"][0]["content"],
+        "วิธีใช้งาน\t3\n"
+    );
+    assert_eq!(
+        output["entries"][0]["paragraphs"][0]["paragraphStyle"]["namedStyleType"],
+        "NORMAL_TEXT"
+    );
+    assert_eq!(
+        output["entries"][0]["paragraphs"][0]["paragraphStyle"]["indentStart"]["magnitude"],
+        18
+    );
     assert_eq!(
         output["entries"][1]["location"]["confidence"],
         "table-of-contents"
@@ -4641,6 +4655,10 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                                 "startIndex": 2,
                                 "endIndex": 23,
                                 "paragraph": {
+                                    "paragraphStyle": {
+                                        "namedStyleType": "NORMAL_TEXT",
+                                        "indentStart": { "magnitude": 18, "unit": "PT" }
+                                    },
                                     "elements": [
                                         {
                                             "startIndex": 2,

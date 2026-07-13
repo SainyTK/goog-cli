@@ -670,6 +670,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
             preview: "A | B / C | D".into(),
             paragraph_style: None,
             text_runs: Vec::new(),
+            paragraphs: Vec::new(),
             heading_id: None,
             image_handle: None,
             object_id: None,
