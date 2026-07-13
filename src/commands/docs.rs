@@ -1234,19 +1234,68 @@ pub(super) async fn run_insert_table_to<S: AccountStore>(
 ) -> Result<()> {
     let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
     let change = prepare_insert_table_change(&document_map, &command)?;
+    let insert_index = change
+        .location_index()
+        .context("table insert did not resolve to a Google Docs index")?;
     let dry_run = command.dry_run;
     let no_auto_style = command.no_auto_style;
     let document_id = command.document_id.clone();
-    apply_or_preview_docs_change(
-        client,
-        command.document_id,
-        change,
-        command.dry_run,
-        command.json,
-        out,
-        documents_url,
-    )
-    .await?;
+    let data = command.data.clone();
+    let mut insert_output = Vec::new();
+    if dry_run {
+        apply_or_preview_docs_change(
+            client,
+            command.document_id,
+            change,
+            true,
+            command.json,
+            out,
+            documents_url,
+        )
+        .await?;
+    } else {
+        apply_or_preview_docs_change(
+            client,
+            command.document_id,
+            change,
+            false,
+            command.json,
+            &mut insert_output,
+            documents_url,
+        )
+        .await?;
+    }
+
+    if !dry_run {
+        if let Some(data) = data {
+            let document_map = get_document_map(client, document_id.clone(), documents_url).await?;
+            let table_id = inserted_table_handle(&document_map, insert_index)?;
+            let edit = prepare_edit_table_change(
+                &document_map,
+                &EditTableCommand {
+                    document_id: document_id.clone(),
+                    table_id,
+                    data,
+                    resize: false,
+                    dry_run: false,
+                    json: false,
+                    required_revision_id: document_map.revision_id.clone(),
+                },
+            )?;
+            apply_or_preview_docs_change(
+                client,
+                document_id.clone(),
+                edit,
+                false,
+                false,
+                &mut std::io::sink(),
+                documents_url,
+            )
+            .await?;
+        }
+        out.write_all(&insert_output)
+            .context("failed to write Google Docs table insert output")?;
+    }
 
     if !dry_run && !no_auto_style {
         apply_table_header_auto_style_to(client, &document_id, documents_url, style_cache_dir)
@@ -1275,22 +1324,85 @@ pub(super) async fn run_insert_table_unified_to<S: AccountStore>(
     )
     .await?;
     let change = prepare_insert_table_change(&document_map, &command)?;
+    let insert_index = change
+        .location_index()
+        .context("table insert did not resolve to a Google Docs index")?;
     let dry_run = command.dry_run;
     let no_auto_style = command.no_auto_style;
     let document_id = command.document_id.clone();
-    apply_or_preview_docs_change_unified(
-        config,
-        store,
-        account_override,
-        command.document_id,
-        change,
-        command.dry_run,
-        command.json,
-        out,
-        documents_url,
-        state_path,
-    )
-    .await?;
+    let data = command.data.clone();
+    let mut insert_output = Vec::new();
+    if dry_run {
+        apply_or_preview_docs_change_unified(
+            config,
+            store,
+            account_override,
+            command.document_id,
+            change,
+            true,
+            command.json,
+            out,
+            documents_url,
+            state_path,
+        )
+        .await?;
+    } else {
+        apply_or_preview_docs_change_unified(
+            config,
+            store,
+            account_override,
+            command.document_id,
+            change,
+            false,
+            command.json,
+            &mut insert_output,
+            documents_url,
+            state_path,
+        )
+        .await?;
+    }
+
+    if !dry_run {
+        if let Some(data) = data {
+            let document_map = get_document_map_unified(
+                config,
+                store,
+                account_override,
+                document_id.clone(),
+                documents_url,
+                state_path,
+            )
+            .await?;
+            let table_id = inserted_table_handle(&document_map, insert_index)?;
+            let edit = prepare_edit_table_change(
+                &document_map,
+                &EditTableCommand {
+                    document_id: document_id.clone(),
+                    table_id,
+                    data,
+                    resize: false,
+                    dry_run: false,
+                    json: false,
+                    required_revision_id: document_map.revision_id.clone(),
+                },
+            )?;
+            apply_or_preview_docs_change_unified(
+                config,
+                store,
+                account_override,
+                document_id.clone(),
+                edit,
+                false,
+                false,
+                &mut std::io::sink(),
+                documents_url,
+                state_path,
+            )
+            .await?;
+        }
+        out.write_all(&insert_output)
+            .context("failed to write Google Docs table insert output")?;
+    }
 
     if !dry_run && !no_auto_style {
         apply_table_header_auto_style_unified_to(
@@ -1305,6 +1417,21 @@ pub(super) async fn run_insert_table_unified_to<S: AccountStore>(
         .await;
     }
     Ok(())
+}
+
+pub(super) fn inserted_table_handle(
+    document_map: &DocumentMap,
+    insert_index: i64,
+) -> Result<String> {
+    let table_index = insert_index + 1;
+    document_map
+        .entries
+        .iter()
+        .find(|entry| {
+            entry.kind == DocumentMapEntryKind::Table && entry.location.index == Some(table_index)
+        })
+        .and_then(|entry| entry.table_handle.clone())
+        .with_context(|| format!("inserted table was not found at Google Docs index {table_index}"))
 }
 
 #[cfg(test)]

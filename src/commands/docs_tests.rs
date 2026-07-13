@@ -16,7 +16,7 @@ use crate::docs::change::{
     InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
     InsertTextCommand, ReplaceTextCommand,
 };
-use crate::docs::map::{ContentSelector, InsertTextSelector, RangeSelector};
+use crate::docs::map::{build_document_map, ContentSelector, InsertTextSelector, RangeSelector};
 use crate::docs::style_template::{
     load_style_template_in, save_style_template_in, ListStyleTemplate, NamedStyleTemplate,
     StyleTemplate, TextStyleTemplate,
@@ -1490,7 +1490,7 @@ async fn run_create_footnote_dry_run_emits_native_request() {
 }
 
 #[tokio::test]
-async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
+async fn run_insert_table_dry_run_plans_structure_before_follow_up_population() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/docs/v1/documents/document-123"))
@@ -1537,20 +1537,8 @@ async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
         4
     );
     assert_eq!(
-        output["requestBody"]["requests"][1]["insertText"]["location"]["index"],
-        63
-    );
-    assert_eq!(
-        output["requestBody"]["requests"][1]["insertText"]["text"],
-        "D2"
-    );
-    assert_eq!(
-        output["requestBody"]["requests"][8]["insertText"]["location"]["index"],
-        48
-    );
-    assert_eq!(
-        output["requestBody"]["requests"][8]["insertText"]["text"],
-        "A1"
+        output["requestBody"]["requests"].as_array().unwrap().len(),
+        1
     );
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
@@ -1560,6 +1548,17 @@ async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
         .as_str()
         .unwrap()
         .contains("A1 | B1 | C1 / A2 | B2 | C2"));
+}
+
+#[test]
+fn inserted_table_handle_uses_the_post_insert_table_index() {
+    let document_map = build_document_map(&editable_table_document());
+
+    assert_eq!(inserted_table_handle(&document_map, 0).unwrap(), "table-1");
+    assert!(inserted_table_handle(&document_map, 1)
+        .unwrap_err()
+        .to_string()
+        .contains("inserted table was not found at Google Docs index 2"));
 }
 
 #[tokio::test]

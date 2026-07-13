@@ -166,8 +166,8 @@ fn image_table_style_and_list_changes_build_native_requests() {
         2
     );
     assert_eq!(
-        table["requestBody"]["requests"][1]["insertText"]["text"],
-        "B2"
+        table["requestBody"]["requests"].as_array().unwrap().len(),
+        1
     );
 
     let wide_table_data = temp_dir.path().join("wide-table.tsv");
@@ -193,12 +193,11 @@ fn image_table_style_and_list_changes_build_native_requests() {
     .unwrap();
     let wide_table = preview_json(&wide_table);
     assert_eq!(
-        wide_table["requestBody"]["requests"][1]["insertText"]["location"]["index"],
-        467
-    );
-    assert_eq!(
-        wide_table["requestBody"]["requests"][1]["insertText"]["text"],
-        "Access restored"
+        wide_table["requestBody"]["requests"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
     );
 
     let styles = prepare_apply_styles_change(

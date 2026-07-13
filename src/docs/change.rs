@@ -326,6 +326,14 @@ impl PreparedDocsChange {
             Self::HighLevel(change) => change.preview.command.as_str(),
         }
     }
+
+    pub fn location_index(&self) -> Option<i64> {
+        match self {
+            Self::InsertText(change) => change.location.index,
+            Self::ReplaceText(_) => None,
+            Self::HighLevel(change) => change.location.as_ref().and_then(|location| location.index),
+        }
+    }
 }
 
 impl DocsChangePreview {
@@ -607,16 +615,13 @@ pub(crate) fn prepare_insert_table_change(
     let Some(index) = resolved.location.index else {
         bail!("table insert selector resolved without a Google Docs index");
     };
-    let mut requests = vec![serde_json::json!({
+    let requests = vec![serde_json::json!({
         "insertTable": {
             "location": { "index": index },
             "rows": dimensions.rows,
             "columns": dimensions.columns
         }
     })];
-    if let Some(data) = &data {
-        requests.extend(insert_table_data_requests(index, data));
-    }
     let request_body =
         request_body_with_revision(requests, command.required_revision_id.as_deref());
     let summary = if let Some(data) = &data {
@@ -666,42 +671,6 @@ fn explicit_table_dimensions(
         bail!("table insert requires --rows and --columns to be greater than zero");
     }
     Ok(TableDimensions { rows, columns })
-}
-
-fn insert_table_data_requests(table_index: i64, data: &TableData) -> Vec<serde_json::Value> {
-    let mut requests = Vec::new();
-    let column_count = data.dimensions().columns;
-    for (row_index, row) in data.rows().iter().enumerate().rev() {
-        for (column_index, text) in row.iter().enumerate().rev() {
-            if text.is_empty() {
-                continue;
-            }
-            requests.push(serde_json::json!({
-                "insertText": {
-                    "location": {
-                        "index": inserted_table_cell_text_index(
-                            table_index,
-                            row_index,
-                            column_index,
-                            column_count
-                        )
-                    },
-                    "text": text
-                }
-            }));
-        }
-    }
-    requests
-}
-
-fn inserted_table_cell_text_index(
-    table_index: i64,
-    row_index: usize,
-    column_index: usize,
-    column_count: usize,
-) -> i64 {
-    let row_stride = (column_count as i64 * 2) + 1;
-    table_index + 4 + (row_index as i64 * row_stride) + (column_index as i64 * 2)
 }
 
 pub(crate) fn prepare_edit_table_change(
