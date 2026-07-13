@@ -128,14 +128,17 @@ pub struct ResolvedInsertLocation {
 }
 
 pub fn build_document_map(document: &Value) -> DocumentMap {
+    let inline_objects = document_object_maps(document, "inlineObjects");
+    let positioned_objects = document_object_maps(document, "positionedObjects");
     let mut builder = DocumentMapBuilder::new(
         collect_table_of_contents_page_hints(document),
-        document.get("positionedObjects"),
+        positioned_objects.clone(),
     );
 
     for content in document_content(document) {
         builder.push_structural_element(content);
     }
+    builder.push_non_body_images(&inline_objects, &positioned_objects);
 
     let entries = builder.entries;
     DocumentMap {
@@ -561,7 +564,7 @@ struct DocumentMapBuilder<'a> {
     table_count: usize,
     image_count: usize,
     toc_page_hints: Vec<TableOfContentsPageHint>,
-    positioned_objects: Option<&'a Value>,
+    positioned_objects: Vec<&'a Value>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -578,7 +581,7 @@ struct DocumentMapEntryMetadata {
 impl<'a> DocumentMapBuilder<'a> {
     fn new(
         toc_page_hints: Vec<TableOfContentsPageHint>,
-        positioned_objects: Option<&'a Value>,
+        positioned_objects: Vec<&'a Value>,
     ) -> Self {
         Self {
             entries: Vec::new(),
@@ -659,7 +662,7 @@ impl<'a> DocumentMapBuilder<'a> {
         for (object_index, object_id) in positioned_object_ids.into_iter().enumerate() {
             let image_handle = self.next_image_handle();
             let layout_metadata =
-                positioned_image_layout_metadata(self.positioned_objects, &object_id);
+                positioned_image_layout_metadata(&self.positioned_objects, &object_id);
             self.push_entry_with_metadata(
                 self.current_location(element),
                 DocumentMapEntryKind::PositionedImage,
@@ -717,6 +720,48 @@ impl<'a> DocumentMapBuilder<'a> {
     fn next_image_handle(&mut self) -> String {
         self.image_count += 1;
         format!("image-{}", self.image_count)
+    }
+
+    fn push_non_body_images(&mut self, inline_objects: &[&Value], positioned_objects: &[&Value]) {
+        let body_object_ids = self
+            .entries
+            .iter()
+            .filter_map(|entry| entry.object_id.as_deref())
+            .collect::<std::collections::HashSet<_>>();
+        let non_body_inline_ids = object_ids_not_in_body(inline_objects, &body_object_ids);
+        let non_body_positioned_ids = object_ids_not_in_body(positioned_objects, &body_object_ids);
+
+        for object_id in non_body_inline_ids {
+            let image_handle = self.next_image_handle();
+            self.push_entry_with_metadata(
+                non_body_image_location(),
+                DocumentMapEntryKind::InlineImage,
+                None,
+                "[non-body inline image]".into(),
+                DocumentMapEntryMetadata {
+                    image_handle: Some(image_handle),
+                    object_id: Some(object_id),
+                    ..DocumentMapEntryMetadata::default()
+                },
+            );
+        }
+
+        for object_id in non_body_positioned_ids {
+            let image_handle = self.next_image_handle();
+            let layout_metadata = positioned_image_layout_metadata(positioned_objects, &object_id);
+            self.push_entry_with_metadata(
+                non_body_image_location(),
+                DocumentMapEntryKind::PositionedImage,
+                None,
+                "[non-body positioned image]".into(),
+                DocumentMapEntryMetadata {
+                    image_handle: Some(image_handle),
+                    object_id: Some(object_id),
+                    layout_metadata,
+                    ..DocumentMapEntryMetadata::default()
+                },
+            );
+        }
     }
 
     fn push_entry(
@@ -962,11 +1007,12 @@ const POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS: [&str; 5] = [
 ];
 
 fn positioned_image_layout_metadata(
-    positioned_objects: Option<&Value>,
+    positioned_objects: &[&Value],
     object_id: &str,
 ) -> Option<Value> {
-    let properties = positioned_objects?
-        .get(object_id)?
+    let properties = positioned_objects
+        .iter()
+        .find_map(|objects| objects.get(object_id))?
         .get("positionedObjectProperties")?;
     let mut metadata = serde_json::Map::new();
 
@@ -986,6 +1032,49 @@ fn positioned_image_layout_metadata(
         None
     } else {
         Some(Value::Object(metadata))
+    }
+}
+
+fn object_ids_not_in_body(
+    objects: &[&Value],
+    body_object_ids: &std::collections::HashSet<&str>,
+) -> Vec<String> {
+    objects
+        .iter()
+        .filter_map(|objects| objects.as_object())
+        .flat_map(|objects| objects.keys())
+        .filter(|object_id| !body_object_ids.contains(object_id.as_str()))
+        .cloned()
+        .collect()
+}
+
+fn document_object_maps<'a>(document: &'a Value, field: &str) -> Vec<&'a Value> {
+    document
+        .get(field)
+        .filter(|objects| {
+            objects
+                .as_object()
+                .is_some_and(|objects| !objects.is_empty())
+        })
+        .into_iter()
+        .chain(
+            document
+                .get("tabs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|tab| tab.get("documentTab"))
+                .filter_map(|document_tab| document_tab.get(field)),
+        )
+        .collect()
+}
+
+fn non_body_image_location() -> DocumentLocation {
+    DocumentLocation {
+        index: None,
+        page: None,
+        content_line: 0,
+        confidence: LocationConfidence::Unknown,
     }
 }
 

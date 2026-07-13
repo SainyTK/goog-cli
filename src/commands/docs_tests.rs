@@ -342,7 +342,7 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(output["revisionId"], "rev-long");
-    assert_eq!(output["documentLocations"].as_array().unwrap().len(), 6);
+    assert_eq!(output["documentLocations"].as_array().unwrap().len(), 8);
     assert_eq!(
         output["entries"][0]["location"]["confidence"],
         "table-of-contents"
@@ -361,6 +361,13 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
     );
     assert_eq!(output["entries"][5]["location"]["page"], 2);
     assert_eq!(output["entries"][5]["location"]["contentLine"], 1);
+    assert_eq!(output["entries"][6]["preview"], "[non-body inline image]");
+    assert!(output["entries"][6]["location"]["index"].is_null());
+    assert_eq!(
+        output["entries"][7]["preview"],
+        "[non-body positioned image]"
+    );
+    assert!(output["entries"][7]["location"]["index"].is_null());
 }
 
 #[tokio::test]
@@ -1138,7 +1145,7 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     .await
     .unwrap();
     let images: serde_json::Value = serde_json::from_slice(&images).unwrap();
-    assert_eq!(images.as_array().unwrap().len(), 2);
+    assert_eq!(images.as_array().unwrap().len(), 4);
     assert_eq!(images[0]["kind"], "inline-image");
     assert_eq!(images[0]["imageHandle"], "image-1");
     assert_eq!(images[0]["objectId"], "inline-image-1");
@@ -1158,6 +1165,18 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(
         images[1]["layoutMetadata"]["size"]["height"]["magnitude"],
         72
+    );
+    assert_eq!(images[2]["kind"], "inline-image");
+    assert_eq!(images[2]["objectId"], "header-inline-image");
+    assert!(images[2]["location"]["index"].is_null());
+    assert_eq!(images[2]["preview"], "[non-body inline image]");
+    assert_eq!(images[3]["kind"], "positioned-image");
+    assert_eq!(images[3]["objectId"], "footer-positioned-image");
+    assert!(images[3]["location"]["index"].is_null());
+    assert_eq!(images[3]["preview"], "[non-body positioned image]");
+    assert_eq!(
+        images[3]["layoutMetadata"]["positioning"]["layout"],
+        "BEHIND_TEXT"
     );
 
     let mut human_images = Vec::new();
@@ -4263,7 +4282,42 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     }
                 }
             }
-        }
+        },
+        "tabs": [{
+            "documentTab": {
+                "inlineObjects": {
+                    "header-inline-image": {
+                        "inlineObjectProperties": {
+                            "embeddedObject": {
+                                "imageProperties": {}
+                            }
+                        }
+                    }
+                },
+                "positionedObjects": {
+                    "footer-positioned-image": {
+                        "positionedObjectProperties": {
+                            "positioning": {
+                                "layout": "BEHIND_TEXT"
+                            },
+                            "embeddedObject": {
+                                "size": {
+                                    "height": {
+                                        "magnitude": 24,
+                                        "unit": "PT"
+                                    },
+                                    "width": {
+                                        "magnitude": 48,
+                                        "unit": "PT"
+                                    }
+                                },
+                                "imageProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }]
     })
 }
 
