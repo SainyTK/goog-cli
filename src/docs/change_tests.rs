@@ -228,6 +228,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             space_above: Some(6.0),
             space_below: Some(10.0),
             line_spacing: Some(115.0),
+            spacing_mode: Some(crate::cli::DocsParagraphSpacingMode::NeverCollapse),
             indent_start: Some(36.0),
             indent_end: Some(12.0),
             indent_first_line: Some(18.0),
@@ -272,6 +273,11 @@ fn image_table_style_and_list_changes_build_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["spacingMode"],
+        "NEVER_COLLAPSE"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["keepWithNext"],
         true
     );
@@ -292,7 +298,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
-        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,avoidWidowAndOrphan,pageBreakBefore"
+        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,spacingMode,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,avoidWidowAndOrphan,pageBreakBefore"
     );
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
@@ -352,6 +358,7 @@ fn paragraph_spacing_rejects_invalid_point_values() {
         space_above: Some(-1.0),
         space_below: None,
         line_spacing: None,
+        spacing_mode: None,
         indent_start: None,
         indent_end: None,
         indent_first_line: None,

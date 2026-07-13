@@ -2062,6 +2062,7 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
             space_above: Some(4.0),
             space_below: Some(10.0),
             line_spacing: Some(115.0),
+            spacing_mode: Some(crate::cli::DocsParagraphSpacingMode::NeverCollapse),
             indent_start: Some(36.0),
             indent_end: Some(12.0),
             indent_first_line: Some(18.0),
@@ -2108,12 +2109,17 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
-        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,avoidWidowAndOrphan,pageBreakBefore"
+        "namedStyleType,alignment,spaceAbove,spaceBelow,lineSpacing,spacingMode,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,avoidWidowAndOrphan,pageBreakBefore"
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["lineSpacing"],
         115.0
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["spacingMode"],
+        "NEVER_COLLAPSE"
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
@@ -2535,6 +2541,7 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
             space_above: None,
             space_below: None,
             line_spacing: None,
+            spacing_mode: None,
             indent_start: None,
             indent_end: None,
             indent_first_line: None,
@@ -2690,6 +2697,7 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
             space_above: None,
             space_below: None,
             line_spacing: None,
+            spacing_mode: None,
             indent_start: None,
             indent_end: None,
             indent_first_line: None,
@@ -2785,6 +2793,7 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
             space_above: None,
             space_below: None,
             line_spacing: None,
+            spacing_mode: None,
             indent_start: None,
             indent_end: None,
             indent_first_line: None,
@@ -2922,6 +2931,7 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
             space_above: None,
             space_below: None,
             line_spacing: None,
+            spacing_mode: None,
             indent_start: None,
             indent_end: None,
             indent_first_line: None,

@@ -158,6 +158,7 @@ pub(crate) struct ApplyStylesCommand {
     pub space_above: Option<f64>,
     pub space_below: Option<f64>,
     pub line_spacing: Option<f64>,
+    pub spacing_mode: Option<crate::cli::DocsParagraphSpacingMode>,
     pub indent_start: Option<f64>,
     pub indent_end: Option<f64>,
     pub indent_first_line: Option<f64>,
@@ -1357,6 +1358,12 @@ fn paragraph_style_payload(
             bail!("--line-spacing must be a finite, positive percentage");
         }
         payload.set_field("lineSpacing", serde_json::json!(line_spacing));
+    }
+    if let Some(spacing_mode) = command.spacing_mode {
+        payload.set_field(
+            "spacingMode",
+            serde_json::Value::String(spacing_mode.api_value().into()),
+        );
     }
     set_paragraph_dimension(
         &mut payload,

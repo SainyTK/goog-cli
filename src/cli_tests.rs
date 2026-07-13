@@ -1837,6 +1837,7 @@ fn docs_apply_styles_accepts_paragraph_layout() {
                         space_above,
                         space_below,
                         line_spacing,
+                        spacing_mode,
                         indent_start,
                         indent_end,
                         indent_first_line,
@@ -1861,6 +1862,8 @@ fn docs_apply_styles_accepts_paragraph_layout() {
         "10",
         "--line-spacing",
         "115",
+        "--spacing-mode",
+        "never-collapse",
         "--indent-start",
         "36",
         "--indent-end",
@@ -1882,6 +1885,10 @@ fn docs_apply_styles_accepts_paragraph_layout() {
     assert_eq!(space_above, Some(6.0));
     assert_eq!(space_below, Some(10.0));
     assert_eq!(line_spacing, Some(115.0));
+    assert_eq!(
+        spacing_mode,
+        Some(crate::cli::DocsParagraphSpacingMode::NeverCollapse)
+    );
     assert_eq!(indent_start, Some(36.0));
     assert_eq!(indent_end, Some(12.0));
     assert_eq!(indent_first_line, Some(18.0));

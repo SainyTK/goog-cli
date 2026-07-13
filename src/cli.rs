@@ -2132,6 +2132,9 @@ pub enum DocsStyleCommand {
         /// Line spacing as a percentage of normal, where normal is 100
         #[arg(long)]
         line_spacing: Option<f64>,
+        /// Paragraph spacing behavior, including whether list spacing collapses
+        #[arg(long, value_enum)]
+        spacing_mode: Option<DocsParagraphSpacingMode>,
         /// Paragraph start indent in points
         #[arg(long)]
         indent_start: Option<f64>,
@@ -2663,6 +2666,21 @@ pub enum DocsParagraphAlignment {
     Center,
     End,
     Justified,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsParagraphSpacingMode {
+    CollapseLists,
+    NeverCollapse,
+}
+
+impl DocsParagraphSpacingMode {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            DocsParagraphSpacingMode::CollapseLists => "COLLAPSE_LISTS",
+            DocsParagraphSpacingMode::NeverCollapse => "NEVER_COLLAPSE",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
