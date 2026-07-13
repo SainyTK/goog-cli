@@ -82,6 +82,31 @@ target/debug/goog docs map DOCUMENT_ID --json
 The customer reference uses explicit paragraph spacing, line spacing, alignment, indentation, direction, custom fonts, and pagination controls.
 Do not rely on visual similarity alone when these native properties can be verified through the map.
 
+## Internal navigation
+
+Map the document after the heading structure is final and copy the target heading's native `headingId` from the JSON output:
+
+```bash
+target/debug/goog docs map DOCUMENT_ID --json
+```
+
+Insert the navigation label as normal text, then preview and apply an internal heading link over that exact text:
+
+```bash
+target/debug/goog docs text insert DOCUMENT_ID $'Executive summary\n' --at after-heading:'Contents' --dry-run --json
+target/debug/goog docs text insert DOCUMENT_ID $'Executive summary\n' --at after-heading:'Contents'
+target/debug/goog docs style apply DOCUMENT_ID --text 'Executive summary' --link-heading-id TARGET_HEADING_ID --dry-run --json
+target/debug/goog docs style apply DOCUMENT_ID --text 'Executive summary' --link-heading-id TARGET_HEADING_ID
+```
+
+Use `--entry` or `--match N` when the label also appears elsewhere in the document.
+Google applies native link color and underline styling to linked text automatically.
+Map again and verify that the selected text run contains the expected `headingId` link and that the target heading retains the same ID.
+
+The Docs API cannot create a native table of contents.
+Copy a template when the document requires an editor-managed table of contents with page numbers and automatic entry updates.
+Use heading links to build a manual navigation list only when automatic TOC behavior is unnecessary.
+
 ## Images
 
 Insert body images from a publicly reachable URI.
@@ -254,6 +279,7 @@ If neither path is available, report visual QA as blocked.
 target/debug/goog docs --help
 target/debug/goog docs text --help
 target/debug/goog docs style --help
+target/debug/goog docs style apply --help
 target/debug/goog docs table --help
 target/debug/goog docs image --help
 target/debug/goog docs list-format apply --help
