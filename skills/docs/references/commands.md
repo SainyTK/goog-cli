@@ -108,6 +108,27 @@ Use the map's tab-scoped `documentStyles` metadata to verify the stored page siz
 Use `--required-revision-id` when concurrent edits are possible.
 Use `copy-page` instead when the target must inherit an approved source document's page mode, geometry, margins, and supported header or footer behavior.
 
+## Protect multi-step edits with revision guards
+
+Capture the current revision immediately before a related sequence of edits:
+
+```bash
+REVISION_ID="$(target/debug/goog docs get DOCUMENT_ID --fields revisionId | jq -r '.revisionId')"
+test -n "$REVISION_ID" && test "$REVISION_ID" != null
+```
+
+Pass that exact value to both the preview and the confirmed write:
+
+```bash
+target/debug/goog docs text insert DOCUMENT_ID $'Executive summary\n' --at index:1 --required-revision-id "$REVISION_ID" --dry-run --json
+target/debug/goog docs text insert DOCUMENT_ID $'Executive summary\n' --at index:1 --required-revision-id "$REVISION_ID"
+```
+
+The confirmed write fails instead of overwriting concurrent changes when the live document no longer has that revision.
+Fetch a new revision and remap the document after every successful structural edit because later indexes and entry numbers may have moved.
+If a guarded write fails, discard the old revision and location, then fetch and map again before rebuilding the edit.
+Never shorten, retype, or reuse a revision ID from an earlier editing session.
+
 ## Insert and replace text
 
 ```bash
