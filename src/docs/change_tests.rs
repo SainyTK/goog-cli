@@ -3,11 +3,13 @@ use serde_json::json;
 use super::change::{
     prepare_apply_list_change, prepare_apply_styles_change, prepare_edit_table_change,
     prepare_insert_image_change, prepare_insert_table_change, prepare_insert_text_change,
-    prepare_replace_text_change, prepare_set_table_column_widths_change,
-    prepare_style_table_row_change, request_body_required_revision_id,
-    set_request_body_required_revision_id, split_docs_request_bodies, write_docs_change_preview,
-    ApplyListCommand, ApplyStylesCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
-    InsertTextCommand, ReplaceTextCommand, SetTableColumnWidthsCommand, StyleTableRowCommand,
+    prepare_pin_table_header_rows_change, prepare_replace_text_change,
+    prepare_set_table_column_widths_change, prepare_style_table_row_change,
+    request_body_required_revision_id, set_request_body_required_revision_id,
+    split_docs_request_bodies, write_docs_change_preview, ApplyListCommand, ApplyStylesCommand,
+    EditTableCommand, InsertImageCommand, InsertTableCommand, InsertTextCommand,
+    PinTableHeaderRowsCommand, ReplaceTextCommand, SetTableColumnWidthsCommand,
+    StyleTableRowCommand,
 };
 use super::map::{
     build_document_map, DocumentLocation, DocumentMap, DocumentMapEntry, DocumentMapEntryKind,
@@ -801,6 +803,47 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
     )
     .unwrap_err();
     assert!(too_narrow.to_string().contains("at least 5 points"));
+
+    let header_rows = prepare_pin_table_header_rows_change(
+        &table_map,
+        &PinTableHeaderRowsCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            rows: 1,
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-required".into()),
+        },
+    )
+    .unwrap();
+    let header_rows = preview_json(&header_rows);
+    assert_eq!(
+        header_rows["requestBody"]["requests"][0]["pinTableHeaderRows"],
+        json!({
+            "tableStartLocation": { "index": 1 },
+            "pinnedHeaderRowsCount": 1
+        })
+    );
+    assert_eq!(
+        header_rows["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-required"
+    );
+
+    let too_many_header_rows = prepare_pin_table_header_rows_change(
+        &table_map,
+        &PinTableHeaderRowsCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            rows: 3,
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap_err();
+    assert!(too_many_header_rows
+        .to_string()
+        .contains("must be between 0 and 2"));
 
     let style_body = json!({
         "requests": [

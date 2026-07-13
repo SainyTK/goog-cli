@@ -14,7 +14,8 @@ use crate::docs::change::{
     ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
     CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
     InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
-    InsertTextCommand, ReplaceTextCommand, SetTableColumnWidthsCommand, StyleTableRowCommand,
+    InsertTextCommand, PinTableHeaderRowsCommand, ReplaceTextCommand, SetTableColumnWidthsCommand,
+    StyleTableRowCommand,
 };
 use crate::docs::map::{build_document_map, ContentSelector, InsertTextSelector, RangeSelector};
 use crate::docs::style_template::{
@@ -2091,6 +2092,48 @@ async fn run_set_table_column_widths_dry_run_targets_each_native_column() {
     assert_eq!(
         requests[1]["updateTableColumnProperties"]["tableColumnProperties"]["width"],
         serde_json::json!({ "magnitude": 363.75, "unit": "PT" })
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-table"
+    );
+}
+
+#[tokio::test]
+async fn run_pin_table_header_rows_dry_run_targets_the_native_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_table_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_pin_table_header_rows_to(
+        &client,
+        PinTableHeaderRowsCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            rows: 1,
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-table".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["pinTableHeaderRows"]["pinnedHeaderRowsCount"],
+        1
     );
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],

@@ -1890,6 +1890,7 @@ impl DocsCommand {
                 DocsTableCommand::Insert { document_id, .. }
                 | DocsTableCommand::Edit { document_id, .. }
                 | DocsTableCommand::Columns { document_id, .. }
+                | DocsTableCommand::HeaderRows { document_id, .. }
                 | DocsTableCommand::Style { document_id, .. } => document_id,
             },
             DocsCommand::NamedRange { command } => match command {
@@ -2503,6 +2504,26 @@ pub enum DocsTableCommand {
         /// Column widths in points, in left-to-right order
         #[arg(long, required = true, value_delimiter = ',', num_args = 1..)]
         widths: Vec<f64>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Pin leading table rows so they repeat as headers across pages
+    HeaderRows {
+        /// Document ID or URL to update
+        document_id: String,
+        /// Table handle from `docs map --type tables`, such as table-3
+        #[arg(long)]
+        table_id: String,
+        /// Number of leading rows to repeat; use 0 to unpin all header rows
+        #[arg(long)]
+        rows: usize,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,

@@ -145,6 +145,16 @@ pub(crate) struct SetTableColumnWidthsCommand {
     pub required_revision_id: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PinTableHeaderRowsCommand {
+    pub document_id: String,
+    pub table_id: String,
+    pub rows: usize,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ApplyStylesCommand {
     pub document_id: String,
@@ -1014,6 +1024,50 @@ pub(crate) fn prepare_set_table_column_widths_change(
                     .map(|width| width.to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
+            ),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_pin_table_header_rows_change(
+    document_map: &DocumentMap,
+    command: &PinTableHeaderRowsCommand,
+) -> Result<PreparedDocsChange> {
+    let table = resolve_table_handle(document_map, &command.table_id)?;
+    let row_count = table
+        .rows
+        .context("selected table does not expose its row count")?;
+    if command.rows > row_count {
+        bail!(
+            "table header-rows --rows must be between 0 and {} for {}, but received {}",
+            row_count,
+            command.table_id,
+            command.rows
+        );
+    }
+    let table_start_index = table
+        .location
+        .index
+        .context("selected table does not expose a Google Docs index")?;
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "pinTableHeaderRows": {
+                "tableStartLocation": { "index": table_start_index },
+                "pinnedHeaderRowsCount": command.rows
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(table.location.clone()),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "table header-rows",
+            format!(
+                "Pin {} leading header row(s) on {}",
+                command.rows, command.table_id
             ),
         ),
     }))

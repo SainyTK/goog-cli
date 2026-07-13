@@ -1099,6 +1099,44 @@ fn docs_new_high_level_editing_commands_parse() {
 
     let Command::Docs {
         command:
+            DocsCommand::Table {
+                command:
+                    DocsTableCommand::HeaderRows {
+                        table_id,
+                        rows,
+                        dry_run,
+                        json,
+                        required_revision_id,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "table",
+        "header-rows",
+        "document-123",
+        "--table-id",
+        "table-1",
+        "--rows",
+        "1",
+        "--dry-run",
+        "--json",
+        "--required-revision-id",
+        "rev-1",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(table_id, "table-1");
+    assert_eq!(rows, 1);
+    assert!(dry_run);
+    assert!(json);
+    assert_eq!(required_revision_id.as_deref(), Some("rev-1"));
+
+    let Command::Docs {
+        command:
             DocsCommand::Image {
                 command: DocsImageCommand::Insert { at, segment_id, .. },
             },
