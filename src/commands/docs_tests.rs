@@ -322,7 +322,7 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         .respond_with(
             ResponseTemplate::new(200).set_body_json(long_document_with_toc_and_objects()),
         )
-        .expect(1)
+        .expect(3)
         .mount(&server)
         .await;
 
@@ -376,6 +376,51 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         "[non-body positioned image]"
     );
     assert!(output["entries"][8]["location"]["index"].is_null());
+    assert_eq!(output["segments"].as_array().unwrap().len(), 3);
+    assert_eq!(output["segments"][0]["kind"], "header");
+    assert_eq!(output["segments"][0]["segmentId"], "header-123");
+    assert_eq!(output["segments"][0]["startIndex"], 0);
+    assert_eq!(output["segments"][0]["endIndex"], 17);
+    assert_eq!(
+        output["segments"][0]["preview"],
+        "Customer contact [page number]"
+    );
+    assert_eq!(output["segments"][0]["autoTextTypes"][0], "PAGE_NUMBER");
+    assert_eq!(output["segments"][1]["segmentId"], "legacy-header");
+    assert_eq!(output["segments"][1]["preview"], "Legacy header");
+    assert_eq!(output["segments"][2]["kind"], "footer");
+    assert_eq!(output["segments"][2]["preview"], "[empty footer]");
+
+    let mut segments = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Segments,
+        true,
+        &mut segments,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let segments: serde_json::Value = serde_json::from_slice(&segments).unwrap();
+    assert_eq!(segments.as_array().unwrap().len(), 3);
+    assert_eq!(segments[0]["segmentId"], "header-123");
+
+    let mut human_segments = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Segments,
+        false,
+        &mut human_segments,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let human_segments = String::from_utf8(human_segments).unwrap();
+    assert!(human_segments.contains("Segment"));
+    assert!(human_segments.contains("header-123"));
+    assert!(human_segments.contains("PAGE_NUMBER"));
 }
 
 #[tokio::test]
@@ -4404,6 +4449,20 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                 }
             ]
         },
+        "headers": {
+            "legacy-header": {
+                "headerId": "legacy-header",
+                "content": [{
+                    "endIndex": 14,
+                    "paragraph": {
+                        "elements": [{
+                            "endIndex": 14,
+                            "textRun": { "content": "Legacy header\n" }
+                        }]
+                    }
+                }]
+            }
+        },
         "inlineObjects": {
             "inline-image-1": {
                 "inlineObjectProperties": {
@@ -4445,6 +4504,41 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
         },
         "tabs": [{
             "documentTab": {
+                "headers": {
+                    "header-123": {
+                        "headerId": "header-123",
+                        "content": [{
+                            "endIndex": 17,
+                            "paragraph": {
+                                "elements": [
+                                    {
+                                        "endIndex": 16,
+                                        "textRun": { "content": "Customer contact" }
+                                    },
+                                    {
+                                        "startIndex": 16,
+                                        "endIndex": 17,
+                                        "autoText": { "type": "PAGE_NUMBER" }
+                                    }
+                                ]
+                            }
+                        }]
+                    }
+                },
+                "footers": {
+                    "footer-123": {
+                        "footerId": "footer-123",
+                        "content": [{
+                            "endIndex": 1,
+                            "paragraph": {
+                                "elements": [{
+                                    "endIndex": 1,
+                                    "textRun": { "content": "\n" }
+                                }]
+                            }
+                        }]
+                    }
+                },
                 "inlineObjects": {
                     "header-inline-image": {
                         "inlineObjectProperties": {

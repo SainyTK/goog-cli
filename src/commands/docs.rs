@@ -39,6 +39,7 @@ use crate::docs::{
     map::DocumentMapEntry,
     map::DocumentMapEntryKind,
     map::DocumentRange,
+    map::DocumentSegment,
     map::InsertTextSelector,
     map::RangeSelector,
     style_template::{load_style_template_in, save_style_template_in},
@@ -2881,6 +2882,7 @@ fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry)
         document_id: document_map.document_id.clone(),
         title: document_map.title.clone(),
         revision_id: document_map.revision_id.clone(),
+        segments: Vec::new(),
         entries: vec![entry.clone()],
         document_locations: vec![entry.location.clone()],
         text_blocks: Vec::new(),
@@ -3017,12 +3019,20 @@ fn write_document_map(
     map_type: DocsMapType,
     json: bool,
 ) -> Result<()> {
+    if map_type == DocsMapType::Segments {
+        return write_document_segments(out, &document_map.segments, json);
+    }
     if let Some(kinds) = map_type_entry_kinds(map_type) {
         write_filtered_entries(out, document_map, kinds, json)
     } else if json {
         write_json_line(out, document_map, "failed to serialize Docs Document Map")
     } else {
-        write_document_map_table(out, document_map)
+        write_document_map_table(out, document_map)?;
+        if !document_map.segments.is_empty() {
+            writeln!(out).context("failed to separate Docs segment map")?;
+            write_document_segments_table(out, &document_map.segments)?;
+        }
+        Ok(())
     }
 }
 
@@ -3034,6 +3044,19 @@ fn map_type_entry_kinds(map_type: DocsMapType) -> Option<&'static [DocumentMapEn
             DocumentMapEntryKind::PositionedImage,
         ]),
         DocsMapType::Tables => Some(&[DocumentMapEntryKind::Table]),
+        DocsMapType::Segments => unreachable!("segment maps are handled separately"),
+    }
+}
+
+fn write_document_segments(
+    out: &mut impl Write,
+    segments: &[DocumentSegment],
+    json: bool,
+) -> Result<()> {
+    if json {
+        write_json_line(out, segments, "failed to serialize Docs segments")
+    } else {
+        write_document_segments_table(out, segments)
     }
 }
 
@@ -3121,6 +3144,36 @@ fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntr
             entry.preview
         )
         .context("failed to write Docs Document Map row")?;
+    }
+
+    Ok(())
+}
+
+fn write_document_segments_table(out: &mut impl Write, segments: &[DocumentSegment]) -> Result<()> {
+    writeln!(
+        out,
+        "{:<8} {:<24} {:<6} {:<6} {:<18} Preview",
+        "Kind", "Segment", "Start", "End", "Auto text"
+    )
+    .context("failed to write Docs segment map header")?;
+
+    for segment in segments {
+        let auto_text = if segment.auto_text_types.is_empty() {
+            "-".into()
+        } else {
+            segment.auto_text_types.join(",")
+        };
+        writeln!(
+            out,
+            "{:<8} {:<24} {:<6} {:<6} {:<18} {}",
+            format!("{:?}", segment.kind),
+            segment.segment_id,
+            segment.start_index,
+            segment.end_index,
+            auto_text,
+            segment.preview
+        )
+        .context("failed to write Docs segment map row")?;
     }
 
     Ok(())

@@ -8,12 +8,32 @@ pub struct DocumentMap {
     pub document_id: Option<String>,
     pub title: Option<String>,
     pub revision_id: Option<String>,
+    pub segments: Vec<DocumentSegment>,
     pub entries: Vec<DocumentMapEntry>,
     pub document_locations: Vec<DocumentLocation>,
     #[serde(skip)]
     pub text_blocks: Vec<DocumentTextBlock>,
     #[serde(skip)]
     pub insertion_locations: Vec<DocumentLocation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentSegment {
+    pub kind: DocumentSegmentKind,
+    pub segment_id: String,
+    pub start_index: i64,
+    pub end_index: i64,
+    pub preview: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub auto_text_types: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DocumentSegmentKind {
+    Header,
+    Footer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -146,10 +166,148 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         document_id: string_field(document, "documentId"),
         title: string_field(document, "title"),
         revision_id: string_field(document, "revisionId"),
+        segments: document_segments(document),
         document_locations: entries.iter().map(|entry| entry.location.clone()).collect(),
         entries,
         text_blocks: builder.text_blocks,
         insertion_locations: builder.insertion_locations,
+    }
+}
+
+fn document_segments(document: &Value) -> Vec<DocumentSegment> {
+    let mut segments = Vec::new();
+    for (kind, field) in [
+        (DocumentSegmentKind::Header, "headers"),
+        (DocumentSegmentKind::Footer, "footers"),
+    ] {
+        for segment_map in document_segment_maps(document, field) {
+            let Some(segment_map) = segment_map.as_object() else {
+                continue;
+            };
+            for (segment_id, segment) in segment_map {
+                let mut text = String::new();
+                collect_text_run_content(segment, &mut text);
+                let mut auto_text_types = Vec::new();
+                collect_auto_text_types(segment, &mut auto_text_types);
+                auto_text_types.sort();
+                auto_text_types.dedup();
+                let end_index = max_i64_field(segment, "endIndex").unwrap_or_default();
+                let preview = segment_preview(kind, &text, &auto_text_types);
+                segments.push(DocumentSegment {
+                    kind,
+                    segment_id: segment_id.clone(),
+                    start_index: 0,
+                    end_index,
+                    preview,
+                    auto_text_types,
+                });
+            }
+        }
+    }
+    segments.sort_by(|left, right| {
+        (left.kind, left.segment_id.as_str()).cmp(&(right.kind, right.segment_id.as_str()))
+    });
+    segments.dedup_by(|left, right| left.kind == right.kind && left.segment_id == right.segment_id);
+    segments
+}
+
+fn document_segment_maps<'a>(document: &'a Value, field: &str) -> Vec<&'a Value> {
+    document
+        .get(field)
+        .into_iter()
+        .chain(
+            document
+                .get("tabs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|tab| tab.get("documentTab"))
+                .filter_map(|document_tab| document_tab.get(field)),
+        )
+        .collect()
+}
+
+fn collect_text_run_content(value: &Value, text: &mut String) {
+    if let Some(content) = value
+        .get("textRun")
+        .and_then(|text_run| text_run.get("content"))
+        .and_then(Value::as_str)
+    {
+        text.push_str(content);
+        return;
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_text_run_content(value, text);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_text_run_content(value, text);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_auto_text_types(value: &Value, types: &mut Vec<String>) {
+    if let Some(auto_text_type) = value
+        .get("autoText")
+        .and_then(|auto_text| auto_text.get("type"))
+        .and_then(Value::as_str)
+    {
+        types.push(auto_text_type.to_string());
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_auto_text_types(value, types);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_auto_text_types(value, types);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn max_i64_field(value: &Value, field: &str) -> Option<i64> {
+    let own = value.get(field).and_then(Value::as_i64);
+    let descendant = match value {
+        Value::Array(values) => values
+            .iter()
+            .filter_map(|value| max_i64_field(value, field))
+            .max(),
+        Value::Object(values) => values
+            .values()
+            .filter_map(|value| max_i64_field(value, field))
+            .max(),
+        _ => None,
+    };
+    own.into_iter().chain(descendant).max()
+}
+
+fn segment_preview(kind: DocumentSegmentKind, text: &str, auto_text_types: &[String]) -> String {
+    let text_preview = preview(text);
+    let auto_text_preview = auto_text_types
+        .iter()
+        .map(|auto_text_type| auto_text_type.to_ascii_lowercase().replace('_', " "))
+        .collect::<Vec<_>>()
+        .join(", ");
+    match (text_preview.is_empty(), auto_text_preview.is_empty()) {
+        (false, true) => text_preview,
+        (false, false) => format!("{text_preview} [{auto_text_preview}]"),
+        (true, false) => format!("[{auto_text_preview}]"),
+        (true, true) => format!(
+            "[empty {}]",
+            match kind {
+                DocumentSegmentKind::Header => "header",
+                DocumentSegmentKind::Footer => "footer",
+            }
+        ),
     }
 }
 

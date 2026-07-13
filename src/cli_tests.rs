@@ -667,6 +667,14 @@ fn docs_map_with_document_id_and_json_flag() {
         } => assert_eq!(type_, DocsMapType::Tables),
         _ => panic!("unexpected parse result"),
     }
+
+    let cli = parse(&["docs", "map", "document-123", "--type", "segments"]).unwrap();
+    match cli.command {
+        Command::Docs {
+            command: DocsCommand::Map { type_, .. },
+        } => assert_eq!(type_, DocsMapType::Segments),
+        _ => panic!("unexpected parse result"),
+    }
 }
 
 #[test]

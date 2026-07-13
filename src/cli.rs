@@ -2772,6 +2772,8 @@ pub enum DocsMapType {
     Images,
     /// Tables
     Tables,
+    /// Header and footer segments
+    Segments,
 }
 
 #[derive(Debug, Subcommand)]
