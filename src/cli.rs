@@ -1979,6 +1979,7 @@ Notes:
     /// Compare the semantic fidelity of two Google Docs
     #[command(after_long_help = "Notes:
   Compares component inventory, named and page styles, and mapped content properties.
+  Mismatches include up to 20 JSON Pointer paths with source and target values.
   Google-assigned object, heading, segment, and list IDs are ignored.
   A matching result still requires page-level visual inspection for final acceptance.
   Both document arguments accept a bare Document ID or a full Google Docs or Drive URL.")]

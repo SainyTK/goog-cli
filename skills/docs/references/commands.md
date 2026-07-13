@@ -73,7 +73,8 @@ It removes Google-assigned object, heading, segment, and list IDs before compari
 An overall match proves semantic structural equivalence across all three scopes.
 It does not replace page-level visual inspection.
 
-When the command reports a difference, use the manual map comparisons below to isolate the affected properties.
+When the command reports a difference, it includes up to 20 JSON Pointer paths per scope with concise source and target values.
+Use the manual map comparisons below when those paths need more context.
 Generate the same compact inventory for each document:
 
 ```bash

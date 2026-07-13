@@ -3734,7 +3734,20 @@ struct DocumentComparisonScope {
     source_inventory: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     target_inventory: Option<serde_json::Value>,
+    difference_count: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    differences: Vec<DocumentComparisonDifference>,
 }
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct DocumentComparisonDifference {
+    pub(super) path: String,
+    pub(super) source: String,
+    pub(super) target: String,
+}
+
+const COMPARISON_DIFFERENCE_LIMIT: usize = 20;
 
 fn write_document_comparison(
     out: &mut impl Write,
@@ -3791,6 +3804,22 @@ fn write_document_comparison(
             scope.target_fingerprint
         )
         .context("failed to write Docs comparison row")?;
+        for difference in &scope.differences {
+            writeln!(
+                out,
+                "  {}: source={}, target={}",
+                difference.path, difference.source, difference.target
+            )
+            .context("failed to write Docs comparison difference")?;
+        }
+        if scope.difference_count > scope.differences.len() {
+            writeln!(
+                out,
+                "  ... {} more differences",
+                scope.difference_count - scope.differences.len()
+            )
+            .context("failed to write Docs comparison difference count")?;
+        }
     }
     writeln!(
         out,
@@ -3808,6 +3837,9 @@ fn comparison_scope(
     include_inventory: bool,
 ) -> Result<DocumentComparisonScope> {
     let matches = source == target;
+    let mut differences = Vec::new();
+    let difference_count =
+        collect_json_differences("", Some(&source), Some(&target), &mut differences);
     Ok(DocumentComparisonScope {
         scope,
         matches,
@@ -3815,7 +3847,74 @@ fn comparison_scope(
         target_fingerprint: json_fingerprint(&target)?,
         source_inventory: include_inventory.then_some(source),
         target_inventory: include_inventory.then_some(target),
+        difference_count,
+        differences,
     })
+}
+
+pub(super) fn collect_json_differences(
+    path: &str,
+    source: Option<&serde_json::Value>,
+    target: Option<&serde_json::Value>,
+    differences: &mut Vec<DocumentComparisonDifference>,
+) -> usize {
+    match (source, target) {
+        (Some(serde_json::Value::Object(source)), Some(serde_json::Value::Object(target))) => {
+            let keys = source
+                .keys()
+                .chain(target.keys())
+                .collect::<std::collections::BTreeSet<_>>();
+            keys.into_iter()
+                .map(|key| {
+                    collect_json_differences(
+                        &format!("{}/{}", path, escape_json_pointer_token(key)),
+                        source.get(key),
+                        target.get(key),
+                        differences,
+                    )
+                })
+                .sum()
+        }
+        (Some(serde_json::Value::Array(source)), Some(serde_json::Value::Array(target))) => (0
+            ..source.len().max(target.len()))
+            .map(|index| {
+                collect_json_differences(
+                    &format!("{path}/{index}"),
+                    source.get(index),
+                    target.get(index),
+                    differences,
+                )
+            })
+            .sum(),
+        (source, target) if source == target => 0,
+        (source, target) => {
+            if differences.len() < COMPARISON_DIFFERENCE_LIMIT {
+                differences.push(DocumentComparisonDifference {
+                    path: if path.is_empty() {
+                        "/".to_owned()
+                    } else {
+                        path.to_owned()
+                    },
+                    source: summarize_json_value(source),
+                    target: summarize_json_value(target),
+                });
+            }
+            1
+        }
+    }
+}
+
+fn escape_json_pointer_token(token: &str) -> String {
+    token.replace('~', "~0").replace('/', "~1")
+}
+
+fn summarize_json_value(value: Option<&serde_json::Value>) -> String {
+    match value {
+        None => "<missing>".to_owned(),
+        Some(serde_json::Value::Array(values)) => format!("<array: {} items>", values.len()),
+        Some(serde_json::Value::Object(values)) => format!("<object: {} fields>", values.len()),
+        Some(value) => value.to_string(),
+    }
 }
 
 fn document_inventory(document_map: &DocumentMap) -> serde_json::Value {

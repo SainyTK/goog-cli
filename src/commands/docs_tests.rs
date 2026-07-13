@@ -370,6 +370,11 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
         .unwrap()
         .iter()
         .all(|scope| scope["matches"] == true));
+    assert!(output["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|scope| scope["differenceCount"] == 0));
 }
 
 #[tokio::test]
@@ -414,7 +419,37 @@ async fn run_compare_reports_content_difference() {
     assert!(output.contains("inventory        yes"));
     assert!(output.contains("visual-system    yes"));
     assert!(output.contains("content          no"));
+    assert!(
+        output.contains("/entries/0/preview: source=\"Project Plan\", target=\"Changed title\"")
+    );
     assert!(output.contains("Overall: different"));
+}
+
+#[test]
+fn comparison_differences_report_paths_missing_values_and_a_bounded_preview() {
+    let source = serde_json::json!({
+        "a/b": [0, 1, 2],
+        "removed": true,
+        "same": "value",
+    });
+    let target = serde_json::json!({
+        "a/b": [10, 11],
+        "added": false,
+        "same": "value",
+    });
+    let mut differences = Vec::new();
+
+    let count = collect_json_differences("", Some(&source), Some(&target), &mut differences);
+
+    assert_eq!(count, 5);
+    assert_eq!(differences.len(), 5);
+    assert_eq!(differences[0].path, "/a~1b/0");
+    assert_eq!(differences[0].source, "0");
+    assert_eq!(differences[0].target, "10");
+    assert_eq!(differences[2].path, "/a~1b/2");
+    assert_eq!(differences[2].target, "<missing>");
+    assert_eq!(differences[3].path, "/added");
+    assert_eq!(differences[3].source, "<missing>");
 }
 
 #[tokio::test]
