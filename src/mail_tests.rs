@@ -73,6 +73,14 @@ fn download_attachment_options(
         .with_messages_url(messages_url(server))
 }
 
+fn single_attachment_download_options(
+    server: &MockServer,
+    message_id: &str,
+) -> DownloadAttachmentOptions {
+    DownloadAttachmentOptions::without_attachment_id(message_id)
+        .with_messages_url(messages_url(server))
+}
+
 #[test]
 fn parse_message_reference_passes_through_bare_message_id() {
     assert_eq!(
@@ -603,6 +611,85 @@ async fn download_attachment_uses_content_disposition_filename_when_part_filenam
 }
 
 #[tokio::test]
+async fn download_attachment_selects_the_only_attachment_when_id_is_omitted() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "report.txt",
+                        "body": { "attachmentId": "only-attachment" }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(attachment_path("message-1", "only-attachment")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": "cmVwb3J0"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = single_attachment_download_options(&server, "message-1");
+
+    let downloaded = download_attachment(&client, &options).await.unwrap();
+
+    assert_eq!(
+        downloaded.path.canonicalize().unwrap(),
+        temp.path().join("report.txt").canonicalize().unwrap()
+    );
+    assert_eq!(std::fs::read(downloaded.path).unwrap(), b"report");
+}
+
+#[tokio::test]
+async fn download_attachment_rejects_missing_id_when_message_has_multiple_attachments() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "first.txt",
+                        "body": { "attachmentId": "attachment-1" }
+                    },
+                    {
+                        "filename": "second.txt",
+                        "body": { "attachmentId": "attachment-2" }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = single_attachment_download_options(&server, "message-1");
+
+    let err = download_attachment(&client, &options).await.unwrap_err();
+
+    match err {
+        MailError::InvalidInput(message) => {
+            assert!(message.contains("does not have exactly one attachment"));
+        }
+        _ => panic!("unexpected error: {err}"),
+    }
+}
+
+#[tokio::test]
 async fn download_attachment_uses_single_attachment_filename_when_refetched_attachment_id_differs()
 {
     let server = MockServer::start().await;
@@ -853,7 +940,7 @@ async fn download_attachment_returns_api_error_with_response_body() {
 }
 
 #[tokio::test]
-async fn get_message_fetches_raw_googlemail_message() {
+async fn get_message_fetches_raw_gmail_message() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages/message-123"))

@@ -9,7 +9,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::cli::{DocsListType, DocsSectionBreakType};
+use crate::cli::{DocsListType, DocsMapType, DocsSectionBreakType};
 use crate::docs::change::{
     ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
     CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
@@ -293,6 +293,7 @@ async fn run_map_prints_human_document_map_for_manual_page_breaks() {
     run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::All,
         false,
         &mut out,
         Some(&documents_url),
@@ -331,6 +332,7 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
     run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::All,
         true,
         &mut out,
         Some(&documents_url),
@@ -382,6 +384,7 @@ async fn run_map_json_emits_each_inline_image_in_a_paragraph() {
     run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::All,
         true,
         &mut out,
         Some(&documents_url),
@@ -546,6 +549,18 @@ fn get_content_selector_rejects_mixed_or_partial_selectors() {
         content_selector(None, None, None, Some(1), None),
         "--page and --line must be provided together",
         "line selectors require a matching page",
+    );
+}
+
+#[test]
+fn insert_text_selector_accepts_at_selector() {
+    let selector = insert_text_selector("page:2,line:5".into()).unwrap();
+    assert_eq!(selector, InsertTextSelector::PageLine { page: 2, line: 5 });
+
+    let selector = insert_text_selector("before-text:\"quarterly plan\"".into()).unwrap();
+    assert_eq!(
+        selector,
+        InsertTextSelector::BeforeText("quarterly plan".into())
     );
 }
 
@@ -1085,7 +1100,7 @@ async fn run_replace_text_rejects_ambiguous_match_with_candidates() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("ambiguous replace-text match"));
+    assert!(message.contains("ambiguous text replace match"));
     assert!(message.contains("match 1 index 9"));
     assert!(message.contains("match 2 index 49"));
     assert!(out.is_empty());
@@ -1096,7 +1111,7 @@ async fn run_replace_text_rejects_ambiguous_match_with_candidates() {
 }
 
 #[tokio::test]
-async fn run_list_images_and_tables_emit_document_map_metadata() {
+async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/docs/v1/documents/document-123"))
@@ -1112,9 +1127,10 @@ async fn run_list_images_and_tables_emit_document_map_metadata() {
     let documents_url = format!("{}/docs/v1/documents", server.uri());
 
     let mut images = Vec::new();
-    run_list_images_to(
+    run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::Images,
         true,
         &mut images,
         Some(&documents_url),
@@ -1145,9 +1161,10 @@ async fn run_list_images_and_tables_emit_document_map_metadata() {
     );
 
     let mut human_images = Vec::new();
-    run_list_images_to(
+    run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::Images,
         false,
         &mut human_images,
         Some(&documents_url),
@@ -1162,9 +1179,10 @@ async fn run_list_images_and_tables_emit_document_map_metadata() {
     assert!(human_images.contains("positioned-image-1"));
 
     let mut tables = Vec::new();
-    run_list_tables_to(
+    run_map_to(
         &client,
         "document-123".into(),
+        DocsMapType::Tables,
         true,
         &mut tables,
         Some(&documents_url),
@@ -1520,7 +1538,7 @@ async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
     );
     assert_eq!(
         output["requestBody"]["requests"][1]["insertText"]["location"]["index"],
-        59
+        63
     );
     assert_eq!(
         output["requestBody"]["requests"][1]["insertText"]["text"],
@@ -1625,7 +1643,7 @@ async fn run_insert_image_dry_run_human_shows_placeholder_in_context() {
     .unwrap();
 
     let output = String::from_utf8(out).unwrap();
-    assert!(output.contains("insert-image: Insert inline image at index 37"));
+    assert!(output.contains("image insert: Insert inline image at index 37"));
     assert!(output.contains("Before: Second Page Plan"));
     assert!(output.contains("After: [inline image]Second Page Plan"));
 
@@ -1723,7 +1741,7 @@ async fn run_edit_table_rejects_dimension_changes_without_supported_resize() {
     .await;
 
     let message = format!("{:#}", mismatch.unwrap_err());
-    assert!(message.contains("edit-table data dimensions are 1x2"));
+    assert!(message.contains("table edit data dimensions are 1x2"));
     assert!(message.contains("table-1 is 2x2"));
     assert!(message.contains("pass --resize"));
 
@@ -1744,7 +1762,7 @@ async fn run_edit_table_rejects_dimension_changes_without_supported_resize() {
     .await;
 
     let message = format!("{:#}", resize.unwrap_err());
-    assert!(message.contains("edit-table --resize is not supported yet"));
+    assert!(message.contains("table edit --resize is not supported yet"));
 }
 
 #[tokio::test]
@@ -2087,7 +2105,7 @@ async fn run_apply_list_targets_whole_blocks_and_rejects_ambiguous_text_ranges()
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("ambiguous replace-text match"));
+    assert!(message.contains("ambiguous text replace match"));
     assert!(message.contains("index 9"));
     assert!(message.contains("index 49"));
 }
@@ -2888,6 +2906,7 @@ async fn run_map_unified_falls_back_and_maps_successful_account() {
         &store,
         None,
         "document-123".into(),
+        DocsMapType::All,
         false,
         &mut out,
         Some(&documents_url),
@@ -3038,6 +3057,7 @@ async fn high_level_docs_unified_commands_do_not_fallback_for_explicit_account()
         &store,
         Some("alice@example.com"),
         "map-document".into(),
+        DocsMapType::All,
         false,
         &mut Vec::new(),
         Some(&documents_url),
@@ -3071,7 +3091,7 @@ async fn high_level_docs_unified_commands_do_not_fallback_for_explicit_account()
 
     for result in [map, search, content] {
         let message = format!("{:#}", result.unwrap_err());
-        assert!(message.contains("failed to fetch Google Docs Document"));
+        assert!(message.contains("failed to read Google Docs Document"));
         assert!(message.contains("Google Docs Document was not found"));
     }
     assert!(load_runtime_state_from_path(&state_path)
@@ -3188,7 +3208,7 @@ async fn run_get_unified_does_not_fallback_for_explicit_account_but_maps_success
     .await;
 
     let message = format!("{:#}", denied.unwrap_err());
-    assert!(message.contains("failed to fetch Google Docs Document"));
+    assert!(message.contains("failed to read Google Docs Document"));
     assert!(message.contains("Google Docs Document was not found"));
     assert!(denied_out.is_empty());
 
@@ -3249,7 +3269,7 @@ async fn run_get_unified_does_not_fallback_on_non_target_api_error() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("failed to fetch Google Docs Document"));
+    assert!(message.contains("failed to read Google Docs Document"));
     assert!(message.contains("Google Docs API error (500 Internal Server Error): server broke"));
     assert!(out.is_empty());
     assert!(load_runtime_state_from_path(&state_path)
@@ -3402,7 +3422,7 @@ async fn run_get_returns_clear_error_for_not_found_response() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("failed to fetch Google Docs Document"));
+    assert!(message.contains("failed to read Google Docs Document"));
     assert!(message.contains("Google Docs Document was not found"));
     assert!(out.is_empty());
 }

@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -8,7 +8,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{MailAttachmentCommand, MailCommand, MailDraftCommand};
+use crate::cli::MailCommand;
 use crate::mail::{
     create_draft, decode_base64url, download_attachment, get_message, list_messages,
     parse_message_reference, resolve_message_reference, update_draft, CreateDraftOptions,
@@ -29,23 +29,11 @@ pub fn run<S: AccountStore>(
     quiet: bool,
 ) -> Result<()> {
     match cmd {
-        MailCommand::List { limit, json } => {
+        MailCommand::List { query, limit, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             runtime.block_on(run_list_to(
-                &client,
-                limit,
-                json,
-                &mut std::io::stdout(),
-                None,
-            ))
-        }
-        MailCommand::Search { query, limit, json } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            let client = AuthClient::from_config(config.clone(), store, account_override)?;
-            runtime.block_on(run_search_to(
                 &client,
                 query,
                 limit,
@@ -68,91 +56,66 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        MailCommand::Attachment { command } => match command {
-            MailAttachmentCommand::Download {
+        MailCommand::Download {
+            message_id,
+            attachment_id,
+            output,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_attachment_download_unified_to(
+                config,
+                store,
+                account_override,
                 message_id,
                 attachment_id,
-                output,
-            } => {
-                let runtime =
-                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                runtime.block_on(run_attachment_download_unified_to(
-                    config,
-                    store,
-                    account_override,
-                    message_id,
-                    attachment_id,
-                    output.map(PathBuf::from),
-                    quiet,
-                    None,
-                    None,
-                ))
-            }
-        },
-        MailCommand::Draft { command } => match command {
-            MailDraftCommand::Create {
+                output.map(PathBuf::from),
+                quiet,
+                None,
+                None,
+            ))
+        }
+        MailCommand::Draft {
+            draft_id,
+            to,
+            cc,
+            bcc,
+            subject,
+            body,
+            attachment,
+            json,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            let body = resolve_draft_body(body)?;
+            let attachments = resolve_draft_attachments(attachment)?;
+            let input = CreateDraftInput {
                 to,
                 cc,
                 bcc,
                 subject,
                 body,
-                body_file,
-                attachment,
-                json,
-            } => {
-                let runtime =
-                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                let client = AuthClient::from_config(config.clone(), store, account_override)?;
-                let body = resolve_draft_body(body, body_file)?;
-                let attachments = resolve_draft_attachments(attachment)?;
-                runtime.block_on(run_draft_create_to(
-                    &client,
-                    CreateDraftInput {
-                        to,
-                        cc,
-                        bcc,
-                        subject,
-                        body,
-                        attachments,
-                    },
-                    json,
-                    &mut std::io::stdout(),
-                    None,
-                ))
-            }
-            MailDraftCommand::Edit {
-                draft_id,
-                to,
-                cc,
-                bcc,
-                subject,
-                body,
-                body_file,
-                attachment,
-                json,
-            } => {
-                let runtime =
-                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                let client = AuthClient::from_config(config.clone(), store, account_override)?;
-                let body = resolve_draft_body(body, body_file)?;
-                let attachments = resolve_draft_attachments(attachment)?;
-                runtime.block_on(run_draft_edit_to(
+                attachments,
+            };
+            match draft_id {
+                Some(draft_id) => runtime.block_on(run_draft_edit_to(
                     &client,
                     draft_id,
-                    CreateDraftInput {
-                        to,
-                        cc,
-                        bcc,
-                        subject,
-                        body,
-                        attachments,
-                    },
+                    input,
                     json,
                     &mut std::io::stdout(),
                     None,
-                ))
+                )),
+                None => runtime.block_on(run_draft_create_to(
+                    &client,
+                    input,
+                    json,
+                    &mut std::io::stdout(),
+                    None,
+                )),
             }
-        },
+        }
     }
 }
 
@@ -175,39 +138,25 @@ pub(super) struct DraftAttachmentInput {
 
 pub(super) async fn run_list_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
+    query: Option<String>,
     limit: Option<u32>,
     json: bool,
     out: &mut impl Write,
     messages_url: Option<&str>,
 ) -> Result<()> {
-    let options = list_options(limit, messages_url);
+    let is_search = query.is_some();
+    let options = list_options(query, limit, messages_url);
     run_summary_to(
         client,
         &options,
         json,
         out,
-        "failed to list GoogleMail Messages",
-        None,
-    )
-    .await
-}
-
-pub(super) async fn run_search_to<S: AccountStore>(
-    client: &AuthClient<'_, S>,
-    query: String,
-    limit: Option<u32>,
-    json: bool,
-    out: &mut impl Write,
-    messages_url: Option<&str>,
-) -> Result<()> {
-    let options = search_options(query, limit, messages_url);
-    run_summary_to(
-        client,
-        &options,
-        json,
-        out,
-        "failed to search GoogleMail Messages",
-        Some(SEARCH_EMPTY_TABLE_MESSAGE),
+        if is_search {
+            "failed to search Gmail messages"
+        } else {
+            "failed to list Gmail messages"
+        },
+        is_search.then_some(SEARCH_EMPTY_TABLE_MESSAGE),
     )
     .await
 }
@@ -222,7 +171,7 @@ pub(super) async fn run_draft_create_to<S: AccountStore>(
     let options = create_draft_options(input, drafts_url);
     let draft = create_draft(client, &options)
         .await
-        .context("failed to create GoogleMail Draft")?;
+        .context("failed to create Gmail draft")?;
     write_draft(&draft, json, out)
 }
 
@@ -237,7 +186,7 @@ pub(super) async fn run_draft_edit_to<S: AccountStore>(
     let options = update_draft_options(draft_id, input, drafts_url);
     let draft = update_draft(client, &options)
         .await
-        .context("failed to edit GoogleMail Draft")?;
+        .context("failed to edit Gmail draft")?;
     write_draft(&draft, json, out)
 }
 
@@ -266,12 +215,12 @@ pub(super) async fn run_read_to<S: AccountStore>(
     let reference = parse_message_reference(&message_id);
     let message_id = resolve_message_reference(client, &reference, messages_url)
         .await
-        .context("failed to resolve GoogleMail Message reference")?;
+        .context("failed to resolve Gmail message reference")?;
     let options = get_message_options(message_id, messages_url);
 
     let message = get_message(client, &options)
         .await
-        .context("failed to fetch GoogleMail Message")?;
+        .context("failed to read Gmail message")?;
     write_message(&message, json, out)
 }
 
@@ -301,7 +250,7 @@ pub(super) async fn run_read_unified_to<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to fetch GoogleMail Message")?;
+    .context("failed to read Gmail message")?;
     let MailAccessResult::Message(message) = result else {
         unreachable!("read access returns a message")
     };
@@ -321,11 +270,12 @@ pub(super) async fn run_attachment_download_to<S: AccountStore>(
     let reference = parse_message_reference(&message_id);
     let message_id = resolve_message_reference(client, &reference, messages_url)
         .await
-        .context("failed to resolve GoogleMail Message reference")?;
-    let options = attachment_download_options(message_id, attachment_id, output, messages_url);
+        .context("failed to resolve Gmail message reference")?;
+    let options =
+        attachment_download_options(message_id, Some(attachment_id), output, messages_url);
     let downloaded = download_attachment(client, &options)
         .await
-        .context("failed to download GoogleMail Attachment")?;
+        .context("failed to download Gmail attachment")?;
 
     write_download_notice(&downloaded, quiet);
 
@@ -338,7 +288,7 @@ pub(super) async fn run_attachment_download_unified_to<S: AccountStore>(
     store: &S,
     account_override: Option<&str>,
     message_id: String,
-    attachment_id: String,
+    attachment_id: Option<String>,
     output: Option<PathBuf>,
     quiet: bool,
     messages_url: Option<&str>,
@@ -360,7 +310,7 @@ pub(super) async fn run_attachment_download_unified_to<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to download GoogleMail Attachment")?;
+    .context("failed to download Gmail attachment")?;
     let MailAccessResult::Downloaded(downloaded) = result else {
         unreachable!("attachment download access returns a download result")
     };
@@ -406,7 +356,7 @@ enum MailAccessAttempt<'a> {
     },
     DownloadAttachment {
         reference: MessageReference,
-        attachment_id: String,
+        attachment_id: Option<String>,
         output: Option<PathBuf>,
         messages_url: Option<&'a str>,
     },
@@ -489,20 +439,16 @@ fn is_target_access_failure(err: &MailError) -> bool {
     matches!(err, MailError::NotFound | MailError::PermissionDenied)
 }
 
-fn list_options(limit: Option<u32>, messages_url: Option<&str>) -> ListMessagesOptions {
-    let mut options = ListMessagesOptions::inbox(limit.unwrap_or(DEFAULT_LIST_LIMIT));
-    if let Some(messages_url) = messages_url {
-        options = options.with_messages_url(messages_url);
-    }
-    options
-}
-
-fn search_options(
-    query: String,
+fn list_options(
+    query: Option<String>,
     limit: Option<u32>,
     messages_url: Option<&str>,
 ) -> ListMessagesOptions {
-    let mut options = ListMessagesOptions::search(query, limit.unwrap_or(DEFAULT_LIST_LIMIT));
+    let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT);
+    let mut options = match query {
+        Some(query) => ListMessagesOptions::search(query, limit),
+        None => ListMessagesOptions::inbox(limit),
+    };
     if let Some(messages_url) = messages_url {
         options = options.with_messages_url(messages_url);
     }
@@ -511,11 +457,14 @@ fn search_options(
 
 fn attachment_download_options(
     message_id: String,
-    attachment_id: String,
+    attachment_id: Option<String>,
     output: Option<PathBuf>,
     messages_url: Option<&str>,
 ) -> DownloadAttachmentOptions {
-    let mut options = DownloadAttachmentOptions::new(message_id, attachment_id);
+    let mut options = match attachment_id {
+        Some(attachment_id) => DownloadAttachmentOptions::new(message_id, attachment_id),
+        None => DownloadAttachmentOptions::without_attachment_id(message_id),
+    };
     if let Some(output) = output {
         options = options.with_output(output);
     }
@@ -583,14 +532,32 @@ fn get_message_options(message_id: String, messages_url: Option<&str>) -> GetMes
     options
 }
 
-fn resolve_draft_body(body: Option<String>, body_file: Option<String>) -> Result<String> {
-    match (body, body_file) {
-        (Some(body), None) => Ok(body),
-        (None, Some(path)) => std::fs::read_to_string(&path)
-            .with_context(|| format!("failed to read GoogleMail Draft body file: {path}")),
-        (None, None) => Ok(String::new()),
-        (Some(_), Some(_)) => unreachable!("clap prevents --body and --body-file together"),
+fn resolve_draft_body(body: Option<String>) -> Result<String> {
+    resolve_draft_body_from_reader(body, &mut std::io::stdin())
+}
+
+pub(super) fn resolve_draft_body_from_reader(
+    body: Option<String>,
+    stdin: &mut impl Read,
+) -> Result<String> {
+    let Some(body) = body else {
+        return Ok(String::new());
+    };
+
+    if body == "-" {
+        let mut stdin_body = String::new();
+        stdin
+            .read_to_string(&mut stdin_body)
+            .context("failed to read Gmail draft body from stdin")?;
+        return Ok(stdin_body);
     }
+
+    if let Some(path) = body.strip_prefix('@') {
+        return std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read Gmail draft body file: {path}"));
+    }
+
+    Ok(body)
 }
 
 pub(super) fn resolve_draft_attachments(paths: Vec<String>) -> Result<Vec<DraftAttachmentInput>> {
@@ -598,13 +565,13 @@ pub(super) fn resolve_draft_attachments(paths: Vec<String>) -> Result<Vec<DraftA
         .into_iter()
         .map(|path| {
             let data = std::fs::read(&path)
-                .with_context(|| format!("failed to read GoogleMail Draft Attachment: {path}"))?;
+                .with_context(|| format!("failed to read Gmail draft attachment: {path}"))?;
             let path = PathBuf::from(path);
             let filename = path
                 .file_name()
                 .and_then(std::ffi::OsStr::to_str)
                 .filter(|filename| !filename.is_empty())
-                .context("GoogleMail Draft Attachment path has no filename")?
+                .context("Gmail draft attachment path has no filename")?
                 .to_string();
             Ok(DraftAttachmentInput {
                 content_type: content_type_for_path(&path),
@@ -660,7 +627,7 @@ fn write_summaries(
 
 fn write_draft(draft: &serde_json::Value, json: bool, out: &mut impl Write) -> Result<()> {
     if json {
-        return write_json_line(out, draft, "failed to serialize GoogleMail Draft");
+        return write_json_line(out, draft, "failed to serialize Gmail draft");
     }
 
     writeln!(out, "{DRAFT_TABLE_HEADER}").context("failed to write output")?;
@@ -688,7 +655,7 @@ fn write_draft(draft: &serde_json::Value, json: bool, out: &mut impl Write) -> R
 fn write_summary_ndjson(summaries: &[MessageSummary], out: &mut impl Write) -> Result<()> {
     for summary in summaries {
         serde_json::to_writer(&mut *out, summary)
-            .context("failed to serialize GoogleMail Message Summary")?;
+            .context("failed to serialize Gmail message summary")?;
         writeln!(out).context("failed to write output")?;
     }
     Ok(())
@@ -715,7 +682,7 @@ fn write_json_line(out: &mut impl Write, value: &serde_json::Value, context: &st
 
 fn write_message(message: &serde_json::Value, json: bool, out: &mut impl Write) -> Result<()> {
     if json {
-        write_json_line(out, message, "failed to serialize GoogleMail Message")
+        write_json_line(out, message, "failed to serialize Gmail message")
     } else {
         write_message_markdown(message, out)
     }
