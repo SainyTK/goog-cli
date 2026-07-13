@@ -2261,7 +2261,7 @@ pub enum DocsStyleCommand {
         #[arg(long)]
         required_revision_id: Option<String>,
     },
-    /// Copy page layout and header/footer behavior from one Google Doc to another
+    /// Copy page mode, layout, and header/footer behavior from one Google Doc to another
     CopyPage {
         /// Source Document ID or URL whose page layout should be copied
         source_document_id: String,

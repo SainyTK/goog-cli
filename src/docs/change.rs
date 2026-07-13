@@ -1571,6 +1571,7 @@ pub(crate) fn prepare_copy_page_style_change(
     let mut style = serde_json::Map::new();
     let mut fields = Vec::new();
     for field in [
+        "documentFormat",
         "pageSize",
         "marginTop",
         "marginBottom",
@@ -1587,7 +1588,7 @@ pub(crate) fn prepare_copy_page_style_change(
         }
     }
     if fields.is_empty() {
-        bail!("source document has no copyable page size or margins");
+        bail!("source document has no copyable page layout");
     }
     let mut update = serde_json::json!({
         "documentStyle": style,

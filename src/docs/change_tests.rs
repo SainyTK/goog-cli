@@ -701,6 +701,7 @@ fn copy_page_style_builds_tab_aware_document_style_request() {
     source_map.document_styles = vec![crate::docs::map::DocumentTabStyle {
         tab_id: Some("source-tab".into()),
         document_style: json!({
+            "documentFormat": { "documentMode": "PAGES" },
             "pageSize": {
                 "width": { "magnitude": 612, "unit": "PT" },
                 "height": { "magnitude": 792, "unit": "PT" }
@@ -735,7 +736,11 @@ fn copy_page_style_builds_tab_aware_document_style_request() {
     assert_eq!(update["tabId"], "target-tab");
     assert_eq!(
         update["fields"],
-        "pageSize,marginTop,marginBottom,marginLeft,marginRight,marginHeader,marginFooter,useFirstPageHeaderFooter,useEvenPageHeaderFooter"
+        "documentFormat,pageSize,marginTop,marginBottom,marginLeft,marginRight,marginHeader,marginFooter,useFirstPageHeaderFooter,useEvenPageHeaderFooter"
+    );
+    assert_eq!(
+        update["documentStyle"]["documentFormat"]["documentMode"],
+        "PAGES"
     );
     assert_eq!(
         update["documentStyle"]["pageSize"]["width"]["magnitude"],
