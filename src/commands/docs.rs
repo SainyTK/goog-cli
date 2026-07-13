@@ -21,15 +21,15 @@ use crate::docs::{
         prepare_insert_section_break_change, prepare_insert_table_change,
         prepare_insert_text_change, prepare_pin_table_header_rows_change,
         prepare_replace_text_change, prepare_set_table_column_widths_change,
-        prepare_style_table_row_change, request_body_required_revision_id,
-        request_body_with_revision, set_request_body_required_revision_id,
-        split_docs_request_bodies, table_header_style_requests, write_docs_change_preview,
-        ApplyListCommand, ApplyStylesCommand, ConfigurePageCommand, CreateFooterCommand,
-        CreateFootnoteCommand, CreateHeaderCommand, CreateNamedRangeCommand,
-        DeleteNamedRangeCommand, EditTableCommand, InsertImageCommand, InsertPageBreakCommand,
-        InsertSectionBreakCommand, InsertTableCommand, InsertTextCommand,
-        PinTableHeaderRowsCommand, PreparedDocsChange, ReplaceTextCommand,
-        SetTableColumnWidthsCommand, StyleTableRowCommand,
+        prepare_style_table_row_change, prepare_update_named_style_change,
+        request_body_required_revision_id, request_body_with_revision,
+        set_request_body_required_revision_id, split_docs_request_bodies,
+        table_header_style_requests, write_docs_change_preview, ApplyListCommand,
+        ApplyStylesCommand, ConfigurePageCommand, CreateFooterCommand, CreateFootnoteCommand,
+        CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
+        InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
+        InsertTextCommand, PinTableHeaderRowsCommand, PreparedDocsChange, ReplaceTextCommand,
+        SetTableColumnWidthsCommand, StyleTableRowCommand, UpdateNamedStyleCommand,
     },
     copy_document, create_document, extract_style_template, get_document,
     map::build_document_map,
@@ -671,6 +671,38 @@ pub fn run<S: AccountStore>(
                 },
                 &mut std::io::stdout(),
                 None,
+                None,
+                None,
+            ))
+        }
+        DocsCommand::Style {
+            command:
+                DocsStyleCommand::Named {
+                    document_id,
+                    named_style,
+                    style_json,
+                    tab_id,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_update_named_style_unified_to(
+                config,
+                store,
+                account_override,
+                UpdateNamedStyleCommand {
+                    document_id,
+                    named_style,
+                    style_json: *style_json,
+                    tab_id,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
                 None,
                 None,
             ))
@@ -2279,6 +2311,40 @@ pub(super) async fn run_configure_page_unified_to<S: AccountStore>(
     )
     .await?;
     let change = prepare_configure_page_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+pub(super) async fn run_update_named_style_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: UpdateNamedStyleCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_update_named_style_change(&document_map, &command)?;
     apply_or_preview_docs_change_unified(
         config,
         store,

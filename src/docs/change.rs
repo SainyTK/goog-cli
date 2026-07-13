@@ -190,6 +190,17 @@ pub(crate) struct ApplyStylesCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UpdateNamedStyleCommand {
+    pub document_id: String,
+    pub named_style: String,
+    pub style_json: String,
+    pub tab_id: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ApplyListCommand {
     pub document_id: String,
     pub selector: RangeSelector,
@@ -1185,6 +1196,98 @@ pub(crate) fn prepare_apply_styles_change(
                 "Apply styles to range {}..{}",
                 range.start_index, range.end_index
             ),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_update_named_style_change(
+    document_map: &DocumentMap,
+    command: &UpdateNamedStyleCommand,
+) -> Result<PreparedDocsChange> {
+    let named_style = command.named_style.trim();
+    const NAMED_STYLE_TYPES: [&str; 9] = [
+        "NORMAL_TEXT",
+        "TITLE",
+        "SUBTITLE",
+        "HEADING_1",
+        "HEADING_2",
+        "HEADING_3",
+        "HEADING_4",
+        "HEADING_5",
+        "HEADING_6",
+    ];
+    if !NAMED_STYLE_TYPES.contains(&named_style) {
+        bail!(
+            "named style must be one of NORMAL_TEXT, TITLE, SUBTITLE, or HEADING_1 through HEADING_6"
+        );
+    }
+    let tab_id = command.tab_id.as_deref().map(str::trim);
+    if tab_id.is_some_and(str::is_empty) {
+        bail!("--tab-id cannot be empty");
+    }
+
+    let style_value: serde_json::Value = serde_json::from_str(&command.style_json)
+        .context("failed to parse --style-json as Google Docs style JSON")?;
+    let has_style_container = style_value.as_object().is_some_and(|style| {
+        style.contains_key("textStyle") || style.contains_key("paragraphStyle")
+    });
+    if !has_style_container {
+        bail!("style named requires textStyle and/or paragraphStyle in --style-json");
+    }
+    let raw_payload = raw_style_payload(Some(&command.style_json))?;
+    if raw_payload
+        .paragraph_style
+        .as_ref()
+        .is_some_and(|style| style.contains_key("namedStyleType"))
+    {
+        bail!(
+            "paragraphStyle.namedStyleType cannot be updated; select the native style with the NAMED_STYLE argument"
+        );
+    }
+
+    let mut named_style_payload = serde_json::Map::new();
+    named_style_payload.insert(
+        "namedStyleType".into(),
+        serde_json::Value::String(named_style.into()),
+    );
+    let mut fields = vec!["namedStyleType".to_string()];
+    if let Some(text_style) = raw_payload.text_style {
+        fields.push("textStyle".into());
+        fields.extend(text_style.keys().map(|key| format!("textStyle.{key}")));
+        named_style_payload.insert("textStyle".into(), serde_json::Value::Object(text_style));
+    }
+    if let Some(paragraph_style) = raw_payload.paragraph_style {
+        fields.push("paragraphStyle".into());
+        fields.extend(
+            paragraph_style
+                .keys()
+                .map(|key| format!("paragraphStyle.{key}")),
+        );
+        named_style_payload.insert(
+            "paragraphStyle".into(),
+            serde_json::Value::Object(paragraph_style),
+        );
+    }
+
+    let mut update = serde_json::json!({
+        "namedStyle": serde_json::Value::Object(named_style_payload),
+        "fields": fields.join(",")
+    });
+    if let Some(tab_id) = tab_id {
+        update["tabId"] = serde_json::Value::String(tab_id.into());
+    }
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({ "updateNamedStyle": update })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "style named",
+            format!("Update native named style {named_style}"),
         ),
     }))
 }

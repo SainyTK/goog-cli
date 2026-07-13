@@ -1913,6 +1913,55 @@ fn docs_apply_styles_accepts_font_family() {
 }
 
 #[test]
+fn docs_named_style_accepts_native_style_payload_and_safety_options() {
+    let Command::Docs {
+        command:
+            DocsCommand::Style {
+                command:
+                    DocsStyleCommand::Named {
+                        document_id,
+                        named_style,
+                        style_json,
+                        tab_id,
+                        dry_run,
+                        json,
+                        required_revision_id,
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "style",
+        "named",
+        "https://docs.google.com/document/d/document-123/edit",
+        "HEADING_1",
+        "--style-json",
+        r#"{"textStyle":{"bold":true}}"#,
+        "--tab-id",
+        "t.0",
+        "--dry-run",
+        "--json",
+        "--required-revision-id",
+        "rev-123",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(
+        document_id,
+        "https://docs.google.com/document/d/document-123/edit"
+    );
+    assert_eq!(named_style, "HEADING_1");
+    assert_eq!(*style_json, r#"{"textStyle":{"bold":true}}"#);
+    assert_eq!(tab_id.as_deref(), Some("t.0"));
+    assert!(dry_run);
+    assert!(json);
+    assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
+}
+
+#[test]
 fn docs_apply_styles_accepts_underline() {
     let Command::Docs {
         command:

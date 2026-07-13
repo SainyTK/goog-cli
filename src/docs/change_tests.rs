@@ -5,11 +5,11 @@ use super::change::{
     prepare_edit_table_change, prepare_insert_image_change, prepare_insert_table_change,
     prepare_insert_text_change, prepare_pin_table_header_rows_change, prepare_replace_text_change,
     prepare_set_table_column_widths_change, prepare_style_table_row_change,
-    request_body_required_revision_id, set_request_body_required_revision_id,
-    split_docs_request_bodies, write_docs_change_preview, ApplyListCommand, ApplyStylesCommand,
-    ConfigurePageCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
-    InsertTextCommand, PinTableHeaderRowsCommand, ReplaceTextCommand, SetTableColumnWidthsCommand,
-    StyleTableRowCommand,
+    prepare_update_named_style_change, request_body_required_revision_id,
+    set_request_body_required_revision_id, split_docs_request_bodies, write_docs_change_preview,
+    ApplyListCommand, ApplyStylesCommand, ConfigurePageCommand, EditTableCommand,
+    InsertImageCommand, InsertTableCommand, InsertTextCommand, PinTableHeaderRowsCommand,
+    ReplaceTextCommand, SetTableColumnWidthsCommand, StyleTableRowCommand, UpdateNamedStyleCommand,
 };
 use super::map::{
     build_document_map, DocumentLocation, DocumentMap, DocumentMapEntry, DocumentMapEntryKind,
@@ -55,6 +55,94 @@ fn searchable_map() -> DocumentMap {
             ]
         }
     }))
+}
+
+#[test]
+fn update_named_style_builds_native_request_with_safety_controls() {
+    let document_map = searchable_map();
+    let change = prepare_update_named_style_change(
+        &document_map,
+        &UpdateNamedStyleCommand {
+            document_id: "document-123".into(),
+            named_style: "HEADING_1".into(),
+            style_json: json!({
+                "textStyle": {
+                    "fontSize": { "magnitude": 20, "unit": "PT" },
+                    "weightedFontFamily": { "fontFamily": "Bai Jamjuree" }
+                },
+                "paragraphStyle": {
+                    "keepWithNext": true,
+                    "spaceBelow": { "magnitude": 6, "unit": "PT" }
+                }
+            })
+            .to_string(),
+            tab_id: Some("t.0".into()),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-required".into()),
+        },
+    )
+    .unwrap();
+    let change = preview_json(&change);
+    let update = &change["requestBody"]["requests"][0]["updateNamedStyle"];
+    assert_eq!(update["namedStyle"]["namedStyleType"], "HEADING_1");
+    assert_eq!(
+        update["namedStyle"]["textStyle"]["weightedFontFamily"]["fontFamily"],
+        "Bai Jamjuree"
+    );
+    assert_eq!(update["namedStyle"]["paragraphStyle"]["keepWithNext"], true);
+    assert_eq!(update["tabId"], "t.0");
+    let fields = update["fields"].as_str().unwrap();
+    for expected in [
+        "namedStyleType",
+        "textStyle",
+        "textStyle.fontSize",
+        "textStyle.weightedFontFamily",
+        "paragraphStyle",
+        "paragraphStyle.keepWithNext",
+        "paragraphStyle.spaceBelow",
+    ] {
+        assert!(fields.split(',').any(|field| field == expected));
+    }
+    assert_eq!(
+        change["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-required"
+    );
+}
+
+#[test]
+fn update_named_style_rejects_invalid_inputs() {
+    let document_map = searchable_map();
+    let command = |named_style: &str, style_json: &str, tab_id: Option<&str>| {
+        prepare_update_named_style_change(
+            &document_map,
+            &UpdateNamedStyleCommand {
+                document_id: "document-123".into(),
+                named_style: named_style.into(),
+                style_json: style_json.into(),
+                tab_id: tab_id.map(str::to_string),
+                dry_run: true,
+                json: true,
+                required_revision_id: None,
+            },
+        )
+        .unwrap_err()
+        .to_string()
+    };
+
+    assert!(command("CUSTOM", r#"{"textStyle":{"bold":true}}"#, None)
+        .contains("named style must be one of"));
+    assert!(command("HEADING_1", "{}", None).contains("requires textStyle and/or paragraphStyle"));
+    assert!(
+        command("HEADING_1", r#"{"textStyle":{"bold":true}}"#, Some(" "))
+            .contains("--tab-id cannot be empty")
+    );
+    assert!(command(
+        "HEADING_1",
+        r#"{"paragraphStyle":{"namedStyleType":"HEADING_1"}}"#,
+        None
+    )
+    .contains("paragraphStyle.namedStyleType cannot be updated"));
 }
 
 fn preview_json(change: &super::change::PreparedDocsChange) -> serde_json::Value {

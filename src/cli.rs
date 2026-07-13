@@ -1868,6 +1868,7 @@ impl DocsCommand {
             },
             DocsCommand::Style { command } => match command {
                 DocsStyleCommand::Apply { document_id, .. }
+                | DocsStyleCommand::Named { document_id, .. }
                 | DocsStyleCommand::Page { document_id, .. }
                 | DocsStyleCommand::Template { document_id, .. } => document_id,
             },
@@ -2201,6 +2202,28 @@ pub enum DocsStyleCommand {
         /// Ignore the cached style template for this document
         #[arg(long)]
         no_cached_style: bool,
+    },
+    /// Update a native named style such as HEADING_1
+    Named {
+        /// Document ID or URL to update
+        document_id: String,
+        /// Native named style type such as NORMAL_TEXT, TITLE, or HEADING_1
+        named_style: String,
+        /// Google Docs style JSON with textStyle and/or paragraphStyle objects
+        #[arg(long)]
+        style_json: Box<String>,
+        /// Document tab containing the named style; defaults to the first tab
+        #[arg(long)]
+        tab_id: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
     },
     /// Configure page size and document margins in points
     Page {
