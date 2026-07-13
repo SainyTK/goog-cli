@@ -481,7 +481,7 @@ async fn get_document_converts_office_file_then_reads_temporary_document() {
         .and(path("/drive/v3/files/office-file-123/copy"))
         .and(query_param("fields", "id"))
         .and(query_param("supportsAllDrives", "true"))
-        .and(body_json(serde_json::json!({
+        .and(body_json(&serde_json::json!({
             "mimeType": "application/vnd.google-apps.document",
             "name": "goog temporary Docs conversion"
         })))

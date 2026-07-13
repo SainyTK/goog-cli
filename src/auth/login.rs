@@ -7,12 +7,10 @@ use url::Url;
 
 use super::account::Token;
 use super::error::AuthError;
-use crate::calendar::CALENDAR_SCOPE;
 use crate::docs::DOCS_SCOPE;
 use crate::drive::DRIVE_SCOPE;
 use crate::mail::GMAIL_SCOPE;
 use crate::sheets::SHEETS_SCOPE;
-use crate::slides::SLIDES_SCOPE;
 
 pub const DEFAULT_LOGIN_SCOPES: &[&str] = &[
     "openid",
@@ -21,8 +19,6 @@ pub const DEFAULT_LOGIN_SCOPES: &[&str] = &[
     DRIVE_SCOPE,
     DOCS_SCOPE,
     SHEETS_SCOPE,
-    SLIDES_SCOPE,
-    CALENDAR_SCOPE,
     GMAIL_SCOPE,
 ];
 
@@ -33,8 +29,6 @@ pub const DEFAULT_DEVICE_LOGIN_SCOPES: &[&str] = &[
     DRIVE_SCOPE,
     DOCS_SCOPE,
     SHEETS_SCOPE,
-    SLIDES_SCOPE,
-    CALENDAR_SCOPE,
     GMAIL_SCOPE,
 ];
 

@@ -23,7 +23,6 @@ const GOOGLE_SHEETS_MIME_TYPE: &str = "application/vnd.google-apps.spreadsheet";
 const TEMPORARY_CONVERSION_NAME: &str = "goog temporary Sheets conversion";
 
 pub type Spreadsheet = Value;
-pub type CreateSpreadsheetResponse = Value;
 pub type ValueRange = Value;
 pub type BatchGetValuesResponse = Value;
 pub type UpdateValuesResponse = Value;
@@ -43,30 +42,6 @@ pub enum SheetsOperation<'a> {
     ClearValues(&'a ClearValuesOptions),
     BatchClearValues(&'a BatchClearValuesOptions),
     BatchUpdateSpreadsheet(&'a BatchUpdateSpreadsheetOptions),
-}
-
-#[derive(Debug, Clone)]
-pub struct CreateSpreadsheetOptions {
-    pub title: String,
-    spreadsheets_url: String,
-}
-
-impl CreateSpreadsheetOptions {
-    pub fn new(title: impl Into<String>) -> Self {
-        Self {
-            title: title.into(),
-            spreadsheets_url: SHEETS_SPREADSHEETS_URL.to_string(),
-        }
-    }
-
-    pub(super) fn with_spreadsheets_url(mut self, spreadsheets_url: impl Into<String>) -> Self {
-        self.spreadsheets_url = spreadsheets_url.into();
-        self
-    }
-
-    fn request_url(&self) -> Result<Url, SheetsError> {
-        Ok(Url::parse(&self.spreadsheets_url)?)
-    }
 }
 
 impl SheetsOperation<'_> {
@@ -178,20 +153,6 @@ impl SheetsOperation<'_> {
             }
         }
     }
-}
-
-pub async fn create_spreadsheet<S: AccountStore>(
-    client: &AuthClient<'_, S>,
-    options: &CreateSpreadsheetOptions,
-) -> Result<CreateSpreadsheetResponse, SheetsError> {
-    send_json_request(
-        client,
-        client
-            .post(options.request_url()?)
-            .json(&serde_json::json!({ "properties": { "title": options.title } })),
-        SHEETS_SCOPES,
-    )
-    .await
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

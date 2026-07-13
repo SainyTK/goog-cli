@@ -4,9 +4,10 @@ use std::pin::Pin;
 
 use super::config::Config;
 use super::error::AuthError;
-#[cfg(not(test))]
-use super::state::{load_runtime_state, save_runtime_state};
-use super::state::{load_runtime_state_from_path, save_runtime_state_to_path, RuntimeState};
+use super::state::{
+    load_runtime_state, load_runtime_state_from_path, save_runtime_state,
+    save_runtime_state_to_path, RuntimeState,
+};
 
 pub type AccessFuture<'a, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + 'a>>;
 
@@ -23,11 +24,11 @@ impl UnifiedAccess {
     ) -> Result<Self, AuthError> {
         let state = match state_path {
             Some(path) => load_runtime_state_from_path(path),
-            None => load_default_runtime_state(),
-        };
+            None => load_runtime_state(),
+        }?;
 
         Ok(Self {
-            state: state?,
+            state,
             state_path: state_path.map(Path::to_path_buf),
             target_resource_key: target_resource_key.into(),
         })
@@ -42,7 +43,7 @@ impl UnifiedAccess {
             .set_resource_account(self.target_resource_key.clone(), account);
         match self.state_path.as_deref() {
             Some(path) => save_runtime_state_to_path(&self.state, path),
-            None => save_default_runtime_state(&self.state),
+            None => save_runtime_state(&self.state),
         }
     }
 
@@ -87,26 +88,6 @@ impl UnifiedAccess {
         Err(last_target_access_failure
             .unwrap_or_else(|| AuthError::ActiveAccountNotConfigured.into()))
     }
-}
-
-#[cfg(not(test))]
-fn load_default_runtime_state() -> Result<RuntimeState, AuthError> {
-    load_runtime_state()
-}
-
-#[cfg(test)]
-fn load_default_runtime_state() -> Result<RuntimeState, AuthError> {
-    Ok(RuntimeState::default())
-}
-
-#[cfg(not(test))]
-fn save_default_runtime_state(state: &RuntimeState) -> Result<(), AuthError> {
-    save_runtime_state(state)
-}
-
-#[cfg(test)]
-fn save_default_runtime_state(_state: &RuntimeState) -> Result<(), AuthError> {
-    Ok(())
 }
 
 pub fn unified_access_candidates(

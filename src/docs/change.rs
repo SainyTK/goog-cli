@@ -321,8 +321,8 @@ impl PreparedDocsChange {
 
     pub fn command_name(&self) -> &str {
         match self {
-            Self::InsertText(_) => "text insert",
-            Self::ReplaceText(_) => "text replace",
+            Self::InsertText(_) => "insert-text",
+            Self::ReplaceText(_) => "replace-text",
             Self::HighLevel(change) => change.preview.command.as_str(),
         }
     }
@@ -406,7 +406,7 @@ pub(crate) fn prepare_insert_image_change(
 ) -> Result<PreparedDocsChange> {
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
     let Some(index) = resolved.location.index else {
-        bail!("image insert selector resolved without a Google Docs index");
+        bail!("insert-image selector resolved without a Google Docs index");
     };
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
@@ -428,7 +428,7 @@ pub(crate) fn prepare_insert_image_change(
         range: None,
         request_body,
         preview: DocsChangePreview::with_context(
-            "image insert",
+            "insert-image",
             format!(
                 "Insert inline image at index {index} from {}",
                 command.image_uri
@@ -445,7 +445,7 @@ pub(crate) fn prepare_insert_page_break_change(
 ) -> Result<PreparedDocsChange> {
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
     let Some(index) = resolved.location.index else {
-        bail!("break page selector resolved without a Google Docs index");
+        bail!("insert-page-break selector resolved without a Google Docs index");
     };
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
@@ -466,7 +466,7 @@ pub(crate) fn prepare_insert_page_break_change(
         range: None,
         request_body,
         preview: DocsChangePreview::with_context(
-            "break page",
+            "insert-page-break",
             format!("Insert page break at index {index}"),
             resolved.preview_before,
             preview_after,
@@ -480,7 +480,7 @@ pub(crate) fn prepare_insert_section_break_change(
 ) -> Result<PreparedDocsChange> {
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
     let Some(index) = resolved.location.index else {
-        bail!("break section selector resolved without a Google Docs index");
+        bail!("insert-section-break selector resolved without a Google Docs index");
     };
     let section_type = command.section_type.api_value();
     let request_body = request_body_with_revision(
@@ -503,7 +503,7 @@ pub(crate) fn prepare_insert_section_break_change(
         range: None,
         request_body,
         preview: DocsChangePreview::with_context(
-            "break section",
+            "insert-section-break",
             format!("Insert {section_type} section break at index {index}"),
             resolved.preview_before,
             preview_after,
@@ -529,7 +529,7 @@ pub(crate) fn prepare_create_header_change(
         range: None,
         request_body,
         preview: DocsChangePreview::new(
-            "header create",
+            "create-header",
             "Create the document's DEFAULT header".to_string(),
         ),
     })
@@ -553,7 +553,7 @@ pub(crate) fn prepare_create_footer_change(
         range: None,
         request_body,
         preview: DocsChangePreview::new(
-            "footer create",
+            "create-footer",
             "Create the document's DEFAULT footer".to_string(),
         ),
     })
@@ -565,7 +565,7 @@ pub(crate) fn prepare_create_footnote_change(
 ) -> Result<PreparedDocsChange> {
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
     let Some(index) = resolved.location.index else {
-        bail!("footnote insert selector resolved without a Google Docs index");
+        bail!("create-footnote selector resolved without a Google Docs index");
     };
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
@@ -586,8 +586,8 @@ pub(crate) fn prepare_create_footnote_change(
         range: None,
         request_body,
         preview: DocsChangePreview::with_context(
-            "footnote insert",
-            format!("Insert footnote reference at index {index}"),
+            "create-footnote",
+            format!("Create footnote reference at index {index}"),
             resolved.preview_before,
             preview_after,
         ),
@@ -605,7 +605,7 @@ pub(crate) fn prepare_insert_table_change(
     let dimensions = insert_table_dimensions(command, data.as_ref())?;
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
     let Some(index) = resolved.location.index else {
-        bail!("table insert selector resolved without a Google Docs index");
+        bail!("insert-table selector resolved without a Google Docs index");
     };
     let mut requests = vec![serde_json::json!({
         "insertTable": {
@@ -637,7 +637,7 @@ pub(crate) fn prepare_insert_table_change(
         location: Some(resolved.location),
         range: None,
         request_body,
-        preview: DocsChangePreview::new("table insert", summary),
+        preview: DocsChangePreview::new("insert-table", summary),
     }))
 }
 
@@ -646,7 +646,7 @@ fn insert_table_dimensions(
     data: Option<&TableData>,
 ) -> Result<TableDimensions> {
     if data.is_some() && (command.rows.is_some() || command.columns.is_some()) {
-        bail!("table insert accepts either --data or --rows with --columns, not both");
+        bail!("insert-table accepts either --data or --rows with --columns, not both");
     }
     if let Some(data) = data {
         return Ok(data.dimensions());
@@ -660,17 +660,16 @@ fn explicit_table_dimensions(
     columns: Option<usize>,
 ) -> Result<TableDimensions> {
     let (Some(rows), Some(columns)) = (rows, columns) else {
-        bail!("table insert requires --data or --rows with --columns");
+        bail!("insert-table requires --data or --rows with --columns");
     };
     if rows == 0 || columns == 0 {
-        bail!("table insert requires --rows and --columns to be greater than zero");
+        bail!("insert-table requires --rows and --columns to be greater than zero");
     }
     Ok(TableDimensions { rows, columns })
 }
 
 fn insert_table_data_requests(table_index: i64, data: &TableData) -> Vec<serde_json::Value> {
     let mut requests = Vec::new();
-    let column_count = data.dimensions().columns;
     for (row_index, row) in data.rows().iter().enumerate().rev() {
         for (column_index, text) in row.iter().enumerate().rev() {
             if text.is_empty() {
@@ -682,8 +681,7 @@ fn insert_table_data_requests(table_index: i64, data: &TableData) -> Vec<serde_j
                         "index": inserted_table_cell_text_index(
                             table_index,
                             row_index,
-                            column_index,
-                            column_count
+                            column_index
                         )
                     },
                     "text": text
@@ -694,14 +692,8 @@ fn insert_table_data_requests(table_index: i64, data: &TableData) -> Vec<serde_j
     requests
 }
 
-fn inserted_table_cell_text_index(
-    table_index: i64,
-    row_index: usize,
-    column_index: usize,
-    column_count: usize,
-) -> i64 {
-    let row_stride = (column_count as i64 * 2) + 1;
-    table_index + 4 + (row_index as i64 * row_stride) + (column_index as i64 * 2)
+fn inserted_table_cell_text_index(table_index: i64, row_index: usize, column_index: usize) -> i64 {
+    table_index + 4 + (row_index as i64 * 5) + (column_index as i64 * 2)
 }
 
 pub(crate) fn prepare_edit_table_change(
@@ -717,7 +709,7 @@ pub(crate) fn prepare_edit_table_change(
     };
     if !command.resize && data_dimensions != table_dimensions {
         bail!(
-            "table edit data dimensions are {}x{} but {} is {}x{}; pass --resize when structural resizing is supported",
+            "edit-table data dimensions are {}x{} but {} is {}x{}; pass --resize when structural resizing is supported",
             data_dimensions.rows,
             data_dimensions.columns,
             command.table_id,
@@ -726,7 +718,7 @@ pub(crate) fn prepare_edit_table_change(
         );
     }
     if command.resize {
-        bail!("table edit --resize is not supported yet");
+        bail!("edit-table --resize is not supported yet");
     }
     if table.table_cells.len() != table_dimensions.rows
         || table
@@ -747,7 +739,7 @@ pub(crate) fn prepare_edit_table_change(
         range: None,
         request_body,
         preview: DocsChangePreview::new(
-            "table edit",
+            "edit-table",
             format!(
                 "Replace {} with {}x{} table data",
                 command.table_id, table_dimensions.rows, table_dimensions.columns
@@ -828,7 +820,7 @@ pub(crate) fn prepare_apply_styles_change(
         }));
     }
     if requests.is_empty() {
-        bail!("style apply requires at least one style flag");
+        bail!("apply-styles requires at least one style flag");
     }
     let request_body =
         request_body_with_revision(requests, command.required_revision_id.as_deref());
@@ -838,7 +830,7 @@ pub(crate) fn prepare_apply_styles_change(
         range: Some(range.clone()),
         request_body,
         preview: DocsChangePreview::new(
-            "style apply",
+            "apply-styles",
             format!(
                 "Apply styles to range {}..{}",
                 range.start_index, range.end_index
@@ -853,7 +845,7 @@ pub(crate) fn prepare_apply_list_change(
     style_template: Option<&StyleTemplate>,
 ) -> Result<PreparedDocsChange> {
     if command.list_type.is_some() && command.preset.is_some() {
-        bail!("list apply accepts either --type or --preset, not both");
+        bail!("apply-list accepts either --type or --preset, not both");
     }
     let preset = command
         .preset
@@ -865,7 +857,7 @@ pub(crate) fn prepare_apply_list_change(
                 .map(|list| list.preset.clone())
         })
         .context(
-            "list apply requires --type or --preset, and no cached style template was found for this document",
+            "apply-list requires --type or --preset, and no cached style template was found for this document",
         )?;
     let range = resolve_range_selector(document_map, &command.selector)?;
     let request_body = request_body_with_revision(
@@ -883,7 +875,7 @@ pub(crate) fn prepare_apply_list_change(
         range: Some(range.clone()),
         request_body,
         preview: DocsChangePreview::new(
-            "list apply",
+            "apply-list",
             format!(
                 "Apply list preset to range {}..{}",
                 range.start_index, range.end_index
@@ -912,7 +904,7 @@ pub(crate) fn prepare_create_named_range_change(
         range: Some(range.clone()),
         request_body,
         preview: DocsChangePreview::new(
-            "named-range create",
+            "create-named-range",
             format!(
                 "Create named range '{}' over {}..{}",
                 command.name, range.start_index, range.end_index
@@ -930,7 +922,7 @@ pub(crate) fn prepare_delete_named_range_change(
             serde_json::json!({ "namedRangeId": named_range_id })
         }
         (None, Some(name)) => serde_json::json!({ "name": name }),
-        _ => bail!("named-range delete requires exactly one of --named-range-id or --name"),
+        _ => bail!("delete-named-range requires exactly one of --named-range-id or --name"),
     };
     let request_body = request_body_with_revision(
         vec![serde_json::json!({ "deleteNamedRange": target })],
@@ -946,7 +938,7 @@ pub(crate) fn prepare_delete_named_range_change(
         location: None,
         range: None,
         request_body,
-        preview: DocsChangePreview::new("named-range delete", summary),
+        preview: DocsChangePreview::new("delete-named-range", summary),
     }))
 }
 
@@ -1299,7 +1291,7 @@ fn write_insert_text_dry_run(
     json: bool,
 ) -> Result<()> {
     if json {
-        write_json_line(out, dry_run, "failed to serialize Docs text insert dry run")
+        write_json_line(out, dry_run, "failed to serialize Docs insert-text dry run")
     } else {
         write_insert_text_preview(out, dry_run)
     }
@@ -1314,7 +1306,7 @@ fn write_replace_text_dry_run(
         write_json_line(
             out,
             dry_run,
-            "failed to serialize Docs text replace dry run",
+            "failed to serialize Docs replace-text dry run",
         )
     } else {
         write_replace_text_preview(out, dry_run)
@@ -1358,7 +1350,7 @@ pub(crate) fn split_docs_request_bodies(
     request_body: &serde_json::Value,
     command_name: &str,
 ) -> Vec<serde_json::Value> {
-    if command_name != "style apply" {
+    if command_name != "apply-styles" {
         return vec![request_body.clone()];
     }
 
@@ -1415,17 +1407,17 @@ fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -
         "Insert text at index {}",
         display_optional(dry_run.location.index)
     )
-    .context("failed to write Docs text insert preview header")?;
+    .context("failed to write Docs insert-text preview header")?;
     writeln!(out, "Before: {}", dry_run.preview.before)
-        .context("failed to write Docs text insert before preview")?;
+        .context("failed to write Docs insert-text before preview")?;
     writeln!(out, "After: {}", dry_run.preview.after)
-        .context("failed to write Docs text insert after preview")?;
+        .context("failed to write Docs insert-text after preview")?;
     Ok(())
 }
 
 fn write_replace_text_preview(out: &mut impl Write, dry_run: &ReplaceTextDryRun) -> Result<()> {
     writeln!(out, "Replace text in {} match(es)", dry_run.ranges.len())
-        .context("failed to write Docs text replace preview header")?;
+        .context("failed to write Docs replace-text preview header")?;
     for (index, change) in dry_run.preview.changes.iter().enumerate() {
         writeln!(
             out,
@@ -1433,11 +1425,11 @@ fn write_replace_text_preview(out: &mut impl Write, dry_run: &ReplaceTextDryRun)
             index + 1,
             change.range.start_index
         )
-        .context("failed to write Docs text replace match preview")?;
+        .context("failed to write Docs replace-text match preview")?;
         writeln!(out, "Before: {}", change.before)
-            .context("failed to write Docs text replace before preview")?;
+            .context("failed to write Docs replace-text before preview")?;
         writeln!(out, "After: {}", change.after)
-            .context("failed to write Docs text replace after preview")?;
+            .context("failed to write Docs replace-text after preview")?;
     }
     Ok(())
 }

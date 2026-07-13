@@ -6,11 +6,7 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{
-    DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand,
-    DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
-    DocsTextCommand,
-};
+use crate::cli::DocsCommand;
 use crate::docs::{
     batch_update_document,
     change::{
@@ -49,88 +45,33 @@ pub fn run<S: AccountStore>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
-    output_json_by_default: bool,
-    quiet: bool,
 ) -> Result<()> {
     cmd.normalize_document_id();
     match cmd {
-        DocsCommand::List {
-            limit,
-            all,
-            folder,
-            json,
-        } => {
-            let json = super::drive::should_emit_json(json, output_json_by_default);
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(super::drive::run_docs_list_command_to(
-                config,
-                store,
-                account_override,
-                limit,
-                all,
-                folder,
-                json,
-                quiet,
-                &mut std::io::stdout(),
-                &mut std::io::stderr(),
-                None,
-            ))
-        }
         DocsCommand::Create { title } => {
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_create_to(&client, title, &mut std::io::stdout(), None))
         }
-        DocsCommand::Map {
-            document_id,
-            type_,
-            index,
-            entry,
-            page,
-            line,
-            heading,
-            json,
-        } => {
+        DocsCommand::Map { document_id, json } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            if let Some(selector) = optional_content_selector(index, entry, page, line, heading)? {
-                if type_ != DocsMapType::All {
-                    bail!("--type cannot be combined with content selectors");
-                }
-                runtime.block_on(run_get_content_unified_to(
-                    config,
-                    store,
-                    account_override,
-                    document_id,
-                    selector,
-                    json,
-                    &mut std::io::stdout(),
-                    None,
-                    None,
-                ))
-            } else {
-                runtime.block_on(run_map_unified_to(
-                    config,
-                    store,
-                    account_override,
-                    document_id,
-                    type_,
-                    json,
-                    &mut std::io::stdout(),
-                    None,
-                    None,
-                ))
-            }
+            runtime.block_on(run_map_unified_to(
+                config,
+                store,
+                account_override,
+                document_id,
+                json,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
         }
-        DocsCommand::Text {
-            command:
-                DocsTextCommand::Search {
-                    document_id,
-                    text,
-                    json,
-                },
+        DocsCommand::SearchText {
+            document_id,
+            text,
+            json,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -146,18 +87,55 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Text {
-            command:
-                DocsTextCommand::Insert {
-                    document_id,
-                    text,
-                    at,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
+        DocsCommand::GetContent {
+            document_id,
+            index,
+            entry,
+            page,
+            line,
+            heading,
+            json,
         } => {
-            let selector = insert_text_selector(at)?;
+            let selector = content_selector(index, entry, page, line, heading)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_get_content_unified_to(
+                config,
+                store,
+                account_override,
+                document_id,
+                selector,
+                json,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::InsertText {
+            document_id,
+            text,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_text_unified_to(
@@ -177,18 +155,15 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Text {
-            command:
-                DocsTextCommand::Replace {
-                    document_id,
-                    old_text,
-                    new_text,
-                    match_number,
-                    all,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
+        DocsCommand::ReplaceText {
+            document_id,
+            old_text,
+            new_text,
+            match_number,
+            all,
+            dry_run,
+            json,
+            required_revision_id,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -211,18 +186,59 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Image {
-            command:
-                DocsImageCommand::Insert {
-                    document_id,
-                    image_uri,
-                    at,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
+        DocsCommand::ListImages { document_id, json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_list_images_unified_to(
+                config,
+                store,
+                account_override,
+                document_id,
+                json,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::ListTables { document_id, json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_list_tables_unified_to(
+                config,
+                store,
+                account_override,
+                document_id,
+                json,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::InsertImage {
+            document_id,
+            image_uri,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
         } => {
-            let selector = insert_text_selector(at)?;
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_image_unified_to(
@@ -242,17 +258,30 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Break {
-            command:
-                DocsBreakCommand::Page {
-                    document_id,
-                    at,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
+        DocsCommand::InsertPageBreak {
+            document_id,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
         } => {
-            let selector = insert_text_selector(at)?;
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_page_break_unified_to(
@@ -271,18 +300,31 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Break {
-            command:
-                DocsBreakCommand::Section {
-                    document_id,
-                    section_type,
-                    at,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
+        DocsCommand::InsertSectionBreak {
+            document_id,
+            section_type,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
         } => {
-            let selector = insert_text_selector(at)?;
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_section_break_unified_to(
@@ -302,14 +344,11 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Header {
-            command:
-                DocsHeaderCommand::Create {
-                    document_id,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
+        DocsCommand::CreateHeader {
+            document_id,
+            dry_run,
+            json,
+            required_revision_id,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -328,14 +367,11 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Footer {
-            command:
-                DocsFooterCommand::Create {
-                    document_id,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
+        DocsCommand::CreateFooter {
+            document_id,
+            dry_run,
+            json,
+            required_revision_id,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -354,17 +390,30 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Footnote {
-            command:
-                DocsFootnoteCommand::Insert {
-                    document_id,
-                    at,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
+        DocsCommand::CreateFootnote {
+            document_id,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
         } => {
-            let selector = insert_text_selector(at)?;
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_create_footnote_unified_to(
@@ -383,21 +432,34 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Table {
-            command:
-                DocsTableCommand::Insert {
-                    document_id,
-                    data,
-                    rows,
-                    columns,
-                    at,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                    no_auto_style,
-                },
+        DocsCommand::InsertTable {
+            document_id,
+            data,
+            rows,
+            columns,
+            index,
+            entry,
+            page,
+            line,
+            after_heading,
+            before_heading,
+            after_text,
+            before_text,
+            dry_run,
+            json,
+            required_revision_id,
+            no_auto_style,
         } => {
-            let selector = insert_text_selector(at)?;
+            let selector = insert_text_selector(
+                index,
+                entry,
+                page,
+                line,
+                after_heading,
+                before_heading,
+                after_text,
+                before_text,
+            )?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_insert_table_unified_to(
@@ -421,17 +483,14 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Table {
-            command:
-                DocsTableCommand::Edit {
-                    document_id,
-                    table_id,
-                    data,
-                    resize,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
+        DocsCommand::EditTable {
+            document_id,
+            table_id,
+            data,
+            resize,
+            dry_run,
+            json,
+            required_revision_id,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -453,28 +512,25 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Style {
-            command:
-                DocsStyleCommand::Apply {
-                    document_id,
-                    from_index,
-                    to_index,
-                    entry,
-                    page,
-                    line,
-                    text,
-                    match_number,
-                    bold,
-                    italic,
-                    font_size,
-                    foreground_color,
-                    heading,
-                    style_json,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                    no_cached_style,
-                },
+        DocsCommand::ApplyStyles {
+            document_id,
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            text,
+            match_number,
+            bold,
+            italic,
+            font_size,
+            foreground_color,
+            heading,
+            style_json,
+            dry_run,
+            json,
+            required_revision_id,
+            no_auto_style,
         } => {
             let selector =
                 range_selector(from_index, to_index, entry, page, line, text, match_number)?;
@@ -496,7 +552,7 @@ pub fn run<S: AccountStore>(
                     dry_run,
                     json,
                     required_revision_id,
-                    no_auto_style: no_cached_style,
+                    no_auto_style,
                 },
                 &mut std::io::stdout(),
                 None,
@@ -504,27 +560,21 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::ListFormat {
-            command:
-                crate::cli::DocsListCommand::Apply {
-                    document_id,
-                    from_index,
-                    to_index,
-                    entry,
-                    page,
-                    line,
-                    text,
-                    match_number,
-                    list_type,
-                    preset,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                    no_cached_style,
-                },
+        DocsCommand::ApplyList {
+            document_id,
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            list_type,
+            preset,
+            dry_run,
+            json,
+            required_revision_id,
+            no_auto_style,
         } => {
-            let selector =
-                range_selector(from_index, to_index, entry, page, line, text, match_number)?;
+            let selector = range_selector(from_index, to_index, entry, page, line, None, None)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_apply_list_unified_to(
@@ -539,7 +589,7 @@ pub fn run<S: AccountStore>(
                     dry_run,
                     json,
                     required_revision_id,
-                    no_auto_style: no_cached_style,
+                    no_auto_style,
                 },
                 &mut std::io::stdout(),
                 None,
@@ -547,13 +597,68 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::NamedRange { command } => run_named_range_command(
-            command,
-            config,
-            store,
-            account_override,
-            &mut std::io::stdout(),
-        ),
+        DocsCommand::CreateNamedRange {
+            document_id,
+            name,
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            text,
+            match_number,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector =
+                range_selector(from_index, to_index, entry, page, line, text, match_number)?;
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_named_range_unified_to(
+                config,
+                store,
+                account_override,
+                CreateNamedRangeCommand {
+                    document_id,
+                    name,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::DeleteNamedRange {
+            document_id,
+            named_range_id,
+            name,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_delete_named_range_unified_to(
+                config,
+                store,
+                account_override,
+                DeleteNamedRangeCommand {
+                    document_id,
+                    named_range_id,
+                    name,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
         DocsCommand::Get {
             document_id,
             fields,
@@ -593,81 +698,8 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Style {
-            command: DocsStyleCommand::Template { document_id, json },
-        } => run_show_style_template(&document_id, json, &mut std::io::stdout(), None),
-    }
-}
-
-fn run_named_range_command<S: AccountStore>(
-    command: DocsNamedRangeCommand,
-    config: &Config,
-    store: &S,
-    account_override: Option<&str>,
-    out: &mut impl Write,
-) -> Result<()> {
-    match command {
-        DocsNamedRangeCommand::Create {
-            document_id,
-            name,
-            from_index,
-            to_index,
-            entry,
-            page,
-            line,
-            text,
-            match_number,
-            dry_run,
-            json,
-            required_revision_id,
-        } => {
-            let selector =
-                range_selector(from_index, to_index, entry, page, line, text, match_number)?;
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_create_named_range_unified_to(
-                config,
-                store,
-                account_override,
-                CreateNamedRangeCommand {
-                    document_id,
-                    name,
-                    selector,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
-                out,
-                None,
-                None,
-            ))
-        }
-        DocsNamedRangeCommand::Delete {
-            document_id,
-            named_range_id,
-            name,
-            dry_run,
-            json,
-            required_revision_id,
-        } => {
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_delete_named_range_unified_to(
-                config,
-                store,
-                account_override,
-                DeleteNamedRangeCommand {
-                    document_id,
-                    named_range_id,
-                    name,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
-                out,
-                None,
-                None,
-            ))
+        DocsCommand::ShowStyleTemplate { document_id, json } => {
+            run_show_style_template(&document_id, json, &mut std::io::stdout(), None)
         }
     }
 }
@@ -676,13 +708,12 @@ fn run_named_range_command<S: AccountStore>(
 pub(super) async fn run_map_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
-    map_type: DocsMapType,
     json: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
     let document_map = get_document_map(client, document_id, documents_url).await?;
-    write_document_map(out, &document_map, map_type, json)
+    write_document_map(out, &document_map, json)
 }
 
 pub(super) async fn run_map_unified_to<S: AccountStore>(
@@ -690,7 +721,6 @@ pub(super) async fn run_map_unified_to<S: AccountStore>(
     store: &S,
     account_override: Option<&str>,
     document_id: String,
-    map_type: DocsMapType,
     json: bool,
     out: &mut impl Write,
     documents_url: Option<&str>,
@@ -705,7 +735,7 @@ pub(super) async fn run_map_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
-    write_document_map(out, &document_map, map_type, json)
+    write_document_map(out, &document_map, json)
 }
 
 #[cfg(test)]
@@ -892,6 +922,90 @@ pub(super) async fn run_replace_text_unified_to<S: AccountStore>(
         state_path,
     )
     .await
+}
+
+#[cfg(test)]
+pub(super) async fn run_list_images_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, document_id, documents_url).await?;
+    write_filtered_entries(
+        out,
+        &document_map,
+        &[
+            DocumentMapEntryKind::InlineImage,
+            DocumentMapEntryKind::PositionedImage,
+        ],
+        json,
+    )
+}
+
+pub(super) async fn run_list_images_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    write_filtered_entries(
+        out,
+        &document_map,
+        &[
+            DocumentMapEntryKind::InlineImage,
+            DocumentMapEntryKind::PositionedImage,
+        ],
+        json,
+    )
+}
+
+#[cfg(test)]
+pub(super) async fn run_list_tables_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, document_id, documents_url).await?;
+    write_filtered_entries(out, &document_map, &[DocumentMapEntryKind::Table], json)
+}
+
+pub(super) async fn run_list_tables_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    write_filtered_entries(out, &document_map, &[DocumentMapEntryKind::Table], json)
 }
 
 #[cfg(test)]
@@ -1742,7 +1856,7 @@ pub(super) async fn run_get_to<S: AccountStore>(
 
     let document = get_document(client, &options)
         .await
-        .context("failed to read Google Docs Document")?;
+        .context("failed to fetch Google Docs Document")?;
     refresh_style_template_cache(&document_id, &document, style_cache_dir);
     write_json_line(out, &document, "failed to serialize Docs Document")
 }
@@ -1775,7 +1889,7 @@ pub(super) async fn run_get_unified_to<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to read Google Docs Document")?;
+    .context("failed to fetch Google Docs Document")?;
 
     refresh_style_template_cache(&document_id, &document, style_cache_dir);
     write_json_line(out, &document, "failed to serialize Docs Document")
@@ -2034,7 +2148,7 @@ async fn get_document_map<S: AccountStore>(
     let options = get_document_options(document_id, None, true, documents_url);
     let document = get_document(client, &options)
         .await
-        .context("failed to read Google Docs Document")?;
+        .context("failed to fetch Google Docs Document")?;
     Ok(build_document_map(&document))
 }
 
@@ -2057,7 +2171,7 @@ async fn get_document_map_unified<S: AccountStore>(
         state_path,
     )
     .await
-    .context("failed to read Google Docs Document")?;
+    .context("failed to fetch Google Docs Document")?;
     Ok(build_document_map(&document))
 }
 
@@ -2100,76 +2214,58 @@ pub(super) fn content_selector(
     unreachable!("selector count checked above")
 }
 
-fn optional_content_selector(
+fn insert_text_selector(
     index: Option<i64>,
     entry: Option<usize>,
     page: Option<usize>,
     line: Option<usize>,
-    heading: Option<String>,
-) -> Result<Option<ContentSelector>> {
-    if index.is_none() && entry.is_none() && page.is_none() && line.is_none() && heading.is_none() {
-        return Ok(None);
+    after_heading: Option<String>,
+    before_heading: Option<String>,
+    after_text: Option<String>,
+    before_text: Option<String>,
+) -> Result<InsertTextSelector> {
+    let selector_count = usize::from(index.is_some())
+        + usize::from(entry.is_some())
+        + usize::from(page.is_some() || line.is_some())
+        + usize::from(after_heading.is_some())
+        + usize::from(before_heading.is_some())
+        + usize::from(after_text.is_some())
+        + usize::from(before_text.is_some());
+    if selector_count != 1 {
+        bail!(
+            "provide exactly one insert-text selector: --index, --entry, --page with --line, --after-heading, --before-heading, --after-text, or --before-text"
+        );
     }
 
-    content_selector(index, entry, page, line, heading).map(Some)
-}
-
-pub(super) fn insert_text_selector(at: String) -> Result<InsertTextSelector> {
-    parse_insert_at_selector(&at)
-}
-
-fn parse_insert_at_selector(selector: &str) -> Result<InsertTextSelector> {
-    if let Some((page, line)) = selector.split_once(",line:") {
-        let Some(page) = page.strip_prefix("page:") else {
-            bail!("invalid --at selector {selector:?}; use page:P,line:L");
+    if let Some(index) = index {
+        return Ok(InsertTextSelector::Index(index));
+    }
+    if let Some(entry) = entry {
+        return Ok(InsertTextSelector::Entry(entry));
+    }
+    if page.is_some() || line.is_some() {
+        let Some(page) = page else {
+            bail!("--page and --line must be provided together");
         };
-        return Ok(InsertTextSelector::PageLine {
-            page: parse_insert_at_number(page, "page")?,
-            line: parse_insert_at_number(line, "line")?,
-        });
+        let Some(line) = line else {
+            bail!("--page and --line must be provided together");
+        };
+        return Ok(InsertTextSelector::PageLine { page, line });
+    }
+    if let Some(heading) = after_heading {
+        return Ok(InsertTextSelector::AfterHeading(heading));
+    }
+    if let Some(heading) = before_heading {
+        return Ok(InsertTextSelector::BeforeHeading(heading));
+    }
+    if let Some(text) = after_text {
+        return Ok(InsertTextSelector::AfterText(text));
+    }
+    if let Some(text) = before_text {
+        return Ok(InsertTextSelector::BeforeText(text));
     }
 
-    let Some((kind, value)) = selector.split_once(':') else {
-        bail!("invalid --at selector {selector:?}; expected kind:value");
-    };
-    let value = trim_insert_at_value(value);
-    match kind {
-        "index" => Ok(InsertTextSelector::Index(parse_insert_at_number(
-            value, "index",
-        )?)),
-        "entry" => Ok(InsertTextSelector::Entry(parse_insert_at_number(
-            value, "entry",
-        )?)),
-        "heading" | "after-heading" => Ok(InsertTextSelector::AfterHeading(value.into())),
-        "before-heading" => Ok(InsertTextSelector::BeforeHeading(value.into())),
-        "after-text" => Ok(InsertTextSelector::AfterText(value.into())),
-        "before-text" => Ok(InsertTextSelector::BeforeText(value.into())),
-        _ => bail!(
-            "invalid --at selector kind {kind:?}; expected index, entry, page, heading, after-heading, before-heading, after-text, or before-text"
-        ),
-    }
-}
-
-fn parse_insert_at_number<T>(value: &str, label: &str) -> Result<T>
-where
-    T: std::str::FromStr,
-    T::Err: std::fmt::Display,
-{
-    value
-        .parse()
-        .map_err(|error| anyhow::anyhow!("invalid {label} value in --at selector: {error}"))
-}
-
-fn trim_insert_at_value(value: &str) -> &str {
-    value
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .or_else(|| {
-            value
-                .strip_prefix('\'')
-                .and_then(|value| value.strip_suffix('\''))
-        })
-        .unwrap_or(value)
+    unreachable!("selector count checked above")
 }
 
 fn range_selector(
@@ -2358,29 +2454,11 @@ fn batch_update_document_options(
     options
 }
 
-fn write_document_map(
-    out: &mut impl Write,
-    document_map: &DocumentMap,
-    map_type: DocsMapType,
-    json: bool,
-) -> Result<()> {
-    if let Some(kinds) = map_type_entry_kinds(map_type) {
-        write_filtered_entries(out, document_map, kinds, json)
-    } else if json {
+fn write_document_map(out: &mut impl Write, document_map: &DocumentMap, json: bool) -> Result<()> {
+    if json {
         write_json_line(out, document_map, "failed to serialize Docs Document Map")
     } else {
         write_document_map_table(out, document_map)
-    }
-}
-
-fn map_type_entry_kinds(map_type: DocsMapType) -> Option<&'static [DocumentMapEntryKind]> {
-    match map_type {
-        DocsMapType::All => None,
-        DocsMapType::Images => Some(&[
-            DocumentMapEntryKind::InlineImage,
-            DocumentMapEntryKind::PositionedImage,
-        ]),
-        DocsMapType::Tables => Some(&[DocumentMapEntryKind::Table]),
     }
 }
 

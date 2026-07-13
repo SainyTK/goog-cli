@@ -2,28 +2,28 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum MailError {
-    #[error("Gmail message was not found")]
+    #[error("GoogleMail Message was not found")]
     NotFound,
 
-    #[error("Gmail permission denied")]
+    #[error("GoogleMail permission denied")]
     PermissionDenied,
 
-    #[error("Gmail API error ({status}): {body}")]
+    #[error("GoogleMail API error ({status}): {body}")]
     Api {
         status: reqwest::StatusCode,
         body: String,
     },
 
-    #[error("invalid Gmail API response: {0}")]
+    #[error("invalid GoogleMail API response: {0}")]
     InvalidResponse(String),
 
-    #[error("invalid Gmail input: {0}")]
+    #[error("invalid GoogleMail input: {0}")]
     InvalidInput(String),
 
-    #[error("Gmail attachment filename was not found; pass --output")]
+    #[error("GoogleMail Attachment filename was not found; pass --output")]
     MissingAttachmentFilename,
 
-    #[error("invalid Gmail API URL: {0}")]
+    #[error("invalid GoogleMail API URL: {0}")]
     InvalidUrl(#[from] url::ParseError),
 
     #[error("io error: {0}")]

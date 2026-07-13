@@ -50,10 +50,6 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
         self
     }
 
-    pub(crate) fn account_email(&self) -> &str {
-        &self.account_email
-    }
-
     #[cfg(test)]
     pub(crate) fn with_auth_urls_for_tests(
         mut self,
