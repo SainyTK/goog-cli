@@ -35,6 +35,7 @@ use crate::docs::{
     map::resolve_content_entry,
     map::search_document_text,
     map::ContentSelector,
+    map::DocumentList,
     map::DocumentMap,
     map::DocumentMapEntry,
     map::DocumentMapEntryKind,
@@ -2883,6 +2884,7 @@ fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry)
         title: document_map.title.clone(),
         revision_id: document_map.revision_id.clone(),
         segments: Vec::new(),
+        lists: Vec::new(),
         entries: vec![entry.clone()],
         document_locations: vec![entry.location.clone()],
         text_blocks: Vec::new(),
@@ -3022,12 +3024,19 @@ fn write_document_map(
     if map_type == DocsMapType::Segments {
         return write_document_segments(out, &document_map.segments, json);
     }
+    if map_type == DocsMapType::Lists {
+        return write_document_lists(out, &document_map.lists, json);
+    }
     if let Some(kinds) = map_type_entry_kinds(map_type) {
         write_filtered_entries(out, document_map, kinds, json)
     } else if json {
         write_json_line(out, document_map, "failed to serialize Docs Document Map")
     } else {
         write_document_map_table(out, document_map)?;
+        if !document_map.lists.is_empty() {
+            writeln!(out).context("failed to separate Docs list map")?;
+            write_document_lists_table(out, &document_map.lists)?;
+        }
         if !document_map.segments.is_empty() {
             writeln!(out).context("failed to separate Docs segment map")?;
             write_document_segments_table(out, &document_map.segments)?;
@@ -3044,8 +3053,63 @@ fn map_type_entry_kinds(map_type: DocsMapType) -> Option<&'static [DocumentMapEn
             DocumentMapEntryKind::PositionedImage,
         ]),
         DocsMapType::Tables => Some(&[DocumentMapEntryKind::Table]),
-        DocsMapType::Segments => unreachable!("segment maps are handled separately"),
+        DocsMapType::Lists | DocsMapType::Segments => {
+            unreachable!("list and segment maps are handled separately")
+        }
     }
+}
+
+fn write_document_lists(out: &mut impl Write, lists: &[DocumentList], json: bool) -> Result<()> {
+    if json {
+        write_json_line(out, lists, "failed to serialize Docs lists")
+    } else {
+        write_document_lists_table(out, lists)
+    }
+}
+
+fn write_document_lists_table(out: &mut impl Write, lists: &[DocumentList]) -> Result<()> {
+    writeln!(
+        out,
+        "{:<24} {:<7} {:<7} {:<6} {:<8} {:<18} Preview",
+        "List", "Start", "End", "Items", "Levels", "Glyphs"
+    )
+    .context("failed to write Docs list map header")?;
+
+    for list in lists {
+        let levels = list
+            .nesting_levels
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        let glyphs = list
+            .glyphs
+            .iter()
+            .map(|glyph| {
+                glyph
+                    .glyph_symbol
+                    .as_deref()
+                    .or(glyph.glyph_format.as_deref())
+                    .or(glyph.glyph_type.as_deref())
+                    .unwrap_or("-")
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        writeln!(
+            out,
+            "{:<24} {:<7} {:<7} {:<6} {:<8} {:<18} {}",
+            list.list_id,
+            display_optional(list.start_index),
+            display_optional(list.end_index),
+            list.item_count,
+            levels,
+            glyphs,
+            list.preview
+        )
+        .context("failed to write Docs list map row")?;
+    }
+
+    Ok(())
 }
 
 fn write_document_segments(

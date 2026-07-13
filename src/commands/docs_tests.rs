@@ -322,7 +322,7 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         .respond_with(
             ResponseTemplate::new(200).set_body_json(long_document_with_toc_and_objects()),
         )
-        .expect(3)
+        .expect(5)
         .mount(&server)
         .await;
 
@@ -390,6 +390,48 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
     assert_eq!(output["segments"][1]["preview"], "Legacy header");
     assert_eq!(output["segments"][2]["kind"], "footer");
     assert_eq!(output["segments"][2]["preview"], "[empty footer]");
+    assert_eq!(output["lists"].as_array().unwrap().len(), 1);
+    assert_eq!(output["lists"][0]["listId"], "list-abc");
+    assert_eq!(output["lists"][0]["itemCount"], 1);
+    assert_eq!(output["lists"][0]["nestingLevels"][0], 1);
+    assert_eq!(output["lists"][0]["glyphs"][0]["nestingLevel"], 1);
+    assert_eq!(output["lists"][0]["glyphs"][0]["glyphSymbol"], "○");
+    assert_eq!(
+        output["lists"][0]["preview"],
+        "เอกสารนี้มีข้อความภาษาไทยสำหรับทดสอบ"
+    );
+
+    let mut lists = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Lists,
+        true,
+        &mut lists,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let lists: serde_json::Value = serde_json::from_slice(&lists).unwrap();
+    assert_eq!(lists.as_array().unwrap().len(), 1);
+    assert_eq!(lists[0]["startIndex"], 35);
+    assert_eq!(lists[0]["endIndex"], 74);
+
+    let mut human_lists = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Lists,
+        false,
+        &mut human_lists,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let human_lists = String::from_utf8(human_lists).unwrap();
+    assert!(human_lists.contains("List"));
+    assert!(human_lists.contains("list-abc"));
+    assert!(human_lists.contains("○"));
 
     let mut segments = Vec::new();
     run_map_to(
@@ -4306,6 +4348,16 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
         "documentId": "document-123",
         "title": "คู่มือ Sandcastle",
         "revisionId": "rev-long",
+        "lists": {
+            "list-abc": {
+                "listProperties": {
+                    "nestingLevels": [
+                        { "glyphSymbol": "●", "glyphFormat": "%0", "startNumber": 1 },
+                        { "glyphSymbol": "○", "glyphFormat": "%1", "startNumber": 1 }
+                    ]
+                }
+            }
+        },
         "body": {
             "content": [
                 {
@@ -4347,6 +4399,7 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "startIndex": 35,
                     "endIndex": 74,
                     "paragraph": {
+                        "bullet": { "listId": "list-abc", "nestingLevel": 1 },
                         "paragraphStyle": { "namedStyleType": "NORMAL_TEXT" },
                         "elements": [
                             {

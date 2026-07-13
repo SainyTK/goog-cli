@@ -9,12 +9,39 @@ pub struct DocumentMap {
     pub title: Option<String>,
     pub revision_id: Option<String>,
     pub segments: Vec<DocumentSegment>,
+    pub lists: Vec<DocumentList>,
     pub entries: Vec<DocumentMapEntry>,
     pub document_locations: Vec<DocumentLocation>,
     #[serde(skip)]
     pub text_blocks: Vec<DocumentTextBlock>,
     #[serde(skip)]
     pub insertion_locations: Vec<DocumentLocation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentList {
+    pub list_id: String,
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub item_count: usize,
+    pub nesting_levels: Vec<i64>,
+    pub glyphs: Vec<DocumentListGlyph>,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentListGlyph {
+    pub nesting_level: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glyph_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glyph_symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glyph_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_number: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -167,11 +194,144 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         title: string_field(document, "title"),
         revision_id: string_field(document, "revisionId"),
         segments: document_segments(document),
+        lists: document_lists(document),
         document_locations: entries.iter().map(|entry| entry.location.clone()).collect(),
         entries,
         text_blocks: builder.text_blocks,
         insertion_locations: builder.insertion_locations,
     }
+}
+
+fn document_lists(document: &Value) -> Vec<DocumentList> {
+    let mut accumulators = Vec::<DocumentListAccumulator>::new();
+    collect_list_items(document, &mut accumulators);
+    let list_maps = document_list_maps(document);
+
+    accumulators
+        .into_iter()
+        .map(|list| {
+            let glyphs = list
+                .nesting_levels
+                .iter()
+                .filter_map(|nesting_level| list_glyph(&list_maps, &list.list_id, *nesting_level))
+                .collect();
+            DocumentList {
+                list_id: list.list_id,
+                start_index: list.start_index,
+                end_index: list.end_index,
+                item_count: list.item_count,
+                nesting_levels: list.nesting_levels,
+                glyphs,
+                preview: preview(&list.previews.join(" | ")),
+            }
+        })
+        .collect()
+}
+
+#[derive(Debug)]
+struct DocumentListAccumulator {
+    list_id: String,
+    start_index: Option<i64>,
+    end_index: Option<i64>,
+    item_count: usize,
+    nesting_levels: Vec<i64>,
+    previews: Vec<String>,
+}
+
+fn collect_list_items(value: &Value, lists: &mut Vec<DocumentListAccumulator>) {
+    if let Some(paragraph) = value.get("paragraph") {
+        if let Some(bullet) = paragraph.get("bullet") {
+            if let Some(list_id) = bullet.get("listId").and_then(Value::as_str) {
+                let nesting_level = bullet
+                    .get("nestingLevel")
+                    .and_then(Value::as_i64)
+                    .unwrap_or_default();
+                let start_index = value.get("startIndex").and_then(Value::as_i64);
+                let end_index = value.get("endIndex").and_then(Value::as_i64);
+                let text = preview(&paragraph_text(paragraph));
+                if let Some(list) = lists.iter_mut().find(|list| list.list_id == list_id) {
+                    list.start_index = min_optional(list.start_index, start_index);
+                    list.end_index = max_optional(list.end_index, end_index);
+                    list.item_count += 1;
+                    if !list.nesting_levels.contains(&nesting_level) {
+                        list.nesting_levels.push(nesting_level);
+                        list.nesting_levels.sort_unstable();
+                    }
+                    if !text.is_empty() && list.previews.len() < 3 {
+                        list.previews.push(text);
+                    }
+                } else {
+                    lists.push(DocumentListAccumulator {
+                        list_id: list_id.to_string(),
+                        start_index,
+                        end_index,
+                        item_count: 1,
+                        nesting_levels: vec![nesting_level],
+                        previews: (!text.is_empty()).then_some(text).into_iter().collect(),
+                    });
+                }
+            }
+        }
+    }
+
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_list_items(value, lists);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_list_items(value, lists);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn min_optional(left: Option<i64>, right: Option<i64>) -> Option<i64> {
+    left.into_iter().chain(right).min()
+}
+
+fn max_optional(left: Option<i64>, right: Option<i64>) -> Option<i64> {
+    left.into_iter().chain(right).max()
+}
+
+fn document_list_maps(document: &Value) -> Vec<&Value> {
+    document
+        .get("lists")
+        .into_iter()
+        .chain(
+            document
+                .get("tabs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|tab| tab.get("documentTab"))
+                .filter_map(|document_tab| document_tab.get("lists")),
+        )
+        .collect()
+}
+
+fn list_glyph(
+    list_maps: &[&Value],
+    list_id: &str,
+    nesting_level: i64,
+) -> Option<DocumentListGlyph> {
+    let glyph = list_maps
+        .iter()
+        .find_map(|lists| lists.get(list_id))?
+        .get("listProperties")?
+        .get("nestingLevels")?
+        .as_array()?
+        .get(usize::try_from(nesting_level).ok()?)?;
+    Some(DocumentListGlyph {
+        nesting_level,
+        glyph_type: string_field(glyph, "glyphType"),
+        glyph_symbol: string_field(glyph, "glyphSymbol"),
+        glyph_format: string_field(glyph, "glyphFormat"),
+        start_number: glyph.get("startNumber").and_then(Value::as_i64),
+    })
 }
 
 fn document_segments(document: &Value) -> Vec<DocumentSegment> {

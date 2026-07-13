@@ -2770,6 +2770,8 @@ pub enum DocsMapType {
     All,
     /// Inline and positioned images
     Images,
+    /// Native paragraph lists
+    Lists,
     /// Tables
     Tables,
     /// Header and footer segments
