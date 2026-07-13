@@ -1959,6 +1959,7 @@ Notes:
 
 Notes:
   Copying preserves document components that the Google Docs API cannot create directly, including native tables of contents, page-number auto text, positioned images, and first-page header content.
+  Workspace or source-file download, print, and copy restrictions can remain effective on the copied document.
   SOURCE_DOCUMENT_ID accepts either a bare Document ID or a full Google Docs or Drive URL.")]
     Copy {
         /// Existing Google Doc to copy, as a Document ID or URL
