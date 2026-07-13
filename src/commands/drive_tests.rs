@@ -267,6 +267,54 @@ fn write_folder_table_includes_expected_columns() {
 }
 
 #[test]
+fn write_docs_table_uses_document_id_header() {
+    let mut out = Vec::new();
+    let mut wrote_header = false;
+    write_docs_table(
+        &[DriveFile {
+            name: "Roadmap".into(),
+            id: "doc-1".into(),
+            parent_ids: vec!["folder-123".into()],
+            mime_type: "application/vnd.google-apps.document".into(),
+            modified_time: "2026-06-24T10:15:00.000Z".into(),
+        }],
+        &mut out,
+        &mut wrote_header,
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert_eq!(
+        rendered,
+        "NAME\tDOCUMENT ID\tPARENT FOLDER IDS\tMODIFIED\nRoadmap\tdoc-1\tfolder-123\t2026-06-24T10:15:00.000Z\n"
+    );
+}
+
+#[test]
+fn write_sheets_table_uses_spreadsheet_id_header() {
+    let mut out = Vec::new();
+    let mut wrote_header = false;
+    write_sheets_table(
+        &[DriveFile {
+            name: "Budget".into(),
+            id: "sheet-1".into(),
+            parent_ids: vec!["folder-123".into()],
+            mime_type: "application/vnd.google-apps.spreadsheet".into(),
+            modified_time: "2026-06-24T12:15:00.000Z".into(),
+        }],
+        &mut out,
+        &mut wrote_header,
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert_eq!(
+        rendered,
+        "NAME\tSPREADSHEET ID\tPARENT FOLDER IDS\tMODIFIED\nBudget\tsheet-1\tfolder-123\t2026-06-24T12:15:00.000Z\n"
+    );
+}
+
+#[test]
 fn write_browse_table_includes_type_and_blanks_folder_mime_type() {
     let mut out = Vec::new();
     let mut wrote_header = false;
@@ -475,7 +523,7 @@ async fn run_ls_emits_ndjson_with_drive_native_mime_type_field() {
 }
 
 #[tokio::test]
-async fn run_ls_all_fetches_following_pages_and_reports_progress() {
+async fn run_ls_all_lists_following_pages_and_reports_progress() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
@@ -520,7 +568,7 @@ async fn run_ls_all_fetches_following_pages_and_reports_progress() {
     assert!(rendered.contains("file\tNotes\tfile-2\ttext/plain"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 items...\nFetched 2 items...\n"
+        "Listed 1 items...\nListed 2 items...\n"
     );
 }
 
@@ -731,7 +779,7 @@ async fn run_folder_list_emits_ndjson_with_parent_ids() {
 }
 
 #[tokio::test]
-async fn run_folder_list_all_fetches_following_pages_and_reports_progress() {
+async fn run_folder_list_all_lists_following_pages_and_reports_progress() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
@@ -782,12 +830,12 @@ async fn run_folder_list_all_fetches_following_pages_and_reports_progress() {
     assert!(rendered.contains("Second\tfolder-2\troot\t"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 folders...\nFetched 2 folders...\n"
+        "Listed 1 folders...\nListed 2 folders...\n"
     );
 }
 
 #[tokio::test]
-async fn run_list_all_fetches_following_pages_and_reports_progress() {
+async fn run_list_all_lists_following_pages_and_reports_progress() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
@@ -838,7 +886,7 @@ async fn run_list_all_fetches_following_pages_and_reports_progress() {
     assert!(rendered.contains("Second\tfile-2\t\ttext/plain"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 files...\nFetched 2 files...\n"
+        "Listed 1 files...\nListed 2 files...\n"
     );
 }
 
@@ -1054,14 +1102,14 @@ async fn run_download_unified_falls_back_on_target_access_failure_and_maps_succe
 }
 
 #[tokio::test]
-async fn run_list_command_without_target_stays_on_active_account() {
+async fn run_ls_files_without_target_stays_on_active_account_and_defaults_to_root() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType != 'application/vnd.google-apps.folder'",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -1074,10 +1122,11 @@ async fn run_list_command_without_target_stays_on_active_account() {
     let mut err = Vec::new();
     let files_url = format!("{}/drive/v3/files", server.uri());
 
-    run_list_command_to(
+    run_ls_command_to(
         &config,
         &store,
         None,
+        DriveListKind::Files,
         None,
         false,
         None,
@@ -1418,7 +1467,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
 
     assert_eq!(
         err_probe.snapshot(),
-        "Fetched 1 items...\n",
+        "Listed 1 items...\n",
         "progress for the first page must reach the real writer before the second page finishes"
     );
 
@@ -1426,7 +1475,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
 
     assert_eq!(
         err_probe.snapshot(),
-        "Fetched 1 items...\nFetched 2 items...\n"
+        "Listed 1 items...\nListed 2 items...\n"
     );
 }
 
@@ -1500,7 +1549,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
 
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 items...\nFetched 2 items...\n"
+        "Listed 1 items...\nListed 2 items...\n"
     );
     assert_eq!(
         load_runtime_state_from_path(&state_path)

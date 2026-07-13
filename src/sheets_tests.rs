@@ -118,6 +118,33 @@ fn values_body() -> serde_json::Value {
     })
 }
 
+#[tokio::test]
+async fn create_spreadsheet_posts_title_with_write_scope() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(serde_json::json!({
+            "properties": { "title": "Roadmap" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "spreadsheet-123",
+            "properties": { "title": "Roadmap" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let options =
+        CreateSpreadsheetOptions::new("Roadmap").with_spreadsheets_url(spreadsheets_url(&server));
+
+    let response = create_spreadsheet(&client, &options).await.unwrap();
+
+    assert_eq!(response["spreadsheetId"], "spreadsheet-123");
+}
+
 fn office_file_precondition_response() -> ResponseTemplate {
     ResponseTemplate::new(400).set_body_json(serde_json::json!({
         "error": {
@@ -132,7 +159,7 @@ async fn mount_temporary_sheet_copy(server: &MockServer) {
     Mock::given(method("POST"))
         .and(path("/drive/v3/files/office-file-123/copy"))
         .and(query_param("fields", "id"))
-        .and(body_json(&serde_json::json!({
+        .and(body_json(serde_json::json!({
             "mimeType": "application/vnd.google-apps.spreadsheet",
             "name": "goog temporary Sheets conversion"
         })))
@@ -913,7 +940,7 @@ async fn clear_values_posts_empty_body_to_clear_endpoint() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(header("authorization", "Bearer sheets-write-access"))
-        .and(body_json(&serde_json::json!({})))
+        .and(body_json(serde_json::json!({})))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "clearedRange": "Sheet1!A1:B2"
         })))

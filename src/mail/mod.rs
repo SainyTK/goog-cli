@@ -36,7 +36,7 @@ pub enum MessageReference {
     },
 }
 
-/// Accepts either a bare GoogleMail Message ID or a Gmail browser URL.
+/// Accepts either a bare Gmail message ID or a Gmail browser URL.
 /// Browser URLs may identify a thread token instead of a REST Message ID.
 pub fn parse_message_reference(input: &str) -> MessageReference {
     let trimmed = input.trim();
@@ -266,7 +266,7 @@ struct AttachmentPayload {
 #[derive(Debug, Clone)]
 pub struct DownloadAttachmentOptions {
     pub message_id: String,
-    pub attachment_id: String,
+    pub attachment_id: Option<String>,
     pub output: Option<PathBuf>,
     messages_url: String,
 }
@@ -275,7 +275,16 @@ impl DownloadAttachmentOptions {
     pub fn new(message_id: impl Into<String>, attachment_id: impl Into<String>) -> Self {
         Self {
             message_id: message_id.into(),
-            attachment_id: attachment_id.into(),
+            attachment_id: Some(attachment_id.into()),
+            output: None,
+            messages_url: GMAIL_MESSAGES_URL.to_string(),
+        }
+    }
+
+    pub fn without_attachment_id(message_id: impl Into<String>) -> Self {
+        Self {
+            message_id: message_id.into(),
+            attachment_id: None,
             output: None,
             messages_url: GMAIL_MESSAGES_URL.to_string(),
         }
@@ -291,12 +300,12 @@ impl DownloadAttachmentOptions {
         self
     }
 
-    fn attachment_url(&self) -> Result<Url, MailError> {
+    fn attachment_url(&self, attachment_id: &str) -> Result<Url, MailError> {
         let mut url = message_url(&self.messages_url, &self.message_id)?;
         url.path_segments_mut()
-            .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
+            .map_err(|_| MailError::InvalidResponse("Gmail API URL cannot be a base".into()))?
             .push("attachments")
-            .push(&self.attachment_id);
+            .push(attachment_id);
         Ok(url)
     }
 }
@@ -492,7 +501,7 @@ impl GetMessageOptions {
 fn message_url(messages_url: &str, message_id: &str) -> Result<Url, MailError> {
     let mut url = Url::parse(messages_url)?;
     url.path_segments_mut()
-        .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
+        .map_err(|_| MailError::InvalidResponse("Gmail API URL cannot be a base".into()))?
         .push(message_id);
     Ok(url)
 }
@@ -500,7 +509,7 @@ fn message_url(messages_url: &str, message_id: &str) -> Result<Url, MailError> {
 fn draft_url(drafts_url: &str, draft_id: &str) -> Result<Url, MailError> {
     let mut url = Url::parse(drafts_url)?;
     url.path_segments_mut()
-        .map_err(|_| MailError::InvalidResponse("GoogleMail API URL cannot be a base".into()))?
+        .map_err(|_| MailError::InvalidResponse("Gmail API URL cannot be a base".into()))?
         .push(draft_id);
     Ok(url)
 }
@@ -508,9 +517,9 @@ fn draft_url(drafts_url: &str, draft_id: &str) -> Result<Url, MailError> {
 fn thread_url(messages_url: &str, thread_id: &str) -> Result<Url, MailError> {
     let mut url = Url::parse(messages_url)?;
     {
-        let mut segments = url.path_segments_mut().map_err(|_| {
-            MailError::InvalidResponse("GoogleMail API URL cannot be a base".into())
-        })?;
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| MailError::InvalidResponse("Gmail API URL cannot be a base".into()))?;
         segments.pop();
         segments.push("threads").push(thread_id);
     }
@@ -634,14 +643,15 @@ pub async fn download_attachment<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DownloadAttachmentOptions,
 ) -> Result<DownloadedAttachment, MailError> {
-    let path = match &options.output {
-        Some(output) => output.clone(),
-        None => attachment_filename_path(client, options).await?,
-    };
+    let resolved = resolve_attachment_download(client, options).await?;
+    let path = resolved.path;
     ensure_destination_available(&path).await?;
 
     let response = client
-        .send_with_scopes(client.get(options.attachment_url()?), GMAIL_SCOPES)
+        .send_with_scopes(
+            client.get(options.attachment_url(&resolved.attachment_id)?),
+            GMAIL_SCOPES,
+        )
         .await
         .map_err(MailError::Auth)?;
     let payload: AttachmentPayload = parse_json_response(response).await?;
@@ -792,16 +802,43 @@ async fn ensure_destination_available(path: &Path) -> Result<(), MailError> {
     Ok(())
 }
 
-async fn attachment_filename_path<S: AccountStore>(
+struct ResolvedAttachmentDownload {
+    attachment_id: String,
+    path: PathBuf,
+}
+
+async fn resolve_attachment_download<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &DownloadAttachmentOptions,
-) -> Result<PathBuf, MailError> {
-    let metadata = fetch_attachment_filename_metadata(client, options).await?;
-    let filename = find_attachment_filename(&metadata.payload, &options.attachment_id)
-        .ok_or(MailError::MissingAttachmentFilename)?;
-    Ok(std::env::current_dir()
-        .map_err(MailError::Io)?
-        .join(filename))
+) -> Result<ResolvedAttachmentDownload, MailError> {
+    match (&options.attachment_id, &options.output) {
+        (Some(attachment_id), Some(output)) => Ok(ResolvedAttachmentDownload {
+            attachment_id: attachment_id.clone(),
+            path: output.clone(),
+        }),
+        _ => {
+            let metadata = fetch_attachment_filename_metadata(client, options).await?;
+            let attachments = attachment_filenames(&metadata.payload);
+            let attachment_id =
+                resolve_attachment_id(options.attachment_id.as_deref(), &attachments)?;
+            let path = match &options.output {
+                Some(output) => output.clone(),
+                None => {
+                    let filename = filename_for_attachment(&attachments, &attachment_id)
+                        .or_else(|| filename_from_single_attachment(&attachments))
+                        .ok_or(MailError::MissingAttachmentFilename)?;
+                    std::env::current_dir()
+                        .map_err(MailError::Io)?
+                        .join(filename)
+                }
+            };
+
+            Ok(ResolvedAttachmentDownload {
+                attachment_id,
+                path,
+            })
+        }
+    }
 }
 
 async fn fetch_attachment_filename_metadata<S: AccountStore>(
@@ -818,11 +855,22 @@ async fn fetch_attachment_filename_metadata<S: AccountStore>(
     parse_json_response(response).await
 }
 
-fn find_attachment_filename(payload: &MessagePayload, attachment_id: &str) -> Option<String> {
-    let attachments = attachment_filenames(payload);
+fn resolve_attachment_id(
+    attachment_id: Option<&str>,
+    attachments: &[AttachmentFilename],
+) -> Result<String, MailError> {
+    if let Some(attachment_id) = attachment_id {
+        return Ok(attachment_id.to_string());
+    }
 
-    filename_for_attachment(&attachments, attachment_id)
-        .or_else(|| filename_from_single_attachment(&attachments))
+    let [attachment] = attachments else {
+        return Err(MailError::InvalidInput(
+            "attachment ID is required when the message does not have exactly one attachment"
+                .into(),
+        ));
+    };
+
+    Ok(attachment.id.clone())
 }
 
 fn filename_for_attachment(
