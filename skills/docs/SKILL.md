@@ -80,5 +80,6 @@ Do not call the document finished until all of these are true:
 - No placeholder, instruction text, or duplicated content remains.
 - Styles are consistent and readable.
 - The native document or its exported PDF has been visually inspected at 100% zoom, including every page edge and any requested page-count limit.
+- When reproducing a source document, source and target component inventories have been compared and every intentional difference is understood.
 - The live document has been fetched again after the last write.
 - The final URL opens the intended native Google Doc.

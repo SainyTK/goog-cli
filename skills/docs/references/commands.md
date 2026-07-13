@@ -58,6 +58,24 @@ target/debug/goog docs get SOURCE_DOCUMENT_ID --include-tabs-content
 Classify each source component before choosing the creation path.
 Build supported components with high-level commands, copy the source as a template for editor-only components, and record any policy-limited visual verification separately from structural fidelity.
 
+## Compare a source and target
+
+When reproducing an existing document, compare fresh source and target maps after the last write.
+Generate the same compact inventory for each document:
+
+```bash
+target/debug/goog docs map SOURCE_DOCUMENT_ID --json | jq '{entriesByKind: (.entries | group_by(.kind) | map({kind: .[0].kind, count: length})), lists: (.lists | length), breaks: (.breaks | length), segments: (.segments | length), blankParagraphs: (.blankParagraphs | length), namedStyleTabs: (.namedStyles | length), documentStyleTabs: (.documentStyles | length)}' > /tmp/source-doc-inventory.json
+target/debug/goog docs map TARGET_DOCUMENT_ID --json | jq '{entriesByKind: (.entries | group_by(.kind) | map({kind: .[0].kind, count: length})), lists: (.lists | length), breaks: (.breaks | length), segments: (.segments | length), blankParagraphs: (.blankParagraphs | length), namedStyleTabs: (.namedStyles | length), documentStyleTabs: (.documentStyles | length)}' > /tmp/target-doc-inventory.json
+diff -u /tmp/source-doc-inventory.json /tmp/target-doc-inventory.json
+```
+
+An empty diff is useful for a template copy, but counts alone do not prove fidelity.
+Compare the focused table, image, list, break, and segment maps when those components affect the design.
+For a blank-document recreation, explain intentional count differences and verify the properties that matter, including named styles, page geometry, paragraph and text-run styles, table geometry, image sizes, and header or footer content.
+Do not compare generated object IDs, heading IDs, segment IDs, or revision IDs because Google assigns those independently.
+Complete the comparison with page-level visual inspection of the target PDF or native document.
+Remove the temporary inventory files after verification.
+
 For a blank target that should inherit an existing visual system, preview and then copy its named styles and page layout:
 
 ```bash
