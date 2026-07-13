@@ -3,17 +3,43 @@
 Use `target/debug/goog` in the repository examples below.
 Replace it with `cargo run --` when the debug binary has not been built.
 
-## Create and inspect
+## Choose a creation path
+
+Create a blank document when the design can be built from supported text, paragraph, list, table, image, header, footer, and page-layout operations:
 
 ```bash
 target/debug/goog docs create "Quarterly operating review"
+```
+
+Copy a template when the source contains editor-only components such as a native table of contents, page-number auto text, positioned images, or first-page header content:
+
+```bash
+target/debug/goog docs copy SOURCE_DOCUMENT_ID "Quarterly operating review"
+```
+
+Both commands print the document ID and edit URL separated by a tab.
+Capture both values from the output rather than guessing the URL.
+
+Inspect the selected document before editing:
+
+```bash
 target/debug/goog docs get DOCUMENT_ID
 target/debug/goog docs map DOCUMENT_ID
 target/debug/goog docs map DOCUMENT_ID --json
 ```
 
-The create command prints the document ID and edit URL separated by a tab.
-Capture both values from the output rather than guessing the URL.
+For a blank target that should inherit an existing visual system, preview and then copy its named styles and page layout:
+
+```bash
+target/debug/goog docs style copy-named SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
+target/debug/goog docs style copy-named SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID
+target/debug/goog docs style copy-page SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
+target/debug/goog docs style copy-page SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID
+```
+
+Named-style copying transfers the native title, subtitle, heading, and normal-text definitions.
+Page copying transfers document mode, page dimensions, margins, and supported first-page or even-page header and footer behavior.
+It does not create source header and footer segments in a blank target.
 
 ## Insert and replace text
 
@@ -58,6 +84,25 @@ Apply one numbering operation over the complete contiguous action range so all i
 target/debug/goog docs list-format apply DOCUMENT_ID --from-index START --to-index END --type numbered --dry-run --json
 ```
 
+## Visual verification
+
+Export the completed native document and inspect every rendered page at 100% zoom:
+
+```bash
+target/debug/goog docs export-pdf DOCUMENT_ID --output ./quarterly-operating-review.pdf
+```
+
+Re-export after the last layout-affecting edit.
+If export is denied, confirm the account explicitly before treating it as a Workspace or file-policy restriction:
+
+```bash
+target/debug/goog docs export-pdf DOCUMENT_ID --output ./quarterly-operating-review.pdf --account alice@example.com
+```
+
+Template copying preserves source components, but it does not bypass restrictions on downloading, printing, or copying.
+Use an authenticated browser for visual inspection when export remains unavailable.
+If neither path is available, report visual QA as blocked.
+
 ## Learn unfamiliar commands
 
 ```bash
@@ -66,6 +111,10 @@ target/debug/goog docs text --help
 target/debug/goog docs style --help
 target/debug/goog docs table --help
 target/debug/goog docs image --help
+target/debug/goog docs copy --help
+target/debug/goog docs export-pdf --help
+target/debug/goog docs style copy-named --help
+target/debug/goog docs style copy-page --help
 ```
 
 Pass each command segment as its own shell argument.
