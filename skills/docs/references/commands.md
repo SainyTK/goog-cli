@@ -73,6 +73,7 @@ target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope vis
 
 The command compares component inventory, the native named-style and page-style visual system, and all mapped content and component properties.
 It removes Google-assigned object, heading, segment, and list IDs before comparison while retaining tab IDs, indexes, ranges, and component order.
+The visual-system scope also normalizes equivalent default fields that Google can materialize after copying styles, including false bold and page-break values and a page-number start of one.
 An overall match proves semantic structural equivalence across all three scopes.
 It does not replace page-level visual inspection.
 Use `--fail-on-difference` in acceptance scripts that must return a nonzero status when any scope differs.

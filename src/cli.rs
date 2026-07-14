@@ -1984,6 +1984,7 @@ Notes:
   Use --max-differences to control how many paths are shown per scope.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.
   Google-assigned object, heading, segment, and list IDs are ignored.
+  Visual-system comparison ignores equivalent defaults that Google materializes after style copying.
   A matching result still requires page-level visual inspection for final acceptance.
   Both document arguments accept a bare Document ID or a full Google Docs or Drive URL.")]
     Compare {

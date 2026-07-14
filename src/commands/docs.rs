@@ -3997,7 +3997,40 @@ fn canonical_visual_system(document_map: &DocumentMap) -> Result<serde_json::Val
         "documentStyles": document_map.document_styles,
     });
     remove_generated_ids(&mut value);
+    remove_materialized_visual_defaults(&mut value);
     Ok(value)
+}
+
+fn remove_materialized_visual_defaults(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Array(values) => {
+            for value in values {
+                remove_materialized_visual_defaults(value);
+            }
+        }
+        serde_json::Value::Object(object) => {
+            if object.get("pageNumberStart") == Some(&serde_json::json!(1)) {
+                object.remove("pageNumberStart");
+            }
+            if let Some(serde_json::Value::Object(paragraph_style)) =
+                object.get_mut("paragraphStyle")
+            {
+                paragraph_style.remove("namedStyleType");
+                if paragraph_style.get("pageBreakBefore") == Some(&serde_json::Value::Bool(false)) {
+                    paragraph_style.remove("pageBreakBefore");
+                }
+            }
+            if let Some(serde_json::Value::Object(text_style)) = object.get_mut("textStyle") {
+                if text_style.get("bold") == Some(&serde_json::Value::Bool(false)) {
+                    text_style.remove("bold");
+                }
+            }
+            for child in object.values_mut() {
+                remove_materialized_visual_defaults(child);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn canonical_content(document_map: &DocumentMap) -> Result<serde_json::Value> {

@@ -468,6 +468,88 @@ fn compare_scope_limits_output_and_acceptance_to_selected_scope() {
 }
 
 #[test]
+fn visual_system_comparison_ignores_google_materialized_defaults() {
+    let mut source = searchable_document();
+    source["tabs"] = serde_json::json!([{
+        "tabProperties": { "tabId": "tab-1" },
+        "documentTab": {
+            "documentStyle": { "marginTop": { "magnitude": 72, "unit": "PT" } },
+            "namedStyles": { "styles": [{
+                "namedStyleType": "HEADING_1",
+                "paragraphStyle": {
+                    "namedStyleType": "HEADING_1",
+                    "keepWithNext": true
+                },
+                "textStyle": { "fontSize": { "magnitude": 20, "unit": "PT" } }
+            }] }
+        }
+    }]);
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["tabs"][0]["documentTab"]["documentStyle"]["pageNumberStart"] = serde_json::json!(1);
+    target["tabs"][0]["documentTab"]["namedStyles"]["styles"][0]["paragraphStyle"]
+        ["namedStyleType"] = serde_json::json!("NORMAL_TEXT");
+    target["tabs"][0]["documentTab"]["namedStyles"]["styles"][0]["paragraphStyle"]
+        ["pageBreakBefore"] = serde_json::json!(false);
+    target["tabs"][0]["documentTab"]["namedStyles"]["styles"][0]["textStyle"]["bold"] =
+        serde_json::json!(false);
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::VisualSystem,
+        true,
+        20,
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["scopes"][0]["differenceCount"], 0);
+}
+
+#[test]
+fn visual_system_comparison_preserves_non_default_page_number_start() {
+    let mut source = searchable_document();
+    source["tabs"] = serde_json::json!([{
+        "tabProperties": { "tabId": "tab-1" },
+        "documentTab": {
+            "documentStyle": { "marginTop": { "magnitude": 72, "unit": "PT" } },
+            "namedStyles": { "styles": [] }
+        }
+    }]);
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["tabs"][0]["documentTab"]["documentStyle"]["pageNumberStart"] = serde_json::json!(2);
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::VisualSystem,
+        false,
+        20,
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], false);
+    assert_eq!(
+        output["scopes"][0]["differences"][0]["path"],
+        "/documentStyles/0/documentStyle/pageNumberStart"
+    );
+}
+
+#[test]
 fn comparison_differences_report_paths_missing_values_and_a_bounded_preview() {
     let source = serde_json::json!({
         "a/b": [0, 1, 2],
