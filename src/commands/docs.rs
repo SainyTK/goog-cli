@@ -119,6 +119,7 @@ pub fn run<S: AccountStore>(
             scope,
             fail_on_difference,
             max_differences,
+            difference_pattern,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -133,6 +134,7 @@ pub fn run<S: AccountStore>(
                     scope,
                     fail_on_difference,
                     max_differences,
+                    difference_pattern,
                 },
                 &mut std::io::stdout(),
                 None,
@@ -1084,7 +1086,10 @@ pub(super) async fn run_compare_to<S: AccountStore>(
         command.json,
         command.scope,
         command.fail_on_difference,
-        command.max_differences as usize,
+        DocumentComparisonPreview {
+            max_differences: command.max_differences as usize,
+            difference_pattern: command.difference_pattern.as_deref(),
+        },
     )
 }
 
@@ -1122,7 +1127,10 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
         command.json,
         command.scope,
         command.fail_on_difference,
-        command.max_differences as usize,
+        DocumentComparisonPreview {
+            max_differences: command.max_differences as usize,
+            difference_pattern: command.difference_pattern.as_deref(),
+        },
     )
 }
 
@@ -3735,6 +3743,7 @@ pub(super) struct CompareDocumentsCommand {
     pub(super) scope: DocsCompareScope,
     pub(super) fail_on_difference: bool,
     pub(super) max_differences: u32,
+    pub(super) difference_pattern: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -3742,6 +3751,8 @@ pub(super) struct CompareDocumentsCommand {
 struct DocumentComparisonReport {
     source_document_id: Option<String>,
     target_document_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    difference_preview_pattern: Option<String>,
     matches: bool,
     scopes: Vec<DocumentComparisonScope>,
 }
@@ -3780,6 +3791,12 @@ pub(super) struct DocumentComparisonDifference {
     pub(super) target: String,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct DocumentComparisonPreview<'a> {
+    pub(super) max_differences: usize,
+    pub(super) difference_pattern: Option<&'a str>,
+}
+
 pub(super) fn write_document_comparison(
     out: &mut impl Write,
     source_map: &DocumentMap,
@@ -3787,7 +3804,7 @@ pub(super) fn write_document_comparison(
     json: bool,
     scope: DocsCompareScope,
     fail_on_difference: bool,
-    max_differences: usize,
+    preview: DocumentComparisonPreview<'_>,
 ) -> Result<()> {
     let source_inventory = document_inventory(source_map);
     let target_inventory = document_inventory(target_map);
@@ -3805,7 +3822,7 @@ pub(super) fn write_document_comparison(
             source_inventory,
             target_inventory,
             true,
-            max_differences,
+            preview,
         )?);
     }
     if matches!(
@@ -3817,7 +3834,7 @@ pub(super) fn write_document_comparison(
             source_visual_system,
             target_visual_system,
             false,
-            max_differences,
+            preview,
         )?);
     }
     if matches!(scope, DocsCompareScope::All | DocsCompareScope::Formatting) {
@@ -3826,7 +3843,7 @@ pub(super) fn write_document_comparison(
             source_formatting,
             target_formatting,
             false,
-            max_differences,
+            preview,
         )?);
     }
     if matches!(scope, DocsCompareScope::All | DocsCompareScope::Content) {
@@ -3835,12 +3852,13 @@ pub(super) fn write_document_comparison(
             source_content,
             target_content,
             false,
-            max_differences,
+            preview,
         )?);
     }
     let report = DocumentComparisonReport {
         source_document_id: source_map.document_id.clone(),
         target_document_id: target_map.document_id.clone(),
+        difference_preview_pattern: preview.difference_pattern.map(str::to_owned),
         matches: scopes.iter().all(|scope| scope.matches),
         scopes,
     };
@@ -3854,6 +3872,10 @@ pub(super) fn write_document_comparison(
             "Scope", "Match", "Source SHA-256"
         )
         .context("failed to write Docs comparison header")?;
+        if let Some(pattern) = preview.difference_pattern {
+            writeln!(out, "Difference preview filter: {pattern}")
+                .context("failed to write Docs comparison difference filter")?;
+        }
         for scope in &report.scopes {
             writeln!(
                 out,
@@ -3910,7 +3932,7 @@ fn comparison_scope(
     source: serde_json::Value,
     target: serde_json::Value,
     include_inventory: bool,
-    max_differences: usize,
+    preview: DocumentComparisonPreview<'_>,
 ) -> Result<DocumentComparisonScope> {
     let matches = source == target;
     let mut differences = Vec::new();
@@ -3921,7 +3943,7 @@ fn comparison_scope(
         Some(&source),
         Some(&target),
         &mut differences,
-        max_differences,
+        preview,
         &mut difference_patterns,
     );
     let mut difference_patterns = difference_patterns
@@ -3961,13 +3983,17 @@ pub(super) fn collect_json_differences(
     differences: &mut Vec<DocumentComparisonDifference>,
     max_differences: usize,
 ) -> usize {
+    let preview = DocumentComparisonPreview {
+        max_differences,
+        difference_pattern: None,
+    };
     collect_json_differences_with_patterns(
         path,
         path,
         source,
         target,
         differences,
-        max_differences,
+        preview,
         &mut std::collections::BTreeMap::new(),
     )
 }
@@ -3978,7 +4004,7 @@ fn collect_json_differences_with_patterns(
     source: Option<&serde_json::Value>,
     target: Option<&serde_json::Value>,
     differences: &mut Vec<DocumentComparisonDifference>,
-    max_differences: usize,
+    preview: DocumentComparisonPreview<'_>,
     difference_patterns: &mut std::collections::BTreeMap<
         String,
         (usize, DocumentComparisonDifference),
@@ -3999,7 +4025,7 @@ fn collect_json_differences_with_patterns(
                         source.get(key),
                         target.get(key),
                         differences,
-                        max_differences,
+                        preview,
                         difference_patterns,
                     )
                 })
@@ -4014,7 +4040,7 @@ fn collect_json_differences_with_patterns(
                     source.get(index),
                     target.get(index),
                     differences,
-                    max_differences,
+                    preview,
                     difference_patterns,
                 )
             })
@@ -4035,11 +4061,14 @@ fn collect_json_differences_with_patterns(
             } else {
                 pattern_path.to_owned()
             };
+            let include_preview = preview
+                .difference_pattern
+                .is_none_or(|filter| filter == pattern_path);
             difference_patterns
                 .entry(pattern_path)
                 .and_modify(|(count, _)| *count += 1)
                 .or_insert_with(|| (1, difference.clone()));
-            if differences.len() < max_differences {
+            if include_preview && differences.len() < preview.max_differences {
                 differences.push(difference);
             }
             1

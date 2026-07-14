@@ -1982,6 +1982,7 @@ Notes:
   Use --scope to compare only inventory, visual-system, formatting, or content properties.
   Mismatches include complete path-pattern counts, a representative example for every pattern, and JSON Pointer previews with source and target values.
   Use --max-differences to control how many paths are shown per scope.
+  Use --difference-pattern to show concrete paths for one reported pattern while retaining complete counts and acceptance behavior.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.
   Google-assigned object, heading, segment, and list IDs are ignored.
   Visual-system comparison ignores equivalent defaults that Google materializes after style copying.
@@ -2004,6 +2005,9 @@ Notes:
         /// Maximum mismatch paths to show per comparison scope
         #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..))]
         max_differences: u32,
+        /// Show mismatch path previews only for this reported pattern
+        #[arg(long)]
+        difference_pattern: Option<String>,
     },
     /// Export a native Google Doc as a PDF file
     #[command(after_long_help = "Notes:

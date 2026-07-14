@@ -42,6 +42,16 @@ fn test_config() -> Config {
     }
 }
 
+fn comparison_preview(
+    max_differences: usize,
+    difference_pattern: Option<&str>,
+) -> DocumentComparisonPreview<'_> {
+    DocumentComparisonPreview {
+        max_differences,
+        difference_pattern,
+    }
+}
+
 fn docs_token() -> Token {
     scoped_docs_token("docs-write-access")
 }
@@ -355,6 +365,7 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
             scope: DocsCompareScope::All,
             fail_on_difference: false,
             max_differences: 20,
+            difference_pattern: None,
         },
         &mut out,
         Some(&documents_url),
@@ -419,6 +430,7 @@ async fn run_compare_reports_content_difference() {
             scope: DocsCompareScope::All,
             fail_on_difference: true,
             max_differences: 20,
+            difference_pattern: None,
         },
         &mut out,
         Some(&documents_url),
@@ -462,7 +474,7 @@ fn compare_scope_limits_output_and_acceptance_to_selected_scope() {
         true,
         DocsCompareScope::VisualSystem,
         true,
-        20,
+        comparison_preview(20, None),
     )
     .unwrap();
 
@@ -504,7 +516,7 @@ fn formatting_comparison_ignores_prose_positions_and_empty_run_splits() {
         true,
         DocsCompareScope::Formatting,
         true,
-        20,
+        comparison_preview(20, None),
     )
     .unwrap();
 
@@ -532,7 +544,7 @@ fn formatting_comparison_reports_paragraph_style_changes() {
         true,
         DocsCompareScope::Formatting,
         true,
-        20,
+        comparison_preview(20, None),
     )
     .unwrap_err();
 
@@ -582,7 +594,7 @@ fn comparison_groups_repeated_array_differences_by_path_pattern() {
         true,
         DocsCompareScope::Formatting,
         false,
-        1,
+        comparison_preview(1, None),
     )
     .unwrap();
 
@@ -607,6 +619,62 @@ fn comparison_groups_repeated_array_differences_by_path_pattern() {
     assert_eq!(
         output["scopes"][0]["differencePatterns"][0]["example"]["path"],
         output["scopes"][0]["differences"][0]["path"]
+    );
+}
+
+#[test]
+fn comparison_filters_path_previews_by_reported_pattern() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    for paragraph in source["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"] = serde_json::json!({
+            "alignment": "START",
+            "direction": "LEFT_TO_RIGHT"
+        });
+    }
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    for paragraph in target["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"]["alignment"] = serde_json::json!("CENTER");
+        paragraph["paragraph"]["paragraphStyle"]["direction"] = serde_json::json!("RIGHT_TO_LEFT");
+    }
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(1, Some("/entries/*/paragraphStyle/direction")),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["differencePreviewPattern"],
+        "/entries/*/paragraphStyle/direction"
+    );
+    assert_eq!(output["scopes"][0]["differenceCount"], 4);
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        output["scopes"][0]["differences"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        output["scopes"][0]["differences"][0]["path"],
+        "/entries/0/paragraphStyle/direction"
     );
 }
 
@@ -659,7 +727,7 @@ fn formatting_comparison_ignores_font_redundant_with_inherited_named_style() {
         true,
         DocsCompareScope::Formatting,
         true,
-        20,
+        comparison_preview(20, None),
     )
     .unwrap();
 
@@ -705,7 +773,7 @@ fn visual_system_comparison_ignores_google_materialized_defaults() {
         true,
         DocsCompareScope::VisualSystem,
         true,
-        20,
+        comparison_preview(20, None),
     )
     .unwrap();
 
@@ -738,7 +806,7 @@ fn visual_system_comparison_preserves_non_default_page_number_start() {
         true,
         DocsCompareScope::VisualSystem,
         false,
-        20,
+        comparison_preview(20, None),
     )
     .unwrap();
 

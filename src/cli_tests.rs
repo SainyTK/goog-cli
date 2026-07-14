@@ -706,6 +706,8 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "--fail-on-difference",
         "--max-differences",
         "7",
+        "--difference-pattern",
+        "/entries/*/paragraphStyle/alignment",
     ])
     .unwrap();
     let Command::Docs { command } = &mut cli.command else {
@@ -720,6 +722,7 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             scope,
             fail_on_difference,
             max_differences,
+            difference_pattern,
         } => {
             assert_eq!(source_document_id, "source-123");
             assert_eq!(target_document_id, "target-456");
@@ -727,6 +730,10 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             assert_eq!(*scope, DocsCompareScope::VisualSystem);
             assert!(*fail_on_difference);
             assert_eq!(*max_differences, 7);
+            assert_eq!(
+                difference_pattern.as_deref(),
+                Some("/entries/*/paragraphStyle/alignment")
+            );
         }
         _ => panic!("unexpected parse result"),
     }

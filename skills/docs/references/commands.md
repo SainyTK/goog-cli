@@ -68,6 +68,7 @@ target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --json
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --fail-on-difference
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --max-differences 100
+target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope formatting --difference-pattern '/entries/*/paragraphStyle/alignment' --max-differences 100
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope visual-system --fail-on-difference
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope formatting --fail-on-difference
 ```
@@ -86,6 +87,7 @@ When the command reports a difference, it includes complete path-pattern counts,
 Array indexes become `*` in patterns, so repeated formatting gaps remain visible even when an earlier component consumes the raw-path preview.
 The per-pattern example remains available when `--max-differences` limits the general path preview.
 Set `--max-differences` to a positive number when a larger or smaller diagnostic preview is useful.
+Copy a reported pattern into `--difference-pattern` to show concrete paths only for that pattern while retaining the complete pattern summary, total difference count, and acceptance result.
 Use the manual map comparisons below when those paths need more context.
 Generate the same compact inventory for each document:
 
