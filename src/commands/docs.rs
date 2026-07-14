@@ -1142,7 +1142,7 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
     documents_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<()> {
-    let source_map = get_document_map_unified(
+    let (source_map, source_account) = get_document_map_unified_with_account(
         config,
         store,
         account_override,
@@ -1151,7 +1151,7 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
-    let target_map = get_document_map_unified(
+    let (target_map, target_account) = get_document_map_unified_with_account(
         config,
         store,
         account_override,
@@ -1184,6 +1184,8 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
                 difference_pattern: command.difference_pattern.as_deref(),
             },
             account_override,
+            source_account: Some(&source_account),
+            target_account: Some(&target_account),
         },
     )
 }
@@ -3053,13 +3055,37 @@ async fn run_with_docs_unified_access<S: AccountStore>(
     attempt: DocsAccessAttempt<'_>,
     state_path: Option<&Path>,
 ) -> Result<serde_json::Value, DocsError> {
+    run_with_docs_unified_access_and_account(
+        config,
+        store,
+        account_override,
+        target_resource_key,
+        attempt,
+        state_path,
+    )
+    .await
+    .map(|(value, _account)| value)
+}
+
+async fn run_with_docs_unified_access_and_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    attempt: DocsAccessAttempt<'_>,
+    state_path: Option<&Path>,
+) -> Result<(serde_json::Value, String), DocsError> {
     UnifiedAccess::run(
         config,
         account_override,
         target_resource_key,
         state_path,
-        |account| -> AccessFuture<'_, serde_json::Value, DocsError> {
-            Box::pin(run_docs_access_as_account(config, store, &attempt, account))
+        |account| -> AccessFuture<'_, (serde_json::Value, String), DocsError> {
+            Box::pin(async {
+                let value =
+                    run_docs_access_as_account(config, store, &attempt, account.clone()).await?;
+                Ok((value, account))
+            })
         },
         is_target_access_failure,
     )
@@ -3251,9 +3277,29 @@ async fn get_document_map_unified<S: AccountStore>(
     documents_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<DocumentMap> {
+    Ok(get_document_map_unified_with_account(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?
+    .0)
+}
+
+async fn get_document_map_unified_with_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<(DocumentMap, String)> {
     let options = get_document_options(document_id.clone(), None, true, documents_url);
     let resource_key = resource_key("docs", &document_id);
-    let document = run_with_docs_unified_access(
+    let (document, account) = run_with_docs_unified_access_and_account(
         config,
         store,
         account_override,
@@ -3263,7 +3309,7 @@ async fn get_document_map_unified<S: AccountStore>(
     )
     .await
     .context("failed to read Google Docs Document")?;
-    Ok(build_document_map(&document))
+    Ok((build_document_map(&document), account))
 }
 
 pub(super) fn content_selector(
@@ -3811,6 +3857,10 @@ struct DocumentComparisonReport {
     replay_command: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     account_override: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_account: Option<String>,
     comparison_scope: &'static str,
     fail_on_difference: bool,
     max_differences: usize,
@@ -3891,6 +3941,8 @@ pub(super) struct DocumentComparisonSettings<'a> {
     pub(super) fail_on_difference: bool,
     pub(super) preview: DocumentComparisonPreview<'a>,
     pub(super) account_override: Option<&'a str>,
+    pub(super) source_account: Option<&'a str>,
+    pub(super) target_account: Option<&'a str>,
 }
 
 #[cfg(test)]
@@ -3913,6 +3965,8 @@ pub(super) fn write_document_comparison(
             fail_on_difference,
             preview,
             account_override: None,
+            source_account: None,
+            target_account: None,
         },
     )
 }
@@ -3929,6 +3983,8 @@ pub(super) fn write_document_comparison_with_settings(
         fail_on_difference,
         preview,
         account_override,
+        source_account,
+        target_account,
     } = settings;
     let source_inventory = document_inventory(source_map);
     let target_inventory = document_inventory(target_map);
@@ -4018,6 +4074,8 @@ pub(super) fn write_document_comparison_with_settings(
             settings,
         ),
         account_override: account_override.map(str::to_owned),
+        source_account: source_account.map(str::to_owned),
+        target_account: target_account.map(str::to_owned),
         comparison_scope: docs_compare_scope_label(scope),
         fail_on_difference,
         max_differences: preview.max_differences,
@@ -4090,6 +4148,14 @@ pub(super) fn write_document_comparison_with_settings(
         if let Some(account_override) = &report.account_override {
             writeln!(out, "Account override: {account_override}")
                 .context("failed to write Docs comparison account override")?;
+        }
+        if let Some(source_account) = &report.source_account {
+            writeln!(out, "Source account: {source_account}")
+                .context("failed to write Docs comparison source account")?;
+        }
+        if let Some(target_account) = &report.target_account {
+            writeln!(out, "Target account: {target_account}")
+                .context("failed to write Docs comparison target account")?;
         }
         writeln!(
             out,
@@ -4280,10 +4346,15 @@ fn document_comparison_replay_command(
         fail_on_difference,
         preview,
         account_override,
+        source_account,
+        target_account,
     } = settings;
     let mut arguments = vec!["goog".to_owned()];
-    if let Some(account_override) = account_override {
-        arguments.extend(["--account".to_owned(), account_override.to_owned()]);
+    let replay_account = account_override.or_else(|| {
+        source_account.filter(|source_account| Some(*source_account) == target_account)
+    });
+    if let Some(replay_account) = replay_account {
+        arguments.extend(["--account".to_owned(), replay_account.to_owned()]);
     }
     arguments.extend([
         "docs".to_owned(),

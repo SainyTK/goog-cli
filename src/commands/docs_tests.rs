@@ -437,6 +437,70 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
 }
 
 #[tokio::test]
+async fn run_compare_unified_records_and_replays_the_resolved_account() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-123");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+
+    for (document_id, document) in [("source-123", source), ("target-456", target)] {
+        Mock::given(method("GET"))
+            .and(path(format!("/docs/v1/documents/{document_id}")))
+            .and(header("authorization", "Bearer bob-access"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(document))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut state = RuntimeState::default();
+    state.set_resource_account(resource_key("docs", "source-123"), "bob@example.com");
+    state.set_resource_account(resource_key("docs", "target-456"), "bob@example.com");
+    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_compare_unified_to(
+        &config,
+        &store,
+        None,
+        CompareDocumentsCommand {
+            source_document_id: "source-123".into(),
+            target_document_id: "target-456".into(),
+            json: true,
+            scope: DocsCompareScope::All,
+            fail_on_difference: true,
+            max_differences: 20,
+            summary_only: false,
+            difference_pattern: None,
+            required_source_revision_id: None,
+            required_target_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["sourceAccount"], "bob@example.com");
+    assert_eq!(output["targetAccount"], "bob@example.com");
+    assert!(output["accountOverride"].is_null());
+    assert_eq!(
+        &output["replayCommand"].as_array().unwrap()[..3],
+        serde_json::json!(["goog", "--account", "bob@example.com"])
+            .as_array()
+            .unwrap()
+    );
+}
+
+#[tokio::test]
 async fn run_compare_reports_content_difference() {
     let server = MockServer::start().await;
     let mut source = searchable_document();
@@ -967,12 +1031,16 @@ fn comparison_report_preserves_explicit_account_in_replay_evidence() {
             fail_on_difference: true,
             preview: comparison_preview(20, None),
             account_override: Some("owner@example.com"),
+            source_account: Some("owner@example.com"),
+            target_account: Some("owner@example.com"),
         },
     )
     .unwrap();
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(output["accountOverride"], "owner@example.com");
+    assert_eq!(output["sourceAccount"], "owner@example.com");
+    assert_eq!(output["targetAccount"], "owner@example.com");
     assert_eq!(
         output["replayCommand"],
         serde_json::json!([
@@ -1007,6 +1075,8 @@ fn comparison_report_preserves_explicit_account_in_replay_evidence() {
             fail_on_difference: true,
             preview: comparison_preview(20, None),
             account_override: Some("owner@example.com"),
+            source_account: Some("owner@example.com"),
+            target_account: Some("owner@example.com"),
         },
     )
     .unwrap();
@@ -1015,6 +1085,37 @@ fn comparison_report_preserves_explicit_account_in_replay_evidence() {
     assert!(
         human_output.contains("Replay command: goog --account 'owner@example.com' docs compare")
     );
+}
+
+#[test]
+fn comparison_report_does_not_pin_one_account_when_documents_used_different_accounts() {
+    let source_map = build_document_map(&searchable_document());
+    let mut target = searchable_document();
+    target["documentId"] = serde_json::json!("target-456");
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison_with_settings(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocumentComparisonSettings {
+            scope: DocsCompareScope::All,
+            fail_on_difference: false,
+            preview: comparison_preview(20, None),
+            account_override: None,
+            source_account: Some("alice@example.com"),
+            target_account: Some("bob@example.com"),
+        },
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["sourceAccount"], "alice@example.com");
+    assert_eq!(output["targetAccount"], "bob@example.com");
+    assert_eq!(output["replayCommand"][0], "goog");
+    assert_eq!(output["replayCommand"][1], "docs");
 }
 
 #[test]
