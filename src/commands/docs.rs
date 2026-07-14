@@ -2930,6 +2930,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
             &CopyDocumentAcceptance {
                 report_type: COPY_DOCUMENT_ACCEPTANCE_REPORT_TYPE,
                 report_schema_version: COPY_DOCUMENT_ACCEPTANCE_REPORT_SCHEMA_VERSION,
+                accepted_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
                 source_document_id: &source_document_id,
                 copied_document_id: document_id,
                 copied_document_title: &title,
@@ -2954,6 +2955,7 @@ const COPY_DOCUMENT_ACCEPTANCE_REPORT_SCHEMA_VERSION: u32 = 1;
 struct CopyDocumentAcceptance<'a> {
     report_type: &'static str,
     report_schema_version: u32,
+    accepted_at: String,
     source_document_id: &'a str,
     copied_document_id: &'a str,
     copied_document_title: &'a str,
