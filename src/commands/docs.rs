@@ -3861,6 +3861,7 @@ pub(super) struct CompareDocumentsCommand {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DocumentComparisonReport {
+    report_schema_version: u32,
     compared_at: String,
     goog_cli_version: &'static str,
     goog_cli_execution_os: &'static str,
@@ -3899,6 +3900,8 @@ struct DocumentComparisonReport {
     total_difference_count_outside_preview: Option<usize>,
     scopes: Vec<DocumentComparisonScope>,
 }
+
+const DOCUMENT_COMPARISON_REPORT_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -4074,6 +4077,7 @@ pub(super) fn write_document_comparison_with_settings(
             .sum()
     });
     let mut report = DocumentComparisonReport {
+        report_schema_version: DOCUMENT_COMPARISON_REPORT_SCHEMA_VERSION,
         compared_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         goog_cli_version: env!("CARGO_PKG_VERSION"),
         goog_cli_execution_os: std::env::consts::OS,
@@ -4158,6 +4162,12 @@ pub(super) fn write_document_comparison_with_settings(
     if json {
         write_json_line(out, &report, "failed to serialize Docs comparison")?;
     } else {
+        writeln!(
+            out,
+            "Report schema version: {}",
+            report.report_schema_version
+        )
+        .context("failed to write Docs comparison report schema version")?;
         writeln!(out, "Compared at: {}", report.compared_at)
             .context("failed to write Docs comparison timestamp")?;
         writeln!(out, "goog CLI version: {}", report.goog_cli_version)

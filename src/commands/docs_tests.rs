@@ -380,6 +380,7 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     .unwrap();
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["reportSchemaVersion"], 1);
     let compared_at = output["comparedAt"].as_str().unwrap();
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
@@ -640,6 +641,7 @@ async fn run_compare_reports_content_difference() {
     );
 
     let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("Report schema version: 1"));
     let compared_at = output
         .lines()
         .find_map(|line| line.strip_prefix("Compared at: "))
