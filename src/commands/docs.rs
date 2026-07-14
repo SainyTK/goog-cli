@@ -126,6 +126,7 @@ pub fn run<S: AccountStore>(
             max_differences,
             summary_only,
             difference_pattern,
+            required_executable_sha256,
             required_source_revision_id,
             required_target_revision_id,
         } => {
@@ -146,6 +147,7 @@ pub fn run<S: AccountStore>(
                     max_differences,
                     summary_only,
                     difference_pattern,
+                    required_executable_sha256,
                     required_source_revision_id,
                     required_target_revision_id,
                 },
@@ -1090,6 +1092,7 @@ pub(super) async fn run_compare_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
+    validate_comparison_executable_sha256(command.required_executable_sha256.as_deref())?;
     let source_map = get_document_map(client, command.source_document_id, documents_url).await?;
     let target_map = get_document_map(client, command.target_document_id, documents_url).await?;
     validate_comparison_revision(
@@ -1138,6 +1141,21 @@ pub(super) fn validate_comparison_revision(
     Ok(())
 }
 
+pub(super) fn validate_comparison_executable_sha256(
+    required_executable_sha256: Option<&str>,
+) -> Result<()> {
+    let Some(required_executable_sha256) = required_executable_sha256 else {
+        return Ok(());
+    };
+    let actual_executable_sha256 = goog_cli_executable_sha256()?;
+    if actual_executable_sha256 != required_executable_sha256 {
+        bail!(
+            "required goog CLI executable SHA-256 `{required_executable_sha256}` does not match running executable SHA-256 `{actual_executable_sha256}`"
+        );
+    }
+    Ok(())
+}
+
 pub(super) async fn run_compare_unified_to<S: AccountStore>(
     config: &Config,
     store: &S,
@@ -1147,6 +1165,7 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
     documents_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<()> {
+    validate_comparison_executable_sha256(command.required_executable_sha256.as_deref())?;
     let source_account_override = command.source_account.as_deref().or(account_override);
     let target_account_override = command.target_account.as_deref().or(account_override);
     let (source_map, source_account) = get_document_map_unified_with_account(
@@ -3854,6 +3873,7 @@ pub(super) struct CompareDocumentsCommand {
     pub(super) max_differences: u32,
     pub(super) summary_only: bool,
     pub(super) difference_pattern: Option<String>,
+    pub(super) required_executable_sha256: Option<String>,
     pub(super) required_source_revision_id: Option<String>,
     pub(super) required_target_revision_id: Option<String>,
 }
@@ -4079,6 +4099,7 @@ pub(super) fn write_document_comparison_with_settings(
             .sum()
     });
     let goog_cli_executable_path = goog_cli_executable_path()?.to_owned();
+    let goog_cli_executable_sha256 = goog_cli_executable_sha256()?.to_owned();
     let mut report = DocumentComparisonReport {
         report_type: DOCUMENT_COMPARISON_REPORT_TYPE,
         report_schema_version: DOCUMENT_COMPARISON_REPORT_SCHEMA_VERSION,
@@ -4087,9 +4108,10 @@ pub(super) fn write_document_comparison_with_settings(
         goog_cli_execution_os: std::env::consts::OS,
         goog_cli_execution_arch: std::env::consts::ARCH,
         goog_cli_executable_path: goog_cli_executable_path.clone(),
-        goog_cli_executable_sha256: goog_cli_executable_sha256()?.to_owned(),
+        goog_cli_executable_sha256: goog_cli_executable_sha256.clone(),
         replay_command: document_comparison_replay_command(
             &goog_cli_executable_path,
+            &goog_cli_executable_sha256,
             source_map.document_id.as_deref(),
             target_map.document_id.as_deref(),
             (
@@ -4388,6 +4410,7 @@ pub(super) fn write_document_comparison_with_settings(
 
 fn document_comparison_replay_command(
     goog_cli_executable_path: &str,
+    goog_cli_executable_sha256: &str,
     source_document_id: Option<&str>,
     target_document_id: Option<&str>,
     revision_ids: (Option<&str>, Option<&str>),
@@ -4424,6 +4447,8 @@ fn document_comparison_replay_command(
         target_document_id
             .unwrap_or("TARGET_DOCUMENT_ID")
             .to_owned(),
+        "--required-executable-sha256".to_owned(),
+        goog_cli_executable_sha256.to_owned(),
     ]);
     if replay_account.is_none() {
         if let Some(source_account) = source_account {
@@ -5013,7 +5038,7 @@ fn json_fingerprint(value: &serde_json::Value) -> Result<String> {
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn goog_cli_executable_sha256() -> Result<&'static str> {
+pub(super) fn goog_cli_executable_sha256() -> Result<&'static str> {
     static EXECUTABLE_SHA256: OnceLock<std::result::Result<String, String>> = OnceLock::new();
     let fingerprint = EXECUTABLE_SHA256.get_or_init(|| {
         let executable = (|| -> Result<String> {

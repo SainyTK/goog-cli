@@ -713,6 +713,8 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "--summary-only",
         "--difference-pattern",
         "/entries/*/paragraphStyle/alignment",
+        "--required-executable-sha256",
+        "abc123",
         "--required-source-revision-id",
         "source-revision",
         "--required-target-revision-id",
@@ -735,6 +737,7 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             max_differences,
             summary_only,
             difference_pattern,
+            required_executable_sha256,
             required_source_revision_id,
             required_target_revision_id,
         } => {
@@ -751,6 +754,7 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
                 difference_pattern.as_deref(),
                 Some("/entries/*/paragraphStyle/alignment")
             );
+            assert_eq!(required_executable_sha256.as_deref(), Some("abc123"));
             assert_eq!(
                 required_source_revision_id.as_deref(),
                 Some("source-revision")

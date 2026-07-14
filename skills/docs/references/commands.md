@@ -82,7 +82,7 @@ Each report records its stable report type, schema version, a revision-guarded r
 JSON reports expose the replay command as an argument array so the recorded executable path, pattern filters, and other values can be reused without ambiguous shell parsing.
 Use `reportType` to identify `goog.docs.compare` evidence before interpreting `reportSchemaVersion` or any report-specific fields.
 Use `reportSchemaVersion` to reject or migrate report shapes that an acceptance-evidence consumer does not understand.
-The replay command starts with the recorded absolute goog executable path and includes `--required-source-revision-id` and `--required-target-revision-id`, so it cannot silently select a different binary or later document state.
+The replay command starts with the recorded absolute goog executable path and includes `--required-executable-sha256`, `--required-source-revision-id`, and `--required-target-revision-id`, so it rejects a rebuilt binary at the same path or a later document state.
 When the comparison uses `--account EMAIL`, the replay command preserves it so multi-account routing cannot silently select a different account.
 When both documents resolve through the same account, the replay command pins that resolved account automatically.
 When they resolve through different accounts, the replay command pins each one with `--source-account` and `--target-account`.

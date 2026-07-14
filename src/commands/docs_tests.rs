@@ -370,6 +370,7 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
             max_differences: 20,
             summary_only: false,
             difference_pattern: None,
+            required_executable_sha256: None,
             required_source_revision_id: None,
             required_target_revision_id: None,
         },
@@ -404,6 +405,8 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
             "compare",
             "source-123",
             "target-456",
+            "--required-executable-sha256",
+            executable_sha256,
             "--json",
             "--scope",
             "all",
@@ -494,6 +497,7 @@ async fn run_compare_unified_records_and_replays_the_resolved_account() {
             max_differences: 20,
             summary_only: false,
             difference_pattern: None,
+            required_executable_sha256: None,
             required_source_revision_id: None,
             required_target_revision_id: None,
         },
@@ -560,6 +564,7 @@ async fn run_compare_unified_uses_and_replays_distinct_document_accounts() {
             max_differences: 20,
             summary_only: false,
             difference_pattern: None,
+            required_executable_sha256: None,
             required_source_revision_id: None,
             required_target_revision_id: None,
         },
@@ -629,6 +634,7 @@ async fn run_compare_reports_content_difference() {
             max_differences: 20,
             summary_only: false,
             difference_pattern: None,
+            required_executable_sha256: None,
             required_source_revision_id: None,
             required_target_revision_id: None,
         },
@@ -675,8 +681,9 @@ async fn run_compare_reports_content_difference() {
         .bytes()
         .all(|byte| byte.is_ascii_hexdigit()));
     assert!(output.contains(&format!(
-        "Replay command: {} docs compare source-123 target-456 --scope all --fail-on-difference --max-differences 20 --required-source-revision-id rev-search --required-target-revision-id rev-search",
-        goog_cli_executable_path().unwrap()
+        "Replay command: {} docs compare source-123 target-456 --required-executable-sha256 {} --scope all --fail-on-difference --max-differences 20 --required-source-revision-id rev-search --required-target-revision-id rev-search",
+        goog_cli_executable_path().unwrap(),
+        goog_cli_executable_sha256().unwrap()
     )));
     assert!(output.contains(
         "Comparison settings: scope=all, fail-on-difference=yes, max-differences=20, summary-only=no"
@@ -722,6 +729,24 @@ fn comparison_revision_guards_reject_drift_and_missing_revision_metadata() {
 
     validate_comparison_revision("source", Some("same-revision"), Some("same-revision")).unwrap();
     validate_comparison_revision("target", None, None).unwrap();
+}
+
+#[test]
+fn comparison_executable_guard_rejects_binary_drift() {
+    let actual = goog_cli_executable_sha256().unwrap();
+    validate_comparison_executable_sha256(Some(actual)).unwrap();
+    validate_comparison_executable_sha256(None).unwrap();
+
+    let error = validate_comparison_executable_sha256(Some(
+        "0000000000000000000000000000000000000000000000000000000000000000",
+    ))
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "required goog CLI executable SHA-256 `0000000000000000000000000000000000000000000000000000000000000000` does not match running executable SHA-256 `{actual}`"
+        )
+    );
 }
 
 #[test]
@@ -1089,6 +1114,8 @@ fn comparison_filters_path_previews_by_reported_pattern() {
             "compare",
             "document-123",
             "target-456",
+            "--required-executable-sha256",
+            goog_cli_executable_sha256().unwrap(),
             "--json",
             "--scope",
             "formatting",
@@ -1167,6 +1194,8 @@ fn comparison_report_preserves_explicit_account_in_replay_evidence() {
             "compare",
             "document-123",
             "target-456",
+            "--required-executable-sha256",
+            goog_cli_executable_sha256().unwrap(),
             "--json",
             "--scope",
             "all",
@@ -1239,6 +1268,8 @@ fn comparison_report_pins_each_account_when_documents_used_different_accounts() 
             "compare",
             "document-123",
             "target-456",
+            "--required-executable-sha256",
+            goog_cli_executable_sha256().unwrap(),
             "--source-account",
             "alice@example.com",
             "--target-account",
@@ -1291,8 +1322,9 @@ fn filtered_human_comparison_distinguishes_matching_and_other_differences() {
 
     let output = String::from_utf8(out).unwrap();
     assert!(output.contains(&format!(
-        "Replay command: {} docs compare document-123 target-456 --scope formatting --max-differences 1 --difference-pattern '/entries/*/paragraphStyle/direction'",
-        goog_cli_executable_path().unwrap()
+        "Replay command: {} docs compare document-123 target-456 --required-executable-sha256 {} --scope formatting --max-differences 1 --difference-pattern '/entries/*/paragraphStyle/direction'",
+        goog_cli_executable_path().unwrap(),
+        goog_cli_executable_sha256().unwrap()
     )));
     assert!(output.contains("... 1 more difference matching the preview filter"));
     assert!(output.contains("2 differences outside the preview filter"));
