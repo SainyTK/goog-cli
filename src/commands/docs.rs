@@ -3757,9 +3757,11 @@ struct DocumentComparisonReport {
     source_document_id: Option<String>,
     source_document_title: Option<String>,
     source_document_url: Option<String>,
+    source_revision_id: Option<String>,
     target_document_id: Option<String>,
     target_document_title: Option<String>,
     target_document_url: Option<String>,
+    target_revision_id: Option<String>,
     summary_only: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     difference_preview_pattern: Option<String>,
@@ -3910,9 +3912,11 @@ pub(super) fn write_document_comparison(
         source_document_id: source_map.document_id.clone(),
         source_document_title: source_map.title.clone(),
         source_document_url: source_map.document_id.as_deref().map(document_edit_url),
+        source_revision_id: source_map.revision_id.clone(),
         target_document_id: target_map.document_id.clone(),
         target_document_title: target_map.title.clone(),
         target_document_url: target_map.document_id.as_deref().map(document_edit_url),
+        target_revision_id: target_map.revision_id.clone(),
         summary_only: preview.summary_only,
         difference_preview_pattern: preview.difference_pattern.map(str::to_owned),
         matches: scopes.iter().all(|scope| scope.matches),
@@ -3973,6 +3977,7 @@ pub(super) fn write_document_comparison(
             report.source_document_title.as_deref(),
             report.source_document_id.as_deref(),
             report.source_document_url.as_deref(),
+            report.source_revision_id.as_deref(),
         )?;
         write_document_comparison_identity(
             out,
@@ -3980,6 +3985,7 @@ pub(super) fn write_document_comparison(
             report.target_document_title.as_deref(),
             report.target_document_id.as_deref(),
             report.target_document_url.as_deref(),
+            report.target_revision_id.as_deref(),
         )?;
         writeln!(
             out,
@@ -4132,6 +4138,7 @@ fn write_document_comparison_identity(
     title: Option<&str>,
     document_id: Option<&str>,
     url: Option<&str>,
+    revision_id: Option<&str>,
 ) -> Result<()> {
     let identity = match (title, document_id, url) {
         (Some(title), Some(document_id), Some(url)) => format!("{title} [{document_id}] {url}"),
@@ -4140,7 +4147,10 @@ fn write_document_comparison_identity(
         (_, Some(document_id), _) => document_id.to_owned(),
         _ => "unknown document".to_owned(),
     };
-    writeln!(out, "{label}: {identity}")
+    let revision = revision_id
+        .map(|revision_id| format!(" [revision {revision_id}]"))
+        .unwrap_or_default();
+    writeln!(out, "{label}: {identity}{revision}")
         .with_context(|| format!("failed to write {label} Docs comparison identity"))
 }
 
