@@ -74,6 +74,7 @@ target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope for
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope visual-system --fail-on-difference
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope formatting --fail-on-difference
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --account EMAIL --fail-on-difference
+target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --source-account SOURCE_EMAIL --target-account TARGET_EMAIL --fail-on-difference
 ```
 
 The command compares component inventory, the native named-style and page-style visual system, formatting and layout, and all mapped content and component properties.
@@ -81,7 +82,8 @@ Each report records a revision-guarded replay command, the UTC comparison time, 
 JSON reports expose the replay command as an argument array so pattern filters and other values can be reused without ambiguous shell parsing.
 The replay command includes `--required-source-revision-id` and `--required-target-revision-id`, so it rejects a later document state instead of silently producing new evidence.
 When the comparison uses `--account EMAIL`, the replay command preserves it so multi-account routing cannot silently select a different account.
-When no override is supplied and both documents resolve through the same account, the replay command pins that resolved account automatically.
+When both documents resolve through the same account, the replay command pins that resolved account automatically.
+When they resolve through different accounts, the replay command pins each one with `--source-account` and `--target-account`.
 Keep the replay command, timestamp, CLI version, and revision IDs with acceptance evidence so a later document edit, tool change, or informational comparison cannot be mistaken for the tested acceptance gate.
 It removes Google-assigned object, heading, segment, and list IDs before comparison while retaining tab IDs, indexes, ranges, and component order.
 The visual-system scope also normalizes equivalent default fields that Google can materialize after copying styles, including false bold and page-break values and a page-number start of one.

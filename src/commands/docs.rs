@@ -117,6 +117,8 @@ pub fn run<S: AccountStore>(
         DocsCommand::Compare {
             source_document_id,
             target_document_id,
+            source_account,
+            target_account,
             json,
             scope,
             fail_on_difference,
@@ -135,6 +137,8 @@ pub fn run<S: AccountStore>(
                 CompareDocumentsCommand {
                     source_document_id,
                     target_document_id,
+                    source_account,
+                    target_account,
                     json,
                     scope,
                     fail_on_difference,
@@ -1142,10 +1146,12 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
     documents_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<()> {
+    let source_account_override = command.source_account.as_deref().or(account_override);
+    let target_account_override = command.target_account.as_deref().or(account_override);
     let (source_map, source_account) = get_document_map_unified_with_account(
         config,
         store,
-        account_override,
+        source_account_override,
         command.source_document_id,
         documents_url,
         state_path,
@@ -1154,7 +1160,7 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
     let (target_map, target_account) = get_document_map_unified_with_account(
         config,
         store,
-        account_override,
+        target_account_override,
         command.target_document_id,
         documents_url,
         state_path,
@@ -3839,6 +3845,8 @@ fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) ->
 pub(super) struct CompareDocumentsCommand {
     pub(super) source_document_id: String,
     pub(super) target_document_id: String,
+    pub(super) source_account: Option<String>,
+    pub(super) target_account: Option<String>,
     pub(super) json: bool,
     pub(super) scope: DocsCompareScope,
     pub(super) fail_on_difference: bool,
@@ -4350,9 +4358,15 @@ fn document_comparison_replay_command(
         target_account,
     } = settings;
     let mut arguments = vec!["goog".to_owned()];
-    let replay_account = account_override.or_else(|| {
-        source_account.filter(|source_account| Some(*source_account) == target_account)
-    });
+    let replay_account = source_account
+        .filter(|source_account| Some(*source_account) == target_account)
+        .or_else(|| {
+            if source_account.is_none() && target_account.is_none() {
+                account_override
+            } else {
+                None
+            }
+        });
     if let Some(replay_account) = replay_account {
         arguments.extend(["--account".to_owned(), replay_account.to_owned()]);
     }
@@ -4366,6 +4380,14 @@ fn document_comparison_replay_command(
             .unwrap_or("TARGET_DOCUMENT_ID")
             .to_owned(),
     ]);
+    if replay_account.is_none() {
+        if let Some(source_account) = source_account {
+            arguments.extend(["--source-account".to_owned(), source_account.to_owned()]);
+        }
+        if let Some(target_account) = target_account {
+            arguments.extend(["--target-account".to_owned(), target_account.to_owned()]);
+        }
+    }
     if json {
         arguments.push("--json".to_owned());
     }

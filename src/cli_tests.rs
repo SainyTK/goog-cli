@@ -700,6 +700,10 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "compare",
         "https://docs.google.com/document/d/source-123/edit",
         "target-456",
+        "--source-account",
+        "alice@example.com",
+        "--target-account",
+        "bob@example.com",
         "--json",
         "--scope",
         "visual-system",
@@ -723,6 +727,8 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         DocsCommand::Compare {
             source_document_id,
             target_document_id,
+            source_account,
+            target_account,
             json,
             scope,
             fail_on_difference,
@@ -734,6 +740,8 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         } => {
             assert_eq!(source_document_id, "source-123");
             assert_eq!(target_document_id, "target-456");
+            assert_eq!(source_account.as_deref(), Some("alice@example.com"));
+            assert_eq!(target_account.as_deref(), Some("bob@example.com"));
             assert!(*json);
             assert_eq!(*scope, DocsCompareScope::VisualSystem);
             assert!(*fail_on_difference);
