@@ -5037,6 +5037,7 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
     let accepted_at = acceptance["acceptedAt"].as_str().unwrap();
     assert!(chrono::DateTime::parse_from_rfc3339(accepted_at).is_ok());
     assert!(accepted_at.ends_with('Z'));
+    assert_eq!(acceptance["account"], "alice@example.com");
     assert_eq!(acceptance["sourceDocumentId"], "source-document-123");
     assert_eq!(acceptance["copiedDocumentId"], "copied-document-456");
     assert_eq!(acceptance["copiedDocumentTitle"], "Customer proposal copy");
@@ -5192,6 +5193,7 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     let accepted_at = records[1]["acceptedAt"].as_str().unwrap();
     assert!(chrono::DateTime::parse_from_rfc3339(accepted_at).is_ok());
     assert!(accepted_at.ends_with('Z'));
+    assert_eq!(records[1]["account"], "alice@example.com");
     assert_eq!(records[1]["copiedDocumentId"], "copied-document-456");
     assert_eq!(records[1]["fidelityVerified"], true);
     assert_eq!(records[1]["verifiedSourceRevisionId"], "rev-search");
