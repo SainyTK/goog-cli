@@ -1979,6 +1979,7 @@ Notes:
     /// Compare the semantic fidelity of two Google Docs
     #[command(after_long_help = "Notes:
   Compares component inventory, named and page styles, and mapped content properties.
+  Use --scope to compare only inventory, visual-system, or content properties.
   Mismatches include JSON Pointer paths with source and target values.
   Use --max-differences to control how many paths are shown per scope.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.
@@ -1993,6 +1994,9 @@ Notes:
         /// Emit structured JSON
         #[arg(long)]
         json: bool,
+        /// Comparison scope to evaluate
+        #[arg(long, value_enum, default_value_t = DocsCompareScope::All)]
+        scope: DocsCompareScope,
         /// Return a nonzero exit status when any comparison scope differs
         #[arg(long)]
         fail_on_difference: bool,
@@ -2965,6 +2969,18 @@ pub enum DocsMapType {
     Tables,
     /// Header and footer segments
     Segments,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, serde::Serialize)]
+pub enum DocsCompareScope {
+    /// Compare every semantic scope
+    All,
+    /// Compare component counts and inventory
+    Inventory,
+    /// Compare native named styles and page styles
+    VisualSystem,
+    /// Compare mapped content and component properties
+    Content,
 }
 
 #[derive(Debug, Subcommand)]

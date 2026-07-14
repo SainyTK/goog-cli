@@ -7,9 +7,9 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand,
-    DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
-    DocsTextCommand,
+    DocsBreakCommand, DocsCommand, DocsCompareScope, DocsFooterCommand, DocsFootnoteCommand,
+    DocsHeaderCommand, DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand,
+    DocsTableCommand, DocsTextCommand,
 };
 use crate::docs::{
     batch_update_document,
@@ -116,6 +116,7 @@ pub fn run<S: AccountStore>(
             source_document_id,
             target_document_id,
             json,
+            scope,
             fail_on_difference,
             max_differences,
         } => {
@@ -129,6 +130,7 @@ pub fn run<S: AccountStore>(
                     source_document_id,
                     target_document_id,
                     json,
+                    scope,
                     fail_on_difference,
                     max_differences,
                 },
@@ -1080,6 +1082,7 @@ pub(super) async fn run_compare_to<S: AccountStore>(
         &source_map,
         &target_map,
         command.json,
+        command.scope,
         command.fail_on_difference,
         command.max_differences as usize,
     )
@@ -1117,6 +1120,7 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
         &source_map,
         &target_map,
         command.json,
+        command.scope,
         command.fail_on_difference,
         command.max_differences as usize,
     )
@@ -3728,6 +3732,7 @@ pub(super) struct CompareDocumentsCommand {
     pub(super) source_document_id: String,
     pub(super) target_document_id: String,
     pub(super) json: bool,
+    pub(super) scope: DocsCompareScope,
     pub(super) fail_on_difference: bool,
     pub(super) max_differences: u32,
 }
@@ -3765,11 +3770,12 @@ pub(super) struct DocumentComparisonDifference {
     pub(super) target: String,
 }
 
-fn write_document_comparison(
+pub(super) fn write_document_comparison(
     out: &mut impl Write,
     source_map: &DocumentMap,
     target_map: &DocumentMap,
     json: bool,
+    scope: DocsCompareScope,
     fail_on_difference: bool,
     max_differences: usize,
 ) -> Result<()> {
@@ -3780,29 +3786,37 @@ fn write_document_comparison(
     let source_content = canonical_content(source_map)?;
     let target_content = canonical_content(target_map)?;
 
-    let scopes = vec![
-        comparison_scope(
+    let mut scopes = Vec::new();
+    if matches!(scope, DocsCompareScope::All | DocsCompareScope::Inventory) {
+        scopes.push(comparison_scope(
             "inventory",
-            source_inventory.clone(),
-            target_inventory.clone(),
+            source_inventory,
+            target_inventory,
             true,
             max_differences,
-        )?,
-        comparison_scope(
+        )?);
+    }
+    if matches!(
+        scope,
+        DocsCompareScope::All | DocsCompareScope::VisualSystem
+    ) {
+        scopes.push(comparison_scope(
             "visual-system",
             source_visual_system,
             target_visual_system,
             false,
             max_differences,
-        )?,
-        comparison_scope(
+        )?);
+    }
+    if matches!(scope, DocsCompareScope::All | DocsCompareScope::Content) {
+        scopes.push(comparison_scope(
             "content",
             source_content,
             target_content,
             false,
             max_differences,
-        )?,
-    ];
+        )?);
+    }
     let report = DocumentComparisonReport {
         source_document_id: source_map.document_id.clone(),
         target_document_id: target_map.document_id.clone(),

@@ -9,7 +9,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::cli::{DocsListType, DocsMapType, DocsSectionBreakType};
+use crate::cli::{DocsCompareScope, DocsListType, DocsMapType, DocsSectionBreakType};
 use crate::docs::change::{
     ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
     CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
@@ -352,6 +352,7 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
             source_document_id: "source-123".into(),
             target_document_id: "target-456".into(),
             json: true,
+            scope: DocsCompareScope::All,
             fail_on_difference: false,
             max_differences: 20,
         },
@@ -414,6 +415,7 @@ async fn run_compare_reports_content_difference() {
             source_document_id: "source-123".into(),
             target_document_id: "target-456".into(),
             json: false,
+            scope: DocsCompareScope::All,
             fail_on_difference: true,
             max_differences: 20,
         },
@@ -435,6 +437,34 @@ async fn run_compare_reports_content_difference() {
         output.contains("/entries/0/preview: source=\"Project Plan\", target=\"Changed title\"")
     );
     assert!(output.contains("Overall: different"));
+}
+
+#[test]
+fn compare_scope_limits_output_and_acceptance_to_selected_scope() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["content"] =
+        serde_json::json!("Changed title\n");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::VisualSystem,
+        true,
+        20,
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["scopes"].as_array().unwrap().len(), 1);
+    assert_eq!(output["scopes"][0]["scope"], "visual-system");
 }
 
 #[test]

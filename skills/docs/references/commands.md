@@ -68,6 +68,7 @@ target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --json
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --fail-on-difference
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --max-differences 100
+target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope visual-system --fail-on-difference
 ```
 
 The command compares component inventory, the native named-style and page-style visual system, and all mapped content and component properties.
@@ -75,6 +76,8 @@ It removes Google-assigned object, heading, segment, and list IDs before compari
 An overall match proves semantic structural equivalence across all three scopes.
 It does not replace page-level visual inspection.
 Use `--fail-on-difference` in acceptance scripts that must return a nonzero status when any scope differs.
+Use `--scope inventory`, `--scope visual-system`, or `--scope content` when the target intentionally differs in other scopes.
+For example, a blank-document recreation with different prose can independently gate its copied native named styles and page layout with `--scope visual-system`.
 
 When the command reports a difference, it includes up to 20 JSON Pointer paths per scope with concise source and target values by default.
 Set `--max-differences` to a positive number when a larger or smaller diagnostic preview is useful.

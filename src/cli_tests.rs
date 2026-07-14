@@ -5,9 +5,9 @@ use crate::cli::{
     AuthCommand, AuthMappingsCommand, CalendarAclCommand, CalendarAclRole, CalendarAclScope,
     CalendarCalendarsCommand, CalendarColorsCommand, CalendarCommand, CalendarEventType,
     CalendarEventsCommand, CalendarEventsOrderBy, CalendarListEntryCommand, CalendarSendUpdates,
-    Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand,
-    DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType, DocsMapType,
-    DocsNamedRangeCommand, DocsParagraphAlignment, DocsStyleCommand, DocsTableCommand,
+    Cli, Command, DocsBreakCommand, DocsCommand, DocsCompareScope, DocsFooterCommand,
+    DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType,
+    DocsMapType, DocsNamedRangeCommand, DocsParagraphAlignment, DocsStyleCommand, DocsTableCommand,
     DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle,
     SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
     SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
@@ -701,6 +701,8 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "https://docs.google.com/document/d/source-123/edit",
         "target-456",
         "--json",
+        "--scope",
+        "visual-system",
         "--fail-on-difference",
         "--max-differences",
         "7",
@@ -715,12 +717,14 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             source_document_id,
             target_document_id,
             json,
+            scope,
             fail_on_difference,
             max_differences,
         } => {
             assert_eq!(source_document_id, "source-123");
             assert_eq!(target_document_id, "target-456");
             assert!(*json);
+            assert_eq!(*scope, DocsCompareScope::VisualSystem);
             assert!(*fail_on_difference);
             assert_eq!(*max_differences, 7);
         }
@@ -736,6 +740,15 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "0",
     ])
     .is_err());
+
+    let cli = parse(&["docs", "compare", "source-123", "target-456"]).unwrap();
+    let Command::Docs {
+        command: DocsCommand::Compare { scope, .. },
+    } = cli.command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(scope, DocsCompareScope::All);
 }
 
 #[test]
