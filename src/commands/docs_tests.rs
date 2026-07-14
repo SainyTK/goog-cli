@@ -376,6 +376,9 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     .unwrap();
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let compared_at = output["comparedAt"].as_str().unwrap();
+    assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
+    assert!(compared_at.ends_with('Z'));
     assert_eq!(output["sourceDocumentId"], "source-123");
     assert_eq!(output["sourceDocumentTitle"], "Searchable");
     assert_eq!(output["sourceRevisionId"], "rev-search");
@@ -458,6 +461,12 @@ async fn run_compare_reports_content_difference() {
     );
 
     let output = String::from_utf8(out).unwrap();
+    let compared_at = output
+        .lines()
+        .find_map(|line| line.strip_prefix("Compared at: "))
+        .unwrap();
+    assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
+    assert!(compared_at.ends_with('Z'));
     assert!(output.contains(
         "Source: Searchable [source-123] https://docs.google.com/document/d/source-123/edit [revision rev-search]"
     ));

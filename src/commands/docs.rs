@@ -1,6 +1,8 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
+use chrono::{SecondsFormat, Utc};
+
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
@@ -3754,6 +3756,7 @@ pub(super) struct CompareDocumentsCommand {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DocumentComparisonReport {
+    compared_at: String,
     source_document_id: Option<String>,
     source_document_title: Option<String>,
     source_document_url: Option<String>,
@@ -3909,6 +3912,7 @@ pub(super) fn write_document_comparison(
             .sum()
     });
     let mut report = DocumentComparisonReport {
+        compared_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         source_document_id: source_map.document_id.clone(),
         source_document_title: source_map.title.clone(),
         source_document_url: source_map.document_id.as_deref().map(document_edit_url),
@@ -3971,6 +3975,8 @@ pub(super) fn write_document_comparison(
     if json {
         write_json_line(out, &report, "failed to serialize Docs comparison")?;
     } else {
+        writeln!(out, "Compared at: {}", report.compared_at)
+            .context("failed to write Docs comparison timestamp")?;
         write_document_comparison_identity(
             out,
             "Source",
