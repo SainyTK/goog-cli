@@ -103,6 +103,7 @@ pub fn run<S: AccountStore>(
         DocsCommand::Copy {
             source_document_id,
             title,
+            required_executable_sha256,
             required_source_revision_id,
         } => {
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
@@ -110,9 +111,12 @@ pub fn run<S: AccountStore>(
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_copy_to(
                 &client,
-                source_document_id,
-                title,
-                required_source_revision_id.as_deref(),
+                CopyDocumentCommand {
+                    source_document_id,
+                    title,
+                    required_executable_sha256,
+                    required_source_revision_id,
+                },
                 &mut std::io::stdout(),
                 None,
                 None,
@@ -1095,7 +1099,7 @@ pub(super) async fn run_compare_to<S: AccountStore>(
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
-    validate_comparison_executable_sha256(command.required_executable_sha256.as_deref())?;
+    validate_executable_sha256(command.required_executable_sha256.as_deref())?;
     let source_map = get_document_map(client, command.source_document_id, documents_url).await?;
     let target_map = get_document_map(client, command.target_document_id, documents_url).await?;
     validate_comparison_revision(
@@ -1144,9 +1148,7 @@ pub(super) fn validate_comparison_revision(
     Ok(())
 }
 
-pub(super) fn validate_comparison_executable_sha256(
-    required_executable_sha256: Option<&str>,
-) -> Result<()> {
+pub(super) fn validate_executable_sha256(required_executable_sha256: Option<&str>) -> Result<()> {
     let Some(required_executable_sha256) = required_executable_sha256 else {
         return Ok(());
     };
@@ -1168,7 +1170,7 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
     documents_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<()> {
-    validate_comparison_executable_sha256(command.required_executable_sha256.as_deref())?;
+    validate_executable_sha256(command.required_executable_sha256.as_deref())?;
     let source_account_override = command.source_account.as_deref().or(account_override);
     let target_account_override = command.target_account.as_deref().or(account_override);
     let (source_map, source_account) = get_document_map_unified_with_account(
@@ -2852,16 +2854,15 @@ pub(super) async fn run_create_to<S: AccountStore>(
 
 pub(super) async fn run_copy_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
-    source_document_id: String,
-    title: String,
-    required_source_revision_id: Option<&str>,
+    command: CopyDocumentCommand,
     out: &mut impl Write,
     drive_files_url: Option<&str>,
     documents_url: Option<&str>,
 ) -> Result<()> {
-    if let Some(required_source_revision_id) = required_source_revision_id {
+    validate_executable_sha256(command.required_executable_sha256.as_deref())?;
+    if let Some(required_source_revision_id) = command.required_source_revision_id.as_deref() {
         let options = get_document_options(
-            source_document_id.clone(),
+            command.source_document_id.clone(),
             Some("revisionId".into()),
             false,
             documents_url,
@@ -2876,7 +2877,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         )?;
     }
 
-    let mut options = CopyDocumentOptions::new(source_document_id, title);
+    let mut options = CopyDocumentOptions::new(command.source_document_id, command.title);
     if let Some(drive_files_url) = drive_files_url {
         options = options.with_drive_files_url(drive_files_url);
     }
@@ -2896,6 +2897,13 @@ pub(super) async fn run_copy_to<S: AccountStore>(
     )
     .context("failed to write output")?;
     Ok(())
+}
+
+pub(super) struct CopyDocumentCommand {
+    pub(super) source_document_id: String,
+    pub(super) title: String,
+    pub(super) required_executable_sha256: Option<String>,
+    pub(super) required_source_revision_id: Option<String>,
 }
 
 #[cfg(test)]

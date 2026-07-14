@@ -732,12 +732,12 @@ fn comparison_revision_guards_reject_drift_and_missing_revision_metadata() {
 }
 
 #[test]
-fn comparison_executable_guard_rejects_binary_drift() {
+fn executable_guard_rejects_binary_drift() {
     let actual = goog_cli_executable_sha256().unwrap();
-    validate_comparison_executable_sha256(Some(actual)).unwrap();
-    validate_comparison_executable_sha256(None).unwrap();
+    validate_executable_sha256(Some(actual)).unwrap();
+    validate_executable_sha256(None).unwrap();
 
-    let error = validate_comparison_executable_sha256(Some(
+    let error = validate_executable_sha256(Some(
         "0000000000000000000000000000000000000000000000000000000000000000",
     ))
     .unwrap_err();
@@ -5015,9 +5015,12 @@ async fn run_copy_preserves_template_through_drive_and_prints_edit_url() {
 
     run_copy_to(
         &client,
-        "source-document-123".into(),
-        "Customer proposal copy".into(),
-        None,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: None,
+        },
         &mut out,
         Some(&drive_files_url),
         None,
@@ -5071,9 +5074,12 @@ async fn run_copy_verifies_required_source_revision_before_drive_copy() {
 
     run_copy_to(
         &client,
-        "source-document-123".into(),
-        "Customer proposal copy".into(),
-        Some("rev-approved"),
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: Some("rev-approved".into()),
+        },
         &mut out,
         Some(&format!("{}/drive/v3/files", server.uri())),
         Some(&format!("{}/docs/v1/documents", server.uri())),
@@ -5085,6 +5091,46 @@ async fn run_copy_verifies_required_source_revision_before_drive_copy() {
         String::from_utf8(out).unwrap(),
         "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit\n"
     );
+}
+
+#[tokio::test]
+async fn run_copy_rejects_executable_drift_before_document_access() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let error = run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: Some(
+                "0000000000000000000000000000000000000000000000000000000000000000".into(),
+            ),
+            required_source_revision_id: Some("rev-approved".into()),
+        },
+        &mut Vec::new(),
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("does not match running executable SHA-256"));
 }
 
 #[tokio::test]
@@ -5110,9 +5156,12 @@ async fn run_copy_rejects_stale_source_revision_before_drive_copy() {
     let client = test_client(&store);
     let error = run_copy_to(
         &client,
-        "source-document-123".into(),
-        "Customer proposal copy".into(),
-        Some("rev-approved"),
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: Some("rev-approved".into()),
+        },
         &mut Vec::new(),
         Some(&format!("{}/drive/v3/files", server.uri())),
         Some(&format!("{}/docs/v1/documents", server.uri())),

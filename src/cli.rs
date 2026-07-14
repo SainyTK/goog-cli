@@ -1968,6 +1968,7 @@ Notes:
 
 Notes:
   Copying preserves document components that the Google Docs API cannot create directly, including native tables of contents, page-number auto text, positioned images, and first-page header content.
+  Use --required-executable-sha256 to reject the copy if the running goog binary differs from the reviewed binary.
   Use --required-source-revision-id to reject the copy if the source changed after it was inspected.
   Workspace or source-file download, print, and copy restrictions can remain effective on the copied document.
   SOURCE_DOCUMENT_ID accepts either a bare Document ID or a full Google Docs or Drive URL.")]
@@ -1976,6 +1977,9 @@ Notes:
         source_document_id: String,
         /// Title for the copied Google Doc
         title: String,
+        /// Reject the copy unless the running goog executable has this SHA-256
+        #[arg(long)]
+        required_executable_sha256: Option<String>,
         /// Reject the copy unless the source is at this revision
         #[arg(long)]
         required_source_revision_id: Option<String>,

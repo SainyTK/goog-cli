@@ -1142,6 +1142,8 @@ fn docs_copy_parses_and_normalizes_source_url() {
         "copy",
         "https://docs.google.com/document/d/source-document-123/edit?tab=t.0",
         "Customer proposal copy",
+        "--required-executable-sha256",
+        "abc123",
         "--required-source-revision-id",
         "rev-approved",
     ])
@@ -1155,6 +1157,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
     let DocsCommand::Copy {
         source_document_id,
         title,
+        required_executable_sha256,
         required_source_revision_id,
     } = command
     else {
@@ -1162,6 +1165,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
     };
     assert_eq!(source_document_id, "source-document-123");
     assert_eq!(title, "Customer proposal copy");
+    assert_eq!(required_executable_sha256.as_deref(), Some("abc123"));
     assert_eq!(required_source_revision_id.as_deref(), Some("rev-approved"));
 }
 
