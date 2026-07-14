@@ -3769,6 +3769,10 @@ struct DocumentComparisonScope {
     #[serde(skip_serializing_if = "Option::is_none")]
     target_inventory: Option<serde_json::Value>,
     difference_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    preview_difference_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    difference_count_outside_preview: Option<usize>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     difference_patterns: Vec<DocumentComparisonDifferencePattern>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -3936,15 +3940,9 @@ pub(super) fn write_document_comparison(
                 )
                 .context("failed to write Docs comparison difference")?;
             }
-            let preview_difference_count = match preview.difference_pattern {
-                Some(filter) => scope
-                    .difference_patterns
-                    .iter()
-                    .find(|pattern| pattern.path == filter)
-                    .map(|pattern| pattern.count)
-                    .unwrap_or(0),
-                None => scope.difference_count,
-            };
+            let preview_difference_count = scope
+                .preview_difference_count
+                .unwrap_or(scope.difference_count);
             if preview_difference_count > scope.differences.len() {
                 let hidden_count = preview_difference_count - scope.differences.len();
                 writeln!(
@@ -4061,6 +4059,15 @@ fn comparison_scope(
             .cmp(&left.count)
             .then_with(|| left.path.cmp(&right.path))
     });
+    let preview_difference_count = preview.difference_pattern.map(|filter| {
+        difference_patterns
+            .iter()
+            .find(|pattern| pattern.path == filter)
+            .map(|pattern| pattern.count)
+            .unwrap_or(0)
+    });
+    let difference_count_outside_preview =
+        preview_difference_count.map(|preview_count| difference_count - preview_count);
     Ok(DocumentComparisonScope {
         scope,
         matches,
@@ -4069,6 +4076,8 @@ fn comparison_scope(
         source_inventory: include_inventory.then_some(source),
         target_inventory: include_inventory.then_some(target),
         difference_count,
+        preview_difference_count,
+        difference_count_outside_preview,
         difference_patterns,
         differences,
     })

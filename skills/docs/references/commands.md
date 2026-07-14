@@ -89,6 +89,7 @@ The per-pattern example remains available when `--max-differences` limits the ge
 Set `--max-differences` to a positive number when a larger or smaller diagnostic preview is useful.
 Copy a reported pattern into `--difference-pattern` to show concrete paths only for that pattern while retaining the complete pattern summary, total difference count, and acceptance result.
 Filtered human-readable reports count additional paths that match the selected pattern separately from differences outside the filter.
+Filtered JSON reports expose the same split through `previewDifferenceCount` and `differenceCountOutsidePreview` for every selected scope.
 The command rejects a pattern that is not present in the selected scope and suggests the closest reported patterns, so a typo cannot look like a successful empty drill-down.
 Use the manual map comparisons below when those paths need more context.
 Generate the same compact inventory for each document:

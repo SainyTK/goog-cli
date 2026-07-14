@@ -661,6 +661,8 @@ fn comparison_filters_path_previews_by_reported_pattern() {
         "/entries/*/paragraphStyle/direction"
     );
     assert_eq!(output["scopes"][0]["differenceCount"], 4);
+    assert_eq!(output["scopes"][0]["previewDifferenceCount"], 2);
+    assert_eq!(output["scopes"][0]["differenceCountOutsidePreview"], 2);
     assert_eq!(
         output["scopes"][0]["differencePatterns"]
             .as_array()
@@ -745,6 +747,45 @@ fn filtered_human_comparison_treats_an_absent_scope_pattern_as_outside() {
     let output = String::from_utf8(out).unwrap();
     assert!(output.contains("3 differences outside the preview filter"));
     assert!(!output.contains("... 3 more differences matching the preview filter"));
+}
+
+#[test]
+fn filtered_json_comparison_treats_an_absent_scope_pattern_as_outside() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    let mut target = searchable_document();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::All,
+        false,
+        comparison_preview(1, Some("/entries/*/paragraphStyle/alignment")),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let inventory = output["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|scope| scope["scope"] == "inventory")
+        .unwrap();
+    assert_eq!(inventory["previewDifferenceCount"], 0);
+    assert_eq!(
+        inventory["differenceCountOutsidePreview"],
+        inventory["differenceCount"]
+    );
 }
 
 #[test]
