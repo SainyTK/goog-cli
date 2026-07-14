@@ -4989,7 +4989,7 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "copied-document-456",
-            "name": "Customer proposal copy",
+            "name": "Google-confirmed customer proposal copy",
             "mimeType": "application/vnd.google-apps.document",
             "webViewLink": "https://docs.google.com/document/d/copied-document-456/edit"
         })))
@@ -5056,7 +5056,10 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
         "https://docs.google.com/document/d/source-document-123/edit"
     );
     assert_eq!(acceptance["copiedDocumentId"], "copied-document-456");
-    assert_eq!(acceptance["copiedDocumentTitle"], "Customer proposal copy");
+    assert_eq!(
+        acceptance["copiedDocumentTitle"],
+        "Google-confirmed customer proposal copy"
+    );
     assert_eq!(
         acceptance["copiedDocumentUrl"],
         "https://docs.google.com/document/d/copied-document-456/edit"
@@ -5140,7 +5143,7 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     source["documentId"] = serde_json::json!("source-document-123");
     let mut target = source.clone();
     target["documentId"] = serde_json::json!("copied-document-456");
-    target["title"] = serde_json::json!("Customer proposal copy");
+    target["title"] = serde_json::json!("Google-confirmed customer proposal copy");
     target["revisionId"] = serde_json::json!("rev-copy");
 
     Mock::given(method("POST"))
@@ -5240,6 +5243,10 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     );
     assert_eq!(records[1]["sourceDocumentTitle"], "Searchable");
     assert_eq!(records[1]["copiedDocumentId"], "copied-document-456");
+    assert_eq!(
+        records[1]["copiedDocumentTitle"],
+        "Google-confirmed customer proposal copy"
+    );
     assert_eq!(records[1]["fidelityVerified"], true);
     assert_eq!(records[1]["verifiedSourceRevisionId"], "rev-search");
     assert_eq!(records[1]["verifiedCopiedRevisionId"], "rev-copy");

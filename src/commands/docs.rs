@@ -2906,6 +2906,10 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         .get("id")
         .and_then(serde_json::Value::as_str)
         .context("Google Drive copy response did not include an id")?;
+    let mut copied_document_title = document
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
 
     let mut verified_source_document_title = None;
     let mut verified_source_revision_id = None;
@@ -2918,6 +2922,9 @@ pub(super) async fn run_copy_to<S: AccountStore>(
             .await
             .context("failed to map the copied Google Docs Document for fidelity verification")?;
         verified_source_document_title = source_map.title.clone();
+        if let Some(verified_title) = target_map.title.as_ref() {
+            copied_document_title = Some(verified_title.clone());
+        }
         verified_source_revision_id = source_map.revision_id.clone();
         verified_copied_revision_id = target_map.revision_id.clone();
         write_document_comparison_with_settings(
@@ -2963,7 +2970,9 @@ pub(super) async fn run_copy_to<S: AccountStore>(
                 source_document_title: verified_source_document_title.as_deref(),
                 source_document_url: &source_document_url,
                 copied_document_id: document_id,
-                copied_document_title: &title,
+                copied_document_title: copied_document_title
+                    .as_deref()
+                    .context("Google copy response did not include the copied Document title")?,
                 copied_document_url: &document_url,
                 fidelity_verified: command.verify_fidelity,
                 verified_source_revision_id: verified_source_revision_id.as_deref(),
