@@ -2935,6 +2935,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
     let mut verified_source_revision_id = None;
     let mut verified_copied_revision_id = None;
     let mut verified_scopes = Vec::new();
+    let mut fidelity_replay_command = None;
     if command.verify_fidelity {
         let source_map = source_map_for_verification
             .as_ref()
@@ -2948,7 +2949,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         }
         verified_source_revision_id = source_map.revision_id.clone();
         verified_copied_revision_id = target_map.revision_id.clone();
-        verified_scopes = write_document_comparison_with_settings(
+        let evidence = write_document_comparison_with_settings(
             out,
             source_map,
             &target_map,
@@ -2966,6 +2967,8 @@ pub(super) async fn run_copy_to<S: AccountStore>(
                 target_account: Some(client.account_email()),
             },
         )?;
+        verified_scopes = evidence.verified_scopes;
+        fidelity_replay_command = Some(evidence.replay_command);
     }
 
     let document_url = document_edit_url(document_id);
@@ -3005,6 +3008,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
                 fingerprint_algorithm: command.verify_fidelity.then_some("sha256"),
                 verified_source_revision_id: verified_source_revision_id.as_deref(),
                 verified_copied_revision_id: verified_copied_revision_id.as_deref(),
+                fidelity_replay_command: fidelity_replay_command.as_deref(),
                 verified_scopes: &verified_scopes,
             },
             "failed to serialize Docs copy acceptance record",
@@ -3016,7 +3020,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
 }
 
 const COPY_DOCUMENT_ACCEPTANCE_REPORT_TYPE: &str = "goog.docs.copy.acceptance";
-const COPY_DOCUMENT_ACCEPTANCE_REPORT_SCHEMA_VERSION: u32 = 3;
+const COPY_DOCUMENT_ACCEPTANCE_REPORT_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -3042,6 +3046,7 @@ struct CopyDocumentAcceptance<'a> {
     fingerprint_algorithm: Option<&'static str>,
     verified_source_revision_id: Option<&'a str>,
     verified_copied_revision_id: Option<&'a str>,
+    fidelity_replay_command: Option<&'a [String]>,
     verified_scopes: &'a [DocumentComparisonFingerprint],
 }
 
@@ -4135,6 +4140,11 @@ pub(super) struct DocumentComparisonFingerprint {
     target_fingerprint: String,
 }
 
+pub(super) struct DocumentComparisonEvidence {
+    verified_scopes: Vec<DocumentComparisonFingerprint>,
+    replay_command: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DocumentComparisonDifferencePattern {
@@ -4201,7 +4211,7 @@ pub(super) fn write_document_comparison_with_settings(
     target_map: &DocumentMap,
     json: bool,
     settings: DocumentComparisonSettings<'_>,
-) -> Result<Vec<DocumentComparisonFingerprint>> {
+) -> Result<DocumentComparisonEvidence> {
     let DocumentComparisonSettings {
         scope,
         fail_on_difference,
@@ -4372,15 +4382,18 @@ pub(super) fn write_document_comparison_with_settings(
         }
     }
 
-    let verified_scopes = report
-        .scopes
-        .iter()
-        .map(|scope| DocumentComparisonFingerprint {
-            scope: scope.scope,
-            source_fingerprint: scope.source_fingerprint.clone(),
-            target_fingerprint: scope.target_fingerprint.clone(),
-        })
-        .collect();
+    let evidence = DocumentComparisonEvidence {
+        replay_command: report.replay_command.clone(),
+        verified_scopes: report
+            .scopes
+            .iter()
+            .map(|scope| DocumentComparisonFingerprint {
+                scope: scope.scope,
+                source_fingerprint: scope.source_fingerprint.clone(),
+                target_fingerprint: scope.target_fingerprint.clone(),
+            })
+            .collect(),
+    };
 
     if json {
         write_json_line(out, &report, "failed to serialize Docs comparison")?;
@@ -4601,7 +4614,7 @@ pub(super) fn write_document_comparison_with_settings(
     if fail_on_difference && !report.matches {
         bail!("Google Docs comparison found semantic differences");
     }
-    Ok(verified_scopes)
+    Ok(evidence)
 }
 
 fn document_comparison_replay_command(
