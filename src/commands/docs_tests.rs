@@ -5017,8 +5017,10 @@ async fn run_copy_preserves_template_through_drive_and_prints_edit_url() {
         &client,
         "source-document-123".into(),
         "Customer proposal copy".into(),
+        None,
         &mut out,
         Some(&drive_files_url),
+        None,
     )
     .await
     .unwrap();
@@ -5027,6 +5029,100 @@ async fn run_copy_preserves_template_through_drive_and_prints_edit_url() {
         String::from_utf8(out).unwrap(),
         "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit\n"
     );
+}
+
+#[tokio::test]
+async fn run_copy_verifies_required_source_revision_before_drive_copy() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .and(wiremock::matchers::query_param("fields", "revisionId"))
+        .and(header("authorization", "Bearer docs-drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "revisionId": "rev-approved"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .and(header("authorization", "Bearer docs-drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "copied-document-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "docs-drive-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DOCS_SCOPE.into(), DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let mut out = Vec::new();
+
+    run_copy_to(
+        &client,
+        "source-document-123".into(),
+        "Customer proposal copy".into(),
+        Some("rev-approved"),
+        &mut out,
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit\n"
+    );
+}
+
+#[tokio::test]
+async fn run_copy_rejects_stale_source_revision_before_drive_copy() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .and(wiremock::matchers::query_param("fields", "revisionId"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "revisionId": "rev-current"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let error = run_copy_to(
+        &client,
+        "source-document-123".into(),
+        "Customer proposal copy".into(),
+        Some("rev-approved"),
+        &mut Vec::new(),
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains(
+        "required source revision `rev-approved` does not match current revision `rev-current`"
+    ));
 }
 
 #[tokio::test]

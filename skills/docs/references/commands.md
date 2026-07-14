@@ -15,7 +15,10 @@ Copy a template when the source contains editor-only components such as a native
 
 ```bash
 target/debug/goog docs copy SOURCE_DOCUMENT_ID "Quarterly operating review"
+target/debug/goog docs copy SOURCE_DOCUMENT_ID "Quarterly operating review" --required-source-revision-id REVISION_ID
 ```
+
+Use `--required-source-revision-id` after inspecting a live template to prevent copying a newer, unreviewed revision.
 
 Both commands print the document ID and edit URL separated by a tab.
 Capture both values from the output rather than guessing the URL.

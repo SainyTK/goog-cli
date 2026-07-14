@@ -1142,6 +1142,8 @@ fn docs_copy_parses_and_normalizes_source_url() {
         "copy",
         "https://docs.google.com/document/d/source-document-123/edit?tab=t.0",
         "Customer proposal copy",
+        "--required-source-revision-id",
+        "rev-approved",
     ])
     .unwrap()
     .command
@@ -1153,12 +1155,14 @@ fn docs_copy_parses_and_normalizes_source_url() {
     let DocsCommand::Copy {
         source_document_id,
         title,
+        required_source_revision_id,
     } = command
     else {
         panic!("unexpected Docs command");
     };
     assert_eq!(source_document_id, "source-document-123");
     assert_eq!(title, "Customer proposal copy");
+    assert_eq!(required_source_revision_id.as_deref(), Some("rev-approved"));
 }
 
 #[test]

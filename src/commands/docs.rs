@@ -103,6 +103,7 @@ pub fn run<S: AccountStore>(
         DocsCommand::Copy {
             source_document_id,
             title,
+            required_source_revision_id,
         } => {
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             let runtime =
@@ -111,7 +112,9 @@ pub fn run<S: AccountStore>(
                 &client,
                 source_document_id,
                 title,
+                required_source_revision_id.as_deref(),
                 &mut std::io::stdout(),
+                None,
                 None,
             ))
         }
@@ -2851,9 +2854,28 @@ pub(super) async fn run_copy_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     source_document_id: String,
     title: String,
+    required_source_revision_id: Option<&str>,
     out: &mut impl Write,
     drive_files_url: Option<&str>,
+    documents_url: Option<&str>,
 ) -> Result<()> {
+    if let Some(required_source_revision_id) = required_source_revision_id {
+        let options = get_document_options(
+            source_document_id.clone(),
+            Some("revisionId".into()),
+            false,
+            documents_url,
+        );
+        let source = get_document(client, &options)
+            .await
+            .context("failed to verify source Google Docs Document revision before copying")?;
+        validate_comparison_revision(
+            "source",
+            Some(required_source_revision_id),
+            source.get("revisionId").and_then(serde_json::Value::as_str),
+        )?;
+    }
+
     let mut options = CopyDocumentOptions::new(source_document_id, title);
     if let Some(drive_files_url) = drive_files_url {
         options = options.with_drive_files_url(drive_files_url);
