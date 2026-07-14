@@ -2875,7 +2875,23 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         .then(goog_cli_executable_sha256)
         .transpose()?
         .map(str::to_owned);
-    if let Some(required_source_revision_id) = command.required_source_revision_id.as_deref() {
+    let source_map_for_verification = if command.verify_fidelity {
+        let source_map =
+            get_document_map(client, command.source_document_id.clone(), documents_url)
+                .await
+                .context(
+                    "failed to map the source Google Docs Document for fidelity verification",
+                )?;
+        if let Some(required_source_revision_id) = command.required_source_revision_id.as_deref() {
+            validate_comparison_revision(
+                "source",
+                Some(required_source_revision_id),
+                source_map.revision_id.as_deref(),
+            )?;
+        }
+        Some(source_map)
+    } else if let Some(required_source_revision_id) = command.required_source_revision_id.as_deref()
+    {
         let options = get_document_options(
             command.source_document_id.clone(),
             Some("revisionId".into()),
@@ -2890,7 +2906,10 @@ pub(super) async fn run_copy_to<S: AccountStore>(
             Some(required_source_revision_id),
             source.get("revisionId").and_then(serde_json::Value::as_str),
         )?;
-    }
+        None
+    } else {
+        None
+    };
 
     let source_document_id = command.source_document_id;
     let title = command.title;
@@ -2915,9 +2934,9 @@ pub(super) async fn run_copy_to<S: AccountStore>(
     let mut verified_source_revision_id = None;
     let mut verified_copied_revision_id = None;
     if command.verify_fidelity {
-        let source_map = get_document_map(client, source_document_id.clone(), documents_url)
-            .await
-            .context("failed to map the source Google Docs Document for fidelity verification")?;
+        let source_map = source_map_for_verification
+            .as_ref()
+            .context("missing source map for fidelity verification")?;
         let target_map = get_document_map(client, document_id.to_owned(), documents_url)
             .await
             .context("failed to map the copied Google Docs Document for fidelity verification")?;
@@ -2929,7 +2948,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         verified_copied_revision_id = target_map.revision_id.clone();
         write_document_comparison_with_settings(
             out,
-            &source_map,
+            source_map,
             &target_map,
             command.json,
             DocumentComparisonSettings {

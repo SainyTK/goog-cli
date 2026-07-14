@@ -19,7 +19,7 @@ target/debug/goog docs copy SOURCE_DOCUMENT_ID "Quarterly operating review" --re
 ```
 
 Use `--required-executable-sha256` and `--required-source-revision-id` after inspecting a live template to prevent copying with a changed CLI binary or from a newer, unreviewed source revision.
-Use `--verify-fidelity` to compare the completed copy with the source across inventory, visual-system, formatting, and content scopes before accepting it.
+Use `--verify-fidelity` to capture and validate the source before copying, then compare the completed copy with that exact snapshot across inventory, visual-system, formatting, and content scopes before accepting it.
 The verified comparison replay command pins the resolved account used to read both the source and copied documents.
 The final JSON acceptance record identifies both document IDs, Google-confirmed titles, and edit URLs, the resolved account, goog CLI version, execution OS and architecture, running executable path and SHA-256, when acceptance occurred, and the exact source and copied revisions that passed verification.
 Use `--json` to emit the comparison and typed copy acceptance records as newline-delimited JSON.

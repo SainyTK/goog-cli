@@ -5156,6 +5156,13 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
         .await;
     Mock::given(method("GET"))
         .and(path("/docs/v1/documents/source-document-123"))
+        .and(wiremock::matchers::query_param("fields", "revisionId"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
         .respond_with(ResponseTemplate::new(200).set_body_json(source))
         .expect(1)
         .mount(&server)
@@ -5188,7 +5195,7 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
             source_document_id: "source-document-123".into(),
             title: "Customer proposal copy".into(),
             required_executable_sha256: None,
-            required_source_revision_id: None,
+            required_source_revision_id: Some("rev-search".into()),
             verify_fidelity: true,
             json: true,
         },
@@ -5403,6 +5410,56 @@ async fn run_copy_rejects_stale_source_revision_before_drive_copy() {
             required_source_revision_id: Some("rev-approved".into()),
             verify_fidelity: false,
             json: false,
+        },
+        &mut Vec::new(),
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains(
+        "required source revision `rev-approved` does not match current revision `rev-current`"
+    ));
+}
+
+#[tokio::test]
+async fn run_verified_copy_rejects_stale_source_snapshot_before_drive_copy() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-document-123");
+    source["revisionId"] = serde_json::json!("rev-current");
+
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/copied-document-456"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let error = run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: Some("rev-approved".into()),
+            verify_fidelity: true,
+            json: true,
         },
         &mut Vec::new(),
         Some(&format!("{}/drive/v3/files", server.uri())),
