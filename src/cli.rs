@@ -1982,6 +1982,7 @@ Notes:
   Use --scope to compare only inventory, visual-system, formatting, or content properties.
   Mismatches include complete path-pattern counts, a representative example for every pattern, and JSON Pointer previews with source and target values.
   Use --max-differences to control how many paths are shown per scope, or set it to 0 to suppress raw path previews.
+  Use --summary-only to suppress mismatch patterns and raw paths while retaining fingerprints, counts, and acceptance behavior.
   Use --difference-pattern to show concrete paths for one reported pattern while retaining complete counts and acceptance behavior.
   Human-readable reports summarize total, displayed, and limit-hidden differences; filtered reports also separate matching paths from differences outside the selected pattern.
   JSON reports expose report-level and per-scope totals for displayed paths and paths hidden by --max-differences; filtered reports also distinguish matching paths from differences outside the selected pattern.
@@ -2008,6 +2009,9 @@ Notes:
         /// Maximum mismatch paths to show per comparison scope
         #[arg(long, default_value_t = 20)]
         max_differences: u32,
+        /// Suppress mismatch patterns and paths while retaining summary counts
+        #[arg(long)]
+        summary_only: bool,
         /// Show mismatch path previews only for this reported pattern
         #[arg(long)]
         difference_pattern: Option<String>,

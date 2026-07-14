@@ -48,6 +48,7 @@ fn comparison_preview(
 ) -> DocumentComparisonPreview<'_> {
     DocumentComparisonPreview {
         max_differences,
+        summary_only: false,
         difference_pattern,
     }
 }
@@ -365,6 +366,7 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
             scope: DocsCompareScope::All,
             fail_on_difference: false,
             max_differences: 20,
+            summary_only: false,
             difference_pattern: None,
         },
         &mut out,
@@ -430,6 +432,7 @@ async fn run_compare_reports_content_difference() {
             scope: DocsCompareScope::All,
             fail_on_difference: true,
             max_differences: 20,
+            summary_only: false,
             difference_pattern: None,
         },
         &mut out,
@@ -663,6 +666,43 @@ fn comparison_can_suppress_raw_difference_paths() {
         output["scopes"][0]["differencePatterns"][0]["example"]["path"],
         "/entries/0/paragraphStyle"
     );
+}
+
+#[test]
+fn summary_only_comparison_suppresses_all_difference_details() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+    let preview = DocumentComparisonPreview {
+        max_differences: 20,
+        summary_only: true,
+        difference_pattern: None,
+    };
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        false,
+        preview,
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["summaryOnly"], true);
+    assert_eq!(output["totalDifferenceCount"], 1);
+    assert_eq!(output["totalDisplayedDifferenceCount"], 0);
+    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 1);
+    assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 0);
+    assert!(output["scopes"][0].get("differencePatterns").is_none());
+    assert!(output["scopes"][0].get("differences").is_none());
 }
 
 #[test]

@@ -706,6 +706,7 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "--fail-on-difference",
         "--max-differences",
         "7",
+        "--summary-only",
         "--difference-pattern",
         "/entries/*/paragraphStyle/alignment",
     ])
@@ -722,6 +723,7 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             scope,
             fail_on_difference,
             max_differences,
+            summary_only,
             difference_pattern,
         } => {
             assert_eq!(source_document_id, "source-123");
@@ -730,6 +732,7 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             assert_eq!(*scope, DocsCompareScope::VisualSystem);
             assert!(*fail_on_difference);
             assert_eq!(*max_differences, 7);
+            assert!(*summary_only);
             assert_eq!(
                 difference_pattern.as_deref(),
                 Some("/entries/*/paragraphStyle/alignment")

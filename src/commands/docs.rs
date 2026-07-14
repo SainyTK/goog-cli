@@ -119,6 +119,7 @@ pub fn run<S: AccountStore>(
             scope,
             fail_on_difference,
             max_differences,
+            summary_only,
             difference_pattern,
         } => {
             let runtime =
@@ -134,6 +135,7 @@ pub fn run<S: AccountStore>(
                     scope,
                     fail_on_difference,
                     max_differences,
+                    summary_only,
                     difference_pattern,
                 },
                 &mut std::io::stdout(),
@@ -1088,6 +1090,7 @@ pub(super) async fn run_compare_to<S: AccountStore>(
         command.fail_on_difference,
         DocumentComparisonPreview {
             max_differences: command.max_differences as usize,
+            summary_only: command.summary_only,
             difference_pattern: command.difference_pattern.as_deref(),
         },
     )
@@ -1129,6 +1132,7 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
         command.fail_on_difference,
         DocumentComparisonPreview {
             max_differences: command.max_differences as usize,
+            summary_only: command.summary_only,
             difference_pattern: command.difference_pattern.as_deref(),
         },
     )
@@ -3743,6 +3747,7 @@ pub(super) struct CompareDocumentsCommand {
     pub(super) scope: DocsCompareScope,
     pub(super) fail_on_difference: bool,
     pub(super) max_differences: u32,
+    pub(super) summary_only: bool,
     pub(super) difference_pattern: Option<String>,
 }
 
@@ -3751,6 +3756,7 @@ pub(super) struct CompareDocumentsCommand {
 struct DocumentComparisonReport {
     source_document_id: Option<String>,
     target_document_id: Option<String>,
+    summary_only: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     difference_preview_pattern: Option<String>,
     matches: bool,
@@ -3807,6 +3813,7 @@ pub(super) struct DocumentComparisonDifference {
 #[derive(Clone, Copy)]
 pub(super) struct DocumentComparisonPreview<'a> {
     pub(super) max_differences: usize,
+    pub(super) summary_only: bool,
     pub(super) difference_pattern: Option<&'a str>,
 }
 
@@ -3889,9 +3896,10 @@ pub(super) fn write_document_comparison(
             .map(|scope| scope.difference_count_outside_preview.unwrap_or(0))
             .sum()
     });
-    let report = DocumentComparisonReport {
+    let mut report = DocumentComparisonReport {
         source_document_id: source_map.document_id.clone(),
         target_document_id: target_map.document_id.clone(),
+        summary_only: preview.summary_only,
         difference_preview_pattern: preview.difference_pattern.map(str::to_owned),
         matches: scopes.iter().all(|scope| scope.matches),
         total_difference_count,
@@ -3931,6 +3939,13 @@ pub(super) fn write_document_comparison(
             bail!(
                 "difference pattern `{pattern}` was not found in the selected comparison scope.{suggestion} Run without --difference-pattern to list all reported patterns"
             );
+        }
+    }
+
+    if preview.summary_only {
+        for scope in &mut report.scopes {
+            scope.difference_patterns.clear();
+            scope.differences.clear();
         }
     }
 
@@ -4125,6 +4140,9 @@ fn comparison_scope(
     });
     let difference_count_outside_preview =
         preview_difference_count.map(|preview_count| difference_count - preview_count);
+    if preview.summary_only {
+        differences.clear();
+    }
     let displayed_difference_count = differences.len();
     let difference_count_hidden_by_limit = preview_difference_count
         .unwrap_or(difference_count)
@@ -4156,6 +4174,7 @@ pub(super) fn collect_json_differences(
 ) -> usize {
     let preview = DocumentComparisonPreview {
         max_differences,
+        summary_only: false,
         difference_pattern: None,
     };
     collect_json_differences_with_patterns(

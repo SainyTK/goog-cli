@@ -68,6 +68,7 @@ target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --json
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --fail-on-difference
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --json --max-differences 0
+target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --json --summary-only --fail-on-difference
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --max-differences 100
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope formatting --difference-pattern '/entries/*/paragraphStyle/alignment' --max-differences 100
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope visual-system --fail-on-difference
@@ -90,6 +91,8 @@ The per-pattern example remains available when `--max-differences` limits the ge
 Set `--max-differences` to a larger or smaller number when a different diagnostic preview is useful.
 Set it to zero for compact automation output with no raw path previews.
 Complete pattern counts, representative examples, fingerprints, aggregate totals, and acceptance behavior remain available.
+Use `--summary-only` when automation needs only fingerprints, aggregate counts, and the acceptance result.
+This suppresses both mismatch patterns and raw path previews without changing `--fail-on-difference` behavior.
 Copy a reported pattern into `--difference-pattern` to show concrete paths only for that pattern while retaining the complete pattern summary, total difference count, and acceptance result.
 Filtered human-readable reports count additional paths that match the selected pattern separately from differences outside the filter.
 Human-readable reports end with aggregate counts for total, displayed, and limit-hidden differences, and filtered reports also summarize the matching and out-of-filter split.
