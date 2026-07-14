@@ -67,6 +67,7 @@ Use the high-level comparison command for the complete structural acceptance che
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --json
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --fail-on-difference
+target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --json --max-differences 0
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --max-differences 100
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope formatting --difference-pattern '/entries/*/paragraphStyle/alignment' --max-differences 100
 target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope visual-system --fail-on-difference
@@ -86,7 +87,9 @@ Use `--scope formatting` to compare paragraph and text styles, table and image g
 When the command reports a difference, it includes complete path-pattern counts, one representative source-target example for every pattern, and up to 20 JSON Pointer paths per scope by default.
 Array indexes become `*` in patterns, so repeated formatting gaps remain visible even when an earlier component consumes the raw-path preview.
 The per-pattern example remains available when `--max-differences` limits the general path preview.
-Set `--max-differences` to a positive number when a larger or smaller diagnostic preview is useful.
+Set `--max-differences` to a larger or smaller number when a different diagnostic preview is useful.
+Set it to zero for compact automation output with no raw path previews.
+Complete pattern counts, representative examples, fingerprints, aggregate totals, and acceptance behavior remain available.
 Copy a reported pattern into `--difference-pattern` to show concrete paths only for that pattern while retaining the complete pattern summary, total difference count, and acceptance result.
 Filtered human-readable reports count additional paths that match the selected pattern separately from differences outside the filter.
 Human-readable reports end with aggregate counts for total, displayed, and limit-hidden differences, and filtered reports also summarize the matching and out-of-filter split.

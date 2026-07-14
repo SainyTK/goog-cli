@@ -630,6 +630,42 @@ fn comparison_groups_repeated_array_differences_by_path_pattern() {
 }
 
 #[test]
+fn comparison_can_suppress_raw_difference_paths() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(0, None),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["totalDifferenceCount"], 1);
+    assert_eq!(output["totalDisplayedDifferenceCount"], 0);
+    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 1);
+    assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 0);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 1);
+    assert!(output["scopes"][0].get("differences").is_none());
+    assert_eq!(output["scopes"][0]["differencePatterns"][0]["count"], 1);
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"][0]["example"]["path"],
+        "/entries/0/paragraphStyle"
+    );
+}
+
+#[test]
 fn comparison_filters_path_previews_by_reported_pattern() {
     let mut source = searchable_document();
     let second_paragraph = source["body"]["content"][0].clone();

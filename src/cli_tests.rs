@@ -738,7 +738,7 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         _ => panic!("unexpected parse result"),
     }
 
-    assert!(parse(&[
+    let cli = parse(&[
         "docs",
         "compare",
         "source-123",
@@ -746,7 +746,16 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "--max-differences",
         "0",
     ])
-    .is_err());
+    .unwrap();
+    let Command::Docs {
+        command: DocsCommand::Compare {
+            max_differences, ..
+        },
+    } = cli.command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(max_differences, 0);
 
     let cli = parse(&["docs", "compare", "source-123", "target-456"]).unwrap();
     let Command::Docs {
