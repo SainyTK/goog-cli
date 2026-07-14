@@ -600,6 +600,8 @@ fn comparison_groups_repeated_array_differences_by_path_pattern() {
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(output["scopes"][0]["differenceCount"], 2);
+    assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 1);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 1);
     assert_eq!(
         output["scopes"][0]["differences"].as_array().unwrap().len(),
         1
@@ -661,6 +663,8 @@ fn comparison_filters_path_previews_by_reported_pattern() {
         "/entries/*/paragraphStyle/direction"
     );
     assert_eq!(output["scopes"][0]["differenceCount"], 4);
+    assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 1);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 1);
     assert_eq!(output["scopes"][0]["previewDifferenceCount"], 2);
     assert_eq!(output["scopes"][0]["differenceCountOutsidePreview"], 2);
     assert_eq!(
@@ -782,6 +786,8 @@ fn filtered_json_comparison_treats_an_absent_scope_pattern_as_outside() {
         .find(|scope| scope["scope"] == "inventory")
         .unwrap();
     assert_eq!(inventory["previewDifferenceCount"], 0);
+    assert_eq!(inventory["displayedDifferenceCount"], 0);
+    assert_eq!(inventory["differenceCountHiddenByLimit"], 0);
     assert_eq!(
         inventory["differenceCountOutsidePreview"],
         inventory["differenceCount"]

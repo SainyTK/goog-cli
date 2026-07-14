@@ -3769,6 +3769,8 @@ struct DocumentComparisonScope {
     #[serde(skip_serializing_if = "Option::is_none")]
     target_inventory: Option<serde_json::Value>,
     difference_count: usize,
+    displayed_difference_count: usize,
+    difference_count_hidden_by_limit: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     preview_difference_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4068,6 +4070,10 @@ fn comparison_scope(
     });
     let difference_count_outside_preview =
         preview_difference_count.map(|preview_count| difference_count - preview_count);
+    let displayed_difference_count = differences.len();
+    let difference_count_hidden_by_limit = preview_difference_count
+        .unwrap_or(difference_count)
+        .saturating_sub(displayed_difference_count);
     Ok(DocumentComparisonScope {
         scope,
         matches,
@@ -4076,6 +4082,8 @@ fn comparison_scope(
         source_inventory: include_inventory.then_some(source),
         target_inventory: include_inventory.then_some(target),
         difference_count,
+        displayed_difference_count,
+        difference_count_hidden_by_limit,
         preview_difference_count,
         difference_count_outside_preview,
         difference_patterns,
