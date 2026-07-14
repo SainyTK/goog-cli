@@ -348,10 +348,13 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     let documents_url = format!("{}/docs/v1/documents", server.uri());
     run_compare_to(
         &client,
-        "source-123".into(),
-        "target-456".into(),
-        true,
-        false,
+        CompareDocumentsCommand {
+            source_document_id: "source-123".into(),
+            target_document_id: "target-456".into(),
+            json: true,
+            fail_on_difference: false,
+            max_differences: 20,
+        },
         &mut out,
         Some(&documents_url),
     )
@@ -407,10 +410,13 @@ async fn run_compare_reports_content_difference() {
     let documents_url = format!("{}/docs/v1/documents", server.uri());
     let error = run_compare_to(
         &client,
-        "source-123".into(),
-        "target-456".into(),
-        false,
-        true,
+        CompareDocumentsCommand {
+            source_document_id: "source-123".into(),
+            target_document_id: "target-456".into(),
+            json: false,
+            fail_on_difference: true,
+            max_differences: 20,
+        },
         &mut out,
         Some(&documents_url),
     )
@@ -445,10 +451,10 @@ fn comparison_differences_report_paths_missing_values_and_a_bounded_preview() {
     });
     let mut differences = Vec::new();
 
-    let count = collect_json_differences("", Some(&source), Some(&target), &mut differences);
+    let count = collect_json_differences("", Some(&source), Some(&target), &mut differences, 4);
 
     assert_eq!(count, 5);
-    assert_eq!(differences.len(), 5);
+    assert_eq!(differences.len(), 4);
     assert_eq!(differences[0].path, "/a~1b/0");
     assert_eq!(differences[0].source, "0");
     assert_eq!(differences[0].target, "10");

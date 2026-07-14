@@ -1979,7 +1979,8 @@ Notes:
     /// Compare the semantic fidelity of two Google Docs
     #[command(after_long_help = "Notes:
   Compares component inventory, named and page styles, and mapped content properties.
-  Mismatches include up to 20 JSON Pointer paths with source and target values.
+  Mismatches include JSON Pointer paths with source and target values.
+  Use --max-differences to control how many paths are shown per scope.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.
   Google-assigned object, heading, segment, and list IDs are ignored.
   A matching result still requires page-level visual inspection for final acceptance.
@@ -1995,6 +1996,9 @@ Notes:
         /// Return a nonzero exit status when any comparison scope differs
         #[arg(long)]
         fail_on_difference: bool,
+        /// Maximum mismatch paths to show per comparison scope
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..))]
+        max_differences: u32,
     },
     /// Export a native Google Doc as a PDF file
     #[command(after_long_help = "Notes:

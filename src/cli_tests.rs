@@ -702,6 +702,8 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "target-456",
         "--json",
         "--fail-on-difference",
+        "--max-differences",
+        "7",
     ])
     .unwrap();
     let Command::Docs { command } = &mut cli.command else {
@@ -714,14 +716,26 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             target_document_id,
             json,
             fail_on_difference,
+            max_differences,
         } => {
             assert_eq!(source_document_id, "source-123");
             assert_eq!(target_document_id, "target-456");
             assert!(*json);
             assert!(*fail_on_difference);
+            assert_eq!(*max_differences, 7);
         }
         _ => panic!("unexpected parse result"),
     }
+
+    assert!(parse(&[
+        "docs",
+        "compare",
+        "source-123",
+        "target-456",
+        "--max-differences",
+        "0",
+    ])
+    .is_err());
 }
 
 #[test]

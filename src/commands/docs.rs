@@ -117,6 +117,7 @@ pub fn run<S: AccountStore>(
             target_document_id,
             json,
             fail_on_difference,
+            max_differences,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -129,6 +130,7 @@ pub fn run<S: AccountStore>(
                     target_document_id,
                     json,
                     fail_on_difference,
+                    max_differences,
                 },
                 &mut std::io::stdout(),
                 None,
@@ -1067,16 +1069,20 @@ pub(super) async fn run_map_unified_to<S: AccountStore>(
 #[cfg(test)]
 pub(super) async fn run_compare_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
-    source_document_id: String,
-    target_document_id: String,
-    json: bool,
-    fail_on_difference: bool,
+    command: CompareDocumentsCommand,
     out: &mut impl Write,
     documents_url: Option<&str>,
 ) -> Result<()> {
-    let source_map = get_document_map(client, source_document_id, documents_url).await?;
-    let target_map = get_document_map(client, target_document_id, documents_url).await?;
-    write_document_comparison(out, &source_map, &target_map, json, fail_on_difference)
+    let source_map = get_document_map(client, command.source_document_id, documents_url).await?;
+    let target_map = get_document_map(client, command.target_document_id, documents_url).await?;
+    write_document_comparison(
+        out,
+        &source_map,
+        &target_map,
+        command.json,
+        command.fail_on_difference,
+        command.max_differences as usize,
+    )
 }
 
 pub(super) async fn run_compare_unified_to<S: AccountStore>(
@@ -1112,6 +1118,7 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
         &target_map,
         command.json,
         command.fail_on_difference,
+        command.max_differences as usize,
     )
 }
 
@@ -3718,10 +3725,11 @@ fn write_document_map_table(out: &mut impl Write, document_map: &DocumentMap) ->
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct CompareDocumentsCommand {
-    source_document_id: String,
-    target_document_id: String,
-    json: bool,
-    fail_on_difference: bool,
+    pub(super) source_document_id: String,
+    pub(super) target_document_id: String,
+    pub(super) json: bool,
+    pub(super) fail_on_difference: bool,
+    pub(super) max_differences: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -3757,14 +3765,13 @@ pub(super) struct DocumentComparisonDifference {
     pub(super) target: String,
 }
 
-const COMPARISON_DIFFERENCE_LIMIT: usize = 20;
-
 fn write_document_comparison(
     out: &mut impl Write,
     source_map: &DocumentMap,
     target_map: &DocumentMap,
     json: bool,
     fail_on_difference: bool,
+    max_differences: usize,
 ) -> Result<()> {
     let source_inventory = document_inventory(source_map);
     let target_inventory = document_inventory(target_map);
@@ -3779,14 +3786,22 @@ fn write_document_comparison(
             source_inventory.clone(),
             target_inventory.clone(),
             true,
+            max_differences,
         )?,
         comparison_scope(
             "visual-system",
             source_visual_system,
             target_visual_system,
             false,
+            max_differences,
         )?,
-        comparison_scope("content", source_content, target_content, false)?,
+        comparison_scope(
+            "content",
+            source_content,
+            target_content,
+            false,
+            max_differences,
+        )?,
     ];
     let report = DocumentComparisonReport {
         source_document_id: source_map.document_id.clone(),
@@ -3850,11 +3865,17 @@ fn comparison_scope(
     source: serde_json::Value,
     target: serde_json::Value,
     include_inventory: bool,
+    max_differences: usize,
 ) -> Result<DocumentComparisonScope> {
     let matches = source == target;
     let mut differences = Vec::new();
-    let difference_count =
-        collect_json_differences("", Some(&source), Some(&target), &mut differences);
+    let difference_count = collect_json_differences(
+        "",
+        Some(&source),
+        Some(&target),
+        &mut differences,
+        max_differences,
+    );
     Ok(DocumentComparisonScope {
         scope,
         matches,
@@ -3872,6 +3893,7 @@ pub(super) fn collect_json_differences(
     source: Option<&serde_json::Value>,
     target: Option<&serde_json::Value>,
     differences: &mut Vec<DocumentComparisonDifference>,
+    max_differences: usize,
 ) -> usize {
     match (source, target) {
         (Some(serde_json::Value::Object(source)), Some(serde_json::Value::Object(target))) => {
@@ -3886,6 +3908,7 @@ pub(super) fn collect_json_differences(
                         source.get(key),
                         target.get(key),
                         differences,
+                        max_differences,
                     )
                 })
                 .sum()
@@ -3898,12 +3921,13 @@ pub(super) fn collect_json_differences(
                     source.get(index),
                     target.get(index),
                     differences,
+                    max_differences,
                 )
             })
             .sum(),
         (source, target) if source == target => 0,
         (source, target) => {
-            if differences.len() < COMPARISON_DIFFERENCE_LIMIT {
+            if differences.len() < max_differences {
                 differences.push(DocumentComparisonDifference {
                     path: if path.is_empty() {
                         "/".to_owned()
