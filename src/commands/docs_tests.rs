@@ -384,6 +384,11 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
     assert_eq!(output["googCliVersion"], env!("CARGO_PKG_VERSION"));
+    let executable_sha256 = output["googCliExecutableSha256"].as_str().unwrap();
+    assert_eq!(executable_sha256.len(), 64);
+    assert!(executable_sha256
+        .bytes()
+        .all(|byte| byte.is_ascii_hexdigit()));
     assert_eq!(
         output["replayCommand"],
         serde_json::json!([
@@ -637,6 +642,14 @@ async fn run_compare_reports_content_difference() {
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
     assert!(output.contains(&format!("goog CLI version: {}", env!("CARGO_PKG_VERSION"))));
+    let executable_fingerprint = output
+        .lines()
+        .find_map(|line| line.strip_prefix("goog CLI executable SHA-256: "))
+        .unwrap();
+    assert_eq!(executable_fingerprint.len(), 64);
+    assert!(executable_fingerprint
+        .bytes()
+        .all(|byte| byte.is_ascii_hexdigit()));
     assert!(output.contains(
         "Replay command: goog docs compare source-123 target-456 --scope all --fail-on-difference --max-differences 20 --required-source-revision-id rev-search --required-target-revision-id rev-search"
     ));

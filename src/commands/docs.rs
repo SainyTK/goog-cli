@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use chrono::{SecondsFormat, Utc};
 
@@ -3862,6 +3863,7 @@ pub(super) struct CompareDocumentsCommand {
 struct DocumentComparisonReport {
     compared_at: String,
     goog_cli_version: &'static str,
+    goog_cli_executable_sha256: String,
     replay_command: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     account_override: Option<String>,
@@ -4071,6 +4073,7 @@ pub(super) fn write_document_comparison_with_settings(
     let mut report = DocumentComparisonReport {
         compared_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         goog_cli_version: env!("CARGO_PKG_VERSION"),
+        goog_cli_executable_sha256: goog_cli_executable_sha256()?.to_owned(),
         replay_command: document_comparison_replay_command(
             source_map.document_id.as_deref(),
             target_map.document_id.as_deref(),
@@ -4153,6 +4156,12 @@ pub(super) fn write_document_comparison_with_settings(
             .context("failed to write Docs comparison timestamp")?;
         writeln!(out, "goog CLI version: {}", report.goog_cli_version)
             .context("failed to write Docs comparison CLI version")?;
+        writeln!(
+            out,
+            "goog CLI executable SHA-256: {}",
+            report.goog_cli_executable_sha256
+        )
+        .context("failed to write Docs comparison executable fingerprint")?;
         if let Some(account_override) = &report.account_override {
             writeln!(out, "Account override: {account_override}")
                 .context("failed to write Docs comparison account override")?;
@@ -4966,6 +4975,39 @@ fn json_fingerprint(value: &serde_json::Value) -> Result<String> {
     let bytes = serde_json::to_vec(value).context("failed to serialize Docs comparison scope")?;
     let digest = Sha256::digest(bytes);
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn goog_cli_executable_sha256() -> Result<&'static str> {
+    static EXECUTABLE_SHA256: OnceLock<std::result::Result<String, String>> = OnceLock::new();
+    let fingerprint = EXECUTABLE_SHA256.get_or_init(|| {
+        let executable = (|| -> Result<String> {
+            let path = std::env::current_exe()
+                .context("failed to locate the running goog CLI executable")?;
+            let mut file = std::fs::File::open(&path).with_context(|| {
+                format!("failed to read goog CLI executable `{}`", path.display())
+            })?;
+            let mut digest = Sha256::new();
+            let mut buffer = [0_u8; 64 * 1024];
+            loop {
+                let bytes_read = file.read(&mut buffer).with_context(|| {
+                    format!("failed to read goog CLI executable `{}`", path.display())
+                })?;
+                if bytes_read == 0 {
+                    break;
+                }
+                digest.update(&buffer[..bytes_read]);
+            }
+            Ok(digest
+                .finalize()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect())
+        })();
+        executable.map_err(|error| format!("{error:#}"))
+    });
+    fingerprint
+        .as_deref()
+        .map_err(|message| anyhow::anyhow!(message.to_owned()))
 }
 
 fn write_document_entries_table(out: &mut impl Write, entries: &[DocumentMapEntry]) -> Result<()> {
