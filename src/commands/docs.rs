@@ -4059,10 +4059,75 @@ fn canonical_content(document_map: &DocumentMap) -> Result<serde_json::Value> {
 
 fn canonical_formatting(document_map: &DocumentMap) -> Result<serde_json::Value> {
     let mut value = canonical_content(document_map)?;
+    remove_redundant_inherited_fonts(&mut value, document_map);
     remove_content_and_positions(&mut value);
     remove_materialized_visual_defaults(&mut value);
     remove_empty_text_runs(&mut value);
     Ok(value)
+}
+
+fn remove_redundant_inherited_fonts(value: &mut serde_json::Value, document_map: &DocumentMap) {
+    let Some(entries) = value
+        .get_mut("entries")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+
+    for (entry, mapped_entry) in entries.iter_mut().zip(&document_map.entries) {
+        let style = mapped_entry.style.as_deref().unwrap_or("NORMAL_TEXT");
+        let Some(inherited_font) = consensus_inherited_font(document_map, style) else {
+            continue;
+        };
+        let Some(text_runs) = entry
+            .get_mut("textRuns")
+            .and_then(serde_json::Value::as_array_mut)
+        else {
+            continue;
+        };
+        for text_run in text_runs {
+            let Some(text_style) = text_run
+                .get_mut("textStyle")
+                .and_then(serde_json::Value::as_object_mut)
+            else {
+                continue;
+            };
+            if text_style.get("weightedFontFamily") == Some(&inherited_font) {
+                text_style.remove("weightedFontFamily");
+            }
+        }
+    }
+}
+
+fn consensus_inherited_font(document_map: &DocumentMap, style: &str) -> Option<serde_json::Value> {
+    let fonts = document_map
+        .named_styles
+        .iter()
+        .map(|tab| inherited_font_for_style(&tab.named_styles, style))
+        .collect::<Option<Vec<_>>>()?;
+    let first = fonts.first()?.clone();
+    fonts.iter().all(|font| font == &first).then_some(first)
+}
+
+fn inherited_font_for_style(
+    named_styles: &serde_json::Value,
+    style: &str,
+) -> Option<serde_json::Value> {
+    let styles = named_styles.get("styles")?.as_array()?;
+    let style_font = |name: &str| {
+        styles
+            .iter()
+            .find(|candidate| {
+                candidate
+                    .get("namedStyleType")
+                    .and_then(serde_json::Value::as_str)
+                    == Some(name)
+            })
+            .and_then(|candidate| candidate.get("textStyle"))
+            .and_then(|text_style| text_style.get("weightedFontFamily"))
+            .cloned()
+    };
+    style_font(style).or_else(|| style_font("NORMAL_TEXT"))
 }
 
 fn remove_content_and_positions(value: &mut serde_json::Value) {
@@ -4121,6 +4186,7 @@ fn remove_empty_text_runs(value: &mut serde_json::Value) {
                         .as_object()
                         .is_none_or(|text_run| !text_run.is_empty())
                 });
+                text_runs.dedup();
             }
         }
         _ => {}

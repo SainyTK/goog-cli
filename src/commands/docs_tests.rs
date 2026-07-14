@@ -546,6 +546,64 @@ fn formatting_comparison_reports_paragraph_style_changes() {
 }
 
 #[test]
+fn formatting_comparison_ignores_font_redundant_with_inherited_named_style() {
+    let mut source = searchable_document();
+    source["namedStyles"] = serde_json::json!({
+        "styles": [
+            {
+                "namedStyleType": "NORMAL_TEXT",
+                "textStyle": {
+                    "weightedFontFamily": { "fontFamily": "Bai Jamjuree", "weight": 400 }
+                }
+            },
+            { "namedStyleType": "TITLE", "textStyle": { "fontSize": { "magnitude": 26, "unit": "PT" } } }
+        ]
+    });
+    source["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["textStyle"] = serde_json::json!({
+        "bold": true,
+        "weightedFontFamily": { "fontFamily": "Bai Jamjuree", "weight": 400 }
+    });
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["elements"] = serde_json::json!([
+        {
+            "startIndex": 1,
+            "endIndex": 13,
+            "textRun": { "content": "Project Plan", "textStyle": { "bold": true } }
+        },
+        {
+            "startIndex": 13,
+            "endIndex": 14,
+            "textRun": {
+                "content": "\n",
+                "textStyle": {
+                    "bold": true,
+                    "weightedFontFamily": { "fontFamily": "Bai Jamjuree", "weight": 400 }
+                }
+            }
+        }
+    ]);
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        true,
+        20,
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["scopes"][0]["differenceCount"], 0);
+}
+
+#[test]
 fn visual_system_comparison_ignores_google_materialized_defaults() {
     let mut source = searchable_document();
     source["tabs"] = serde_json::json!([{
