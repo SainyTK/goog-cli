@@ -3863,6 +3863,7 @@ pub(super) struct CompareDocumentsCommand {
 struct DocumentComparisonReport {
     compared_at: String,
     goog_cli_version: &'static str,
+    goog_cli_executable_path: String,
     goog_cli_executable_sha256: String,
     replay_command: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4073,6 +4074,7 @@ pub(super) fn write_document_comparison_with_settings(
     let mut report = DocumentComparisonReport {
         compared_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         goog_cli_version: env!("CARGO_PKG_VERSION"),
+        goog_cli_executable_path: goog_cli_executable_path()?.to_owned(),
         goog_cli_executable_sha256: goog_cli_executable_sha256()?.to_owned(),
         replay_command: document_comparison_replay_command(
             source_map.document_id.as_deref(),
@@ -4156,6 +4158,12 @@ pub(super) fn write_document_comparison_with_settings(
             .context("failed to write Docs comparison timestamp")?;
         writeln!(out, "goog CLI version: {}", report.goog_cli_version)
             .context("failed to write Docs comparison CLI version")?;
+        writeln!(
+            out,
+            "goog CLI executable path: {}",
+            report.goog_cli_executable_path
+        )
+        .context("failed to write Docs comparison executable path")?;
         writeln!(
             out,
             "goog CLI executable SHA-256: {}",
@@ -4981,17 +4989,15 @@ fn goog_cli_executable_sha256() -> Result<&'static str> {
     static EXECUTABLE_SHA256: OnceLock<std::result::Result<String, String>> = OnceLock::new();
     let fingerprint = EXECUTABLE_SHA256.get_or_init(|| {
         let executable = (|| -> Result<String> {
-            let path = std::env::current_exe()
-                .context("failed to locate the running goog CLI executable")?;
-            let mut file = std::fs::File::open(&path).with_context(|| {
-                format!("failed to read goog CLI executable `{}`", path.display())
-            })?;
+            let path = goog_cli_executable_path()?;
+            let mut file = std::fs::File::open(path)
+                .with_context(|| format!("failed to read goog CLI executable `{path}`"))?;
             let mut digest = Sha256::new();
             let mut buffer = [0_u8; 64 * 1024];
             loop {
-                let bytes_read = file.read(&mut buffer).with_context(|| {
-                    format!("failed to read goog CLI executable `{}`", path.display())
-                })?;
+                let bytes_read = file
+                    .read(&mut buffer)
+                    .with_context(|| format!("failed to read goog CLI executable `{path}`"))?;
                 if bytes_read == 0 {
                     break;
                 }
@@ -5007,6 +5013,18 @@ fn goog_cli_executable_sha256() -> Result<&'static str> {
     });
     fingerprint
         .as_deref()
+        .map_err(|message| anyhow::anyhow!(message.to_owned()))
+}
+
+fn goog_cli_executable_path() -> Result<&'static str> {
+    static EXECUTABLE_PATH: OnceLock<std::result::Result<String, String>> = OnceLock::new();
+    let path = EXECUTABLE_PATH.get_or_init(|| {
+        std::env::current_exe()
+            .context("failed to locate the running goog CLI executable")
+            .map(|path| path.to_string_lossy().into_owned())
+            .map_err(|error| format!("{error:#}"))
+    });
+    path.as_deref()
         .map_err(|message| anyhow::anyhow!(message.to_owned()))
 }
 

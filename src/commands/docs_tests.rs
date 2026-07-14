@@ -384,6 +384,9 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
     assert_eq!(output["googCliVersion"], env!("CARGO_PKG_VERSION"));
+    let executable_path = output["googCliExecutablePath"].as_str().unwrap();
+    assert!(std::path::Path::new(executable_path).is_absolute());
+    assert!(std::path::Path::new(executable_path).is_file());
     let executable_sha256 = output["googCliExecutableSha256"].as_str().unwrap();
     assert_eq!(executable_sha256.len(), 64);
     assert!(executable_sha256
@@ -642,6 +645,12 @@ async fn run_compare_reports_content_difference() {
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
     assert!(output.contains(&format!("goog CLI version: {}", env!("CARGO_PKG_VERSION"))));
+    let executable_path = output
+        .lines()
+        .find_map(|line| line.strip_prefix("goog CLI executable path: "))
+        .unwrap();
+    assert!(std::path::Path::new(executable_path).is_absolute());
+    assert!(std::path::Path::new(executable_path).is_file());
     let executable_fingerprint = output
         .lines()
         .find_map(|line| line.strip_prefix("goog CLI executable SHA-256: "))
