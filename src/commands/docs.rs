@@ -4078,6 +4078,7 @@ pub(super) fn write_document_comparison_with_settings(
             .map(|scope| scope.difference_count_outside_preview.unwrap_or(0))
             .sum()
     });
+    let goog_cli_executable_path = goog_cli_executable_path()?.to_owned();
     let mut report = DocumentComparisonReport {
         report_type: DOCUMENT_COMPARISON_REPORT_TYPE,
         report_schema_version: DOCUMENT_COMPARISON_REPORT_SCHEMA_VERSION,
@@ -4085,9 +4086,10 @@ pub(super) fn write_document_comparison_with_settings(
         goog_cli_version: env!("CARGO_PKG_VERSION"),
         goog_cli_execution_os: std::env::consts::OS,
         goog_cli_execution_arch: std::env::consts::ARCH,
-        goog_cli_executable_path: goog_cli_executable_path()?.to_owned(),
+        goog_cli_executable_path: goog_cli_executable_path.clone(),
         goog_cli_executable_sha256: goog_cli_executable_sha256()?.to_owned(),
         replay_command: document_comparison_replay_command(
+            &goog_cli_executable_path,
             source_map.document_id.as_deref(),
             target_map.document_id.as_deref(),
             (
@@ -4385,6 +4387,7 @@ pub(super) fn write_document_comparison_with_settings(
 }
 
 fn document_comparison_replay_command(
+    goog_cli_executable_path: &str,
     source_document_id: Option<&str>,
     target_document_id: Option<&str>,
     revision_ids: (Option<&str>, Option<&str>),
@@ -4399,7 +4402,7 @@ fn document_comparison_replay_command(
         source_account,
         target_account,
     } = settings;
-    let mut arguments = vec!["goog".to_owned()];
+    let mut arguments = vec![goog_cli_executable_path.to_owned()];
     let replay_account = source_account
         .filter(|source_account| Some(*source_account) == target_account)
         .or_else(|| {
@@ -5041,7 +5044,7 @@ fn goog_cli_executable_sha256() -> Result<&'static str> {
         .map_err(|message| anyhow::anyhow!(message.to_owned()))
 }
 
-fn goog_cli_executable_path() -> Result<&'static str> {
+pub(super) fn goog_cli_executable_path() -> Result<&'static str> {
     static EXECUTABLE_PATH: OnceLock<std::result::Result<String, String>> = OnceLock::new();
     let path = EXECUTABLE_PATH.get_or_init(|| {
         std::env::current_exe()

@@ -399,7 +399,7 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     assert_eq!(
         output["replayCommand"],
         serde_json::json!([
-            "goog",
+            executable_path,
             "docs",
             "compare",
             "source-123",
@@ -508,9 +508,10 @@ async fn run_compare_unified_records_and_replays_the_resolved_account() {
     assert_eq!(output["sourceAccount"], "bob@example.com");
     assert_eq!(output["targetAccount"], "bob@example.com");
     assert!(output["accountOverride"].is_null());
+    assert_eq!(output["replayCommand"][0], output["googCliExecutablePath"]);
     assert_eq!(
-        &output["replayCommand"].as_array().unwrap()[..3],
-        serde_json::json!(["goog", "--account", "bob@example.com"])
+        &output["replayCommand"].as_array().unwrap()[1..3],
+        serde_json::json!(["--account", "bob@example.com"])
             .as_array()
             .unwrap()
     );
@@ -673,9 +674,10 @@ async fn run_compare_reports_content_difference() {
     assert!(executable_fingerprint
         .bytes()
         .all(|byte| byte.is_ascii_hexdigit()));
-    assert!(output.contains(
-        "Replay command: goog docs compare source-123 target-456 --scope all --fail-on-difference --max-differences 20 --required-source-revision-id rev-search --required-target-revision-id rev-search"
-    ));
+    assert!(output.contains(&format!(
+        "Replay command: {} docs compare source-123 target-456 --scope all --fail-on-difference --max-differences 20 --required-source-revision-id rev-search --required-target-revision-id rev-search",
+        goog_cli_executable_path().unwrap()
+    )));
     assert!(output.contains(
         "Comparison settings: scope=all, fail-on-difference=yes, max-differences=20, summary-only=no"
     ));
@@ -1082,7 +1084,7 @@ fn comparison_filters_path_previews_by_reported_pattern() {
     assert_eq!(
         output["replayCommand"],
         serde_json::json!([
-            "goog",
+            goog_cli_executable_path().unwrap(),
             "docs",
             "compare",
             "document-123",
@@ -1158,7 +1160,7 @@ fn comparison_report_preserves_explicit_account_in_replay_evidence() {
     assert_eq!(
         output["replayCommand"],
         serde_json::json!([
-            "goog",
+            goog_cli_executable_path().unwrap(),
             "--account",
             "owner@example.com",
             "docs",
@@ -1196,9 +1198,10 @@ fn comparison_report_preserves_explicit_account_in_replay_evidence() {
     .unwrap();
     let human_output = String::from_utf8(human_out).unwrap();
     assert!(human_output.contains("Account override: owner@example.com"));
-    assert!(
-        human_output.contains("Replay command: goog --account 'owner@example.com' docs compare")
-    );
+    assert!(human_output.contains(&format!(
+        "Replay command: {} --account 'owner@example.com' docs compare",
+        goog_cli_executable_path().unwrap()
+    )));
 }
 
 #[test]
@@ -1231,7 +1234,7 @@ fn comparison_report_pins_each_account_when_documents_used_different_accounts() 
     assert_eq!(
         output["replayCommand"],
         serde_json::json!([
-            "goog",
+            goog_cli_executable_path().unwrap(),
             "docs",
             "compare",
             "document-123",
@@ -1287,9 +1290,10 @@ fn filtered_human_comparison_distinguishes_matching_and_other_differences() {
     .unwrap();
 
     let output = String::from_utf8(out).unwrap();
-    assert!(output.contains(
-        "Replay command: goog docs compare document-123 target-456 --scope formatting --max-differences 1 --difference-pattern '/entries/*/paragraphStyle/direction'"
-    ));
+    assert!(output.contains(&format!(
+        "Replay command: {} docs compare document-123 target-456 --scope formatting --max-differences 1 --difference-pattern '/entries/*/paragraphStyle/direction'",
+        goog_cli_executable_path().unwrap()
+    )));
     assert!(output.contains("... 1 more difference matching the preview filter"));
     assert!(output.contains("2 differences outside the preview filter"));
     assert!(output.contains(

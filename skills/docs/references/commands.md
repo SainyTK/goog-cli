@@ -79,10 +79,10 @@ target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --source-ac
 
 The command compares component inventory, the native named-style and page-style visual system, formatting and layout, and all mapped content and component properties.
 Each report records its stable report type, schema version, a revision-guarded replay command, the UTC comparison time, the goog CLI version, execution OS and architecture, executable path and SHA-256, the selected scope, acceptance-gate setting, preview limit, summary mode, an explicit account override when supplied, and identifies the source and target by title, document ID, edit URL, revision ID, and the account that accessed it.
-JSON reports expose the replay command as an argument array so pattern filters and other values can be reused without ambiguous shell parsing.
+JSON reports expose the replay command as an argument array so the recorded executable path, pattern filters, and other values can be reused without ambiguous shell parsing.
 Use `reportType` to identify `goog.docs.compare` evidence before interpreting `reportSchemaVersion` or any report-specific fields.
 Use `reportSchemaVersion` to reject or migrate report shapes that an acceptance-evidence consumer does not understand.
-The replay command includes `--required-source-revision-id` and `--required-target-revision-id`, so it rejects a later document state instead of silently producing new evidence.
+The replay command starts with the recorded absolute goog executable path and includes `--required-source-revision-id` and `--required-target-revision-id`, so it cannot silently select a different binary or later document state.
 When the comparison uses `--account EMAIL`, the replay command preserves it so multi-account routing cannot silently select a different account.
 When both documents resolve through the same account, the replay command pins that resolved account automatically.
 When they resolve through different accounts, the replay command pins each one with `--source-account` and `--target-account`.
