@@ -1170,17 +1170,20 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
         command.required_target_revision_id.as_deref(),
         target_map.revision_id.as_deref(),
     )?;
-    write_document_comparison(
+    write_document_comparison_with_settings(
         out,
         &source_map,
         &target_map,
         command.json,
-        command.scope,
-        command.fail_on_difference,
-        DocumentComparisonPreview {
-            max_differences: command.max_differences as usize,
-            summary_only: command.summary_only,
-            difference_pattern: command.difference_pattern.as_deref(),
+        DocumentComparisonSettings {
+            scope: command.scope,
+            fail_on_difference: command.fail_on_difference,
+            preview: DocumentComparisonPreview {
+                max_differences: command.max_differences as usize,
+                summary_only: command.summary_only,
+                difference_pattern: command.difference_pattern.as_deref(),
+            },
+            account_override,
         },
     )
 }
@@ -3806,6 +3809,8 @@ struct DocumentComparisonReport {
     compared_at: String,
     goog_cli_version: &'static str,
     replay_command: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    account_override: Option<String>,
     comparison_scope: &'static str,
     fail_on_difference: bool,
     max_differences: usize,
@@ -3880,6 +3885,15 @@ pub(super) struct DocumentComparisonPreview<'a> {
     pub(super) difference_pattern: Option<&'a str>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct DocumentComparisonSettings<'a> {
+    pub(super) scope: DocsCompareScope,
+    pub(super) fail_on_difference: bool,
+    pub(super) preview: DocumentComparisonPreview<'a>,
+    pub(super) account_override: Option<&'a str>,
+}
+
+#[cfg(test)]
 pub(super) fn write_document_comparison(
     out: &mut impl Write,
     source_map: &DocumentMap,
@@ -3889,6 +3903,33 @@ pub(super) fn write_document_comparison(
     fail_on_difference: bool,
     preview: DocumentComparisonPreview<'_>,
 ) -> Result<()> {
+    write_document_comparison_with_settings(
+        out,
+        source_map,
+        target_map,
+        json,
+        DocumentComparisonSettings {
+            scope,
+            fail_on_difference,
+            preview,
+            account_override: None,
+        },
+    )
+}
+
+pub(super) fn write_document_comparison_with_settings(
+    out: &mut impl Write,
+    source_map: &DocumentMap,
+    target_map: &DocumentMap,
+    json: bool,
+    settings: DocumentComparisonSettings<'_>,
+) -> Result<()> {
+    let DocumentComparisonSettings {
+        scope,
+        fail_on_difference,
+        preview,
+        account_override,
+    } = settings;
     let source_inventory = document_inventory(source_map);
     let target_inventory = document_inventory(target_map);
     let source_visual_system = canonical_visual_system(source_map)?;
@@ -3974,10 +4015,9 @@ pub(super) fn write_document_comparison(
                 target_map.revision_id.as_deref(),
             ),
             json,
-            scope,
-            fail_on_difference,
-            preview,
+            settings,
         ),
+        account_override: account_override.map(str::to_owned),
         comparison_scope: docs_compare_scope_label(scope),
         fail_on_difference,
         max_differences: preview.max_differences,
@@ -4047,6 +4087,10 @@ pub(super) fn write_document_comparison(
             .context("failed to write Docs comparison timestamp")?;
         writeln!(out, "goog CLI version: {}", report.goog_cli_version)
             .context("failed to write Docs comparison CLI version")?;
+        if let Some(account_override) = &report.account_override {
+            writeln!(out, "Account override: {account_override}")
+                .context("failed to write Docs comparison account override")?;
+        }
         writeln!(
             out,
             "Replay command: {}",
@@ -4229,12 +4273,19 @@ fn document_comparison_replay_command(
     target_document_id: Option<&str>,
     revision_ids: (Option<&str>, Option<&str>),
     json: bool,
-    scope: DocsCompareScope,
-    fail_on_difference: bool,
-    preview: DocumentComparisonPreview<'_>,
+    settings: DocumentComparisonSettings<'_>,
 ) -> Vec<String> {
-    let mut arguments = vec![
-        "goog".to_owned(),
+    let DocumentComparisonSettings {
+        scope,
+        fail_on_difference,
+        preview,
+        account_override,
+    } = settings;
+    let mut arguments = vec!["goog".to_owned()];
+    if let Some(account_override) = account_override {
+        arguments.extend(["--account".to_owned(), account_override.to_owned()]);
+    }
+    arguments.extend([
         "docs".to_owned(),
         "compare".to_owned(),
         source_document_id
@@ -4243,7 +4294,7 @@ fn document_comparison_replay_command(
         target_document_id
             .unwrap_or("TARGET_DOCUMENT_ID")
             .to_owned(),
-    ];
+    ]);
     if json {
         arguments.push("--json".to_owned());
     }

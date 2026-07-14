@@ -950,6 +950,74 @@ fn comparison_filters_path_previews_by_reported_pattern() {
 }
 
 #[test]
+fn comparison_report_preserves_explicit_account_in_replay_evidence() {
+    let source_map = build_document_map(&searchable_document());
+    let mut target = searchable_document();
+    target["documentId"] = serde_json::json!("target-456");
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison_with_settings(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocumentComparisonSettings {
+            scope: DocsCompareScope::All,
+            fail_on_difference: true,
+            preview: comparison_preview(20, None),
+            account_override: Some("owner@example.com"),
+        },
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["accountOverride"], "owner@example.com");
+    assert_eq!(
+        output["replayCommand"],
+        serde_json::json!([
+            "goog",
+            "--account",
+            "owner@example.com",
+            "docs",
+            "compare",
+            "document-123",
+            "target-456",
+            "--json",
+            "--scope",
+            "all",
+            "--fail-on-difference",
+            "--max-differences",
+            "20",
+            "--required-source-revision-id",
+            "rev-search",
+            "--required-target-revision-id",
+            "rev-search"
+        ])
+    );
+
+    let mut human_out = Vec::new();
+    write_document_comparison_with_settings(
+        &mut human_out,
+        &source_map,
+        &target_map,
+        false,
+        DocumentComparisonSettings {
+            scope: DocsCompareScope::All,
+            fail_on_difference: true,
+            preview: comparison_preview(20, None),
+            account_override: Some("owner@example.com"),
+        },
+    )
+    .unwrap();
+    let human_output = String::from_utf8(human_out).unwrap();
+    assert!(human_output.contains("Account override: owner@example.com"));
+    assert!(
+        human_output.contains("Replay command: goog --account 'owner@example.com' docs compare")
+    );
+}
+
+#[test]
 fn filtered_human_comparison_distinguishes_matching_and_other_differences() {
     let mut source = searchable_document();
     let second_paragraph = source["body"]["content"][0].clone();

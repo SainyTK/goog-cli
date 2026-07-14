@@ -1987,6 +1987,7 @@ Notes:
   Human-readable reports summarize total, displayed, and limit-hidden differences; filtered reports also separate matching paths from differences outside the selected pattern.
   JSON reports expose report-level and per-scope totals for displayed paths, paths hidden by --max-differences, and paths hidden by --summary-only; filtered reports also distinguish matching paths from differences outside the selected pattern.
   Reports include a revision-guarded replay command, the UTC comparison time, goog CLI version, comparison settings, and identify both live documents by title, ID, edit URL, and compared revision ID.
+  When --account is provided, reports record it and replay commands preserve it for deterministic multi-account access.
   Use --required-source-revision-id and --required-target-revision-id to reject evidence replay after either document changes.
   An unknown difference pattern is rejected with the closest reported patterns so a typo cannot produce an empty, misleading preview.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.
