@@ -5042,6 +5042,14 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
         "https://docs.google.com/document/d/copied-document-456/edit"
     );
     assert_eq!(acceptance["fidelityVerified"], false);
+    assert_eq!(
+        acceptance["verifiedSourceRevisionId"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        acceptance["verifiedCopiedRevisionId"],
+        serde_json::Value::Null
+    );
 }
 
 #[tokio::test]
@@ -5180,6 +5188,8 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     assert_eq!(records[1]["reportType"], "goog.docs.copy.acceptance");
     assert_eq!(records[1]["copiedDocumentId"], "copied-document-456");
     assert_eq!(records[1]["fidelityVerified"], true);
+    assert_eq!(records[1]["verifiedSourceRevisionId"], "rev-search");
+    assert_eq!(records[1]["verifiedCopiedRevisionId"], "rev-copy");
 }
 
 #[tokio::test]

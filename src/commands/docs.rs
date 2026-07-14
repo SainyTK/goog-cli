@@ -2897,6 +2897,8 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         .and_then(serde_json::Value::as_str)
         .context("Google Drive copy response did not include an id")?;
 
+    let mut verified_source_revision_id = None;
+    let mut verified_copied_revision_id = None;
     if command.verify_fidelity {
         let source_map = get_document_map(client, source_document_id.clone(), documents_url)
             .await
@@ -2904,6 +2906,8 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         let target_map = get_document_map(client, document_id.to_owned(), documents_url)
             .await
             .context("failed to map the copied Google Docs Document for fidelity verification")?;
+        verified_source_revision_id = source_map.revision_id.clone();
+        verified_copied_revision_id = target_map.revision_id.clone();
         write_document_comparison(
             out,
             &source_map,
@@ -2931,6 +2935,8 @@ pub(super) async fn run_copy_to<S: AccountStore>(
                 copied_document_title: &title,
                 copied_document_url: &document_url,
                 fidelity_verified: command.verify_fidelity,
+                verified_source_revision_id: verified_source_revision_id.as_deref(),
+                verified_copied_revision_id: verified_copied_revision_id.as_deref(),
             },
             "failed to serialize Docs copy acceptance record",
         )?;
@@ -2953,6 +2959,8 @@ struct CopyDocumentAcceptance<'a> {
     copied_document_title: &'a str,
     copied_document_url: &'a str,
     fidelity_verified: bool,
+    verified_source_revision_id: Option<&'a str>,
+    verified_copied_revision_id: Option<&'a str>,
 }
 
 pub(super) struct CopyDocumentCommand {
