@@ -2907,6 +2907,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         .and_then(serde_json::Value::as_str)
         .context("Google Drive copy response did not include an id")?;
 
+    let mut verified_source_document_title = None;
     let mut verified_source_revision_id = None;
     let mut verified_copied_revision_id = None;
     if command.verify_fidelity {
@@ -2916,6 +2917,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         let target_map = get_document_map(client, document_id.to_owned(), documents_url)
             .await
             .context("failed to map the copied Google Docs Document for fidelity verification")?;
+        verified_source_document_title = source_map.title.clone();
         verified_source_revision_id = source_map.revision_id.clone();
         verified_copied_revision_id = target_map.revision_id.clone();
         write_document_comparison_with_settings(
@@ -2958,6 +2960,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
                     .as_deref()
                     .context("missing goog CLI executable SHA-256 for JSON copy acceptance")?,
                 source_document_id: &source_document_id,
+                source_document_title: verified_source_document_title.as_deref(),
                 source_document_url: &source_document_url,
                 copied_document_id: document_id,
                 copied_document_title: &title,
@@ -2990,6 +2993,7 @@ struct CopyDocumentAcceptance<'a> {
     goog_cli_executable_path: &'a str,
     goog_cli_executable_sha256: &'a str,
     source_document_id: &'a str,
+    source_document_title: Option<&'a str>,
     source_document_url: &'a str,
     copied_document_id: &'a str,
     copied_document_title: &'a str,

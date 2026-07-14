@@ -5050,6 +5050,7 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
         goog_cli_executable_sha256().unwrap()
     );
     assert_eq!(acceptance["sourceDocumentId"], "source-document-123");
+    assert_eq!(acceptance["sourceDocumentTitle"], serde_json::Value::Null);
     assert_eq!(
         acceptance["sourceDocumentUrl"],
         "https://docs.google.com/document/d/source-document-123/edit"
@@ -5237,6 +5238,7 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
         records[1]["sourceDocumentUrl"],
         "https://docs.google.com/document/d/source-document-123/edit"
     );
+    assert_eq!(records[1]["sourceDocumentTitle"], "Searchable");
     assert_eq!(records[1]["copiedDocumentId"], "copied-document-456");
     assert_eq!(records[1]["fidelityVerified"], true);
     assert_eq!(records[1]["verifiedSourceRevisionId"], "rev-search");
