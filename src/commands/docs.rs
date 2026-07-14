@@ -3754,6 +3754,13 @@ struct DocumentComparisonReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     difference_preview_pattern: Option<String>,
     matches: bool,
+    total_difference_count: usize,
+    total_displayed_difference_count: usize,
+    total_difference_count_hidden_by_limit: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_preview_difference_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_difference_count_outside_preview: Option<usize>,
     scopes: Vec<DocumentComparisonScope>,
 }
 
@@ -3861,11 +3868,37 @@ pub(super) fn write_document_comparison(
             preview,
         )?);
     }
+    let total_difference_count = scopes.iter().map(|scope| scope.difference_count).sum();
+    let total_displayed_difference_count = scopes
+        .iter()
+        .map(|scope| scope.displayed_difference_count)
+        .sum();
+    let total_difference_count_hidden_by_limit = scopes
+        .iter()
+        .map(|scope| scope.difference_count_hidden_by_limit)
+        .sum();
+    let total_preview_difference_count = preview.difference_pattern.map(|_| {
+        scopes
+            .iter()
+            .map(|scope| scope.preview_difference_count.unwrap_or(0))
+            .sum()
+    });
+    let total_difference_count_outside_preview = preview.difference_pattern.map(|_| {
+        scopes
+            .iter()
+            .map(|scope| scope.difference_count_outside_preview.unwrap_or(0))
+            .sum()
+    });
     let report = DocumentComparisonReport {
         source_document_id: source_map.document_id.clone(),
         target_document_id: target_map.document_id.clone(),
         difference_preview_pattern: preview.difference_pattern.map(str::to_owned),
         matches: scopes.iter().all(|scope| scope.matches),
+        total_difference_count,
+        total_displayed_difference_count,
+        total_difference_count_hidden_by_limit,
+        total_preview_difference_count,
+        total_difference_count_outside_preview,
         scopes,
     };
 

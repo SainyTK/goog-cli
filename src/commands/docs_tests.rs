@@ -599,6 +599,11 @@ fn comparison_groups_repeated_array_differences_by_path_pattern() {
     .unwrap();
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["totalDifferenceCount"], 2);
+    assert_eq!(output["totalDisplayedDifferenceCount"], 1);
+    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 1);
+    assert!(output.get("totalPreviewDifferenceCount").is_none());
+    assert!(output.get("totalDifferenceCountOutsidePreview").is_none());
     assert_eq!(output["scopes"][0]["differenceCount"], 2);
     assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 1);
     assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 1);
@@ -662,6 +667,11 @@ fn comparison_filters_path_previews_by_reported_pattern() {
         output["differencePreviewPattern"],
         "/entries/*/paragraphStyle/direction"
     );
+    assert_eq!(output["totalDifferenceCount"], 4);
+    assert_eq!(output["totalDisplayedDifferenceCount"], 1);
+    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 1);
+    assert_eq!(output["totalPreviewDifferenceCount"], 2);
+    assert_eq!(output["totalDifferenceCountOutsidePreview"], 2);
     assert_eq!(output["scopes"][0]["differenceCount"], 4);
     assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 1);
     assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 1);
@@ -785,6 +795,20 @@ fn filtered_json_comparison_treats_an_absent_scope_pattern_as_outside() {
         .iter()
         .find(|scope| scope["scope"] == "inventory")
         .unwrap();
+    assert_eq!(
+        output["totalDifferenceCount"],
+        output["scopes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|scope| scope["differenceCount"].as_u64().unwrap())
+            .sum::<u64>()
+    );
+    assert_eq!(output["totalPreviewDifferenceCount"], 1);
+    assert_eq!(
+        output["totalDifferenceCountOutsidePreview"],
+        output["totalDifferenceCount"].as_u64().unwrap() - 1
+    );
     assert_eq!(inventory["previewDifferenceCount"], 0);
     assert_eq!(inventory["displayedDifferenceCount"], 0);
     assert_eq!(inventory["differenceCountHiddenByLimit"], 0);
