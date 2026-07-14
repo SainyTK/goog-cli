@@ -2939,6 +2939,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
     }
 
     let document_url = document_edit_url(document_id);
+    let source_document_url = document_edit_url(&source_document_id);
     if command.json {
         write_json_line(
             out,
@@ -2957,6 +2958,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
                     .as_deref()
                     .context("missing goog CLI executable SHA-256 for JSON copy acceptance")?,
                 source_document_id: &source_document_id,
+                source_document_url: &source_document_url,
                 copied_document_id: document_id,
                 copied_document_title: &title,
                 copied_document_url: &document_url,
@@ -2988,6 +2990,7 @@ struct CopyDocumentAcceptance<'a> {
     goog_cli_executable_path: &'a str,
     goog_cli_executable_sha256: &'a str,
     source_document_id: &'a str,
+    source_document_url: &'a str,
     copied_document_id: &'a str,
     copied_document_title: &'a str,
     copied_document_url: &'a str,
