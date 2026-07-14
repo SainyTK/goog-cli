@@ -702,8 +702,45 @@ fn comparison_rejects_an_unreported_difference_pattern() {
 
     assert_eq!(
         error.to_string(),
-        "difference pattern `/entries/*/paragraphStyle/alignmnt` was not found in the selected comparison scope; run without --difference-pattern to list reported patterns"
+        "difference pattern `/entries/*/paragraphStyle/alignmnt` was not found in the selected comparison scope. Closest reported pattern: `/entries/*/paragraphStyle`. Run without --difference-pattern to list all reported patterns"
     );
+    assert!(out.is_empty());
+}
+
+#[test]
+fn closest_difference_patterns_rank_typos_before_other_reported_patterns() {
+    let mut source = searchable_document();
+    source["body"]["content"][0]["paragraph"]["paragraphStyle"] = serde_json::json!({
+        "alignment": "START",
+        "direction": "LEFT_TO_RIGHT",
+        "lineSpacing": 100
+    });
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"] = serde_json::json!({
+        "alignment": "CENTER",
+        "direction": "RIGHT_TO_LEFT",
+        "lineSpacing": 115
+    });
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    let error = write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(20, Some("/entries/*/paragraphStyle/lineSpcing")),
+    )
+    .unwrap_err();
+
+    let message = error.to_string();
+    assert!(message.contains("Closest reported patterns: `/entries/*/paragraphStyle/lineSpacing`,"));
+    assert!(message.contains("`/entries/*/paragraphStyle/alignment`"));
+    assert!(message.contains("`/entries/*/paragraphStyle/direction`"));
     assert!(out.is_empty());
 }
 

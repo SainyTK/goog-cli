@@ -3871,8 +3871,26 @@ pub(super) fn write_document_comparison(
                 .any(|reported| reported.path == pattern)
         });
         if !pattern_is_reported {
+            let suggestions = closest_difference_patterns(&report, pattern, 3);
+            let suggestion = if suggestions.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    " Closest reported {}: {}.",
+                    if suggestions.len() == 1 {
+                        "pattern"
+                    } else {
+                        "patterns"
+                    },
+                    suggestions
+                        .iter()
+                        .map(|suggestion| format!("`{suggestion}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
             bail!(
-                "difference pattern `{pattern}` was not found in the selected comparison scope; run without --difference-pattern to list reported patterns"
+                "difference pattern `{pattern}` was not found in the selected comparison scope.{suggestion} Run without --difference-pattern to list all reported patterns"
             );
         }
     }
@@ -3939,6 +3957,47 @@ pub(super) fn write_document_comparison(
         bail!("Google Docs comparison found semantic differences");
     }
     Ok(())
+}
+
+fn closest_difference_patterns(
+    report: &DocumentComparisonReport,
+    requested: &str,
+    limit: usize,
+) -> Vec<String> {
+    let mut patterns = report
+        .scopes
+        .iter()
+        .flat_map(|scope| &scope.difference_patterns)
+        .map(|pattern| pattern.path.as_str())
+        .collect::<Vec<_>>();
+    patterns.sort_by(|left, right| {
+        levenshtein_distance(requested, left)
+            .cmp(&levenshtein_distance(requested, right))
+            .then_with(|| left.cmp(right))
+    });
+    patterns.dedup();
+    patterns
+        .into_iter()
+        .take(limit)
+        .map(str::to_owned)
+        .collect()
+}
+
+fn levenshtein_distance(left: &str, right: &str) -> usize {
+    let right = right.chars().collect::<Vec<_>>();
+    let mut previous = (0..=right.len()).collect::<Vec<_>>();
+    for (left_index, left_char) in left.chars().enumerate() {
+        let mut current = vec![left_index + 1];
+        for (right_index, right_char) in right.iter().enumerate() {
+            current.push(
+                (previous[right_index + 1] + 1)
+                    .min(current[right_index] + 1)
+                    .min(previous[right_index] + usize::from(left_char != *right_char)),
+            );
+        }
+        previous = current;
+    }
+    previous[right.len()]
 }
 
 fn comparison_scope(

@@ -1983,7 +1983,7 @@ Notes:
   Mismatches include complete path-pattern counts, a representative example for every pattern, and JSON Pointer previews with source and target values.
   Use --max-differences to control how many paths are shown per scope.
   Use --difference-pattern to show concrete paths for one reported pattern while retaining complete counts and acceptance behavior.
-  An unknown difference pattern is rejected so a typo cannot produce an empty, misleading preview.
+  An unknown difference pattern is rejected with the closest reported patterns so a typo cannot produce an empty, misleading preview.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.
   Google-assigned object, heading, segment, and list IDs are ignored.
   Visual-system comparison ignores equivalent defaults that Google materializes after style copying.
