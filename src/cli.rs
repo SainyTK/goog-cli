@@ -1980,7 +1980,7 @@ Notes:
     #[command(after_long_help = "Notes:
   Compares component inventory, named and page styles, formatting, and mapped content properties.
   Use --scope to compare only inventory, visual-system, formatting, or content properties.
-  Mismatches include complete path-pattern counts and JSON Pointer previews with source and target values.
+  Mismatches include complete path-pattern counts, a representative example for every pattern, and JSON Pointer previews with source and target values.
   Use --max-differences to control how many paths are shown per scope.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.
   Google-assigned object, heading, segment, and list IDs are ignored.

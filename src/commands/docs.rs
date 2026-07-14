@@ -3769,9 +3769,10 @@ struct DocumentComparisonScope {
 struct DocumentComparisonDifferencePattern {
     path: String,
     count: usize,
+    example: DocumentComparisonDifference,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct DocumentComparisonDifference {
     pub(super) path: String,
@@ -3866,6 +3867,12 @@ pub(super) fn write_document_comparison(
             for pattern in &scope.difference_patterns {
                 writeln!(out, "  Pattern ({}): {}", pattern.count, pattern.path)
                     .context("failed to write Docs comparison difference pattern")?;
+                writeln!(
+                    out,
+                    "    Example {}: source={}, target={}",
+                    pattern.example.path, pattern.example.source, pattern.example.target
+                )
+                .context("failed to write Docs comparison difference pattern example")?;
             }
             for difference in &scope.differences {
                 writeln!(
@@ -3907,7 +3914,7 @@ fn comparison_scope(
 ) -> Result<DocumentComparisonScope> {
     let matches = source == target;
     let mut differences = Vec::new();
-    let mut difference_pattern_counts = std::collections::BTreeMap::new();
+    let mut difference_patterns = std::collections::BTreeMap::new();
     let difference_count = collect_json_differences_with_patterns(
         "",
         "",
@@ -3915,11 +3922,17 @@ fn comparison_scope(
         Some(&target),
         &mut differences,
         max_differences,
-        &mut difference_pattern_counts,
+        &mut difference_patterns,
     );
-    let mut difference_patterns = difference_pattern_counts
+    let mut difference_patterns = difference_patterns
         .into_iter()
-        .map(|(path, count)| DocumentComparisonDifferencePattern { path, count })
+        .map(
+            |(path, (count, example))| DocumentComparisonDifferencePattern {
+                path,
+                count,
+                example,
+            },
+        )
         .collect::<Vec<_>>();
     difference_patterns.sort_by(|left, right| {
         right
@@ -3966,7 +3979,10 @@ fn collect_json_differences_with_patterns(
     target: Option<&serde_json::Value>,
     differences: &mut Vec<DocumentComparisonDifference>,
     max_differences: usize,
-    difference_pattern_counts: &mut std::collections::BTreeMap<String, usize>,
+    difference_patterns: &mut std::collections::BTreeMap<
+        String,
+        (usize, DocumentComparisonDifference),
+    >,
 ) -> usize {
     match (source, target) {
         (Some(serde_json::Value::Object(source)), Some(serde_json::Value::Object(target))) => {
@@ -3984,7 +4000,7 @@ fn collect_json_differences_with_patterns(
                         target.get(key),
                         differences,
                         max_differences,
-                        difference_pattern_counts,
+                        difference_patterns,
                     )
                 })
                 .sum()
@@ -3999,29 +4015,32 @@ fn collect_json_differences_with_patterns(
                     target.get(index),
                     differences,
                     max_differences,
-                    difference_pattern_counts,
+                    difference_patterns,
                 )
             })
             .sum(),
         (source, target) if source == target => 0,
         (source, target) => {
-            *difference_pattern_counts
-                .entry(if pattern_path.is_empty() {
+            let difference = DocumentComparisonDifference {
+                path: if path.is_empty() {
                     "/".to_owned()
                 } else {
-                    pattern_path.to_owned()
-                })
-                .or_default() += 1;
+                    path.to_owned()
+                },
+                source: summarize_json_value(source),
+                target: summarize_json_value(target),
+            };
+            let pattern_path = if pattern_path.is_empty() {
+                "/".to_owned()
+            } else {
+                pattern_path.to_owned()
+            };
+            difference_patterns
+                .entry(pattern_path)
+                .and_modify(|(count, _)| *count += 1)
+                .or_insert_with(|| (1, difference.clone()));
             if differences.len() < max_differences {
-                differences.push(DocumentComparisonDifference {
-                    path: if path.is_empty() {
-                        "/".to_owned()
-                    } else {
-                        path.to_owned()
-                    },
-                    source: summarize_json_value(source),
-                    target: summarize_json_value(target),
-                });
+                differences.push(difference);
             }
             1
         }
@@ -4035,9 +4054,22 @@ fn escape_json_pointer_token(token: &str) -> String {
 fn summarize_json_value(value: Option<&serde_json::Value>) -> String {
     match value {
         None => "<missing>".to_owned(),
-        Some(serde_json::Value::Array(values)) => format!("<array: {} items>", values.len()),
-        Some(serde_json::Value::Object(values)) => format!("<object: {} fields>", values.len()),
+        Some(value @ serde_json::Value::Array(values)) => {
+            summarize_json_container(value, format!("<array: {} items>", values.len()))
+        }
+        Some(value @ serde_json::Value::Object(values)) => {
+            summarize_json_container(value, format!("<object: {} fields>", values.len()))
+        }
         Some(value) => value.to_string(),
+    }
+}
+
+fn summarize_json_container(value: &serde_json::Value, fallback: String) -> String {
+    let serialized = value.to_string();
+    if serialized.chars().count() <= 160 {
+        serialized
+    } else {
+        fallback
     }
 }
 

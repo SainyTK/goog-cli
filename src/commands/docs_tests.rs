@@ -435,6 +435,9 @@ async fn run_compare_reports_content_difference() {
     assert!(output.contains("visual-system    yes"));
     assert!(output.contains("formatting       yes"));
     assert!(output.contains("content          no"));
+    assert!(output.contains("Pattern (1): /entries/*/preview"));
+    assert!(output
+        .contains("Example /entries/0/preview: source=\"Project Plan\", target=\"Changed title\""));
     assert!(
         output.contains("/entries/0/preview: source=\"Project Plan\", target=\"Changed title\"")
     );
@@ -545,7 +548,15 @@ fn formatting_comparison_reports_paragraph_style_changes() {
     );
     assert_eq!(
         output["scopes"][0]["differencePatterns"][0],
-        serde_json::json!({ "path": "/entries/*/paragraphStyle", "count": 1 })
+        serde_json::json!({
+            "path": "/entries/*/paragraphStyle",
+            "count": 1,
+            "example": {
+                "path": "/entries/0/paragraphStyle",
+                "source": "<missing>",
+                "target": "{\"alignment\":\"CENTER\"}"
+            }
+        })
     );
 }
 
@@ -585,8 +596,17 @@ fn comparison_groups_repeated_array_differences_by_path_pattern() {
         output["scopes"][0]["differencePatterns"][0],
         serde_json::json!({
             "path": "/entries/*/paragraphStyle",
-            "count": 2
+            "count": 2,
+            "example": {
+                "path": "/entries/0/paragraphStyle",
+                "source": "<missing>",
+                "target": "{\"alignment\":\"CENTER\"}"
+            }
         })
+    );
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"][0]["example"]["path"],
+        output["scopes"][0]["differences"][0]["path"]
     );
 }
 

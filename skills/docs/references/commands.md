@@ -82,8 +82,9 @@ Use `--scope inventory`, `--scope visual-system`, `--scope formatting`, or `--sc
 For example, a blank-document recreation with different prose can independently gate its copied native named styles and page layout with `--scope visual-system`.
 Use `--scope formatting` to compare paragraph and text styles, table and image geometry, lists, breaks, and header or footer presentation without requiring identical prose, indexes, alt text, or generated map handles.
 
-When the command reports a difference, it includes complete path-pattern counts followed by up to 20 JSON Pointer paths per scope with concise source and target values by default.
+When the command reports a difference, it includes complete path-pattern counts, one representative source-target example for every pattern, and up to 20 JSON Pointer paths per scope by default.
 Array indexes become `*` in patterns, so repeated formatting gaps remain visible even when an earlier component consumes the raw-path preview.
+The per-pattern example remains available when `--max-differences` limits the general path preview.
 Set `--max-differences` to a positive number when a larger or smaller diagnostic preview is useful.
 Use the manual map comparisons below when those paths need more context.
 Generate the same compact inventory for each document:
