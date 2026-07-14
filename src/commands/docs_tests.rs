@@ -5200,6 +5200,13 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     assert_eq!(records[0]["reportType"], "goog.docs.compare");
     assert_eq!(records[0]["matches"], true);
     assert_eq!(records[0]["comparisonScope"], "all");
+    assert_eq!(records[0]["accountOverride"], "alice@example.com");
+    assert_eq!(records[0]["sourceAccount"], "alice@example.com");
+    assert_eq!(records[0]["targetAccount"], "alice@example.com");
+    assert_eq!(
+        &records[0]["replayCommand"].as_array().unwrap()[1..3],
+        ["--account", "alice@example.com"]
+    );
     assert_eq!(records[1]["reportType"], "goog.docs.copy.acceptance");
     let accepted_at = records[1]["acceptedAt"].as_str().unwrap();
     assert!(chrono::DateTime::parse_from_rfc3339(accepted_at).is_ok());

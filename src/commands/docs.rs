@@ -2918,17 +2918,22 @@ pub(super) async fn run_copy_to<S: AccountStore>(
             .context("failed to map the copied Google Docs Document for fidelity verification")?;
         verified_source_revision_id = source_map.revision_id.clone();
         verified_copied_revision_id = target_map.revision_id.clone();
-        write_document_comparison(
+        write_document_comparison_with_settings(
             out,
             &source_map,
             &target_map,
             command.json,
-            DocsCompareScope::All,
-            true,
-            DocumentComparisonPreview {
-                max_differences: 20,
-                summary_only: false,
-                difference_pattern: None,
+            DocumentComparisonSettings {
+                scope: DocsCompareScope::All,
+                fail_on_difference: true,
+                preview: DocumentComparisonPreview {
+                    max_differences: 20,
+                    summary_only: false,
+                    difference_pattern: None,
+                },
+                account_override: Some(client.account_email()),
+                source_account: Some(client.account_email()),
+                target_account: Some(client.account_email()),
             },
         )?;
     }
@@ -4106,6 +4111,7 @@ pub(super) struct DocumentComparisonSettings<'a> {
     pub(super) target_account: Option<&'a str>,
 }
 
+#[cfg(test)]
 pub(super) fn write_document_comparison(
     out: &mut impl Write,
     source_map: &DocumentMap,

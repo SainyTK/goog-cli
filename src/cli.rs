@@ -1967,6 +1967,7 @@ Notes:
   Prints the accepted copied Document ID and its Google Docs edit URL, tab-separated.
   With --verify-fidelity, the tab-separated success output is withheld unless every semantic scope matches.
   With --json, emits newline-delimited JSON and withholds the typed copy acceptance record unless fidelity verification succeeds.
+  Verified comparison replay commands pin the resolved account used for both documents.
   Verified acceptance records identify the resolved account, goog CLI version, execution OS and architecture, running executable path and SHA-256, acceptance time, and the exact source and copied revisions that passed comparison.
 
 Notes:
