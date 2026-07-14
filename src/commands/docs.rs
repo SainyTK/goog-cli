@@ -3783,6 +3783,8 @@ pub(super) fn write_document_comparison(
     let target_inventory = document_inventory(target_map);
     let source_visual_system = canonical_visual_system(source_map)?;
     let target_visual_system = canonical_visual_system(target_map)?;
+    let source_formatting = canonical_formatting(source_map)?;
+    let target_formatting = canonical_formatting(target_map)?;
     let source_content = canonical_content(source_map)?;
     let target_content = canonical_content(target_map)?;
 
@@ -3804,6 +3806,15 @@ pub(super) fn write_document_comparison(
             "visual-system",
             source_visual_system,
             target_visual_system,
+            false,
+            max_differences,
+        )?);
+    }
+    if matches!(scope, DocsCompareScope::All | DocsCompareScope::Formatting) {
+        scopes.push(comparison_scope(
+            "formatting",
+            source_formatting,
+            target_formatting,
             false,
             max_differences,
         )?);
@@ -4044,6 +4055,76 @@ fn canonical_content(document_map: &DocumentMap) -> Result<serde_json::Value> {
     });
     remove_generated_ids(&mut value);
     Ok(value)
+}
+
+fn canonical_formatting(document_map: &DocumentMap) -> Result<serde_json::Value> {
+    let mut value = canonical_content(document_map)?;
+    remove_content_and_positions(&mut value);
+    remove_materialized_visual_defaults(&mut value);
+    remove_empty_text_runs(&mut value);
+    Ok(value)
+}
+
+fn remove_content_and_positions(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Array(values) => {
+            for value in values {
+                remove_content_and_positions(value);
+            }
+        }
+        serde_json::Value::Object(object) => {
+            for field in [
+                "content",
+                "preview",
+                "location",
+                "startIndex",
+                "endIndex",
+                "entry",
+                "imageAltText",
+                "imageHandle",
+                "tableHandle",
+                "documentLocations",
+            ] {
+                object.remove(field);
+            }
+            for child in object.values_mut() {
+                remove_content_and_positions(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn remove_empty_text_runs(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Array(values) => {
+            for value in values {
+                remove_empty_text_runs(value);
+            }
+        }
+        serde_json::Value::Object(object) => {
+            for child in object.values_mut() {
+                remove_empty_text_runs(child);
+            }
+            for field in ["textStyle", "paragraphStyle"] {
+                if object
+                    .get(field)
+                    .and_then(serde_json::Value::as_object)
+                    .is_some_and(serde_json::Map::is_empty)
+                {
+                    object.remove(field);
+                }
+            }
+            if let Some(serde_json::Value::Array(text_runs)) = object.get_mut("textRuns") {
+                text_runs.retain(|text_run| {
+                    text_run
+                        .as_object()
+                        .is_none_or(|text_run| !text_run.is_empty())
+                });
+            }
+        }
+        _ => {}
+    }
 }
 
 fn remove_generated_ids(value: &mut serde_json::Value) {

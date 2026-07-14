@@ -1978,8 +1978,8 @@ Notes:
     },
     /// Compare the semantic fidelity of two Google Docs
     #[command(after_long_help = "Notes:
-  Compares component inventory, named and page styles, and mapped content properties.
-  Use --scope to compare only inventory, visual-system, or content properties.
+  Compares component inventory, named and page styles, formatting, and mapped content properties.
+  Use --scope to compare only inventory, visual-system, formatting, or content properties.
   Mismatches include JSON Pointer paths with source and target values.
   Use --max-differences to control how many paths are shown per scope.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.
@@ -2980,6 +2980,8 @@ pub enum DocsCompareScope {
     Inventory,
     /// Compare native named styles and page styles
     VisualSystem,
+    /// Compare formatting and layout independently of prose and positions
+    Formatting,
     /// Compare mapped content and component properties
     Content,
 }

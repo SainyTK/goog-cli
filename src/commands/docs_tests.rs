@@ -369,7 +369,8 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     assert_eq!(output["scopes"][0]["scope"], "inventory");
     assert_eq!(output["scopes"][0]["sourceInventory"]["breaks"], 1);
     assert_eq!(output["scopes"][1]["scope"], "visual-system");
-    assert_eq!(output["scopes"][2]["scope"], "content");
+    assert_eq!(output["scopes"][2]["scope"], "formatting");
+    assert_eq!(output["scopes"][3]["scope"], "content");
     assert!(output["scopes"]
         .as_array()
         .unwrap()
@@ -432,6 +433,7 @@ async fn run_compare_reports_content_difference() {
     let output = String::from_utf8(out).unwrap();
     assert!(output.contains("inventory        yes"));
     assert!(output.contains("visual-system    yes"));
+    assert!(output.contains("formatting       yes"));
     assert!(output.contains("content          no"));
     assert!(
         output.contains("/entries/0/preview: source=\"Project Plan\", target=\"Changed title\"")
@@ -465,6 +467,82 @@ fn compare_scope_limits_output_and_acceptance_to_selected_scope() {
     assert_eq!(output["matches"], true);
     assert_eq!(output["scopes"].as_array().unwrap().len(), 1);
     assert_eq!(output["scopes"][0]["scope"], "visual-system");
+}
+
+#[test]
+fn formatting_comparison_ignores_prose_positions_and_empty_run_splits() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["content"] =
+        serde_json::json!("Different title with a different length\n");
+    target["body"]["content"][0]["paragraph"]["elements"] = serde_json::json!([
+        {
+            "startIndex": 50,
+            "endIndex": 94,
+            "textRun": { "content": "Different title with a different length" }
+        },
+        {
+            "startIndex": 94,
+            "endIndex": 95,
+            "textRun": { "content": "\n" }
+        }
+    ]);
+    target["body"]["content"][0]["startIndex"] = serde_json::json!(50);
+    target["body"]["content"][0]["endIndex"] = serde_json::json!(95);
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        true,
+        20,
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["scopes"][0]["scope"], "formatting");
+    assert_eq!(output["scopes"][0]["differenceCount"], 0);
+}
+
+#[test]
+fn formatting_comparison_reports_paragraph_style_changes() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    let error = write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        true,
+        20,
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Google Docs comparison found semantic differences"
+    );
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], false);
+    assert_eq!(
+        output["scopes"][0]["differences"][0]["path"],
+        "/entries/0/paragraphStyle"
+    );
 }
 
 #[test]

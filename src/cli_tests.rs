@@ -749,6 +749,23 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         panic!("unexpected parse result");
     };
     assert_eq!(scope, DocsCompareScope::All);
+
+    let cli = parse(&[
+        "docs",
+        "compare",
+        "source-123",
+        "target-456",
+        "--scope",
+        "formatting",
+    ])
+    .unwrap();
+    let Command::Docs {
+        command: DocsCommand::Compare { scope, .. },
+    } = cli.command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(scope, DocsCompareScope::Formatting);
 }
 
 #[test]
