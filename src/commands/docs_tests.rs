@@ -679,6 +679,35 @@ fn comparison_filters_path_previews_by_reported_pattern() {
 }
 
 #[test]
+fn comparison_rejects_an_unreported_difference_pattern() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    let error = write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(20, Some("/entries/*/paragraphStyle/alignmnt")),
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "difference pattern `/entries/*/paragraphStyle/alignmnt` was not found in the selected comparison scope; run without --difference-pattern to list reported patterns"
+    );
+    assert!(out.is_empty());
+}
+
+#[test]
 fn formatting_comparison_ignores_font_redundant_with_inherited_named_style() {
     let mut source = searchable_document();
     source["namedStyles"] = serde_json::json!({

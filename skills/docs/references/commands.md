@@ -88,6 +88,7 @@ Array indexes become `*` in patterns, so repeated formatting gaps remain visible
 The per-pattern example remains available when `--max-differences` limits the general path preview.
 Set `--max-differences` to a positive number when a larger or smaller diagnostic preview is useful.
 Copy a reported pattern into `--difference-pattern` to show concrete paths only for that pattern while retaining the complete pattern summary, total difference count, and acceptance result.
+The command rejects a pattern that is not present in the selected scope so a typo cannot look like a successful empty drill-down.
 Use the manual map comparisons below when those paths need more context.
 Generate the same compact inventory for each document:
 

@@ -3863,6 +3863,20 @@ pub(super) fn write_document_comparison(
         scopes,
     };
 
+    if let Some(pattern) = preview.difference_pattern {
+        let pattern_is_reported = report.scopes.iter().any(|scope| {
+            scope
+                .difference_patterns
+                .iter()
+                .any(|reported| reported.path == pattern)
+        });
+        if !pattern_is_reported {
+            bail!(
+                "difference pattern `{pattern}` was not found in the selected comparison scope; run without --difference-pattern to list reported patterns"
+            );
+        }
+    }
+
     if json {
         write_json_line(out, &report, "failed to serialize Docs comparison")?;
     } else {
