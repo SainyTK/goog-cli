@@ -152,7 +152,7 @@ pub enum AuthCommand {
         email: String,
     },
     /// Export full auth state to a file for use with GOOG_TOKEN_FILE in
-    /// headless environments such as Sandcastle. The output file grants
+    /// headless environments and automated runs. The output file grants
     /// access to every account it contains, within their authorized scopes --
     /// never commit it, and delete it once the headless environment no longer
     /// needs it.
