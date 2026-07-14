@@ -3755,7 +3755,11 @@ pub(super) struct CompareDocumentsCommand {
 #[serde(rename_all = "camelCase")]
 struct DocumentComparisonReport {
     source_document_id: Option<String>,
+    source_document_title: Option<String>,
+    source_document_url: Option<String>,
     target_document_id: Option<String>,
+    target_document_title: Option<String>,
+    target_document_url: Option<String>,
     summary_only: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     difference_preview_pattern: Option<String>,
@@ -3904,7 +3908,11 @@ pub(super) fn write_document_comparison(
     });
     let mut report = DocumentComparisonReport {
         source_document_id: source_map.document_id.clone(),
+        source_document_title: source_map.title.clone(),
+        source_document_url: source_map.document_id.as_deref().map(document_edit_url),
         target_document_id: target_map.document_id.clone(),
+        target_document_title: target_map.title.clone(),
+        target_document_url: target_map.document_id.as_deref().map(document_edit_url),
         summary_only: preview.summary_only,
         difference_preview_pattern: preview.difference_pattern.map(str::to_owned),
         matches: scopes.iter().all(|scope| scope.matches),
@@ -3959,6 +3967,20 @@ pub(super) fn write_document_comparison(
     if json {
         write_json_line(out, &report, "failed to serialize Docs comparison")?;
     } else {
+        write_document_comparison_identity(
+            out,
+            "Source",
+            report.source_document_title.as_deref(),
+            report.source_document_id.as_deref(),
+            report.source_document_url.as_deref(),
+        )?;
+        write_document_comparison_identity(
+            out,
+            "Target",
+            report.target_document_title.as_deref(),
+            report.target_document_id.as_deref(),
+            report.target_document_url.as_deref(),
+        )?;
         writeln!(
             out,
             "{:<16} {:<7} {:<64} Target SHA-256",
@@ -4098,6 +4120,28 @@ pub(super) fn write_document_comparison(
         bail!("Google Docs comparison found semantic differences");
     }
     Ok(())
+}
+
+fn document_edit_url(document_id: &str) -> String {
+    format!("https://docs.google.com/document/d/{document_id}/edit")
+}
+
+fn write_document_comparison_identity(
+    out: &mut impl Write,
+    label: &str,
+    title: Option<&str>,
+    document_id: Option<&str>,
+    url: Option<&str>,
+) -> Result<()> {
+    let identity = match (title, document_id, url) {
+        (Some(title), Some(document_id), Some(url)) => format!("{title} [{document_id}] {url}"),
+        (Some(title), _, _) => title.to_owned(),
+        (_, Some(document_id), Some(url)) => format!("[{document_id}] {url}"),
+        (_, Some(document_id), _) => document_id.to_owned(),
+        _ => "unknown document".to_owned(),
+    };
+    writeln!(out, "{label}: {identity}")
+        .with_context(|| format!("failed to write {label} Docs comparison identity"))
 }
 
 fn closest_difference_patterns(

@@ -377,7 +377,17 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(output["sourceDocumentId"], "source-123");
+    assert_eq!(output["sourceDocumentTitle"], "Searchable");
+    assert_eq!(
+        output["sourceDocumentUrl"],
+        "https://docs.google.com/document/d/source-123/edit"
+    );
     assert_eq!(output["targetDocumentId"], "target-456");
+    assert_eq!(output["targetDocumentTitle"], "Copied title");
+    assert_eq!(
+        output["targetDocumentUrl"],
+        "https://docs.google.com/document/d/target-456/edit"
+    );
     assert_eq!(output["matches"], true);
     assert_eq!(output["scopes"][0]["scope"], "inventory");
     assert_eq!(output["scopes"][0]["sourceInventory"]["breaks"], 1);
@@ -446,6 +456,12 @@ async fn run_compare_reports_content_difference() {
     );
 
     let output = String::from_utf8(out).unwrap();
+    assert!(output.contains(
+        "Source: Searchable [source-123] https://docs.google.com/document/d/source-123/edit"
+    ));
+    assert!(output.contains(
+        "Target: Searchable [target-456] https://docs.google.com/document/d/target-456/edit"
+    ));
     assert!(output.contains("inventory        yes"));
     assert!(output.contains("visual-system    yes"));
     assert!(output.contains("formatting       yes"));
