@@ -718,6 +718,36 @@ fn filtered_human_comparison_distinguishes_matching_and_other_differences() {
 }
 
 #[test]
+fn filtered_human_comparison_treats_an_absent_scope_pattern_as_outside() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    let mut target = searchable_document();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::All,
+        false,
+        comparison_preview(1, Some("/entries/*/paragraphStyle/alignment")),
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("3 differences outside the preview filter"));
+    assert!(!output.contains("... 3 more differences matching the preview filter"));
+}
+
+#[test]
 fn comparison_rejects_an_unreported_difference_pattern() {
     let source = searchable_document();
     let mut target = source.clone();
