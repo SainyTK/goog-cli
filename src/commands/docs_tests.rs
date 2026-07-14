@@ -699,10 +699,46 @@ fn summary_only_comparison_suppresses_all_difference_details() {
     assert_eq!(output["summaryOnly"], true);
     assert_eq!(output["totalDifferenceCount"], 1);
     assert_eq!(output["totalDisplayedDifferenceCount"], 0);
-    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 1);
+    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 0);
+    assert_eq!(output["totalDifferenceCountHiddenBySummary"], 1);
     assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 0);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 0);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenBySummary"], 1);
     assert!(output["scopes"][0].get("differencePatterns").is_none());
     assert!(output["scopes"][0].get("differences").is_none());
+}
+
+#[test]
+fn summary_only_human_comparison_attributes_suppressed_paths_to_summary_mode() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+    let preview = DocumentComparisonPreview {
+        max_differences: 20,
+        summary_only: true,
+        difference_pattern: None,
+    };
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        preview,
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains(
+        "Difference totals: 1 overall (0 displayed, 0 hidden by limit, 1 hidden by summary mode)"
+    ));
 }
 
 #[test]

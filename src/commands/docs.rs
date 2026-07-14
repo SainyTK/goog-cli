@@ -3763,6 +3763,7 @@ struct DocumentComparisonReport {
     total_difference_count: usize,
     total_displayed_difference_count: usize,
     total_difference_count_hidden_by_limit: usize,
+    total_difference_count_hidden_by_summary: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     total_preview_difference_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3784,6 +3785,7 @@ struct DocumentComparisonScope {
     difference_count: usize,
     displayed_difference_count: usize,
     difference_count_hidden_by_limit: usize,
+    difference_count_hidden_by_summary: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     preview_difference_count: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3884,6 +3886,10 @@ pub(super) fn write_document_comparison(
         .iter()
         .map(|scope| scope.difference_count_hidden_by_limit)
         .sum();
+    let total_difference_count_hidden_by_summary = scopes
+        .iter()
+        .map(|scope| scope.difference_count_hidden_by_summary)
+        .sum();
     let total_preview_difference_count = preview.difference_pattern.map(|_| {
         scopes
             .iter()
@@ -3905,6 +3911,7 @@ pub(super) fn write_document_comparison(
         total_difference_count,
         total_displayed_difference_count,
         total_difference_count_hidden_by_limit,
+        total_difference_count_hidden_by_summary,
         total_preview_difference_count,
         total_difference_count_outside_preview,
         scopes,
@@ -4023,23 +4030,47 @@ pub(super) fn write_document_comparison(
             report.total_preview_difference_count,
             report.total_difference_count_outside_preview,
         ) {
-            writeln!(
-                out,
-                "Difference totals: {} overall, {preview_count} matching filter ({} displayed, {} hidden by limit), {outside_count} outside filter",
-                report.total_difference_count,
-                report.total_displayed_difference_count,
-                report.total_difference_count_hidden_by_limit
-            )
-            .context("failed to write filtered Docs comparison totals")?;
+            if report.summary_only {
+                writeln!(
+                    out,
+                    "Difference totals: {} overall, {preview_count} matching filter ({} displayed, {} hidden by limit, {} hidden by summary mode), {outside_count} outside filter",
+                    report.total_difference_count,
+                    report.total_displayed_difference_count,
+                    report.total_difference_count_hidden_by_limit,
+                    report.total_difference_count_hidden_by_summary
+                )
+                .context("failed to write filtered Docs comparison totals")?;
+            } else {
+                writeln!(
+                    out,
+                    "Difference totals: {} overall, {preview_count} matching filter ({} displayed, {} hidden by limit), {outside_count} outside filter",
+                    report.total_difference_count,
+                    report.total_displayed_difference_count,
+                    report.total_difference_count_hidden_by_limit
+                )
+                .context("failed to write filtered Docs comparison totals")?;
+            }
         } else {
-            writeln!(
-                out,
-                "Difference totals: {} overall ({} displayed, {} hidden by limit)",
-                report.total_difference_count,
-                report.total_displayed_difference_count,
-                report.total_difference_count_hidden_by_limit
-            )
-            .context("failed to write Docs comparison totals")?;
+            if report.summary_only {
+                writeln!(
+                    out,
+                    "Difference totals: {} overall ({} displayed, {} hidden by limit, {} hidden by summary mode)",
+                    report.total_difference_count,
+                    report.total_displayed_difference_count,
+                    report.total_difference_count_hidden_by_limit,
+                    report.total_difference_count_hidden_by_summary
+                )
+                .context("failed to write Docs comparison totals")?;
+            } else {
+                writeln!(
+                    out,
+                    "Difference totals: {} overall ({} displayed, {} hidden by limit)",
+                    report.total_difference_count,
+                    report.total_displayed_difference_count,
+                    report.total_difference_count_hidden_by_limit
+                )
+                .context("failed to write Docs comparison totals")?;
+            }
         }
         writeln!(
             out,
@@ -4144,9 +4175,17 @@ fn comparison_scope(
         differences.clear();
     }
     let displayed_difference_count = differences.len();
-    let difference_count_hidden_by_limit = preview_difference_count
-        .unwrap_or(difference_count)
-        .saturating_sub(displayed_difference_count);
+    let displayable_difference_count = preview_difference_count.unwrap_or(difference_count);
+    let difference_count_hidden_by_summary = if preview.summary_only {
+        displayable_difference_count
+    } else {
+        0
+    };
+    let difference_count_hidden_by_limit = if preview.summary_only {
+        0
+    } else {
+        displayable_difference_count.saturating_sub(displayed_difference_count)
+    };
     Ok(DocumentComparisonScope {
         scope,
         matches,
@@ -4157,6 +4196,7 @@ fn comparison_scope(
         difference_count,
         displayed_difference_count,
         difference_count_hidden_by_limit,
+        difference_count_hidden_by_summary,
         preview_difference_count,
         difference_count_outside_preview,
         difference_patterns,
