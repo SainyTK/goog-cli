@@ -1147,6 +1147,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
         "--required-source-revision-id",
         "rev-approved",
         "--verify-fidelity",
+        "--json",
     ])
     .unwrap()
     .command
@@ -1161,6 +1162,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
         required_executable_sha256,
         required_source_revision_id,
         verify_fidelity,
+        json,
     } = command
     else {
         panic!("unexpected Docs command");
@@ -1170,6 +1172,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
     assert_eq!(required_executable_sha256.as_deref(), Some("abc123"));
     assert_eq!(required_source_revision_id.as_deref(), Some("rev-approved"));
     assert!(verify_fidelity);
+    assert!(json);
 }
 
 #[test]

@@ -4974,7 +4974,7 @@ async fn run_create_prints_document_id_and_edit_url() {
 }
 
 #[tokio::test]
-async fn run_copy_preserves_template_through_drive_and_prints_edit_url() {
+async fn run_copy_can_emit_a_typed_json_acceptance_record() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/drive/v3/files/source-document-123/copy"))
@@ -5021,6 +5021,7 @@ async fn run_copy_preserves_template_through_drive_and_prints_edit_url() {
             required_executable_sha256: None,
             required_source_revision_id: None,
             verify_fidelity: false,
+            json: true,
         },
         &mut out,
         Some(&drive_files_url),
@@ -5029,10 +5030,18 @@ async fn run_copy_preserves_template_through_drive_and_prints_edit_url() {
     .await
     .unwrap();
 
+    let acceptance: serde_json::Value =
+        serde_json::from_slice(&out).expect("copy acceptance should be valid JSON");
+    assert_eq!(acceptance["reportType"], "goog.docs.copy.acceptance");
+    assert_eq!(acceptance["reportSchemaVersion"], 1);
+    assert_eq!(acceptance["sourceDocumentId"], "source-document-123");
+    assert_eq!(acceptance["copiedDocumentId"], "copied-document-456");
+    assert_eq!(acceptance["copiedDocumentTitle"], "Customer proposal copy");
     assert_eq!(
-        String::from_utf8(out).unwrap(),
-        "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit\n"
+        acceptance["copiedDocumentUrl"],
+        "https://docs.google.com/document/d/copied-document-456/edit"
     );
+    assert_eq!(acceptance["fidelityVerified"], false);
 }
 
 #[tokio::test]
@@ -5081,6 +5090,7 @@ async fn run_copy_verifies_required_source_revision_before_drive_copy() {
             required_executable_sha256: None,
             required_source_revision_id: Some("rev-approved".into()),
             verify_fidelity: false,
+            json: false,
         },
         &mut out,
         Some(&format!("{}/drive/v3/files", server.uri())),
@@ -5149,6 +5159,7 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
             required_executable_sha256: None,
             required_source_revision_id: None,
             verify_fidelity: true,
+            json: true,
         },
         &mut out,
         Some(&format!("{}/drive/v3/files", server.uri())),
@@ -5157,18 +5168,18 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     .await
     .unwrap();
 
-    let output = String::from_utf8(out).unwrap();
-    assert!(output.ends_with(
-        "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit\n"
-    ));
-    assert!(output.contains(
-        "Comparison settings: scope=all, fail-on-difference=yes, max-differences=20, summary-only=no"
-    ));
-    assert!(output.contains("inventory        yes"));
-    assert!(output.contains("visual-system    yes"));
-    assert!(output.contains("formatting       yes"));
-    assert!(output.contains("content          yes"));
-    assert!(output.contains("Overall: match"));
+    let records = String::from_utf8(out)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["reportType"], "goog.docs.compare");
+    assert_eq!(records[0]["matches"], true);
+    assert_eq!(records[0]["comparisonScope"], "all");
+    assert_eq!(records[1]["reportType"], "goog.docs.copy.acceptance");
+    assert_eq!(records[1]["copiedDocumentId"], "copied-document-456");
+    assert_eq!(records[1]["fidelityVerified"], true);
 }
 
 #[tokio::test]
@@ -5227,6 +5238,7 @@ async fn run_copy_does_not_report_a_rejected_copy_as_successful() {
             required_executable_sha256: None,
             required_source_revision_id: None,
             verify_fidelity: true,
+            json: true,
         },
         &mut out,
         Some(&format!("{}/drive/v3/files", server.uri())),
@@ -5239,11 +5251,14 @@ async fn run_copy_does_not_report_a_rejected_copy_as_successful() {
         error.to_string(),
         "Google Docs comparison found semantic differences"
     );
-    let output = String::from_utf8(out).unwrap();
-    assert!(output.contains("Overall: different"));
-    assert!(!output.contains(
-        "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit"
-    ));
+    let records = String::from_utf8(out)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["reportType"], "goog.docs.compare");
+    assert_eq!(records[0]["matches"], false);
 }
 
 #[tokio::test]
@@ -5274,6 +5289,7 @@ async fn run_copy_rejects_executable_drift_before_document_access() {
             ),
             required_source_revision_id: Some("rev-approved".into()),
             verify_fidelity: false,
+            json: false,
         },
         &mut Vec::new(),
         Some(&format!("{}/drive/v3/files", server.uri())),
@@ -5316,6 +5332,7 @@ async fn run_copy_rejects_stale_source_revision_before_drive_copy() {
             required_executable_sha256: None,
             required_source_revision_id: Some("rev-approved".into()),
             verify_fidelity: false,
+            json: false,
         },
         &mut Vec::new(),
         Some(&format!("{}/drive/v3/files", server.uri())),

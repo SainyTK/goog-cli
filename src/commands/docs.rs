@@ -106,7 +106,9 @@ pub fn run<S: AccountStore>(
             required_executable_sha256,
             required_source_revision_id,
             verify_fidelity,
+            json,
         } => {
+            let json = super::drive::should_emit_json(json, output_json_by_default);
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -118,6 +120,7 @@ pub fn run<S: AccountStore>(
                     required_executable_sha256,
                     required_source_revision_id,
                     verify_fidelity,
+                    json,
                 },
                 &mut std::io::stdout(),
                 None,
@@ -2880,7 +2883,8 @@ pub(super) async fn run_copy_to<S: AccountStore>(
     }
 
     let source_document_id = command.source_document_id;
-    let mut options = CopyDocumentOptions::new(source_document_id.clone(), command.title);
+    let title = command.title;
+    let mut options = CopyDocumentOptions::new(source_document_id.clone(), title.clone());
     if let Some(drive_files_url) = drive_files_url {
         options = options.with_drive_files_url(drive_files_url);
     }
@@ -2894,7 +2898,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         .context("Google Drive copy response did not include an id")?;
 
     if command.verify_fidelity {
-        let source_map = get_document_map(client, source_document_id, documents_url)
+        let source_map = get_document_map(client, source_document_id.clone(), documents_url)
             .await
             .context("failed to map the source Google Docs Document for fidelity verification")?;
         let target_map = get_document_map(client, document_id.to_owned(), documents_url)
@@ -2904,7 +2908,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
             out,
             &source_map,
             &target_map,
-            false,
+            command.json,
             DocsCompareScope::All,
             true,
             DocumentComparisonPreview {
@@ -2915,13 +2919,40 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         )?;
     }
 
-    writeln!(
-        out,
-        "{}\thttps://docs.google.com/document/d/{}/edit",
-        document_id, document_id
-    )
-    .context("failed to write output")?;
+    let document_url = document_edit_url(document_id);
+    if command.json {
+        write_json_line(
+            out,
+            &CopyDocumentAcceptance {
+                report_type: COPY_DOCUMENT_ACCEPTANCE_REPORT_TYPE,
+                report_schema_version: COPY_DOCUMENT_ACCEPTANCE_REPORT_SCHEMA_VERSION,
+                source_document_id: &source_document_id,
+                copied_document_id: document_id,
+                copied_document_title: &title,
+                copied_document_url: &document_url,
+                fidelity_verified: command.verify_fidelity,
+            },
+            "failed to serialize Docs copy acceptance record",
+        )?;
+    } else {
+        writeln!(out, "{}\t{}", document_id, document_url).context("failed to write output")?;
+    }
     Ok(())
+}
+
+const COPY_DOCUMENT_ACCEPTANCE_REPORT_TYPE: &str = "goog.docs.copy.acceptance";
+const COPY_DOCUMENT_ACCEPTANCE_REPORT_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CopyDocumentAcceptance<'a> {
+    report_type: &'static str,
+    report_schema_version: u32,
+    source_document_id: &'a str,
+    copied_document_id: &'a str,
+    copied_document_title: &'a str,
+    copied_document_url: &'a str,
+    fidelity_verified: bool,
 }
 
 pub(super) struct CopyDocumentCommand {
@@ -2930,6 +2961,7 @@ pub(super) struct CopyDocumentCommand {
     pub(super) required_executable_sha256: Option<String>,
     pub(super) required_source_revision_id: Option<String>,
     pub(super) verify_fidelity: bool,
+    pub(super) json: bool,
 }
 
 #[cfg(test)]
