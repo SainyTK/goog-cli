@@ -379,6 +379,7 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     let compared_at = output["comparedAt"].as_str().unwrap();
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
+    assert_eq!(output["googCliVersion"], env!("CARGO_PKG_VERSION"));
     assert_eq!(output["sourceDocumentId"], "source-123");
     assert_eq!(output["sourceDocumentTitle"], "Searchable");
     assert_eq!(output["sourceRevisionId"], "rev-search");
@@ -467,6 +468,7 @@ async fn run_compare_reports_content_difference() {
         .unwrap();
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
+    assert!(output.contains(&format!("goog CLI version: {}", env!("CARGO_PKG_VERSION"))));
     assert!(output.contains(
         "Source: Searchable [source-123] https://docs.google.com/document/d/source-123/edit [revision rev-search]"
     ));

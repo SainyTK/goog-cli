@@ -76,8 +76,8 @@ target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --scope for
 ```
 
 The command compares component inventory, the native named-style and page-style visual system, formatting and layout, and all mapped content and component properties.
-Each report records the UTC comparison time and identifies the source and target by title, document ID, edit URL, and the revision ID fetched for the comparison.
-Keep the timestamp and revision IDs with acceptance evidence so a later document edit cannot be mistaken for the tested input.
+Each report records the UTC comparison time, the goog CLI version, and identifies the source and target by title, document ID, edit URL, and the revision ID fetched for the comparison.
+Keep the timestamp, CLI version, and revision IDs with acceptance evidence so a later document edit or tool change cannot be mistaken for the tested input.
 It removes Google-assigned object, heading, segment, and list IDs before comparison while retaining tab IDs, indexes, ranges, and component order.
 The visual-system scope also normalizes equivalent default fields that Google can materialize after copying styles, including false bold and page-break values and a page-number start of one.
 An overall match proves semantic structural equivalence across all four scopes.

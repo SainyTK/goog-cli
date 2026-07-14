@@ -3757,6 +3757,7 @@ pub(super) struct CompareDocumentsCommand {
 #[serde(rename_all = "camelCase")]
 struct DocumentComparisonReport {
     compared_at: String,
+    goog_cli_version: &'static str,
     source_document_id: Option<String>,
     source_document_title: Option<String>,
     source_document_url: Option<String>,
@@ -3913,6 +3914,7 @@ pub(super) fn write_document_comparison(
     });
     let mut report = DocumentComparisonReport {
         compared_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+        goog_cli_version: env!("CARGO_PKG_VERSION"),
         source_document_id: source_map.document_id.clone(),
         source_document_title: source_map.title.clone(),
         source_document_url: source_map.document_id.as_deref().map(document_edit_url),
@@ -3977,6 +3979,8 @@ pub(super) fn write_document_comparison(
     } else {
         writeln!(out, "Compared at: {}", report.compared_at)
             .context("failed to write Docs comparison timestamp")?;
+        writeln!(out, "goog CLI version: {}", report.goog_cli_version)
+            .context("failed to write Docs comparison CLI version")?;
         write_document_comparison_identity(
             out,
             "Source",
