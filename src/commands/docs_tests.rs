@@ -679,6 +679,45 @@ fn comparison_filters_path_previews_by_reported_pattern() {
 }
 
 #[test]
+fn filtered_human_comparison_distinguishes_matching_and_other_differences() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    for paragraph in source["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"] = serde_json::json!({
+            "alignment": "START",
+            "direction": "LEFT_TO_RIGHT"
+        });
+    }
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    for paragraph in target["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"]["alignment"] = serde_json::json!("CENTER");
+        paragraph["paragraph"]["paragraphStyle"]["direction"] = serde_json::json!("RIGHT_TO_LEFT");
+    }
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(1, Some("/entries/*/paragraphStyle/direction")),
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("... 1 more difference matching the preview filter"));
+    assert!(output.contains("2 differences outside the preview filter"));
+    assert!(!output.contains("... 3 more differences"));
+}
+
+#[test]
 fn comparison_rejects_an_unreported_difference_pattern() {
     let source = searchable_document();
     let mut target = source.clone();

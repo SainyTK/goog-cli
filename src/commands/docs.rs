@@ -3936,13 +3936,40 @@ pub(super) fn write_document_comparison(
                 )
                 .context("failed to write Docs comparison difference")?;
             }
-            if scope.difference_count > scope.differences.len() {
+            let preview_difference_count = preview
+                .difference_pattern
+                .and_then(|filter| {
+                    scope
+                        .difference_patterns
+                        .iter()
+                        .find(|pattern| pattern.path == filter)
+                        .map(|pattern| pattern.count)
+                })
+                .unwrap_or(scope.difference_count);
+            if preview_difference_count > scope.differences.len() {
+                let hidden_count = preview_difference_count - scope.differences.len();
                 writeln!(
                     out,
-                    "  ... {} more differences",
-                    scope.difference_count - scope.differences.len()
+                    "  ... {hidden_count} more difference{}{}",
+                    if hidden_count == 1 { "" } else { "s" },
+                    if preview.difference_pattern.is_some() {
+                        " matching the preview filter"
+                    } else {
+                        ""
+                    }
                 )
                 .context("failed to write Docs comparison difference count")?;
+            }
+            if preview.difference_pattern.is_some()
+                && scope.difference_count > preview_difference_count
+            {
+                let outside_count = scope.difference_count - preview_difference_count;
+                writeln!(
+                    out,
+                    "  {outside_count} difference{} outside the preview filter",
+                    if outside_count == 1 { "" } else { "s" }
+                )
+                .context("failed to write Docs comparison filtered difference count")?;
             }
         }
         writeln!(
