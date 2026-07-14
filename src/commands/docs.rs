@@ -3863,6 +3863,8 @@ pub(super) struct CompareDocumentsCommand {
 struct DocumentComparisonReport {
     compared_at: String,
     goog_cli_version: &'static str,
+    goog_cli_execution_os: &'static str,
+    goog_cli_execution_arch: &'static str,
     goog_cli_executable_path: String,
     goog_cli_executable_sha256: String,
     replay_command: Vec<String>,
@@ -4074,6 +4076,8 @@ pub(super) fn write_document_comparison_with_settings(
     let mut report = DocumentComparisonReport {
         compared_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         goog_cli_version: env!("CARGO_PKG_VERSION"),
+        goog_cli_execution_os: std::env::consts::OS,
+        goog_cli_execution_arch: std::env::consts::ARCH,
         goog_cli_executable_path: goog_cli_executable_path()?.to_owned(),
         goog_cli_executable_sha256: goog_cli_executable_sha256()?.to_owned(),
         replay_command: document_comparison_replay_command(
@@ -4158,6 +4162,12 @@ pub(super) fn write_document_comparison_with_settings(
             .context("failed to write Docs comparison timestamp")?;
         writeln!(out, "goog CLI version: {}", report.goog_cli_version)
             .context("failed to write Docs comparison CLI version")?;
+        writeln!(
+            out,
+            "goog CLI execution platform: {} / {}",
+            report.goog_cli_execution_os, report.goog_cli_execution_arch
+        )
+        .context("failed to write Docs comparison execution platform")?;
         writeln!(
             out,
             "goog CLI executable path: {}",

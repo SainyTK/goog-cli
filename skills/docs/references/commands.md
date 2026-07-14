@@ -78,13 +78,13 @@ target/debug/goog docs compare SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --source-ac
 ```
 
 The command compares component inventory, the native named-style and page-style visual system, formatting and layout, and all mapped content and component properties.
-Each report records a revision-guarded replay command, the UTC comparison time, the goog CLI version, executable path and SHA-256, the selected scope, acceptance-gate setting, preview limit, summary mode, an explicit account override when supplied, and identifies the source and target by title, document ID, edit URL, revision ID, and the account that accessed it.
+Each report records a revision-guarded replay command, the UTC comparison time, the goog CLI version, execution OS and architecture, executable path and SHA-256, the selected scope, acceptance-gate setting, preview limit, summary mode, an explicit account override when supplied, and identifies the source and target by title, document ID, edit URL, revision ID, and the account that accessed it.
 JSON reports expose the replay command as an argument array so pattern filters and other values can be reused without ambiguous shell parsing.
 The replay command includes `--required-source-revision-id` and `--required-target-revision-id`, so it rejects a later document state instead of silently producing new evidence.
 When the comparison uses `--account EMAIL`, the replay command preserves it so multi-account routing cannot silently select a different account.
 When both documents resolve through the same account, the replay command pins that resolved account automatically.
 When they resolve through different accounts, the replay command pins each one with `--source-account` and `--target-account`.
-Keep the replay command, timestamp, CLI version, executable path and SHA-256, and revision IDs with acceptance evidence so a later document edit, tool change, or informational comparison cannot be mistaken for the tested acceptance gate.
+Keep the replay command, timestamp, CLI version, execution OS and architecture, executable path and SHA-256, and revision IDs with acceptance evidence so a later document edit, tool change, execution environment change, or informational comparison cannot be mistaken for the tested acceptance gate.
 It removes Google-assigned object, heading, segment, and list IDs before comparison while retaining tab IDs, indexes, ranges, and component order.
 The visual-system scope also normalizes equivalent default fields that Google can materialize after copying styles, including false bold and page-break values and a page-number start of one.
 An overall match proves semantic structural equivalence across all four scopes.
