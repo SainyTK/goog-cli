@@ -5033,7 +5033,7 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
     let acceptance: serde_json::Value =
         serde_json::from_slice(&out).expect("copy acceptance should be valid JSON");
     assert_eq!(acceptance["reportType"], "goog.docs.copy.acceptance");
-    assert_eq!(acceptance["reportSchemaVersion"], 1);
+    assert_eq!(acceptance["reportSchemaVersion"], 2);
     let accepted_at = acceptance["acceptedAt"].as_str().unwrap();
     assert!(chrono::DateTime::parse_from_rfc3339(accepted_at).is_ok());
     assert!(accepted_at.ends_with('Z'));
@@ -5065,6 +5065,11 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
         "https://docs.google.com/document/d/copied-document-456/edit"
     );
     assert_eq!(acceptance["fidelityVerified"], false);
+    assert_eq!(
+        acceptance["comparisonReportSchemaVersion"],
+        serde_json::Value::Null
+    );
+    assert_eq!(acceptance["fingerprintAlgorithm"], serde_json::Value::Null);
     assert_eq!(acceptance["verifiedScopes"], serde_json::json!([]));
     assert_eq!(
         acceptance["verifiedSourceRevisionId"],
@@ -5256,6 +5261,12 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
         "Google-confirmed customer proposal copy"
     );
     assert_eq!(records[1]["fidelityVerified"], true);
+    assert_eq!(records[1]["reportSchemaVersion"], 2);
+    assert_eq!(
+        records[1]["comparisonReportSchemaVersion"],
+        records[0]["reportSchemaVersion"]
+    );
+    assert_eq!(records[1]["fingerprintAlgorithm"], "sha256");
     assert_eq!(records[1]["verifiedSourceRevisionId"], "rev-search");
     assert_eq!(records[1]["verifiedCopiedRevisionId"], "rev-copy");
     let comparison_scopes = records[0]["scopes"].as_array().unwrap();
