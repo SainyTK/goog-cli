@@ -5065,6 +5065,7 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
         "https://docs.google.com/document/d/copied-document-456/edit"
     );
     assert_eq!(acceptance["fidelityVerified"], false);
+    assert_eq!(acceptance["verifiedScopes"], serde_json::json!([]));
     assert_eq!(
         acceptance["verifiedSourceRevisionId"],
         serde_json::Value::Null
@@ -5257,6 +5258,20 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     assert_eq!(records[1]["fidelityVerified"], true);
     assert_eq!(records[1]["verifiedSourceRevisionId"], "rev-search");
     assert_eq!(records[1]["verifiedCopiedRevisionId"], "rev-copy");
+    let comparison_scopes = records[0]["scopes"].as_array().unwrap();
+    let accepted_scopes = records[1]["verifiedScopes"].as_array().unwrap();
+    assert_eq!(accepted_scopes.len(), 4);
+    for (comparison_scope, accepted_scope) in comparison_scopes.iter().zip(accepted_scopes) {
+        assert_eq!(accepted_scope["scope"], comparison_scope["scope"]);
+        assert_eq!(
+            accepted_scope["sourceFingerprint"],
+            comparison_scope["sourceFingerprint"]
+        );
+        assert_eq!(
+            accepted_scope["targetFingerprint"],
+            comparison_scope["targetFingerprint"]
+        );
+    }
 }
 
 #[tokio::test]

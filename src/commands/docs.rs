@@ -1224,6 +1224,7 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
             target_account: Some(&target_account),
         },
     )
+    .map(|_| ())
 }
 
 #[cfg(test)]
@@ -2933,6 +2934,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
     let mut verified_source_document_title = None;
     let mut verified_source_revision_id = None;
     let mut verified_copied_revision_id = None;
+    let mut verified_scopes = Vec::new();
     if command.verify_fidelity {
         let source_map = source_map_for_verification
             .as_ref()
@@ -2946,7 +2948,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         }
         verified_source_revision_id = source_map.revision_id.clone();
         verified_copied_revision_id = target_map.revision_id.clone();
-        write_document_comparison_with_settings(
+        verified_scopes = write_document_comparison_with_settings(
             out,
             source_map,
             &target_map,
@@ -2996,6 +2998,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
                 fidelity_verified: command.verify_fidelity,
                 verified_source_revision_id: verified_source_revision_id.as_deref(),
                 verified_copied_revision_id: verified_copied_revision_id.as_deref(),
+                verified_scopes: &verified_scopes,
             },
             "failed to serialize Docs copy acceptance record",
         )?;
@@ -3029,6 +3032,7 @@ struct CopyDocumentAcceptance<'a> {
     fidelity_verified: bool,
     verified_source_revision_id: Option<&'a str>,
     verified_copied_revision_id: Option<&'a str>,
+    verified_scopes: &'a [DocumentComparisonFingerprint],
 }
 
 pub(super) struct CopyDocumentCommand {
@@ -4115,6 +4119,14 @@ struct DocumentComparisonScope {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(super) struct DocumentComparisonFingerprint {
+    scope: &'static str,
+    source_fingerprint: String,
+    target_fingerprint: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct DocumentComparisonDifferencePattern {
     path: String,
     count: usize,
@@ -4170,6 +4182,7 @@ pub(super) fn write_document_comparison(
             target_account: None,
         },
     )
+    .map(|_| ())
 }
 
 pub(super) fn write_document_comparison_with_settings(
@@ -4178,7 +4191,7 @@ pub(super) fn write_document_comparison_with_settings(
     target_map: &DocumentMap,
     json: bool,
     settings: DocumentComparisonSettings<'_>,
-) -> Result<()> {
+) -> Result<Vec<DocumentComparisonFingerprint>> {
     let DocumentComparisonSettings {
         scope,
         fail_on_difference,
@@ -4348,6 +4361,16 @@ pub(super) fn write_document_comparison_with_settings(
             scope.differences.clear();
         }
     }
+
+    let verified_scopes = report
+        .scopes
+        .iter()
+        .map(|scope| DocumentComparisonFingerprint {
+            scope: scope.scope,
+            source_fingerprint: scope.source_fingerprint.clone(),
+            target_fingerprint: scope.target_fingerprint.clone(),
+        })
+        .collect();
 
     if json {
         write_json_line(out, &report, "failed to serialize Docs comparison")?;
@@ -4568,7 +4591,7 @@ pub(super) fn write_document_comparison_with_settings(
     if fail_on_difference && !report.matches {
         bail!("Google Docs comparison found semantic differences");
     }
-    Ok(())
+    Ok(verified_scopes)
 }
 
 fn document_comparison_replay_command(
