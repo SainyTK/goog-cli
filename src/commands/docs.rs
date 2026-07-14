@@ -4002,17 +4002,31 @@ pub(super) fn write_document_comparison(
                 .unwrap_or(scope.difference_count);
             if preview_difference_count > scope.differences.len() {
                 let hidden_count = preview_difference_count - scope.differences.len();
-                writeln!(
-                    out,
-                    "  ... {hidden_count} more difference{}{}",
-                    if hidden_count == 1 { "" } else { "s" },
-                    if preview.difference_pattern.is_some() {
-                        " matching the preview filter"
-                    } else {
-                        ""
-                    }
-                )
-                .context("failed to write Docs comparison difference count")?;
+                if preview.summary_only {
+                    writeln!(
+                        out,
+                        "  {hidden_count} difference{} hidden by summary mode{}",
+                        if hidden_count == 1 { "" } else { "s" },
+                        if preview.difference_pattern.is_some() {
+                            " (matching the preview filter)"
+                        } else {
+                            ""
+                        }
+                    )
+                    .context("failed to write Docs comparison summary-hidden count")?;
+                } else {
+                    writeln!(
+                        out,
+                        "  ... {hidden_count} more difference{}{}",
+                        if hidden_count == 1 { "" } else { "s" },
+                        if preview.difference_pattern.is_some() {
+                            " matching the preview filter"
+                        } else {
+                            ""
+                        }
+                    )
+                    .context("failed to write Docs comparison difference count")?;
+                }
             }
             if preview.difference_pattern.is_some()
                 && scope.difference_count > preview_difference_count

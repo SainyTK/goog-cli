@@ -736,9 +736,43 @@ fn summary_only_human_comparison_attributes_suppressed_paths_to_summary_mode() {
     .unwrap();
 
     let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("1 difference hidden by summary mode"));
+    assert!(!output.contains("... 1 more difference"));
     assert!(output.contains(
         "Difference totals: 1 overall (0 displayed, 0 hidden by limit, 1 hidden by summary mode)"
     ));
+}
+
+#[test]
+fn filtered_summary_only_human_comparison_attributes_matching_paths_to_summary_mode() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+    let preview = DocumentComparisonPreview {
+        max_differences: 20,
+        summary_only: true,
+        difference_pattern: Some("/entries/*/paragraphStyle"),
+    };
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        preview,
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("1 difference hidden by summary mode (matching the preview filter)"));
+    assert!(!output.contains("... 1 more difference matching the preview filter"));
 }
 
 #[test]
