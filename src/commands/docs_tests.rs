@@ -5039,6 +5039,8 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
     assert!(accepted_at.ends_with('Z'));
     assert_eq!(acceptance["account"], "alice@example.com");
     assert_eq!(acceptance["googCliVersion"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(acceptance["googCliExecutionOs"], std::env::consts::OS);
+    assert_eq!(acceptance["googCliExecutionArch"], std::env::consts::ARCH);
     assert_eq!(
         acceptance["googCliExecutablePath"],
         goog_cli_executable_path().unwrap()
@@ -5204,6 +5206,14 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     assert!(accepted_at.ends_with('Z'));
     assert_eq!(records[1]["account"], "alice@example.com");
     assert_eq!(records[1]["googCliVersion"], records[0]["googCliVersion"]);
+    assert_eq!(
+        records[1]["googCliExecutionOs"],
+        records[0]["googCliExecutionOs"]
+    );
+    assert_eq!(
+        records[1]["googCliExecutionArch"],
+        records[0]["googCliExecutionArch"]
+    );
     assert_eq!(
         records[1]["googCliExecutablePath"],
         goog_cli_executable_path().unwrap()
