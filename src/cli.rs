@@ -1964,7 +1964,8 @@ Notes:
     },
     /// Copy an existing Google Doc as a reusable template
     #[command(after_long_help = "Output shape:
-  Prints the copied Document ID and its Google Docs edit URL, tab-separated.
+  Prints the accepted copied Document ID and its Google Docs edit URL, tab-separated.
+  With --verify-fidelity, the tab-separated success output is withheld unless every semantic scope matches.
 
 Notes:
   Copying preserves document components that the Google Docs API cannot create directly, including native tables of contents, page-number auto text, positioned images, and first-page header content.

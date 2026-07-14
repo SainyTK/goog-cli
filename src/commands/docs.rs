@@ -2893,13 +2893,6 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         .and_then(serde_json::Value::as_str)
         .context("Google Drive copy response did not include an id")?;
 
-    writeln!(
-        out,
-        "{}\thttps://docs.google.com/document/d/{}/edit",
-        document_id, document_id
-    )
-    .context("failed to write output")?;
-
     if command.verify_fidelity {
         let source_map = get_document_map(client, source_document_id, documents_url)
             .await
@@ -2921,6 +2914,13 @@ pub(super) async fn run_copy_to<S: AccountStore>(
             },
         )?;
     }
+
+    writeln!(
+        out,
+        "{}\thttps://docs.google.com/document/d/{}/edit",
+        document_id, document_id
+    )
+    .context("failed to write output")?;
     Ok(())
 }
 

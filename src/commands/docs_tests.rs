@@ -5158,7 +5158,7 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     .unwrap();
 
     let output = String::from_utf8(out).unwrap();
-    assert!(output.starts_with(
+    assert!(output.ends_with(
         "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit\n"
     ));
     assert!(output.contains(
@@ -5169,6 +5169,81 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
     assert!(output.contains("formatting       yes"));
     assert!(output.contains("content          yes"));
     assert!(output.contains("Overall: match"));
+}
+
+#[tokio::test]
+async fn run_copy_does_not_report_a_rejected_copy_as_successful() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-document-123");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("copied-document-456");
+    target["title"] = serde_json::json!("Customer proposal copy");
+    target["revisionId"] = serde_json::json!("rev-copy");
+    target["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["content"] =
+        serde_json::json!("Changed after copy\n");
+
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "copied-document-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/copied-document-456"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(target))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "docs-drive-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DOCS_SCOPE.into(), DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let mut out = Vec::new();
+
+    let error = run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: None,
+            verify_fidelity: true,
+        },
+        &mut out,
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Google Docs comparison found semantic differences"
+    );
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("Overall: different"));
+    assert!(!output.contains(
+        "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit"
+    ));
 }
 
 #[tokio::test]
