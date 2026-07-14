@@ -1983,6 +1983,7 @@ Notes:
   Mismatches include complete path-pattern counts, a representative example for every pattern, and JSON Pointer previews with source and target values.
   Use --max-differences to control how many paths are shown per scope.
   Use --difference-pattern to show concrete paths for one reported pattern while retaining complete counts and acceptance behavior.
+  Human-readable reports summarize total, displayed, and limit-hidden differences; filtered reports also separate matching paths from differences outside the selected pattern.
   JSON reports expose report-level and per-scope totals for displayed paths and paths hidden by --max-differences; filtered reports also distinguish matching paths from differences outside the selected pattern.
   An unknown difference pattern is rejected with the closest reported patterns so a typo cannot produce an empty, misleading preview.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.

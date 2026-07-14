@@ -730,7 +730,40 @@ fn filtered_human_comparison_distinguishes_matching_and_other_differences() {
     let output = String::from_utf8(out).unwrap();
     assert!(output.contains("... 1 more difference matching the preview filter"));
     assert!(output.contains("2 differences outside the preview filter"));
+    assert!(output.contains(
+        "Difference totals: 4 overall, 2 matching filter (1 displayed, 1 hidden by limit), 2 outside filter"
+    ));
     assert!(!output.contains("... 3 more differences"));
+}
+
+#[test]
+fn unfiltered_human_comparison_reports_aggregate_difference_totals() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    for paragraph in target["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"]["alignment"] = serde_json::json!("CENTER");
+    }
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(1, None),
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("Difference totals: 2 overall (1 displayed, 1 hidden by limit)"));
 }
 
 #[test]

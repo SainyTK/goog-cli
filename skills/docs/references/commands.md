@@ -89,6 +89,7 @@ The per-pattern example remains available when `--max-differences` limits the ge
 Set `--max-differences` to a positive number when a larger or smaller diagnostic preview is useful.
 Copy a reported pattern into `--difference-pattern` to show concrete paths only for that pattern while retaining the complete pattern summary, total difference count, and acceptance result.
 Filtered human-readable reports count additional paths that match the selected pattern separately from differences outside the filter.
+Human-readable reports end with aggregate counts for total, displayed, and limit-hidden differences, and filtered reports also summarize the matching and out-of-filter split.
 JSON reports expose the emitted and limit-truncated path counts for every scope through `displayedDifferenceCount` and `differenceCountHiddenByLimit`.
 The report-level `totalDifferenceCount`, `totalDisplayedDifferenceCount`, and `totalDifferenceCountHiddenByLimit` fields provide the corresponding totals across all selected scopes.
 Filtered JSON reports also expose the matching and out-of-filter split through `previewDifferenceCount` and `differenceCountOutsidePreview` for every selected scope, plus `totalPreviewDifferenceCount` and `totalDifferenceCountOutsidePreview` at report level.

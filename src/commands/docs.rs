@@ -4004,6 +4004,28 @@ pub(super) fn write_document_comparison(
                 .context("failed to write Docs comparison filtered difference count")?;
             }
         }
+        if let (Some(preview_count), Some(outside_count)) = (
+            report.total_preview_difference_count,
+            report.total_difference_count_outside_preview,
+        ) {
+            writeln!(
+                out,
+                "Difference totals: {} overall, {preview_count} matching filter ({} displayed, {} hidden by limit), {outside_count} outside filter",
+                report.total_difference_count,
+                report.total_displayed_difference_count,
+                report.total_difference_count_hidden_by_limit
+            )
+            .context("failed to write filtered Docs comparison totals")?;
+        } else {
+            writeln!(
+                out,
+                "Difference totals: {} overall ({} displayed, {} hidden by limit)",
+                report.total_difference_count,
+                report.total_displayed_difference_count,
+                report.total_difference_count_hidden_by_limit
+            )
+            .context("failed to write Docs comparison totals")?;
+        }
         writeln!(
             out,
             "Overall: {}",
