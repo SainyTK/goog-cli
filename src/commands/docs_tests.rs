@@ -380,6 +380,21 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
     assert_eq!(output["googCliVersion"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        output["replayCommand"],
+        serde_json::json!([
+            "goog",
+            "docs",
+            "compare",
+            "source-123",
+            "target-456",
+            "--json",
+            "--scope",
+            "all",
+            "--max-differences",
+            "20"
+        ])
+    );
     assert_eq!(output["comparisonScope"], "all");
     assert_eq!(output["failOnDifference"], false);
     assert_eq!(output["maxDifferences"], 20);
@@ -472,6 +487,9 @@ async fn run_compare_reports_content_difference() {
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
     assert!(output.contains(&format!("goog CLI version: {}", env!("CARGO_PKG_VERSION"))));
+    assert!(output.contains(
+        "Replay command: goog docs compare source-123 target-456 --scope all --fail-on-difference --max-differences 20"
+    ));
     assert!(output.contains(
         "Comparison settings: scope=all, fail-on-difference=yes, max-differences=20, summary-only=no"
     ));
@@ -851,6 +869,23 @@ fn comparison_filters_path_previews_by_reported_pattern() {
         output["differencePreviewPattern"],
         "/entries/*/paragraphStyle/direction"
     );
+    assert_eq!(
+        output["replayCommand"],
+        serde_json::json!([
+            "goog",
+            "docs",
+            "compare",
+            "document-123",
+            "target-456",
+            "--json",
+            "--scope",
+            "formatting",
+            "--max-differences",
+            "1",
+            "--difference-pattern",
+            "/entries/*/paragraphStyle/direction"
+        ])
+    );
     assert_eq!(output["totalDifferenceCount"], 4);
     assert_eq!(output["totalDisplayedDifferenceCount"], 1);
     assert_eq!(output["totalDifferenceCountHiddenByLimit"], 1);
@@ -912,6 +947,9 @@ fn filtered_human_comparison_distinguishes_matching_and_other_differences() {
     .unwrap();
 
     let output = String::from_utf8(out).unwrap();
+    assert!(output.contains(
+        "Replay command: goog docs compare document-123 target-456 --scope formatting --max-differences 1 --difference-pattern '/entries/*/paragraphStyle/direction'"
+    ));
     assert!(output.contains("... 1 more difference matching the preview filter"));
     assert!(output.contains("2 differences outside the preview filter"));
     assert!(output.contains(

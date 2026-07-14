@@ -3758,6 +3758,7 @@ pub(super) struct CompareDocumentsCommand {
 struct DocumentComparisonReport {
     compared_at: String,
     goog_cli_version: &'static str,
+    replay_command: Vec<String>,
     comparison_scope: &'static str,
     fail_on_difference: bool,
     max_differences: usize,
@@ -3918,6 +3919,14 @@ pub(super) fn write_document_comparison(
     let mut report = DocumentComparisonReport {
         compared_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         goog_cli_version: env!("CARGO_PKG_VERSION"),
+        replay_command: document_comparison_replay_command(
+            source_map.document_id.as_deref(),
+            target_map.document_id.as_deref(),
+            json,
+            scope,
+            fail_on_difference,
+            preview,
+        ),
         comparison_scope: docs_compare_scope_label(scope),
         fail_on_difference,
         max_differences: preview.max_differences,
@@ -3987,6 +3996,17 @@ pub(super) fn write_document_comparison(
             .context("failed to write Docs comparison timestamp")?;
         writeln!(out, "goog CLI version: {}", report.goog_cli_version)
             .context("failed to write Docs comparison CLI version")?;
+        writeln!(
+            out,
+            "Replay command: {}",
+            report
+                .replay_command
+                .iter()
+                .map(|argument| shell_quote_argument(argument))
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+        .context("failed to write Docs comparison replay command")?;
         writeln!(
             out,
             "Comparison settings: scope={}, fail-on-difference={}, max-differences={}, summary-only={}",
@@ -4151,6 +4171,60 @@ pub(super) fn write_document_comparison(
         bail!("Google Docs comparison found semantic differences");
     }
     Ok(())
+}
+
+fn document_comparison_replay_command(
+    source_document_id: Option<&str>,
+    target_document_id: Option<&str>,
+    json: bool,
+    scope: DocsCompareScope,
+    fail_on_difference: bool,
+    preview: DocumentComparisonPreview<'_>,
+) -> Vec<String> {
+    let mut arguments = vec![
+        "goog".to_owned(),
+        "docs".to_owned(),
+        "compare".to_owned(),
+        source_document_id
+            .unwrap_or("SOURCE_DOCUMENT_ID")
+            .to_owned(),
+        target_document_id
+            .unwrap_or("TARGET_DOCUMENT_ID")
+            .to_owned(),
+    ];
+    if json {
+        arguments.push("--json".to_owned());
+    }
+    arguments.extend([
+        "--scope".to_owned(),
+        docs_compare_scope_label(scope).to_owned(),
+    ]);
+    if fail_on_difference {
+        arguments.push("--fail-on-difference".to_owned());
+    }
+    arguments.extend([
+        "--max-differences".to_owned(),
+        preview.max_differences.to_string(),
+    ]);
+    if preview.summary_only {
+        arguments.push("--summary-only".to_owned());
+    }
+    if let Some(pattern) = preview.difference_pattern {
+        arguments.extend(["--difference-pattern".to_owned(), pattern.to_owned()]);
+    }
+    arguments
+}
+
+fn shell_quote_argument(argument: &str) -> String {
+    if !argument.is_empty()
+        && argument
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "-_./:".contains(character))
+    {
+        argument.to_owned()
+    } else {
+        format!("'{}'", argument.replace('\'', "'\"'\"'"))
+    }
 }
 
 fn document_edit_url(document_id: &str) -> String {
