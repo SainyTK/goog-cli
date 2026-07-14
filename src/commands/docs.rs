@@ -2942,6 +2942,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
                 report_schema_version: COPY_DOCUMENT_ACCEPTANCE_REPORT_SCHEMA_VERSION,
                 accepted_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
                 account: client.account_email(),
+                goog_cli_version: env!("CARGO_PKG_VERSION"),
                 goog_cli_executable_path: goog_cli_executable_path
                     .as_deref()
                     .context("missing goog CLI executable path for JSON copy acceptance")?,
@@ -2974,6 +2975,7 @@ struct CopyDocumentAcceptance<'a> {
     report_schema_version: u32,
     accepted_at: String,
     account: &'a str,
+    goog_cli_version: &'static str,
     goog_cli_executable_path: &'a str,
     goog_cli_executable_sha256: &'a str,
     source_document_id: &'a str,
