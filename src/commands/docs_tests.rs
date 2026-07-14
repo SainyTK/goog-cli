@@ -380,6 +380,9 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
     assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
     assert!(compared_at.ends_with('Z'));
     assert_eq!(output["googCliVersion"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(output["comparisonScope"], "all");
+    assert_eq!(output["failOnDifference"], false);
+    assert_eq!(output["maxDifferences"], 20);
     assert_eq!(output["sourceDocumentId"], "source-123");
     assert_eq!(output["sourceDocumentTitle"], "Searchable");
     assert_eq!(output["sourceRevisionId"], "rev-search");
@@ -470,6 +473,9 @@ async fn run_compare_reports_content_difference() {
     assert!(compared_at.ends_with('Z'));
     assert!(output.contains(&format!("goog CLI version: {}", env!("CARGO_PKG_VERSION"))));
     assert!(output.contains(
+        "Comparison settings: scope=all, fail-on-difference=yes, max-differences=20, summary-only=no"
+    ));
+    assert!(output.contains(
         "Source: Searchable [source-123] https://docs.google.com/document/d/source-123/edit [revision rev-search]"
     ));
     assert!(output.contains(
@@ -512,6 +518,9 @@ fn compare_scope_limits_output_and_acceptance_to_selected_scope() {
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(output["matches"], true);
+    assert_eq!(output["comparisonScope"], "visual-system");
+    assert_eq!(output["failOnDifference"], true);
+    assert_eq!(output["maxDifferences"], 20);
     assert_eq!(output["scopes"].as_array().unwrap().len(), 1);
     assert_eq!(output["scopes"][0]["scope"], "visual-system");
 }

@@ -3758,6 +3758,9 @@ pub(super) struct CompareDocumentsCommand {
 struct DocumentComparisonReport {
     compared_at: String,
     goog_cli_version: &'static str,
+    comparison_scope: &'static str,
+    fail_on_difference: bool,
+    max_differences: usize,
     source_document_id: Option<String>,
     source_document_title: Option<String>,
     source_document_url: Option<String>,
@@ -3915,6 +3918,9 @@ pub(super) fn write_document_comparison(
     let mut report = DocumentComparisonReport {
         compared_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         goog_cli_version: env!("CARGO_PKG_VERSION"),
+        comparison_scope: docs_compare_scope_label(scope),
+        fail_on_difference,
+        max_differences: preview.max_differences,
         source_document_id: source_map.document_id.clone(),
         source_document_title: source_map.title.clone(),
         source_document_url: source_map.document_id.as_deref().map(document_edit_url),
@@ -3981,6 +3987,15 @@ pub(super) fn write_document_comparison(
             .context("failed to write Docs comparison timestamp")?;
         writeln!(out, "goog CLI version: {}", report.goog_cli_version)
             .context("failed to write Docs comparison CLI version")?;
+        writeln!(
+            out,
+            "Comparison settings: scope={}, fail-on-difference={}, max-differences={}, summary-only={}",
+            report.comparison_scope,
+            if report.fail_on_difference { "yes" } else { "no" },
+            report.max_differences,
+            if report.summary_only { "yes" } else { "no" }
+        )
+        .context("failed to write Docs comparison settings")?;
         write_document_comparison_identity(
             out,
             "Source",
@@ -4140,6 +4155,16 @@ pub(super) fn write_document_comparison(
 
 fn document_edit_url(document_id: &str) -> String {
     format!("https://docs.google.com/document/d/{document_id}/edit")
+}
+
+fn docs_compare_scope_label(scope: DocsCompareScope) -> &'static str {
+    match scope {
+        DocsCompareScope::All => "all",
+        DocsCompareScope::Inventory => "inventory",
+        DocsCompareScope::VisualSystem => "visual-system",
+        DocsCompareScope::Formatting => "formatting",
+        DocsCompareScope::Content => "content",
+    }
 }
 
 fn write_document_comparison_identity(
