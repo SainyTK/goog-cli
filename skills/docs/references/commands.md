@@ -15,10 +15,11 @@ Copy a template when the source contains editor-only components such as a native
 
 ```bash
 target/debug/goog docs copy SOURCE_DOCUMENT_ID "Quarterly operating review"
-target/debug/goog docs copy SOURCE_DOCUMENT_ID "Quarterly operating review" --required-executable-sha256 SHA256 --required-source-revision-id REVISION_ID
+target/debug/goog docs copy SOURCE_DOCUMENT_ID "Quarterly operating review" --required-executable-sha256 SHA256 --required-source-revision-id REVISION_ID --verify-fidelity
 ```
 
 Use `--required-executable-sha256` and `--required-source-revision-id` after inspecting a live template to prevent copying with a changed CLI binary or from a newer, unreviewed source revision.
+Use `--verify-fidelity` to compare the completed copy with the source across inventory, visual-system, formatting, and content scopes before accepting it.
 
 Both commands print the document ID and edit URL separated by a tab.
 Capture both values from the output rather than guessing the URL.

@@ -105,6 +105,7 @@ pub fn run<S: AccountStore>(
             title,
             required_executable_sha256,
             required_source_revision_id,
+            verify_fidelity,
         } => {
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             let runtime =
@@ -116,6 +117,7 @@ pub fn run<S: AccountStore>(
                     title,
                     required_executable_sha256,
                     required_source_revision_id,
+                    verify_fidelity,
                 },
                 &mut std::io::stdout(),
                 None,
@@ -2877,7 +2879,8 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         )?;
     }
 
-    let mut options = CopyDocumentOptions::new(command.source_document_id, command.title);
+    let source_document_id = command.source_document_id;
+    let mut options = CopyDocumentOptions::new(source_document_id.clone(), command.title);
     if let Some(drive_files_url) = drive_files_url {
         options = options.with_drive_files_url(drive_files_url);
     }
@@ -2896,6 +2899,28 @@ pub(super) async fn run_copy_to<S: AccountStore>(
         document_id, document_id
     )
     .context("failed to write output")?;
+
+    if command.verify_fidelity {
+        let source_map = get_document_map(client, source_document_id, documents_url)
+            .await
+            .context("failed to map the source Google Docs Document for fidelity verification")?;
+        let target_map = get_document_map(client, document_id.to_owned(), documents_url)
+            .await
+            .context("failed to map the copied Google Docs Document for fidelity verification")?;
+        write_document_comparison(
+            out,
+            &source_map,
+            &target_map,
+            false,
+            DocsCompareScope::All,
+            true,
+            DocumentComparisonPreview {
+                max_differences: 20,
+                summary_only: false,
+                difference_pattern: None,
+            },
+        )?;
+    }
     Ok(())
 }
 
@@ -2904,6 +2929,7 @@ pub(super) struct CopyDocumentCommand {
     pub(super) title: String,
     pub(super) required_executable_sha256: Option<String>,
     pub(super) required_source_revision_id: Option<String>,
+    pub(super) verify_fidelity: bool,
 }
 
 #[cfg(test)]
@@ -3312,7 +3338,6 @@ async fn apply_docs_change_requests_unified<S: AccountStore>(
     Ok(final_response)
 }
 
-#[cfg(test)]
 async fn get_document_map<S: AccountStore>(
     client: &AuthClient<'_, S>,
     document_id: String,
@@ -4013,7 +4038,6 @@ pub(super) struct DocumentComparisonSettings<'a> {
     pub(super) target_account: Option<&'a str>,
 }
 
-#[cfg(test)]
 pub(super) fn write_document_comparison(
     out: &mut impl Write,
     source_map: &DocumentMap,

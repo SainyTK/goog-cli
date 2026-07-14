@@ -1970,6 +1970,7 @@ Notes:
   Copying preserves document components that the Google Docs API cannot create directly, including native tables of contents, page-number auto text, positioned images, and first-page header content.
   Use --required-executable-sha256 to reject the copy if the running goog binary differs from the reviewed binary.
   Use --required-source-revision-id to reject the copy if the source changed after it was inspected.
+  Use --verify-fidelity to compare the completed copy with the source across every semantic scope and fail if they differ.
   Workspace or source-file download, print, and copy restrictions can remain effective on the copied document.
   SOURCE_DOCUMENT_ID accepts either a bare Document ID or a full Google Docs or Drive URL.")]
     Copy {
@@ -1983,6 +1984,9 @@ Notes:
         /// Reject the copy unless the source is at this revision
         #[arg(long)]
         required_source_revision_id: Option<String>,
+        /// Compare the completed copy with the source and fail if they differ
+        #[arg(long)]
+        verify_fidelity: bool,
     },
     /// Compare the semantic fidelity of two Google Docs
     #[command(after_long_help = "Notes:

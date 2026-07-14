@@ -1146,6 +1146,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
         "abc123",
         "--required-source-revision-id",
         "rev-approved",
+        "--verify-fidelity",
     ])
     .unwrap()
     .command
@@ -1159,6 +1160,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
         title,
         required_executable_sha256,
         required_source_revision_id,
+        verify_fidelity,
     } = command
     else {
         panic!("unexpected Docs command");
@@ -1167,6 +1169,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
     assert_eq!(title, "Customer proposal copy");
     assert_eq!(required_executable_sha256.as_deref(), Some("abc123"));
     assert_eq!(required_source_revision_id.as_deref(), Some("rev-approved"));
+    assert!(verify_fidelity);
 }
 
 #[test]
