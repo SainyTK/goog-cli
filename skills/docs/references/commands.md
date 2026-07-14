@@ -23,7 +23,7 @@ Use `--verify-fidelity` to capture and validate the source before copying, then 
 The verified comparison replay command pins the resolved account used to read both the source and copied documents.
 The final JSON acceptance record identifies both document IDs, Google-confirmed titles, and edit URLs, the resolved account, goog CLI version, execution OS and architecture, running executable path and SHA-256, when acceptance occurred, the exact source and copied revisions, and the four matched scope fingerprints that passed verification.
 Use `--json` to emit the comparison and typed copy acceptance records as newline-delimited JSON.
-Verified acceptance records identify the comparison report schema and SHA-256 fingerprint algorithm so retained scope fingerprints remain interpretable.
+Verified acceptance records identify the comparison report type, schema, and SHA-256 fingerprint algorithm so retained scope fingerprints remain interpretable.
 When fidelity verification fails, the command reports the differences but withholds its tab-separated or `goog.docs.copy.acceptance` success record so automation cannot treat the rejected copy as accepted.
 
 Without `--json`, both commands print the document ID and edit URL separated by a tab.

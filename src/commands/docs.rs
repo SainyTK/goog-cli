@@ -2996,6 +2996,9 @@ pub(super) async fn run_copy_to<S: AccountStore>(
                     .context("Google copy response did not include the copied Document title")?,
                 copied_document_url: &document_url,
                 fidelity_verified: command.verify_fidelity,
+                comparison_report_type: command
+                    .verify_fidelity
+                    .then_some(DOCUMENT_COMPARISON_REPORT_TYPE),
                 comparison_report_schema_version: command
                     .verify_fidelity
                     .then_some(DOCUMENT_COMPARISON_REPORT_SCHEMA_VERSION),
@@ -3013,7 +3016,7 @@ pub(super) async fn run_copy_to<S: AccountStore>(
 }
 
 const COPY_DOCUMENT_ACCEPTANCE_REPORT_TYPE: &str = "goog.docs.copy.acceptance";
-const COPY_DOCUMENT_ACCEPTANCE_REPORT_SCHEMA_VERSION: u32 = 2;
+const COPY_DOCUMENT_ACCEPTANCE_REPORT_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -3034,6 +3037,7 @@ struct CopyDocumentAcceptance<'a> {
     copied_document_title: &'a str,
     copied_document_url: &'a str,
     fidelity_verified: bool,
+    comparison_report_type: Option<&'static str>,
     comparison_report_schema_version: Option<u32>,
     fingerprint_algorithm: Option<&'static str>,
     verified_source_revision_id: Option<&'a str>,
