@@ -3759,7 +3759,16 @@ struct DocumentComparisonScope {
     target_inventory: Option<serde_json::Value>,
     difference_count: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    difference_patterns: Vec<DocumentComparisonDifferencePattern>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     differences: Vec<DocumentComparisonDifference>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentComparisonDifferencePattern {
+    path: String,
+    count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -3854,6 +3863,10 @@ pub(super) fn write_document_comparison(
                 scope.target_fingerprint
             )
             .context("failed to write Docs comparison row")?;
+            for pattern in &scope.difference_patterns {
+                writeln!(out, "  Pattern ({}): {}", pattern.count, pattern.path)
+                    .context("failed to write Docs comparison difference pattern")?;
+            }
             for difference in &scope.differences {
                 writeln!(
                     out,
@@ -3894,13 +3907,26 @@ fn comparison_scope(
 ) -> Result<DocumentComparisonScope> {
     let matches = source == target;
     let mut differences = Vec::new();
-    let difference_count = collect_json_differences(
+    let mut difference_pattern_counts = std::collections::BTreeMap::new();
+    let difference_count = collect_json_differences_with_patterns(
+        "",
         "",
         Some(&source),
         Some(&target),
         &mut differences,
         max_differences,
+        &mut difference_pattern_counts,
     );
+    let mut difference_patterns = difference_pattern_counts
+        .into_iter()
+        .map(|(path, count)| DocumentComparisonDifferencePattern { path, count })
+        .collect::<Vec<_>>();
+    difference_patterns.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.path.cmp(&right.path))
+    });
     Ok(DocumentComparisonScope {
         scope,
         matches,
@@ -3909,16 +3935,38 @@ fn comparison_scope(
         source_inventory: include_inventory.then_some(source),
         target_inventory: include_inventory.then_some(target),
         difference_count,
+        difference_patterns,
         differences,
     })
 }
 
+#[cfg(test)]
 pub(super) fn collect_json_differences(
     path: &str,
     source: Option<&serde_json::Value>,
     target: Option<&serde_json::Value>,
     differences: &mut Vec<DocumentComparisonDifference>,
     max_differences: usize,
+) -> usize {
+    collect_json_differences_with_patterns(
+        path,
+        path,
+        source,
+        target,
+        differences,
+        max_differences,
+        &mut std::collections::BTreeMap::new(),
+    )
+}
+
+fn collect_json_differences_with_patterns(
+    path: &str,
+    pattern_path: &str,
+    source: Option<&serde_json::Value>,
+    target: Option<&serde_json::Value>,
+    differences: &mut Vec<DocumentComparisonDifference>,
+    max_differences: usize,
+    difference_pattern_counts: &mut std::collections::BTreeMap<String, usize>,
 ) -> usize {
     match (source, target) {
         (Some(serde_json::Value::Object(source)), Some(serde_json::Value::Object(target))) => {
@@ -3928,12 +3976,15 @@ pub(super) fn collect_json_differences(
                 .collect::<std::collections::BTreeSet<_>>();
             keys.into_iter()
                 .map(|key| {
-                    collect_json_differences(
+                    let token = escape_json_pointer_token(key);
+                    collect_json_differences_with_patterns(
                         &format!("{}/{}", path, escape_json_pointer_token(key)),
+                        &format!("{pattern_path}/{token}"),
                         source.get(key),
                         target.get(key),
                         differences,
                         max_differences,
+                        difference_pattern_counts,
                     )
                 })
                 .sum()
@@ -3941,17 +3992,26 @@ pub(super) fn collect_json_differences(
         (Some(serde_json::Value::Array(source)), Some(serde_json::Value::Array(target))) => (0
             ..source.len().max(target.len()))
             .map(|index| {
-                collect_json_differences(
+                collect_json_differences_with_patterns(
                     &format!("{path}/{index}"),
+                    &format!("{pattern_path}/*"),
                     source.get(index),
                     target.get(index),
                     differences,
                     max_differences,
+                    difference_pattern_counts,
                 )
             })
             .sum(),
         (source, target) if source == target => 0,
         (source, target) => {
+            *difference_pattern_counts
+                .entry(if pattern_path.is_empty() {
+                    "/".to_owned()
+                } else {
+                    pattern_path.to_owned()
+                })
+                .or_default() += 1;
             if differences.len() < max_differences {
                 differences.push(DocumentComparisonDifference {
                     path: if path.is_empty() {

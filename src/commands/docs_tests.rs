@@ -543,6 +543,51 @@ fn formatting_comparison_reports_paragraph_style_changes() {
         output["scopes"][0]["differences"][0]["path"],
         "/entries/0/paragraphStyle"
     );
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"][0],
+        serde_json::json!({ "path": "/entries/*/paragraphStyle", "count": 1 })
+    );
+}
+
+#[test]
+fn comparison_groups_repeated_array_differences_by_path_pattern() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    for paragraph in target["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"]["alignment"] = serde_json::json!("CENTER");
+    }
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        false,
+        1,
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["scopes"][0]["differenceCount"], 2);
+    assert_eq!(
+        output["scopes"][0]["differences"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"][0],
+        serde_json::json!({
+            "path": "/entries/*/paragraphStyle",
+            "count": 2
+        })
+    );
 }
 
 #[test]
