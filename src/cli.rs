@@ -1986,7 +1986,8 @@ Notes:
   Use --difference-pattern to show concrete paths for one reported pattern while retaining complete counts and acceptance behavior.
   Human-readable reports summarize total, displayed, and limit-hidden differences; filtered reports also separate matching paths from differences outside the selected pattern.
   JSON reports expose report-level and per-scope totals for displayed paths, paths hidden by --max-differences, and paths hidden by --summary-only; filtered reports also distinguish matching paths from differences outside the selected pattern.
-  Reports include a replay command, the UTC comparison time, goog CLI version, comparison settings, and identify both live documents by title, ID, edit URL, and compared revision ID.
+  Reports include a revision-guarded replay command, the UTC comparison time, goog CLI version, comparison settings, and identify both live documents by title, ID, edit URL, and compared revision ID.
+  Use --required-source-revision-id and --required-target-revision-id to reject evidence replay after either document changes.
   An unknown difference pattern is rejected with the closest reported patterns so a typo cannot produce an empty, misleading preview.
   Use --fail-on-difference to return a nonzero exit status when any scope differs.
   Google-assigned object, heading, segment, and list IDs are ignored.
@@ -2016,6 +2017,12 @@ Notes:
         /// Show mismatch path previews only for this reported pattern
         #[arg(long)]
         difference_pattern: Option<String>,
+        /// Reject the comparison unless the source is at this revision
+        #[arg(long)]
+        required_source_revision_id: Option<String>,
+        /// Reject the comparison unless the target is at this revision
+        #[arg(long)]
+        required_target_revision_id: Option<String>,
     },
     /// Export a native Google Doc as a PDF file
     #[command(after_long_help = "Notes:

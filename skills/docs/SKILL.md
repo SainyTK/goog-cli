@@ -82,6 +82,7 @@ Do not call the document finished until all of these are true:
 - Styles are consistent and readable.
 - The native document or its exported PDF has been visually inspected at 100% zoom, including every page edge and any requested page-count limit.
 - When reproducing a source document, `goog docs compare SOURCE TARGET --fail-on-difference` has checked component inventory, named and page styles, formatting, and mapped content properties after generated IDs are removed.
+- The generated revision-guarded replay command has been retained with fidelity evidence so later document edits cannot be mistaken for the accepted state.
 - Every reported difference is understood and intentional.
 - The live document has been fetched again after the last write.
 - The final URL opens the intended native Google Doc.

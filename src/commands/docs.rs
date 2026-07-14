@@ -123,6 +123,8 @@ pub fn run<S: AccountStore>(
             max_differences,
             summary_only,
             difference_pattern,
+            required_source_revision_id,
+            required_target_revision_id,
         } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -139,6 +141,8 @@ pub fn run<S: AccountStore>(
                     max_differences,
                     summary_only,
                     difference_pattern,
+                    required_source_revision_id,
+                    required_target_revision_id,
                 },
                 &mut std::io::stdout(),
                 None,
@@ -1083,6 +1087,16 @@ pub(super) async fn run_compare_to<S: AccountStore>(
 ) -> Result<()> {
     let source_map = get_document_map(client, command.source_document_id, documents_url).await?;
     let target_map = get_document_map(client, command.target_document_id, documents_url).await?;
+    validate_comparison_revision(
+        "source",
+        command.required_source_revision_id.as_deref(),
+        source_map.revision_id.as_deref(),
+    )?;
+    validate_comparison_revision(
+        "target",
+        command.required_target_revision_id.as_deref(),
+        target_map.revision_id.as_deref(),
+    )?;
     write_document_comparison(
         out,
         &source_map,
@@ -1096,6 +1110,27 @@ pub(super) async fn run_compare_to<S: AccountStore>(
             difference_pattern: command.difference_pattern.as_deref(),
         },
     )
+}
+
+pub(super) fn validate_comparison_revision(
+    role: &str,
+    required_revision_id: Option<&str>,
+    actual_revision_id: Option<&str>,
+) -> Result<()> {
+    let Some(required_revision_id) = required_revision_id else {
+        return Ok(());
+    };
+    let Some(actual_revision_id) = actual_revision_id else {
+        bail!(
+            "cannot verify required {role} revision `{required_revision_id}` because Google did not return a revision ID"
+        );
+    };
+    if actual_revision_id != required_revision_id {
+        bail!(
+            "required {role} revision `{required_revision_id}` does not match current revision `{actual_revision_id}`"
+        );
+    }
+    Ok(())
 }
 
 pub(super) async fn run_compare_unified_to<S: AccountStore>(
@@ -1125,6 +1160,16 @@ pub(super) async fn run_compare_unified_to<S: AccountStore>(
         state_path,
     )
     .await?;
+    validate_comparison_revision(
+        "source",
+        command.required_source_revision_id.as_deref(),
+        source_map.revision_id.as_deref(),
+    )?;
+    validate_comparison_revision(
+        "target",
+        command.required_target_revision_id.as_deref(),
+        target_map.revision_id.as_deref(),
+    )?;
     write_document_comparison(
         out,
         &source_map,
@@ -3751,6 +3796,8 @@ pub(super) struct CompareDocumentsCommand {
     pub(super) max_differences: u32,
     pub(super) summary_only: bool,
     pub(super) difference_pattern: Option<String>,
+    pub(super) required_source_revision_id: Option<String>,
+    pub(super) required_target_revision_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -3922,6 +3969,10 @@ pub(super) fn write_document_comparison(
         replay_command: document_comparison_replay_command(
             source_map.document_id.as_deref(),
             target_map.document_id.as_deref(),
+            (
+                source_map.revision_id.as_deref(),
+                target_map.revision_id.as_deref(),
+            ),
             json,
             scope,
             fail_on_difference,
@@ -4176,6 +4227,7 @@ pub(super) fn write_document_comparison(
 fn document_comparison_replay_command(
     source_document_id: Option<&str>,
     target_document_id: Option<&str>,
+    revision_ids: (Option<&str>, Option<&str>),
     json: bool,
     scope: DocsCompareScope,
     fail_on_difference: bool,
@@ -4211,6 +4263,18 @@ fn document_comparison_replay_command(
     }
     if let Some(pattern) = preview.difference_pattern {
         arguments.extend(["--difference-pattern".to_owned(), pattern.to_owned()]);
+    }
+    if let Some(source_revision_id) = revision_ids.0 {
+        arguments.extend([
+            "--required-source-revision-id".to_owned(),
+            source_revision_id.to_owned(),
+        ]);
+    }
+    if let Some(target_revision_id) = revision_ids.1 {
+        arguments.extend([
+            "--required-target-revision-id".to_owned(),
+            target_revision_id.to_owned(),
+        ]);
     }
     arguments
 }

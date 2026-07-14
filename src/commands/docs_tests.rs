@@ -368,6 +368,8 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
             max_differences: 20,
             summary_only: false,
             difference_pattern: None,
+            required_source_revision_id: None,
+            required_target_revision_id: None,
         },
         &mut out,
         Some(&documents_url),
@@ -392,7 +394,11 @@ async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
             "--scope",
             "all",
             "--max-differences",
-            "20"
+            "20",
+            "--required-source-revision-id",
+            "rev-search",
+            "--required-target-revision-id",
+            "target-revision"
         ])
     );
     assert_eq!(output["comparisonScope"], "all");
@@ -468,6 +474,8 @@ async fn run_compare_reports_content_difference() {
             max_differences: 20,
             summary_only: false,
             difference_pattern: None,
+            required_source_revision_id: None,
+            required_target_revision_id: None,
         },
         &mut out,
         Some(&documents_url),
@@ -488,7 +496,7 @@ async fn run_compare_reports_content_difference() {
     assert!(compared_at.ends_with('Z'));
     assert!(output.contains(&format!("goog CLI version: {}", env!("CARGO_PKG_VERSION"))));
     assert!(output.contains(
-        "Replay command: goog docs compare source-123 target-456 --scope all --fail-on-difference --max-differences 20"
+        "Replay command: goog docs compare source-123 target-456 --scope all --fail-on-difference --max-differences 20 --required-source-revision-id rev-search --required-target-revision-id rev-search"
     ));
     assert!(output.contains(
         "Comparison settings: scope=all, fail-on-difference=yes, max-differences=20, summary-only=no"
@@ -510,6 +518,30 @@ async fn run_compare_reports_content_difference() {
         output.contains("/entries/0/preview: source=\"Project Plan\", target=\"Changed title\"")
     );
     assert!(output.contains("Overall: different"));
+}
+
+#[test]
+fn comparison_revision_guards_reject_drift_and_missing_revision_metadata() {
+    let drift_error = validate_comparison_revision(
+        "source",
+        Some("recorded-revision"),
+        Some("current-revision"),
+    )
+    .unwrap_err();
+    assert_eq!(
+        drift_error.to_string(),
+        "required source revision `recorded-revision` does not match current revision `current-revision`"
+    );
+
+    let missing_error =
+        validate_comparison_revision("target", Some("recorded-revision"), None).unwrap_err();
+    assert_eq!(
+        missing_error.to_string(),
+        "cannot verify required target revision `recorded-revision` because Google did not return a revision ID"
+    );
+
+    validate_comparison_revision("source", Some("same-revision"), Some("same-revision")).unwrap();
+    validate_comparison_revision("target", None, None).unwrap();
 }
 
 #[test]
@@ -883,7 +915,11 @@ fn comparison_filters_path_previews_by_reported_pattern() {
             "--max-differences",
             "1",
             "--difference-pattern",
-            "/entries/*/paragraphStyle/direction"
+            "/entries/*/paragraphStyle/direction",
+            "--required-source-revision-id",
+            "rev-search",
+            "--required-target-revision-id",
+            "rev-search"
         ])
     );
     assert_eq!(output["totalDifferenceCount"], 4);

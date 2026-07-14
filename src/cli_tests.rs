@@ -709,6 +709,10 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
         "--summary-only",
         "--difference-pattern",
         "/entries/*/paragraphStyle/alignment",
+        "--required-source-revision-id",
+        "source-revision",
+        "--required-target-revision-id",
+        "target-revision",
     ])
     .unwrap();
     let Command::Docs { command } = &mut cli.command else {
@@ -725,6 +729,8 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             max_differences,
             summary_only,
             difference_pattern,
+            required_source_revision_id,
+            required_target_revision_id,
         } => {
             assert_eq!(source_document_id, "source-123");
             assert_eq!(target_document_id, "target-456");
@@ -736,6 +742,14 @@ fn docs_compare_accepts_document_ids_urls_and_json() {
             assert_eq!(
                 difference_pattern.as_deref(),
                 Some("/entries/*/paragraphStyle/alignment")
+            );
+            assert_eq!(
+                required_source_revision_id.as_deref(),
+                Some("source-revision")
+            );
+            assert_eq!(
+                required_target_revision_id.as_deref(),
+                Some("target-revision")
             );
         }
         _ => panic!("unexpected parse result"),
