@@ -73,6 +73,7 @@ When `cleanupToken` is present, the CLI invokes the same executable after Docs i
 The adapter exits with status zero after cleanup and may return an empty JSON object.
 A nonzero adapter exit makes the overall command fail.
 If insertion succeeded first, JSON output reports `DOCS_IMAGE_INSERTED_CLEANUP_FAILED` as a partial success.
+For the built-in Drive backend, that result includes a `cleanupCommand` argument array that pins the original account and deletes the staged resource without shell interpolation.
 
 `--keep-staged` skips cleanup for debugging and must be selected explicitly.
 Normal runs preserve `--required-revision-id` across the Docs mutation and still request cleanup when a revision check or later mutation step fails.

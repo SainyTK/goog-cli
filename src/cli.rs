@@ -263,6 +263,11 @@ pub enum DriveCommand {
         #[arg(long)]
         folder: Option<String>,
     },
+    /// Permanently delete a file from Google Drive
+    Delete {
+        /// Drive file ID to delete
+        file_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

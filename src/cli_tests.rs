@@ -592,6 +592,19 @@ fn drive_upload_with_folder() {
 }
 
 #[test]
+fn drive_delete_requires_and_parses_file_id() {
+    assert!(parse(&["drive", "delete"]).is_err());
+
+    let cli = parse(&["drive", "delete", "file123"]).unwrap();
+    match cli.command {
+        Command::Drive {
+            command: DriveCommand::Delete { file_id },
+        } => assert_eq!(file_id, "file123"),
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
 fn docs_get_with_document_id() {
     let cli = parse(&["docs", "get", "document-123"]).unwrap();
     match cli.command {

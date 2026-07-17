@@ -627,6 +627,79 @@ async fn drive_public_policy_block_is_typed_and_deletes_the_upload() {
 }
 
 #[tokio::test]
+async fn drive_public_cleanup_failure_returns_account_scoped_cleanup_command() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "orphaned-image-123", "webViewLink": "https://drive.invalid/view"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/orphaned-image-123/permissions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123", "replies": [{}]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/orphaned-image-123"))
+        .respond_with(ResponseTemplate::new(503).set_body_string("temporary cleanup failure"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let image_path = temp_dir.path().join("cleanup failure.png");
+    local_png(&image_path);
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_and_drive_token())
+        .unwrap();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let upload_url = format!("{}/upload/drive/v3/files", server.uri());
+    let files_url = format!("{}/drive/v3/files", server.uri());
+    let mut out = Vec::new();
+
+    let error = run_local_image_drive_public(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        local_drive_public_options(&image_path, &documents_url, &upload_url, &files_url),
+        &mut out,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains("insertion succeeded"));
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["code"], "DOCS_IMAGE_INSERTED_CLEANUP_FAILED");
+    assert_eq!(output["partialSuccess"], true);
+    assert_eq!(output["stagedResourceId"], "orphaned-image-123");
+    assert_eq!(
+        output["cleanupCommand"],
+        serde_json::json!([
+            "goog",
+            "--account",
+            "alice@example.com",
+            "drive",
+            "delete",
+            "orphaned-image-123"
+        ])
+    );
+}
+
+#[tokio::test]
 async fn drive_public_docs_failure_deletes_the_staged_file() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

@@ -200,6 +200,9 @@ pub(super) async fn run_local_image_drive_public<S: AccountStore>(
                         "backend": "drive-public",
                         "cleanupCompleted": false,
                         "stagedResourceId": uploaded.id,
+                        "cleanupCommand": [
+                            "goog", "--account", account, "drive", "delete", uploaded.id
+                        ],
                     }),
                     "failed to serialize local image partial-success result",
                 )?;

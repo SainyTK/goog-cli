@@ -31,8 +31,10 @@ If neither file has been set up, `goog` commands inside the sandbox fail with "a
   - Never pass an ID you discovered via a read/list/search command to a mutating command.
   - Only pass an ID that came back from a `drive upload` (or similar creating call) earlier in the same test run.
   - Name every created resource with a `goog-e2e-` prefix so it's identifiable later.
-  - There is no `drive delete`, `docs create`, or `sheets create` command today. If a test needs to mutate a Doc or Sheet, create the underlying file via `drive upload` first and capture its returned ID -- never reuse an existing Doc/Sheet ID as a "scratch" target, even one that looks disposable.
-  - Drive uploads have no delete path in the CLI yet, so scratch files accumulate. Reuse a single `goog-e2e-scratch-*` file per resource type across test runs instead of creating a new one every time.
+  - Use `drive delete FILE_ID` to remove a file created by the same test run.
+  - There is no `docs create` or `sheets create` command today.
+  - If a test needs to mutate a Doc or Sheet, create the underlying file via `drive upload` first and capture its returned ID -- never reuse an existing Doc/Sheet ID as a "scratch" target, even one that looks disposable.
+  - Always delete scratch uploads at the end of a successful test and in failure cleanup when possible.
 
 ## Evidence
 

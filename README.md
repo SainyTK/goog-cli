@@ -162,6 +162,7 @@ goog drive ls --limit 20
 goog drive ls --type folders --folder FOLDER_ID --json
 goog drive ls --show-all
 goog drive upload ./report.pdf --folder FOLDER_ID
+goog drive delete FILE_ID
 goog drive download FILE_ID --output ./report.pdf
 ```
 

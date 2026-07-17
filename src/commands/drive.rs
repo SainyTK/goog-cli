@@ -14,8 +14,9 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{DriveCommand, DriveListType};
 use crate::drive::{
-    download, list_files, upload, DownloadFileOptions, DownloadedFile, DriveError, DriveFile,
-    ListFilesOptions, UploadFileOptions, UploadedFile, DRIVE_FOLDER_MIME_TYPE,
+    delete_file, download, list_files, upload, DownloadFileOptions, DownloadedFile, DriveError,
+    DriveFile, DriveFileOperationOptions, ListFilesOptions, UploadFileOptions, UploadedFile,
+    DRIVE_FOLDER_MIME_TYPE,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -128,6 +129,17 @@ pub fn run<S: AccountStore>(
                     None,
                 ))
             }
+        }
+        DriveCommand::Delete { file_id } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            runtime.block_on(run_delete_to(
+                &client,
+                &file_id,
+                &mut std::io::stdout(),
+                None,
+            ))
         }
     }
 }
@@ -354,6 +366,23 @@ pub(super) async fn run_upload_to<S: AccountStore>(
 
     writeln!(out, "{}\t{}", uploaded.id, uploaded.web_view_link)
         .context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_delete_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    file_id: &str,
+    out: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    let mut options = DriveFileOperationOptions::new(file_id);
+    if let Some(files_url) = files_url {
+        options = options.with_files_url(files_url);
+    }
+    delete_file(client, &options)
+        .await
+        .context("failed to delete Google Drive file")?;
+    writeln!(out, "Deleted\t{file_id}").context("failed to write output")?;
     Ok(())
 }
 

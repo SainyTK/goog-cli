@@ -1051,6 +1051,33 @@ async fn run_upload_prints_uploaded_file_id_and_url() {
 }
 
 #[tokio::test]
+async fn run_delete_removes_the_file_and_confirms_its_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+
+    run_delete_to(
+        &client,
+        "file-123",
+        &mut out,
+        Some(&format!("{}/drive/v3/files", server.uri())),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "Deleted\tfile-123\n");
+}
+
+#[tokio::test]
 async fn run_download_unified_falls_back_on_target_access_failure_and_maps_success() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
