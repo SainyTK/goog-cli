@@ -24,10 +24,12 @@ use crate::docs::{
         split_docs_request_bodies, table_header_style_requests, write_docs_change_preview,
         ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
         CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
-        InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
-        InsertTextCommand, PreparedDocsChange, ReplaceTextCommand,
+        InsertImageCommand, InsertImageFit, InsertPageBreakCommand, InsertSectionBreakCommand,
+        InsertTableCommand, InsertTextCommand, PreparedDocsChange, ReplaceTextCommand,
     },
     create_document, extract_style_template, get_document,
+    image_fit::ImageFitConstraints,
+    image_metadata::inspect_remote_image_dimensions,
     map::build_document_map,
     map::resolve_content_entry,
     map::search_document_text,
@@ -218,6 +220,10 @@ pub fn run<S: AccountStore>(
                     image_uri,
                     width,
                     height,
+                    max_width,
+                    max_height,
+                    preserve_aspect_ratio,
+                    allow_upscale,
                     at,
                     dry_run,
                     json,
@@ -227,25 +233,36 @@ pub fn run<S: AccountStore>(
             let selector = insert_text_selector(at)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_insert_image_unified_to(
-                config,
-                store,
-                account_override,
-                InsertImageCommand {
-                    document_id,
-                    image_uri,
-                    width,
-                    height,
-                    fit: None,
-                    selector,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
-                &mut std::io::stdout(),
-                None,
-                None,
-            ))
+            runtime.block_on(async {
+                let fit = resolve_remote_image_fit(
+                    &image_uri,
+                    max_width,
+                    max_height,
+                    preserve_aspect_ratio,
+                    allow_upscale,
+                )
+                .await?;
+                run_insert_image_unified_to(
+                    config,
+                    store,
+                    account_override,
+                    InsertImageCommand {
+                        document_id,
+                        image_uri,
+                        width,
+                        height,
+                        fit,
+                        selector,
+                        dry_run,
+                        json,
+                        required_revision_id,
+                    },
+                    &mut std::io::stdout(),
+                    None,
+                    None,
+                )
+                .await
+            })
         }
         DocsCommand::Break {
             command:
@@ -897,6 +914,33 @@ pub(super) async fn run_replace_text_unified_to<S: AccountStore>(
         state_path,
     )
     .await
+}
+
+pub(super) async fn resolve_remote_image_fit(
+    image_uri: &str,
+    max_width_pt: Option<f64>,
+    max_height_pt: Option<f64>,
+    preserve_aspect_ratio: bool,
+    allow_upscale: bool,
+) -> Result<Option<InsertImageFit>> {
+    if max_width_pt.is_none() && max_height_pt.is_none() {
+        if preserve_aspect_ratio || allow_upscale {
+            bail!(
+                "--preserve-aspect-ratio and --allow-upscale require --max-width or --max-height"
+            );
+        }
+        return Ok(None);
+    }
+
+    let source = inspect_remote_image_dimensions(image_uri).await?;
+    Ok(Some(InsertImageFit {
+        source,
+        constraints: ImageFitConstraints {
+            max_width_pt,
+            max_height_pt,
+            allow_upscale,
+        },
+    }))
 }
 
 #[cfg(test)]

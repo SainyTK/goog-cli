@@ -1,4 +1,6 @@
 use chrono::{Duration, Utc};
+use image::{DynamicImage, ImageFormat, RgbaImage};
+use std::io::Cursor;
 use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -51,6 +53,37 @@ fn scoped_docs_token(access_token: &str) -> Token {
         expiry: Utc::now() + Duration::hours(1),
         scopes: vec![DOCS_SCOPE.into()],
     }
+}
+
+#[tokio::test]
+async fn remote_image_fit_resolves_source_metadata_and_constraints() {
+    let mut png = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::new(1_440, 2_534))
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .unwrap();
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/portrait.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(png))
+        .mount(&server)
+        .await;
+
+    let fit = resolve_remote_image_fit(
+        &format!("{}/portrait.png", server.uri()),
+        Some(468.0),
+        Some(500.0),
+        true,
+        true,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    assert_eq!(fit.source.width_px, 1_440);
+    assert_eq!(fit.source.height_px, 2_534);
+    assert_eq!(fit.constraints.max_width_pt, Some(468.0));
+    assert_eq!(fit.constraints.max_height_pt, Some(500.0));
+    assert!(fit.constraints.allow_upscale);
 }
 
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {

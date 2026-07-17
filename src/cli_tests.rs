@@ -1087,7 +1087,7 @@ fn docs_new_high_level_editing_commands_parse() {
     assert!(dry_run);
     assert!(json);
 
-    for invalid in ["0", "-1", "NaN", "inf"] {
+    for invalid in ["0", "-1", "NaN", "inf", "75000.001"] {
         assert!(parse(&[
             "docs",
             "image",
@@ -1576,6 +1576,78 @@ fn docs_new_high_level_editing_commands_parse() {
     };
     assert_eq!(entry, Some(2));
     assert!(no_cached_style);
+}
+
+#[test]
+fn docs_image_insert_parses_aspect_fit_constraints() {
+    let Command::Docs {
+        command:
+            DocsCommand::Image {
+                command:
+                    DocsImageCommand::Insert {
+                        max_width,
+                        max_height,
+                        preserve_aspect_ratio,
+                        allow_upscale,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--max-width",
+        "468",
+        "--max-height",
+        "500",
+        "--preserve-aspect-ratio",
+        "--allow-upscale",
+        "--at",
+        "index:1",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(max_width, Some(468.0));
+    assert_eq!(max_height, Some(500.0));
+    assert!(preserve_aspect_ratio);
+    assert!(allow_upscale);
+
+    for invalid in ["0", "-1", "NaN", "inf"] {
+        assert!(parse(&[
+            "docs",
+            "image",
+            "insert",
+            "document-123",
+            "https://example.test/image.png",
+            "--max-width",
+            invalid,
+            "--at",
+            "index:1",
+        ])
+        .is_err());
+    }
+    assert!(parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--width",
+        "468",
+        "--height",
+        "500",
+        "--max-height",
+        "400",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
 }
 
 #[test]

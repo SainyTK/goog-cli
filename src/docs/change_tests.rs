@@ -307,6 +307,17 @@ fn aspect_fit_image_change_builds_resolved_native_size() {
             "height": { "magnitude": 500.0, "unit": "PT" }
         })
     );
+    assert_eq!(
+        image["preview"]["imageSizing"],
+        serde_json::json!({
+            "sourceDimensions": { "widthPixels": 1_440, "heightPixels": 2_534 },
+            "nativeDimensions": { "widthPoints": 1_080.0, "heightPoints": 1_900.5 },
+            "constraints": { "maxWidthPoints": 468.0, "maxHeightPoints": 500.0 },
+            "scale": 0.263,
+            "finalDimensions": { "widthPoints": 284.136, "heightPoints": 500.0 },
+            "upscaled": false
+        })
+    );
 }
 
 #[test]

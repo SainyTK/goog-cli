@@ -311,6 +311,8 @@ struct DocsChangePreview {
     before: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     after: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_sizing: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,6 +347,7 @@ impl DocsChangePreview {
             summary,
             before: None,
             after: None,
+            image_sizing: None,
         }
     }
 
@@ -354,7 +357,13 @@ impl DocsChangePreview {
             summary,
             before: Some(before),
             after: Some(after),
+            image_sizing: None,
         }
+    }
+
+    fn with_image_sizing(mut self, image_sizing: Option<serde_json::Value>) -> Self {
+        self.image_sizing = image_sizing;
+        self
     }
 }
 
@@ -422,13 +431,33 @@ pub(crate) fn prepare_insert_image_change(
         "location": { "index": index },
         "uri": command.image_uri
     });
-    match (command.width, command.height, command.fit) {
+    let image_sizing = match (command.width, command.height, command.fit) {
         (None, None, Some(fit)) => {
-            let resolved = fit_image(fit.source, fit.constraints)?;
+            let fit_result = fit_image(fit.source, fit.constraints)?;
             insert_inline_image["objectSize"] = serde_json::json!({
-                "width": { "magnitude": resolved.width_pt, "unit": "PT" },
-                "height": { "magnitude": resolved.height_pt, "unit": "PT" }
+                "width": { "magnitude": fit_result.width_pt, "unit": "PT" },
+                "height": { "magnitude": fit_result.height_pt, "unit": "PT" }
             });
+            Some(serde_json::json!({
+                "sourceDimensions": {
+                    "widthPixels": fit.source.width_px,
+                    "heightPixels": fit.source.height_px
+                },
+                "nativeDimensions": {
+                    "widthPoints": fit_result.native_width_pt,
+                    "heightPoints": fit_result.native_height_pt
+                },
+                "constraints": {
+                    "maxWidthPoints": fit.constraints.max_width_pt,
+                    "maxHeightPoints": fit.constraints.max_height_pt
+                },
+                "scale": fit_result.scale,
+                "finalDimensions": {
+                    "widthPoints": fit_result.width_pt,
+                    "heightPoints": fit_result.height_pt
+                },
+                "upscaled": fit_result.upscaled
+            }))
         }
         (Some(width), Some(height), None) => {
             if !width.is_finite() || width <= 0.0 || !height.is_finite() || height <= 0.0 {
@@ -438,13 +467,14 @@ pub(crate) fn prepare_insert_image_change(
                 "width": { "magnitude": width, "unit": "PT" },
                 "height": { "magnitude": height, "unit": "PT" }
             });
+            None
         }
-        (None, None, None) => {}
+        (None, None, None) => None,
         (Some(_), Some(_), Some(_)) => {
             bail!("exact image dimensions and aspect-fit constraints cannot be combined")
         }
         _ => bail!("image width and height must be provided together"),
-    }
+    };
     let request_body = request_body_with_revision(
         vec![serde_json::json!({ "insertInlineImage": insert_inline_image })],
         command.required_revision_id.as_deref(),
@@ -467,7 +497,8 @@ pub(crate) fn prepare_insert_image_change(
             ),
             resolved.preview_before,
             preview_after,
-        ),
+        )
+        .with_image_sizing(image_sizing),
     }))
 }
 

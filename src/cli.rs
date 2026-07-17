@@ -43,11 +43,18 @@ fn parse_mail_draft_id(value: &str) -> Result<String, String> {
 }
 
 fn parse_positive_finite_points(value: &str) -> Result<f64, String> {
+    const MAX_IMAGE_DIMENSION_POINTS: f64 = 75_000.0;
+
     let points = value
         .parse::<f64>()
         .map_err(|_| format!("{value:?} is not a valid point dimension"))?;
     if !points.is_finite() || points <= 0.0 {
         return Err("point dimensions must be finite and greater than zero".into());
+    }
+    if points > MAX_IMAGE_DIMENSION_POINTS {
+        return Err(format!(
+            "point dimensions must not exceed {MAX_IMAGE_DIMENSION_POINTS}"
+        ));
     }
     Ok(points)
 }
@@ -2326,6 +2333,18 @@ pub enum DocsImageCommand {
         /// Exact image height in points; requires --width
         #[arg(long, requires = "width", value_parser = parse_positive_finite_points)]
         height: Option<f64>,
+        /// Maximum image width in points while preserving the source aspect ratio
+        #[arg(long, conflicts_with_all = ["width", "height"], value_parser = parse_positive_finite_points)]
+        max_width: Option<f64>,
+        /// Maximum image height in points while preserving the source aspect ratio
+        #[arg(long, conflicts_with_all = ["width", "height"], value_parser = parse_positive_finite_points)]
+        max_height: Option<f64>,
+        /// Preserve the source aspect ratio when fitting to maximum dimensions (the default)
+        #[arg(long)]
+        preserve_aspect_ratio: bool,
+        /// Permit fitting to enlarge images beyond their native point dimensions
+        #[arg(long)]
+        allow_upscale: bool,
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
         at: String,

@@ -179,6 +179,7 @@ goog docs map DOCUMENT_ID --type tables
 goog docs map DOCUMENT_ID --heading "Summary"
 goog docs text search DOCUMENT_ID "quarterly plan"
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
+goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --max-width 468 --max-height 500 --at 'heading:Summary'
 goog docs break page DOCUMENT_ID --at 'heading:Summary'
 goog docs break section DOCUMENT_ID --section-type next-page --at 'heading:Appendix'
 goog docs header create DOCUMENT_ID
@@ -188,6 +189,10 @@ goog docs named-range create DOCUMENT_ID "highlights" --text "quarterly plan"
 goog docs named-range delete DOCUMENT_ID --name "highlights"
 goog docs batch-update DOCUMENT_ID --requests ./requests.json
 ```
+
+Maximum image dimensions preserve the source aspect ratio and do not upscale by default.
+The conversion uses 96 source pixels per inch and 72 Google Docs points per inch, with results rounded to three decimal places.
+For JPEG images, EXIF orientations 5 through 8 swap the encoded width and height so fitting uses the displayed orientation.
 
 ### Sheets
 

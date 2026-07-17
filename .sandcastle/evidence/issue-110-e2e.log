@@ -1,0 +1,33 @@
+Issue 110 E2E evidence, redacted
+Result: PASS
+
+Test setup:
+- Account used: active account
+- Fixture used: Google Document created by this run with the title goog-e2e-issue-110-aspect-fit
+- Source image: public goog-cli wallpaper PNG pinned to commit 87a32e2d8bb0986d7273c664f5380d6ba198bbd2
+- Skipped fixture: none
+
+Live checks:
+$ cargo run --quiet -- docs create goog-e2e-issue-110-aspect-fit
+Expected: Create a new scratch Document that is safe for this run to mutate.
+Observed: A new Document ID and edit URL were returned.
+Result: PASS.
+
+$ cargo run --quiet -- docs image insert [scratch-document-id] https://raw.githubusercontent.com/SainyTK/goog-cli/87a32e2d8bb0986d7273c664f5380d6ba198bbd2/public/goog-cli-wallpaper.png --max-width 468 --max-height 500 --preserve-aspect-ratio --at index:1 --json
+Expected: Inspect the remote PNG, preserve its aspect ratio, and insert it within 468 by 500 points.
+Observed: documents.batchUpdate returned one insertInlineImage reply with an object ID.
+Result: PASS.
+
+$ cargo run --quiet -- docs get [scratch-document-id] | jq -c '.inlineObjects[] | .inlineObjectProperties.embeddedObject.size'
+Expected: The inserted 3:1 wallpaper is constrained by the 468 point width and remains proportional.
+Observed: {"height":{"magnitude":156,"unit":"PT"},"width":{"magnitude":468,"unit":"PT"}}
+Result: PASS.
+
+$ cargo run --quiet -- docs image insert [scratch-document-id] https://raw.githubusercontent.com/SainyTK/goog-cli/87a32e2d8bb0986d7273c664f5380d6ba198bbd2/public/goog-cli-wallpaper.png --max-width 468 --max-height 500 --at index:1 --dry-run --json | jq -c '.preview.imageSizing'
+Expected: Explain the source, native, constrained, and final dimensions without another mutation.
+Observed: Source 2172 by 724 pixels resolved from 1629 by 543 native points to 468 by 156 points at scale 0.287 without upscaling.
+Result: PASS.
+
+Reviewer notes:
+- The scratch Document was created and mutated only by this test run.
+- The exact-size and page-aware acceptance cases remain separate issue 110 slices.
