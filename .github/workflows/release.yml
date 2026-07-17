@@ -68,6 +68,11 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
       - name: Build release binary
+        env:
+          GOOG_BUILD_GIT_COMMIT: ${{ github.sha }}
+          GOOG_BUILD_GIT_DIRTY: "false"
+          GOOG_BUILD_GIT_DISTANCE: "0"
+          GOOG_BUILD_SOURCE_TAG: ${{ github.ref_name }}
         run: cargo build --release --locked --target "${{ matrix.target }}"
       - name: Package release asset
         shell: bash
@@ -78,6 +83,22 @@ jobs:
           cp "target/${{ matrix.target }}/release/goog" "$staging/goog"
           chmod 0755 "$staging/goog"
           tar -C "$staging" -czf "$asset" goog
+      - name: Smoke test packaged binary
+        shell: bash
+        env:
+          RELEASE_CHANNEL: ${{ needs.verify-tag.outputs.release_channel }}
+        run: |
+          asset="goog-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
+          scripts/verify-release-asset.sh \
+            "$asset" \
+            "$GITHUB_REF_NAME" \
+            "$GITHUB_SHA" \
+            "$RELEASE_CHANNEL" \
+            "${{ matrix.target }}"
+      - name: Generate packaged asset checksum
+        shell: bash
+        run: |
+          asset="goog-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$asset" > "$asset.sha256"
           else

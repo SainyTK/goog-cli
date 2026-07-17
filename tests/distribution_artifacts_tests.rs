@@ -114,6 +114,13 @@ fn release_workflow_builds_assets_from_version_tags_only() {
         "base_branch=\"main\"",
         "Tag must look like vX.Y.Z or vX.Y.Z-preview.N",
         "git merge-base --is-ancestor",
+        "GOOG_BUILD_GIT_COMMIT: ${{ github.sha }}",
+        "GOOG_BUILD_GIT_DIRTY: \"false\"",
+        "GOOG_BUILD_GIT_DISTANCE: \"0\"",
+        "GOOG_BUILD_SOURCE_TAG: ${{ github.ref_name }}",
+        "Smoke test packaged binary",
+        "scripts/verify-release-asset.sh",
+        "Generate packaged asset checksum",
         "--prerelease",
         "aarch64-apple-darwin",
         "x86_64-apple-darwin",
@@ -124,6 +131,31 @@ fn release_workflow_builds_assets_from_version_tags_only() {
         assert!(
             workflow.contains(expected),
             "release workflow should contain {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn release_asset_smoke_test_checks_provenance_and_command_surface() {
+    let smoke_test = fs::read_to_string("scripts/verify-release-asset.sh")
+        .expect("release asset smoke test should exist");
+
+    for expected in [
+        "tar -C \"$staging\" -xzf \"$asset\"",
+        "actual_version=\"$(\"$binary\" --version)\"",
+        "\"$binary\" version --json",
+        "\"semanticVersion\"",
+        "\"gitCommit\"",
+        "\"dirty\"",
+        "\"sourceTag\"",
+        "\"releaseChannel\"",
+        "\"target\"",
+        "\"$binary\" docs image insert --help",
+        "\"$binary\" drive ls --help",
+    ] {
+        assert!(
+            smoke_test.contains(expected),
+            "release asset smoke test should contain {expected:?}"
         );
     }
 }
