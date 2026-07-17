@@ -28,6 +28,18 @@ fn help(args: &[&str]) -> String {
 }
 
 #[test]
+fn version_defaults_to_human_readable_output() {
+    let cli = parse(&["version"]).unwrap();
+    assert!(matches!(cli.command, Command::Version { json: false }));
+}
+
+#[test]
+fn version_accepts_json_output() {
+    let cli = parse(&["version", "--json"]).unwrap();
+    assert!(matches!(cli.command, Command::Version { json: true }));
+}
+
+#[test]
 fn auth_setup_no_flags() {
     let cli = parse(&["auth", "setup"]).unwrap();
     assert!(matches!(

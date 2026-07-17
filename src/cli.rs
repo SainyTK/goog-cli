@@ -46,7 +46,7 @@ fn parse_mail_draft_id(value: &str) -> Result<String, String> {
 #[command(
     name = "goog",
     about = "A terminal-native Google APIs CLI for power users and AI agents",
-    version
+    version = crate::version::DISPLAY_VERSION
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -63,6 +63,12 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Show build version and source provenance
+    Version {
+        /// Emit machine-readable JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Manage Google account authentication
     Auth {
         #[command(subcommand)]

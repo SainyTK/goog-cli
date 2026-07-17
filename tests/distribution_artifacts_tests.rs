@@ -1,4 +1,31 @@
 use std::fs;
+use std::process::Command;
+
+#[test]
+fn binary_reports_matching_human_and_structured_provenance() {
+    let binary = env!("CARGO_BIN_EXE_goog");
+    let human = Command::new(binary)
+        .arg("--version")
+        .output()
+        .expect("--version should run");
+    let structured = Command::new(binary)
+        .args(["version", "--json"])
+        .output()
+        .expect("version --json should run");
+
+    assert!(human.status.success());
+    assert!(structured.status.success());
+
+    let human = String::from_utf8(human.stdout).unwrap();
+    let structured: serde_json::Value = serde_json::from_slice(&structured.stdout).unwrap();
+    assert_eq!(
+        human.trim(),
+        format!("goog {}", structured["displayVersion"].as_str().unwrap())
+    );
+    assert_eq!(structured["semanticVersion"], env!("CARGO_PKG_VERSION"));
+    assert!(structured["gitCommit"].as_str().unwrap().len() >= 7);
+    assert!(!structured.to_string().contains(env!("CARGO_MANIFEST_DIR")));
+}
 
 #[test]
 fn readme_covers_public_distribution_and_usage_contract() {

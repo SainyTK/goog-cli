@@ -15,6 +15,10 @@ fn main() {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
+    if let Command::Version { json } = cli.command {
+        return goog::version::print(json);
+    }
+
     let config = load_config()?;
     let output_json_by_default = config
         .settings
@@ -23,6 +27,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         == Some("json");
 
     match cli.command {
+        Command::Version { .. } => unreachable!("version exits before configuration is loaded"),
         Command::Auth { command } => commands::auth::run(command),
         Command::Drive { command } => {
             let store = resolve_account_store()?;
