@@ -216,6 +216,8 @@ pub fn run<S: AccountStore>(
                 DocsImageCommand::Insert {
                     document_id,
                     image_uri,
+                    width,
+                    height,
                     at,
                     dry_run,
                     json,
@@ -232,6 +234,8 @@ pub fn run<S: AccountStore>(
                 InsertImageCommand {
                     document_id,
                     image_uri,
+                    width,
+                    height,
                     selector,
                     dry_run,
                     json,

@@ -1052,6 +1052,8 @@ fn docs_new_high_level_editing_commands_parse() {
                 command:
                     DocsImageCommand::Insert {
                         image_uri,
+                        width,
+                        height,
                         at,
                         dry_run,
                         json,
@@ -1064,6 +1066,10 @@ fn docs_new_high_level_editing_commands_parse() {
         "insert",
         "document-123",
         "https://example.test/image.png",
+        "--width",
+        "468",
+        "--height",
+        "500",
         "--at",
         "page:2,line:1",
         "--dry-run",
@@ -1075,9 +1081,40 @@ fn docs_new_high_level_editing_commands_parse() {
         panic!("unexpected parse result");
     };
     assert_eq!(image_uri, "https://example.test/image.png");
+    assert_eq!(width, Some(468.0));
+    assert_eq!(height, Some(500.0));
     assert_eq!(at, "page:2,line:1");
     assert!(dry_run);
     assert!(json);
+
+    for invalid in ["0", "-1", "NaN", "inf"] {
+        assert!(parse(&[
+            "docs",
+            "image",
+            "insert",
+            "document-123",
+            "https://example.test/image.png",
+            "--width",
+            invalid,
+            "--height",
+            "500",
+            "--at",
+            "index:1",
+        ])
+        .is_err());
+    }
+    assert!(parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--width",
+        "468",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
 
     let Command::Docs {
         command:

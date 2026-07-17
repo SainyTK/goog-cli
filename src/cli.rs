@@ -42,6 +42,16 @@ fn parse_mail_draft_id(value: &str) -> Result<String, String> {
     }
 }
 
+fn parse_positive_finite_points(value: &str) -> Result<f64, String> {
+    let points = value
+        .parse::<f64>()
+        .map_err(|_| format!("{value:?} is not a valid point dimension"))?;
+    if !points.is_finite() || points <= 0.0 {
+        return Err("point dimensions must be finite and greater than zero".into());
+    }
+    Ok(points)
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "goog",
@@ -2310,6 +2320,12 @@ pub enum DocsImageCommand {
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
         image_uri: String,
+        /// Exact image width in points; requires --height
+        #[arg(long, requires = "height", value_parser = parse_positive_finite_points)]
+        width: Option<f64>,
+        /// Exact image height in points; requires --width
+        #[arg(long, requires = "width", value_parser = parse_positive_finite_points)]
+        height: Option<f64>,
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
         at: String,

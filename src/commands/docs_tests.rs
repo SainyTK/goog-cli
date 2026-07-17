@@ -1218,6 +1218,8 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
         InsertImageCommand {
             document_id: "document-123".into(),
             image_uri: "https://example.test/image.png".into(),
+            width: Some(468.0),
+            height: Some(500.0),
             selector: InsertTextSelector::PageLine { page: 2, line: 1 },
             dry_run: true,
             json: true,
@@ -1237,6 +1239,13 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
     assert_eq!(
         image["requestBody"]["requests"][0]["insertInlineImage"]["uri"],
         "https://example.test/image.png"
+    );
+    assert_eq!(
+        image["requestBody"]["requests"][0]["insertInlineImage"]["objectSize"],
+        serde_json::json!({
+            "width": { "magnitude": 468.0, "unit": "PT" },
+            "height": { "magnitude": 500.0, "unit": "PT" }
+        })
     );
     assert_eq!(
         image["requestBody"]["writeControl"]["requiredRevisionId"],
@@ -1631,6 +1640,8 @@ async fn run_insert_image_dry_run_human_shows_placeholder_in_context() {
         InsertImageCommand {
             document_id: "document-123".into(),
             image_uri: "https://example.test/image.png".into(),
+            width: None,
+            height: None,
             selector: InsertTextSelector::PageLine { page: 2, line: 1 },
             dry_run: true,
             json: false,

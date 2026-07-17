@@ -128,6 +128,8 @@ fn image_table_style_and_list_changes_build_native_requests() {
         &InsertImageCommand {
             document_id: "document-123".into(),
             image_uri: "https://example.test/image.png".into(),
+            width: Some(468.0),
+            height: Some(500.0),
             selector: InsertTextSelector::AfterText("Project".into()),
             dry_run: true,
             json: true,
@@ -139,6 +141,13 @@ fn image_table_style_and_list_changes_build_native_requests() {
     assert_eq!(
         image["requestBody"]["requests"][0]["insertInlineImage"]["location"]["index"],
         8
+    );
+    assert_eq!(
+        image["requestBody"]["requests"][0]["insertInlineImage"]["objectSize"],
+        serde_json::json!({
+            "width": { "magnitude": 468.0, "unit": "PT" },
+            "height": { "magnitude": 500.0, "unit": "PT" }
+        })
     );
     assert_eq!(image["preview"]["after"], "Project[inline image] Plan");
 

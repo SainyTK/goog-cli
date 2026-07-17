@@ -33,10 +33,12 @@ pub(crate) struct ReplaceTextCommand {
     pub required_revision_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InsertImageCommand {
     pub document_id: String,
     pub image_uri: String,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
     pub selector: InsertTextSelector,
     pub dry_run: bool,
     pub json: bool,
@@ -408,13 +410,25 @@ pub(crate) fn prepare_insert_image_change(
     let Some(index) = resolved.location.index else {
         bail!("image insert selector resolved without a Google Docs index");
     };
-    let request_body = request_body_with_revision(
-        vec![serde_json::json!({
-            "insertInlineImage": {
-                "location": { "index": index },
-                "uri": command.image_uri
+    let mut insert_inline_image = serde_json::json!({
+        "location": { "index": index },
+        "uri": command.image_uri
+    });
+    match (command.width, command.height) {
+        (Some(width), Some(height)) => {
+            if !width.is_finite() || width <= 0.0 || !height.is_finite() || height <= 0.0 {
+                bail!("image width and height must be finite and greater than zero");
             }
-        })],
+            insert_inline_image["objectSize"] = serde_json::json!({
+                "width": { "magnitude": width, "unit": "PT" },
+                "height": { "magnitude": height, "unit": "PT" }
+            });
+        }
+        (None, None) => {}
+        _ => bail!("image width and height must be provided together"),
+    }
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({ "insertInlineImage": insert_inline_image })],
         command.required_revision_id.as_deref(),
     );
     let preview_after = insert_preview_text(
