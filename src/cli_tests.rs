@@ -1757,6 +1757,7 @@ fn docs_image_insert_accepts_exactly_one_uri_or_local_file_source() {
                         file,
                         staging,
                         staging_command,
+                        keep_staged,
                         ..
                     },
             },
@@ -1769,6 +1770,7 @@ fn docs_image_insert_accepts_exactly_one_uri_or_local_file_source() {
         "-dashboard ทดสอบ'quote.png",
         "--staging",
         "drive-public",
+        "--keep-staged",
         "--at",
         "index:1",
         "--dry-run",
@@ -1786,6 +1788,7 @@ fn docs_image_insert_accepts_exactly_one_uri_or_local_file_source() {
     );
     assert_eq!(staging, DocsImageStaging::DrivePublic);
     assert!(staging_command.is_none());
+    assert!(keep_staged);
 
     assert!(parse(&[
         "docs",

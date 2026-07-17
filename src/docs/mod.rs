@@ -6,6 +6,9 @@ mod image_fit_tests;
 pub(crate) mod image_metadata;
 #[cfg(test)]
 mod image_metadata_tests;
+pub(crate) mod image_staging;
+#[cfg(test)]
+mod image_staging_tests;
 pub mod map;
 pub(crate) mod page_layout;
 #[cfg(test)]

@@ -2350,6 +2350,9 @@ pub enum DocsImageCommand {
         /// Executable adapter used by automatic local-image staging
         #[arg(long, value_name = "PATH", requires = "file")]
         staging_command: Option<std::path::PathBuf>,
+        /// Keep the adapter's staged resource instead of requesting cleanup
+        #[arg(long, requires = "file")]
+        keep_staged: bool,
         /// Exact image width in points; requires --height
         #[arg(long, requires = "height", value_parser = parse_positive_finite_points)]
         width: Option<f64>,

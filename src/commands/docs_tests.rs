@@ -289,6 +289,159 @@ async fn local_image_dry_run_resolves_native_preview_without_remote_writes() {
     assert_eq!(requests[0].method.as_str(), "GET");
 }
 
+#[cfg(unix)]
+fn staging_adapter(dir: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let command = dir.join("staging adapter");
+    let log = dir.join("staging.log");
+    std::fs::write(
+        &command,
+        format!(
+            "#!/bin/sh\nread request\nprintf '%s\\n' \"$request\" >> \"{}\"\ncase \"$request\" in\n  *stage*) printf '%s\\n' '{{\"uri\":\"https://temporary.example/image.png\",\"cleanupToken\":\"opaque-cleanup\"}}' ;;\n  *) printf '%s\\n' '{{}}' ;;\nesac\n",
+            log.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
+    command
+}
+
+fn local_staging_options<'a>(
+    image_path: &'a std::path::Path,
+    staging_command: &'a std::path::Path,
+    documents_url: &'a str,
+) -> LocalImageStagingCommandOptions<'a> {
+    LocalImageStagingCommandOptions {
+        document_id: "document-123",
+        image_path,
+        staging_command,
+        keep_staged: false,
+        width: None,
+        height: None,
+        sizing: RemoteImageSizingOptions {
+            width_pt: None,
+            height_pt: None,
+            allow_distortion: false,
+            max_width_pt: None,
+            max_height_pt: None,
+            preserve_aspect_ratio: false,
+            fit_page: false,
+            reserve_height_pt: 0.0,
+            allow_upscale: false,
+        },
+        selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+        required_revision_id: Some("rev-search".into()),
+        json: true,
+        documents_url: Some(documents_url),
+        state_path: None,
+    }
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn staging_command_inserts_then_cleans_up_without_exposing_adapter_secrets() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{"insertInlineImage": {
+                "location": {"index": 37},
+                "uri": "https://temporary.example/image.png"
+            }}],
+            "writeControl": {"requiredRevisionId": "rev-search"}
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123", "replies": [{}]
+        })))
+        .mount(&server)
+        .await;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let image_path = temp_dir.path().join("local image.png");
+    let mut png = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::new(32, 24))
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .unwrap();
+    std::fs::write(&image_path, png).unwrap();
+    let adapter = staging_adapter(temp_dir.path());
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_token())
+        .unwrap();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_local_image_staging_command(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        local_staging_options(&image_path, &adapter, &documents_url),
+        &mut out,
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["account"], "alice@example.com");
+    assert_eq!(output["staging"]["cleanupCompleted"], true);
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(!rendered.contains("opaque-cleanup"));
+    assert!(!rendered.contains("temporary.example"));
+    let log = std::fs::read_to_string(temp_dir.path().join("staging.log")).unwrap();
+    assert!(log.lines().next().unwrap().contains("stage"));
+    assert!(log.lines().nth(1).unwrap().contains("cleanup"));
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn staging_command_cleans_up_after_docs_insertion_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+            "error": {"status": "FAILED_PRECONDITION", "message": "revision mismatch"}
+        })))
+        .mount(&server)
+        .await;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let image_path = temp_dir.path().join("image.png");
+    let mut png = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::new(8, 8))
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .unwrap();
+    std::fs::write(&image_path, png).unwrap();
+    let adapter = staging_adapter(temp_dir.path());
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_token())
+        .unwrap();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let error = run_local_image_staging_command(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        local_staging_options(&image_path, &adapter, &documents_url),
+        &mut Vec::new(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains("staging cleanup completed"));
+    let log = std::fs::read_to_string(temp_dir.path().join("staging.log")).unwrap();
+    assert!(log.lines().nth(1).unwrap().contains("cleanup"));
+}
+
 fn dry_run_apply_list_command(
     selector: RangeSelector,
     list_type: DocsListType,
