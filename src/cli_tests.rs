@@ -1618,6 +1618,36 @@ fn docs_image_insert_parses_aspect_fit_constraints() {
     assert!(preserve_aspect_ratio);
     assert!(allow_upscale);
 
+    let Command::Docs {
+        command:
+            DocsCommand::Image {
+                command:
+                    DocsImageCommand::Insert {
+                        fit_page,
+                        reserve_height,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--fit-page",
+        "--reserve-height",
+        "72",
+        "--at",
+        "index:1",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert!(fit_page);
+    assert_eq!(reserve_height, Some(72.0));
+
     for invalid in ["0", "-1", "NaN", "inf"] {
         assert!(parse(&[
             "docs",
@@ -1644,6 +1674,31 @@ fn docs_image_insert_parses_aspect_fit_constraints() {
         "500",
         "--max-height",
         "400",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--fit-page",
+        "--max-width",
+        "468",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
+    assert!(parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--reserve-height",
+        "72",
         "--at",
         "index:1",
     ])

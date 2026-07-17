@@ -10,6 +10,7 @@ use crate::docs::map::{
     text_block_contains_range, DocumentLocation, DocumentMap, DocumentMapEntry,
     DocumentMapEntryKind, DocumentRange, InsertTextSelector, RangeSelector,
 };
+use crate::docs::page_layout::resolve_body_page_geometry;
 use crate::docs::style_template::StyleTemplate;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +52,12 @@ pub(crate) struct InsertImageCommand {
 pub(crate) struct InsertImageFit {
     pub source: SourceImageDimensions,
     pub constraints: ImageFitConstraints,
+    pub page: Option<PageFitOptions>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PageFitOptions {
+    pub reserve_height_pt: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -433,12 +440,51 @@ pub(crate) fn prepare_insert_image_change(
     });
     let image_sizing = match (command.width, command.height, command.fit) {
         (None, None, Some(fit)) => {
-            let fit_result = fit_image(fit.source, fit.constraints)?;
+            let (constraints, page_geometry) = if let Some(page) = fit.page {
+                if !page.reserve_height_pt.is_finite() || page.reserve_height_pt < 0.0 {
+                    bail!("reserved image height must be finite and non-negative");
+                }
+                let geometry = resolve_body_page_geometry(&document_map.raw_document, None, index)?;
+                let max_height_pt =
+                    ((geometry.available_height_points - page.reserve_height_pt) * 1_000.0).round()
+                        / 1_000.0;
+                if max_height_pt <= 0.0 {
+                    bail!(
+                        "--reserve-height {} leaves no positive page height for the image",
+                        page.reserve_height_pt
+                    );
+                }
+                let diagnostic = serde_json::json!({
+                    "tabId": geometry.tab_id,
+                    "sectionStartIndex": geometry.section_start_index,
+                    "pageWidthPoints": geometry.page_width_points,
+                    "pageHeightPoints": geometry.page_height_points,
+                    "marginTopPoints": geometry.margin_top_points,
+                    "marginBottomPoints": geometry.margin_bottom_points,
+                    "marginLeftPoints": geometry.margin_left_points,
+                    "marginRightPoints": geometry.margin_right_points,
+                    "availableWidthPoints": geometry.available_width_points,
+                    "availableHeightPoints": geometry.available_height_points,
+                    "reserveHeightPoints": page.reserve_height_pt,
+                    "imageAvailableHeightPoints": max_height_pt
+                });
+                (
+                    ImageFitConstraints {
+                        max_width_pt: Some(geometry.available_width_points),
+                        max_height_pt: Some(max_height_pt),
+                        allow_upscale: fit.constraints.allow_upscale,
+                    },
+                    Some(diagnostic),
+                )
+            } else {
+                (fit.constraints, None)
+            };
+            let fit_result = fit_image(fit.source, constraints)?;
             insert_inline_image["objectSize"] = serde_json::json!({
                 "width": { "magnitude": fit_result.width_pt, "unit": "PT" },
                 "height": { "magnitude": fit_result.height_pt, "unit": "PT" }
             });
-            Some(serde_json::json!({
+            let mut sizing = serde_json::json!({
                 "sourceDimensions": {
                     "widthPixels": fit.source.width_px,
                     "heightPixels": fit.source.height_px
@@ -448,8 +494,8 @@ pub(crate) fn prepare_insert_image_change(
                     "heightPoints": fit_result.native_height_pt
                 },
                 "constraints": {
-                    "maxWidthPoints": fit.constraints.max_width_pt,
-                    "maxHeightPoints": fit.constraints.max_height_pt
+                    "maxWidthPoints": constraints.max_width_pt,
+                    "maxHeightPoints": constraints.max_height_pt
                 },
                 "scale": fit_result.scale,
                 "finalDimensions": {
@@ -457,7 +503,11 @@ pub(crate) fn prepare_insert_image_change(
                     "heightPoints": fit_result.height_pt
                 },
                 "upscaled": fit_result.upscaled
-            }))
+            });
+            if let Some(page_geometry) = page_geometry {
+                sizing["pageGeometry"] = page_geometry;
+            }
+            Some(sizing)
         }
         (Some(width), Some(height), None) => {
             if !width.is_finite() || width <= 0.0 || !height.is_finite() || height <= 0.0 {

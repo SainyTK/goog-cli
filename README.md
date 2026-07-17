@@ -180,6 +180,7 @@ goog docs map DOCUMENT_ID --heading "Summary"
 goog docs text search DOCUMENT_ID "quarterly plan"
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --max-width 468 --max-height 500 --at 'heading:Summary'
+goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --fit-page --reserve-height 72 --at 'heading:Summary'
 goog docs break page DOCUMENT_ID --at 'heading:Summary'
 goog docs break section DOCUMENT_ID --section-type next-page --at 'heading:Appendix'
 goog docs header create DOCUMENT_ID
@@ -191,6 +192,8 @@ goog docs batch-update DOCUMENT_ID --requests ./requests.json
 ```
 
 Maximum image dimensions preserve the source aspect ratio and do not upscale by default.
+`--fit-page` derives the image bounds from the active body section's page size and margins, while `--reserve-height` leaves vertical space for nearby content.
+Pageless documents require explicit `--max-width` and `--max-height` values.
 Exact `--width` and `--height` values are checked against the source aspect ratio and require `--allow-distortion` when they would change it.
 The conversion uses 96 source pixels per inch and 72 Google Docs points per inch, with results rounded to three decimal places.
 For JPEG images, EXIF orientations 5 through 8 swap the encoded width and height so fitting uses the displayed orientation.

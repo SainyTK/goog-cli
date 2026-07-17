@@ -14,6 +14,8 @@ pub struct DocumentMap {
     pub text_blocks: Vec<DocumentTextBlock>,
     #[serde(skip)]
     pub insertion_locations: Vec<DocumentLocation>,
+    #[serde(skip)]
+    pub raw_document: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -146,6 +148,7 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
         entries,
         text_blocks: builder.text_blocks,
         insertion_locations: builder.insertion_locations,
+        raw_document: document.clone(),
     }
 }
 

@@ -77,6 +77,8 @@ async fn remote_image_fit_resolves_source_metadata_and_constraints() {
             max_width_pt: Some(468.0),
             max_height_pt: Some(500.0),
             preserve_aspect_ratio: true,
+            fit_page: false,
+            reserve_height_pt: 0.0,
             allow_upscale: true,
         },
     )
@@ -89,6 +91,26 @@ async fn remote_image_fit_resolves_source_metadata_and_constraints() {
     assert_eq!(fit.constraints.max_width_pt, Some(468.0));
     assert_eq!(fit.constraints.max_height_pt, Some(500.0));
     assert!(fit.constraints.allow_upscale);
+    assert!(fit.page.is_none());
+
+    let page_fit = resolve_remote_image_fit(
+        &format!("{}/portrait.png", server.uri()),
+        RemoteImageSizingOptions {
+            width_pt: None,
+            height_pt: None,
+            allow_distortion: false,
+            max_width_pt: None,
+            max_height_pt: None,
+            preserve_aspect_ratio: false,
+            fit_page: true,
+            reserve_height_pt: 72.0,
+            allow_upscale: false,
+        },
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(page_fit.page.unwrap().reserve_height_pt, 72.0);
 }
 
 #[tokio::test]
@@ -114,6 +136,8 @@ async fn exact_remote_image_size_requires_explicit_distortion_opt_in() {
             max_width_pt: None,
             max_height_pt: None,
             preserve_aspect_ratio: false,
+            fit_page: false,
+            reserve_height_pt: 0.0,
             allow_upscale: false,
         },
     )
@@ -149,6 +173,8 @@ async fn exact_remote_image_size_allows_matching_ratio_or_explicit_distortion() 
             max_width_pt: None,
             max_height_pt: None,
             preserve_aspect_ratio: false,
+            fit_page: false,
+            reserve_height_pt: 0.0,
             allow_upscale: false,
         },
     )
@@ -165,6 +191,8 @@ async fn exact_remote_image_size_allows_matching_ratio_or_explicit_distortion() 
             max_width_pt: None,
             max_height_pt: None,
             preserve_aspect_ratio: false,
+            fit_page: false,
+            reserve_height_pt: 0.0,
             allow_upscale: false,
         },
     )

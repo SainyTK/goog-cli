@@ -7,6 +7,9 @@ pub(crate) mod image_metadata;
 #[cfg(test)]
 mod image_metadata_tests;
 pub mod map;
+pub(crate) mod page_layout;
+#[cfg(test)]
+mod page_layout_tests;
 pub mod style_template;
 
 #[cfg(test)]

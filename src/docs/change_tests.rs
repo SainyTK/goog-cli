@@ -6,7 +6,7 @@ use super::change::{
     prepare_replace_text_change, request_body_required_revision_id,
     set_request_body_required_revision_id, split_docs_request_bodies, write_docs_change_preview,
     ApplyListCommand, ApplyStylesCommand, EditTableCommand, InsertImageCommand, InsertImageFit,
-    InsertTableCommand, InsertTextCommand, ReplaceTextCommand,
+    InsertTableCommand, InsertTextCommand, PageFitOptions, ReplaceTextCommand,
 };
 use super::image_fit::{ImageFitConstraints, SourceImageDimensions};
 use super::map::{
@@ -290,6 +290,7 @@ fn aspect_fit_image_change_builds_resolved_native_size() {
                     max_height_pt: Some(500.0),
                     allow_upscale: false,
                 },
+                page: None,
             }),
             selector: InsertTextSelector::AfterText("Project".into()),
             dry_run: true,
@@ -316,6 +317,103 @@ fn aspect_fit_image_change_builds_resolved_native_size() {
             "scale": 0.263,
             "finalDimensions": { "widthPoints": 284.136, "heightPoints": 500.0 },
             "upscaled": false
+        })
+    );
+}
+
+#[test]
+fn page_fit_uses_active_section_geometry_and_reserve_height() {
+    let document_map = build_document_map(&json!({
+        "documentId": "document-123",
+        "revisionId": "rev-page-fit",
+        "documentStyle": {
+            "documentFormat": { "documentMode": "PAGES" },
+            "pageSize": {
+                "width": { "magnitude": 612.0, "unit": "PT" },
+                "height": { "magnitude": 792.0, "unit": "PT" }
+            },
+            "marginTop": { "magnitude": 72.0, "unit": "PT" },
+            "marginBottom": { "magnitude": 72.0, "unit": "PT" },
+            "marginLeft": { "magnitude": 72.0, "unit": "PT" },
+            "marginRight": { "magnitude": 72.0, "unit": "PT" }
+        },
+        "body": {
+            "content": [
+                {
+                    "startIndex": 0,
+                    "endIndex": 1,
+                    "sectionBreak": { "sectionStyle": {} }
+                },
+                {
+                    "startIndex": 1,
+                    "endIndex": 14,
+                    "paragraph": {
+                        "elements": [{
+                            "startIndex": 1,
+                            "endIndex": 14,
+                            "textRun": { "content": "Project Plan\n" }
+                        }]
+                    }
+                }
+            ]
+        }
+    }));
+    let image = prepare_insert_image_change(
+        &document_map,
+        &InsertImageCommand {
+            document_id: "document-123".into(),
+            image_uri: "https://example.test/portrait.png".into(),
+            width: None,
+            height: None,
+            fit: Some(InsertImageFit {
+                source: SourceImageDimensions {
+                    width_px: 1_440,
+                    height_px: 2_534,
+                },
+                constraints: ImageFitConstraints {
+                    max_width_pt: None,
+                    max_height_pt: None,
+                    allow_upscale: false,
+                },
+                page: Some(PageFitOptions {
+                    reserve_height_pt: 148.0,
+                }),
+            }),
+            selector: InsertTextSelector::AfterText("Project".into()),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap();
+    let image = preview_json(&image);
+
+    assert_eq!(
+        image["requestBody"]["requests"][0]["insertInlineImage"]["objectSize"],
+        json!({
+            "width": { "magnitude": 284.136, "unit": "PT" },
+            "height": { "magnitude": 500.0, "unit": "PT" }
+        })
+    );
+    assert_eq!(
+        image["preview"]["imageSizing"]["constraints"],
+        json!({ "maxWidthPoints": 468.0, "maxHeightPoints": 500.0 })
+    );
+    assert_eq!(
+        image["preview"]["imageSizing"]["pageGeometry"],
+        json!({
+            "tabId": null,
+            "sectionStartIndex": 0,
+            "pageWidthPoints": 612.0,
+            "pageHeightPoints": 792.0,
+            "marginTopPoints": 72.0,
+            "marginBottomPoints": 72.0,
+            "marginLeftPoints": 72.0,
+            "marginRightPoints": 72.0,
+            "availableWidthPoints": 468.0,
+            "availableHeightPoints": 648.0,
+            "reserveHeightPoints": 148.0,
+            "imageAvailableHeightPoints": 500.0
         })
     );
 }
@@ -351,6 +449,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
         document_locations: Vec::new(),
         text_blocks: Vec::new(),
         insertion_locations: Vec::new(),
+        raw_document: json!({}),
     };
     let temp_dir = tempfile::tempdir().unwrap();
     let table_data = temp_dir.path().join("table.csv");

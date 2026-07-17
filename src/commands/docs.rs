@@ -25,7 +25,8 @@ use crate::docs::{
         ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
         CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
         InsertImageCommand, InsertImageFit, InsertPageBreakCommand, InsertSectionBreakCommand,
-        InsertTableCommand, InsertTextCommand, PreparedDocsChange, ReplaceTextCommand,
+        InsertTableCommand, InsertTextCommand, PageFitOptions, PreparedDocsChange,
+        ReplaceTextCommand,
     },
     create_document, extract_style_template, get_document,
     image_fit::{exact_size_preserves_aspect_ratio, ImageFitConstraints},
@@ -224,6 +225,8 @@ pub fn run<S: AccountStore>(
                     max_width,
                     max_height,
                     preserve_aspect_ratio,
+                    fit_page,
+                    reserve_height,
                     allow_upscale,
                     at,
                     dry_run,
@@ -244,6 +247,8 @@ pub fn run<S: AccountStore>(
                         max_width_pt: max_width,
                         max_height_pt: max_height,
                         preserve_aspect_ratio,
+                        fit_page,
+                        reserve_height_pt: reserve_height.unwrap_or(0.0),
                         allow_upscale,
                     },
                 )
@@ -930,6 +935,8 @@ pub(super) struct RemoteImageSizingOptions {
     pub max_width_pt: Option<f64>,
     pub max_height_pt: Option<f64>,
     pub preserve_aspect_ratio: bool,
+    pub fit_page: bool,
+    pub reserve_height_pt: f64,
     pub allow_upscale: bool,
 }
 
@@ -944,9 +951,11 @@ pub(super) async fn resolve_remote_image_fit(
         max_width_pt,
         max_height_pt,
         preserve_aspect_ratio,
+        fit_page,
+        reserve_height_pt,
         allow_upscale,
     } = options;
-    if max_width_pt.is_none() && max_height_pt.is_none() {
+    if max_width_pt.is_none() && max_height_pt.is_none() && !fit_page {
         if preserve_aspect_ratio || allow_upscale {
             bail!(
                 "--preserve-aspect-ratio and --allow-upscale require --max-width or --max-height"
@@ -977,6 +986,7 @@ pub(super) async fn resolve_remote_image_fit(
             max_height_pt,
             allow_upscale,
         },
+        page: fit_page.then_some(PageFitOptions { reserve_height_pt }),
     }))
 }
 
@@ -2318,6 +2328,7 @@ fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry)
         document_locations: vec![entry.location.clone()],
         text_blocks: Vec::new(),
         insertion_locations: Vec::new(),
+        raw_document: document_map.raw_document.clone(),
     }
 }
 

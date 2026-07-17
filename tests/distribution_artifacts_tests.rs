@@ -55,6 +55,8 @@ fn readme_covers_public_distribution_and_usage_contract() {
         "goog auth switch",
         "goog drive ls",
         "goog docs map",
+        "--fit-page --reserve-height 72",
+        "Pageless documents require explicit",
         "require `--allow-distortion`",
         "goog sheets values get",
         "goog mail list",

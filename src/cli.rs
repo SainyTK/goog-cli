@@ -59,6 +59,17 @@ fn parse_positive_finite_points(value: &str) -> Result<f64, String> {
     Ok(points)
 }
 
+fn parse_non_negative_finite_points(value: &str) -> Result<f64, String> {
+    let points = parse_positive_finite_points(value).or_else(|error| {
+        if value.parse::<f64>().ok() == Some(0.0) {
+            Ok(0.0)
+        } else {
+            Err(error)
+        }
+    })?;
+    Ok(points)
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "goog",
@@ -2345,6 +2356,12 @@ pub enum DocsImageCommand {
         /// Preserve the source aspect ratio when fitting to maximum dimensions (the default)
         #[arg(long)]
         preserve_aspect_ratio: bool,
+        /// Derive maximum dimensions from the active body section's page size and margins
+        #[arg(long, conflicts_with_all = ["width", "height", "max_width", "max_height"])]
+        fit_page: bool,
+        /// Reserve vertical page space for a heading, caption, or other adjacent content
+        #[arg(long, requires = "fit_page", value_parser = parse_non_negative_finite_points)]
+        reserve_height: Option<f64>,
         /// Permit fitting to enlarge images beyond their native point dimensions
         #[arg(long)]
         allow_upscale: bool,
