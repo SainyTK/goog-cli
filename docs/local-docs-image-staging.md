@@ -1,6 +1,26 @@
 # Local Docs image staging
 
 Google Docs requires an HTTPS URL for `insertInlineImage`.
+Local image insertion uses the built-in `drive-public` backend unless `--staging-command` selects a caller-provided HTTPS staging service.
+
+## Drive public staging
+
+```sh
+goog --account alice@example.com docs image insert DOCUMENT_ID \
+  --file './dashboard image.png' \
+  --staging drive-public \
+  --at 'after-heading:Application dashboard' \
+  --json
+```
+
+The built-in backend uploads the validated image with its detected MIME type, grants a temporary `anyone` reader permission, inserts the public Drive URI into the document, and deletes the staged file after Google Docs confirms insertion.
+The staged file is also deleted when public permission creation or Docs insertion fails.
+`--keep-staged` is the explicit debugging opt-out from deletion.
+
+If Workspace policy rejects public sharing with `publishOutNotPermitted`, JSON output uses `DOCS_IMAGE_STAGING_POLICY_BLOCKED`, reports whether cleanup completed, and suggests either a staging adapter or the existing URI form.
+
+## Staging adapters
+
 The `--staging-command` option lets a caller provide a temporary HTTPS staging service without exposing local paths or cleanup tokens in process arguments.
 
 ```sh

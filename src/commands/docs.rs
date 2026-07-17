@@ -46,6 +46,10 @@ use crate::docs::{
     BatchUpdateDocumentOptions, CreateDocumentOptions, DocsError, GetDocumentOptions,
     StyleTemplate,
 };
+use crate::drive::{
+    create_anyone_reader_permission, delete_file, upload, DriveError, DriveFileOperationOptions,
+    UploadFileOptions,
+};
 use anyhow::{bail, Context, Result};
 
 pub(super) struct LocalImageDryRunOptions<'a> {
@@ -76,6 +80,162 @@ pub(super) struct LocalImageStagingCommandOptions<'a> {
     pub json: bool,
     pub documents_url: Option<&'a str>,
     pub state_path: Option<&'a Path>,
+}
+
+pub(super) struct LocalImageDrivePublicOptions<'a> {
+    pub document_id: &'a str,
+    pub image_path: &'a Path,
+    pub keep_staged: bool,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub sizing: RemoteImageSizingOptions,
+    pub selector: InsertTextSelector,
+    pub required_revision_id: Option<String>,
+    pub json: bool,
+    pub documents_url: Option<&'a str>,
+    pub state_path: Option<&'a Path>,
+    pub drive_upload_url: Option<&'a str>,
+    pub drive_files_url: Option<&'a str>,
+}
+
+pub(super) async fn run_local_image_drive_public<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: LocalImageDrivePublicOptions<'_>,
+    out: &mut impl Write,
+) -> Result<()> {
+    let account = account_override.context("local image insertion requires --account EMAIL")?;
+    let client = AuthClient::from_config(config.clone(), store, Some(account))?;
+    let account = client.account_email().to_string();
+    let source = inspect_local_image(options.image_path)?;
+    let fit = resolve_local_image_fit(source.dimensions, options.sizing)?;
+    let mut upload_options = UploadFileOptions::new(&source.path).with_mime_type(source.mime_type);
+    if let Some(upload_url) = options.drive_upload_url {
+        upload_options = upload_options.with_upload_url(upload_url);
+    }
+    let uploaded = upload(&client, &upload_options, |_| ())
+        .await
+        .context("failed to upload local image for Google Docs staging")?;
+    let mut file_options = DriveFileOperationOptions::new(&uploaded.id);
+    if let Some(files_url) = options.drive_files_url {
+        file_options = file_options.with_files_url(files_url);
+    }
+
+    if let Err(permission_error) = create_anyone_reader_permission(&client, &file_options).await {
+        let cleanup = delete_file(&client, &file_options).await;
+        if is_public_sharing_policy_blocked(&permission_error) && options.json {
+            write_json_line(
+                out,
+                &serde_json::json!({
+                    "code": "DOCS_IMAGE_STAGING_POLICY_BLOCKED",
+                    "backend": "drive-public",
+                    "googleReason": "publishOutNotPermitted",
+                    "cleanupCompleted": cleanup.is_ok(),
+                    "account": account,
+                    "nextActions": [
+                        "Configure --staging-command for a permitted HTTPS staging service",
+                        "Use the existing IMAGE_URI form with a caller-hosted image"
+                    ]
+                }),
+                "failed to serialize local image staging policy error",
+            )?;
+        }
+        return match cleanup {
+            Ok(()) => Err(permission_error)
+                .context("Drive public sharing was rejected; staged file cleanup completed"),
+            Err(cleanup_error) => Err(anyhow::anyhow!(
+                "Drive public sharing was rejected and staged file cleanup failed: permission: {permission_error}; cleanup: {cleanup_error}"
+            )),
+        };
+    }
+
+    let image_uri = format!(
+        "https://drive.google.com/uc?export=download&id={}",
+        uploaded.id
+    );
+    let mut docs_output = Vec::new();
+    let insertion = run_insert_image_unified_to(
+        config,
+        store,
+        Some(&account),
+        InsertImageCommand {
+            document_id: options.document_id.to_string(),
+            image_uri,
+            width: options.width,
+            height: options.height,
+            fit,
+            selector: options.selector,
+            dry_run: false,
+            json: options.json,
+            required_revision_id: options.required_revision_id,
+        },
+        &mut docs_output,
+        options.documents_url,
+        options.state_path,
+    )
+    .await;
+    let cleanup = if options.keep_staged {
+        Ok(())
+    } else {
+        delete_file(&client, &file_options).await
+    };
+
+    match (insertion, cleanup) {
+        (Err(insertion), Ok(())) => {
+            Err(insertion.context("local image insertion failed; staged Drive file cleanup completed"))
+        }
+        (Err(insertion), Err(cleanup)) => Err(anyhow::anyhow!(
+            "local image insertion failed and staged Drive file cleanup also failed: insertion: {insertion:#}; cleanup: {cleanup}"
+        )),
+        (Ok(()), Err(cleanup)) => {
+            if options.json {
+                write_json_line(
+                    out,
+                    &serde_json::json!({
+                        "code": "DOCS_IMAGE_INSERTED_CLEANUP_FAILED",
+                        "partialSuccess": true,
+                        "documentId": options.document_id,
+                        "account": account,
+                        "backend": "drive-public",
+                        "cleanupCompleted": false,
+                        "stagedResourceId": uploaded.id,
+                    }),
+                    "failed to serialize local image partial-success result",
+                )?;
+            }
+            Err(anyhow::anyhow!(cleanup)
+                .context("image insertion succeeded but staged Drive file cleanup failed"))
+        }
+        (Ok(()), Ok(())) => {
+            if !options.json {
+                out.write_all(&docs_output)
+                    .context("failed to write Docs image insertion response")?;
+                writeln!(
+                    out,
+                    "Staging: drive-public (cleanup {}) using account {}",
+                    if options.keep_staged { "skipped" } else { "completed" },
+                    account
+                )
+                .context("failed to write local image staging result")?;
+                return Ok(());
+            }
+            let mut output: serde_json::Value = serde_json::from_slice(&docs_output)
+                .context("failed to parse Docs image insertion response")?;
+            output["account"] = serde_json::json!(account);
+            output["staging"] = serde_json::json!({
+                "backend": "drive-public",
+                "cleanupCompleted": !options.keep_staged,
+                "keptStaged": options.keep_staged,
+                "stagedResourceId": options.keep_staged.then_some(uploaded.id),
+            });
+            write_json_line(out, &output, "failed to serialize local image insertion result")
+        }
+    }
+}
+
+fn is_public_sharing_policy_blocked(error: &DriveError) -> bool {
+    matches!(error, DriveError::Api { body, .. } if body.contains("publishOutNotPermitted"))
 }
 
 pub(super) async fn run_local_image_staging_command<S: AccountStore>(
@@ -468,22 +628,50 @@ pub fn run<S: AccountStore>(
             if let Some(image_path) = file {
                 let selector = insert_text_selector(at)?;
                 if !dry_run {
-                    let staging_command = staging_command.as_deref().context(
-                        "local image staging execution requires --staging-command PATH; drive-public execution is not available yet",
-                    )?;
-                    if staging == DocsImageStaging::DrivePublic {
+                    if staging == DocsImageStaging::DrivePublic && staging_command.is_some() {
                         bail!("--staging-command cannot be combined with --staging drive-public");
                     }
                     let runtime =
                         tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                    return runtime.block_on(run_local_image_staging_command(
+                    if let Some(staging_command) = staging_command.as_deref() {
+                        return runtime.block_on(run_local_image_staging_command(
+                            config,
+                            store,
+                            account_override,
+                            LocalImageStagingCommandOptions {
+                                document_id: &document_id,
+                                image_path: &image_path,
+                                staging_command,
+                                keep_staged,
+                                width,
+                                height,
+                                sizing: RemoteImageSizingOptions {
+                                    width_pt: width,
+                                    height_pt: height,
+                                    allow_distortion,
+                                    max_width_pt: max_width,
+                                    max_height_pt: max_height,
+                                    preserve_aspect_ratio,
+                                    fit_page,
+                                    reserve_height_pt: reserve_height.unwrap_or(0.0),
+                                    allow_upscale,
+                                },
+                                selector,
+                                required_revision_id,
+                                json,
+                                documents_url: None,
+                                state_path: None,
+                            },
+                            &mut std::io::stdout(),
+                        ));
+                    }
+                    return runtime.block_on(run_local_image_drive_public(
                         config,
                         store,
                         account_override,
-                        LocalImageStagingCommandOptions {
+                        LocalImageDrivePublicOptions {
                             document_id: &document_id,
                             image_path: &image_path,
-                            staging_command,
                             keep_staged,
                             width,
                             height,
@@ -503,6 +691,8 @@ pub fn run<S: AccountStore>(
                             json,
                             documents_url: None,
                             state_path: None,
+                            drive_upload_url: None,
+                            drive_files_url: None,
                         },
                         &mut std::io::stdout(),
                     ));

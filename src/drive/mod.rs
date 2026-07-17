@@ -172,8 +172,7 @@ impl DriveFileOperationOptions {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
         self.files_url = files_url.into();
         self
     }

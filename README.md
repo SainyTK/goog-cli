@@ -181,6 +181,7 @@ goog docs text search DOCUMENT_ID "quarterly plan"
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --max-width 468 --max-height 500 --at 'heading:Summary'
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --fit-page --reserve-height 72 --at 'heading:Summary'
+goog --account alice@example.com docs image insert DOCUMENT_ID --file ./chart.png --staging drive-public --at 'heading:Summary'
 goog --account alice@example.com docs image insert DOCUMENT_ID --file ./chart.png --staging-command ./stage-image --at 'heading:Summary'
 goog docs break page DOCUMENT_ID --at 'heading:Summary'
 goog docs break section DOCUMENT_ID --section-type next-page --at 'heading:Appendix'
@@ -199,8 +200,8 @@ Exact `--width` and `--height` values are checked against the source aspect rati
 The conversion uses 96 source pixels per inch and 72 Google Docs points per inch, with results rounded to three decimal places.
 For JPEG images, EXIF orientations 5 through 8 swap the encoded width and height so fitting uses the displayed orientation.
 `goog docs map DOCUMENT_ID --type images --json` reports each image's native point dimensions in `layoutMetadata.size`.
-Local image adapters use a JSON stdin and stdout protocol so paths and cleanup tokens never pass through shell interpolation.
-See [Local Docs image staging](docs/local-docs-image-staging.md) for the adapter contract and cleanup behavior.
+Local images use cleanup-aware Drive public staging by default, or a JSON stdin and stdout adapter when public Drive sharing is unavailable.
+See [Local Docs image staging](docs/local-docs-image-staging.md) for both backend contracts and cleanup behavior.
 
 ### Sheets
 

@@ -24,6 +24,7 @@ use crate::docs::style_template::{
     StyleTemplate, TextStyleTemplate,
 };
 use crate::docs::DOCS_SCOPE;
+use crate::drive::DRIVE_SCOPE;
 
 use super::docs::*;
 
@@ -440,6 +441,247 @@ async fn staging_command_cleans_up_after_docs_insertion_failure() {
     assert!(format!("{error:#}").contains("staging cleanup completed"));
     let log = std::fs::read_to_string(temp_dir.path().join("staging.log")).unwrap();
     assert!(log.lines().nth(1).unwrap().contains("cleanup"));
+}
+
+fn docs_and_drive_token() -> Token {
+    let mut token = scoped_docs_token("docs-drive-access");
+    token.scopes.push(DRIVE_SCOPE.into());
+    token
+}
+
+fn local_drive_public_options<'a>(
+    image_path: &'a std::path::Path,
+    documents_url: &'a str,
+    drive_upload_url: &'a str,
+    drive_files_url: &'a str,
+) -> LocalImageDrivePublicOptions<'a> {
+    LocalImageDrivePublicOptions {
+        document_id: "document-123",
+        image_path,
+        keep_staged: false,
+        width: None,
+        height: None,
+        sizing: RemoteImageSizingOptions {
+            width_pt: None,
+            height_pt: None,
+            allow_distortion: false,
+            max_width_pt: None,
+            max_height_pt: None,
+            preserve_aspect_ratio: false,
+            fit_page: false,
+            reserve_height_pt: 0.0,
+            allow_upscale: false,
+        },
+        selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+        required_revision_id: Some("rev-search".into()),
+        json: true,
+        documents_url: Some(documents_url),
+        state_path: None,
+        drive_upload_url: Some(drive_upload_url),
+        drive_files_url: Some(drive_files_url),
+    }
+}
+
+fn local_png(path: &std::path::Path) {
+    let mut png = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::new(32, 24))
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .unwrap();
+    std::fs::write(path, png).unwrap();
+}
+
+#[tokio::test]
+async fn drive_public_stages_inserts_and_deletes_in_order() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "staged-image-123",
+            "webViewLink": "https://drive.google.com/file/d/staged-image-123/view"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/staged-image-123/permissions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{"insertInlineImage": {
+                "location": {"index": 37},
+                "uri": "https://drive.google.com/uc?export=download&id=staged-image-123"
+            }}],
+            "writeControl": {"requiredRevisionId": "rev-search"}
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123", "replies": [{}]
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/staged-image-123"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let image_path = temp_dir.path().join("local image.png");
+    local_png(&image_path);
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_and_drive_token())
+        .unwrap();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let upload_url = format!("{}/upload/drive/v3/files", server.uri());
+    let files_url = format!("{}/drive/v3/files", server.uri());
+    let mut out = Vec::new();
+
+    run_local_image_drive_public(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        local_drive_public_options(&image_path, &documents_url, &upload_url, &files_url),
+        &mut out,
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["staging"]["backend"], "drive-public");
+    assert_eq!(output["staging"]["cleanupCompleted"], true);
+    let requests = server.received_requests().await.unwrap();
+    let operations: Vec<_> = requests
+        .iter()
+        .map(|request| (request.method.as_str(), request.url.path()))
+        .collect();
+    assert_eq!(
+        operations,
+        vec![
+            ("POST", "/upload/drive/v3/files"),
+            ("POST", "/drive/v3/files/staged-image-123/permissions"),
+            ("GET", "/docs/v1/documents/document-123"),
+            ("POST", "/docs/v1/documents/document-123:batchUpdate"),
+            ("DELETE", "/drive/v3/files/staged-image-123"),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn drive_public_policy_block_is_typed_and_deletes_the_upload() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "blocked-image-123", "webViewLink": "https://drive.invalid/view"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/blocked-image-123/permissions"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": {"errors": [{"reason": "publishOutNotPermitted"}]}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/blocked-image-123"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let image_path = temp_dir.path().join("blocked.png");
+    local_png(&image_path);
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_and_drive_token())
+        .unwrap();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let upload_url = format!("{}/upload/drive/v3/files", server.uri());
+    let files_url = format!("{}/drive/v3/files", server.uri());
+    let mut out = Vec::new();
+
+    let error = run_local_image_drive_public(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        local_drive_public_options(&image_path, &documents_url, &upload_url, &files_url),
+        &mut out,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains("staged file cleanup completed"));
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["code"], "DOCS_IMAGE_STAGING_POLICY_BLOCKED");
+    assert_eq!(output["googleReason"], "publishOutNotPermitted");
+    assert_eq!(output["cleanupCompleted"], true);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(requests[2].method.as_str(), "DELETE");
+}
+
+#[tokio::test]
+async fn drive_public_docs_failure_deletes_the_staged_file() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "failed-image-123", "webViewLink": "https://drive.invalid/view"
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/failed-image-123/permissions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
+            "error": {"status": "FAILED_PRECONDITION", "message": "revision mismatch"}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/failed-image-123"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&server)
+        .await;
+    let temp_dir = tempfile::tempdir().unwrap();
+    let image_path = temp_dir.path().join("revision mismatch.png");
+    local_png(&image_path);
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_and_drive_token())
+        .unwrap();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let upload_url = format!("{}/upload/drive/v3/files", server.uri());
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    let error = run_local_image_drive_public(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        local_drive_public_options(&image_path, &documents_url, &upload_url, &files_url),
+        &mut Vec::new(),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains("staged Drive file cleanup completed"));
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.last().unwrap().method.as_str(), "DELETE");
 }
 
 fn dry_run_apply_list_command(
