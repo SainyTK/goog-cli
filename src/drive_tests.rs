@@ -980,3 +980,90 @@ async fn upload_returns_drive_error_for_permission_denied_response() {
 
     assert!(matches!(err, DriveError::PermissionDenied));
 }
+
+#[tokio::test]
+async fn upload_uses_explicit_image_mime_type_in_metadata_and_media_part() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .and(query_param("uploadType", "multipart"))
+        .and(BodyContains(br#""mimeType":"image/png""#))
+        .and(BodyContains(b"Content-Type: image/png"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "image-123",
+            "webViewLink": "https://drive.google.com/file/d/image-123/view"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("image.png");
+    std::fs::write(&path, b"png bytes").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = UploadFileOptions::new(&path)
+        .with_mime_type("image/png")
+        .with_upload_url(format!("{}/upload/drive/v3/files", server.uri()));
+
+    let uploaded = upload(&client, &options, |_| ()).await.unwrap();
+
+    assert_eq!(uploaded.id, "image-123");
+}
+
+#[tokio::test]
+async fn create_anyone_reader_permission_preserves_google_policy_reason() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/image-123/permissions"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(BodyContains(br#""type":"anyone""#))
+        .and(BodyContains(br#""role":"reader""#))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": {
+                "code": 400,
+                "errors": [{"reason": "publishOutNotPermitted"}]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("image-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let error = create_anyone_reader_permission(&client, &options)
+        .await
+        .unwrap_err();
+
+    match error {
+        DriveError::Api { status, body } => {
+            assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+            assert!(body.contains("publishOutNotPermitted"));
+        }
+        other => panic!("expected Drive API error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn delete_file_removes_the_staged_drive_resource() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/image-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("image-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    delete_file(&client, &options).await.unwrap();
+}

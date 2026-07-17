@@ -119,6 +119,7 @@ pub struct UploadedFile {
 pub struct UploadFileOptions {
     pub path: PathBuf,
     pub folder: Option<String>,
+    mime_type: String,
     upload_url: String,
 }
 
@@ -127,12 +128,18 @@ impl UploadFileOptions {
         Self {
             path: path.into(),
             folder: None,
+            mime_type: DEFAULT_UPLOAD_MIME_TYPE.to_string(),
             upload_url: DRIVE_UPLOAD_URL.to_string(),
         }
     }
 
     pub fn with_folder(mut self, folder: impl Into<String>) -> Self {
         self.folder = Some(folder.into());
+        self
+    }
+
+    pub fn with_mime_type(mut self, mime_type: impl Into<String>) -> Self {
+        self.mime_type = mime_type.into();
         self
     }
 
@@ -147,6 +154,49 @@ impl UploadFileOptions {
             .append_pair("uploadType", upload_type.as_query_value())
             .append_pair("fields", UPLOAD_RESPONSE_FIELDS)
             .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DriveFileOperationOptions {
+    pub file_id: String,
+    files_url: String,
+}
+
+impl DriveFileOperationOptions {
+    pub fn new(file_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn file_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id);
+        url.query_pairs_mut()
+            .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+
+    fn permissions_url(&self) -> Result<Url, DriveError> {
+        let mut url = self.file_url()?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push("permissions");
         Ok(url)
     }
 }
@@ -259,6 +309,8 @@ struct FileMetadata {
 #[derive(Debug, Serialize)]
 struct UploadMetadata {
     name: String,
+    #[serde(rename = "mimeType")]
+    mime_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     parents: Option<Vec<String>>,
 }
@@ -592,7 +644,8 @@ where
          Content-Type: {JSON_CONTENT_TYPE}\r\n\r\n\
          {metadata_json}\r\n\
          --{MULTIPART_UPLOAD_BOUNDARY}\r\n\
-         Content-Type: {DEFAULT_UPLOAD_MIME_TYPE}\r\n\r\n"
+         Content-Type: {}\r\n\r\n",
+        options.mime_type
     ));
     let footer = Bytes::from(format!("\r\n--{MULTIPART_UPLOAD_BOUNDARY}--\r\n"));
     let content_length = header.len() as u64 + file_size + footer.len() as u64;
@@ -692,7 +745,7 @@ async fn initiate_resumable_upload<S: AccountStore>(
             client
                 .post(options.upload_url(UploadType::Resumable)?)
                 .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
-                .header(UPLOAD_CONTENT_TYPE_HEADER, DEFAULT_UPLOAD_MIME_TYPE)
+                .header(UPLOAD_CONTENT_TYPE_HEADER, &options.mime_type)
                 .header(UPLOAD_CONTENT_LENGTH_HEADER, file_size.to_string())
                 .json(&metadata),
             DRIVE_SCOPES,
@@ -721,8 +774,39 @@ fn upload_metadata(options: &UploadFileOptions) -> Result<UploadMetadata, DriveE
 
     Ok(UploadMetadata {
         name,
+        mime_type: options.mime_type.clone(),
         parents: options.folder.as_ref().map(|folder| vec![folder.clone()]),
     })
+}
+
+pub async fn create_anyone_reader_permission<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DriveFileOperationOptions,
+) -> Result<(), DriveError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .post(options.permissions_url()?)
+                .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
+                .json(&serde_json::json!({"type": "anyone", "role": "reader"})),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response).await?;
+    Ok(())
+}
+
+pub async fn delete_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DriveFileOperationOptions,
+) -> Result<(), DriveError> {
+    let response = client
+        .send_with_scopes(client.delete(options.file_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response).await?;
+    Ok(())
 }
 
 fn multipart_body(header: Bytes, file: tokio::fs::File, footer: Bytes) -> Body {
