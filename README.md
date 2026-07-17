@@ -397,6 +397,15 @@ Install a specific Canonical Release with:
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.2.3
 ```
 
+Check which release source produced the installed binary with:
+
+```sh
+goog version --json
+```
+
+For a Canonical Release, compare `sourceTag` and `gitCommit` with the tag and commit on the corresponding GitHub Release.
+`releaseChannel` identifies a stable, preview, or development build, and `dirty` must be `false` for a published binary.
+
 Users outside the binary release support matrix can install from source with Cargo:
 
 ```sh
