@@ -236,6 +236,7 @@ pub fn run<S: AccountStore>(
                     image_uri,
                     width,
                     height,
+                    fit: None,
                     selector,
                     dry_run,
                     json,

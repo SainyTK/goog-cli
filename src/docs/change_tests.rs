@@ -5,9 +5,10 @@ use super::change::{
     prepare_insert_image_change, prepare_insert_table_change, prepare_insert_text_change,
     prepare_replace_text_change, request_body_required_revision_id,
     set_request_body_required_revision_id, split_docs_request_bodies, write_docs_change_preview,
-    ApplyListCommand, ApplyStylesCommand, EditTableCommand, InsertImageCommand, InsertTableCommand,
-    InsertTextCommand, ReplaceTextCommand,
+    ApplyListCommand, ApplyStylesCommand, EditTableCommand, InsertImageCommand, InsertImageFit,
+    InsertTableCommand, InsertTextCommand, ReplaceTextCommand,
 };
+use super::image_fit::{ImageFitConstraints, SourceImageDimensions};
 use super::map::{
     build_document_map, DocumentLocation, DocumentMap, DocumentMapEntry, DocumentMapEntryKind,
     DocumentRange, InsertTextSelector, LocationConfidence, RangeSelector,
@@ -130,6 +131,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             image_uri: "https://example.test/image.png".into(),
             width: Some(468.0),
             height: Some(500.0),
+            fit: None,
             selector: InsertTextSelector::AfterText("Project".into()),
             dry_run: true,
             json: true,
@@ -265,6 +267,45 @@ fn image_table_style_and_list_changes_build_native_requests() {
     assert_eq!(
         list["requestBody"]["requests"][0]["createParagraphBullets"]["bulletPreset"],
         "BULLET_CHECKBOX"
+    );
+}
+
+#[test]
+fn aspect_fit_image_change_builds_resolved_native_size() {
+    let document_map = searchable_map();
+    let image = prepare_insert_image_change(
+        &document_map,
+        &InsertImageCommand {
+            document_id: "document-123".into(),
+            image_uri: "https://example.test/portrait.png".into(),
+            width: None,
+            height: None,
+            fit: Some(InsertImageFit {
+                source: SourceImageDimensions {
+                    width_px: 1_440,
+                    height_px: 2_534,
+                },
+                constraints: ImageFitConstraints {
+                    max_width_pt: Some(468.0),
+                    max_height_pt: Some(500.0),
+                    allow_upscale: false,
+                },
+            }),
+            selector: InsertTextSelector::AfterText("Project".into()),
+            dry_run: true,
+            json: true,
+            required_revision_id: None,
+        },
+    )
+    .unwrap();
+    let image = preview_json(&image);
+
+    assert_eq!(
+        image["requestBody"]["requests"][0]["insertInlineImage"]["objectSize"],
+        serde_json::json!({
+            "width": { "magnitude": 284.136, "unit": "PT" },
+            "height": { "magnitude": 500.0, "unit": "PT" }
+        })
     );
 }
 

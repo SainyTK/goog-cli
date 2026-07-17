@@ -1,5 +1,6 @@
 pub mod change;
 pub mod error;
+pub(crate) mod image_fit;
 pub mod map;
 pub mod style_template;
 

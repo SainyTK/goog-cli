@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
 use crate::cli::{DocsListType, DocsSectionBreakType};
+use crate::docs::image_fit::{fit_image, ImageFitConstraints, SourceImageDimensions};
 use crate::docs::map::{
     resolve_insert_text_location, resolve_range_selector, resolve_replace_text_ranges,
     text_block_contains_range, DocumentLocation, DocumentMap, DocumentMapEntry,
@@ -39,10 +40,17 @@ pub(crate) struct InsertImageCommand {
     pub image_uri: String,
     pub width: Option<f64>,
     pub height: Option<f64>,
+    pub fit: Option<InsertImageFit>,
     pub selector: InsertTextSelector,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct InsertImageFit {
+    pub source: SourceImageDimensions,
+    pub constraints: ImageFitConstraints,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -414,8 +422,15 @@ pub(crate) fn prepare_insert_image_change(
         "location": { "index": index },
         "uri": command.image_uri
     });
-    match (command.width, command.height) {
-        (Some(width), Some(height)) => {
+    match (command.width, command.height, command.fit) {
+        (None, None, Some(fit)) => {
+            let resolved = fit_image(fit.source, fit.constraints)?;
+            insert_inline_image["objectSize"] = serde_json::json!({
+                "width": { "magnitude": resolved.width_pt, "unit": "PT" },
+                "height": { "magnitude": resolved.height_pt, "unit": "PT" }
+            });
+        }
+        (Some(width), Some(height), None) => {
             if !width.is_finite() || width <= 0.0 || !height.is_finite() || height <= 0.0 {
                 bail!("image width and height must be finite and greater than zero");
             }
@@ -424,7 +439,10 @@ pub(crate) fn prepare_insert_image_change(
                 "height": { "magnitude": height, "unit": "PT" }
             });
         }
-        (None, None) => {}
+        (None, None, None) => {}
+        (Some(_), Some(_), Some(_)) => {
+            bail!("exact image dimensions and aspect-fit constraints cannot be combined")
+        }
         _ => bail!("image width and height must be provided together"),
     }
     let request_body = request_body_with_revision(
