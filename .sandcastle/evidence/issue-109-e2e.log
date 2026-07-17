@@ -22,5 +22,51 @@ Observed: Exit 1 with "local image format is unsupported".
 Result: PASS.
 
 Reviewer notes:
-- This iteration implements validation and complete dry-run planning only.
-- Staging execution and cleanup remain for later issue 109 iterations.
+- The dry-run evidence above covers the first implementation slice.
+- Later iterations added both staging backends and cleanup behavior.
+
+Restricted Workspace policy acceptance:
+
+Test setup:
+- Account used: [restricted-workspace-account]
+- Fixture used: a blank `goog-e2e-issue-109-policy-*` Document created by this test run and deleted afterward.
+- Local image: public/goog-cli-wallpaper.png
+
+Local checks:
+$ cargo test drive_public_policy_block_is_typed_and_deletes_the_upload
+Result: PASS.
+The typed-error and upload-deletion regression test passed with 0 failures.
+
+$ cargo test create_anyone_reader_permission_preserves_google_policy_reason
+Result: PASS.
+The Google policy-reason preservation regression test passed with 0 failures.
+
+Live checks:
+$ cargo run -- --account [restricted-workspace-account] docs create 'goog-e2e-issue-109-policy-*'
+Expected: Create a blank scratch Document that this run can safely mutate.
+Observed: Exit 0 with a new Document ID and edit URL.
+Result: PASS.
+
+$ cargo run -- --account [restricted-workspace-account] drive ls --all --type files --json | jq -c 'select(.name == "goog-cli-wallpaper.png")'
+Expected: Establish whether a same-named Drive file exists before staging.
+Observed: The account contained 352 files and no matching file.
+Result: PASS.
+
+$ cargo run -- --account [restricted-workspace-account] docs image insert [scratch-document-id] --file public/goog-cli-wallpaper.png --staging drive-public --at index:1 --json
+Expected: Exit nonzero, retain the Workspace policy reason, classify the failure, and clean up the temporary Drive upload.
+Observed: Exit 1 with `code` set to `DOCS_IMAGE_STAGING_POLICY_BLOCKED`, `backend` set to `drive-public`, `googleReason` set to `publishOutNotPermitted`, `cleanupCompleted` set to true, and two actionable alternatives.
+Result: PASS.
+
+$ cargo run -- --account [restricted-workspace-account] drive ls --all --type files --json | jq -c 'select(.name == "goog-cli-wallpaper.png")'
+Expected: Prove the rejected permission attempt left no staged Drive orphan.
+Observed: The account still contained 352 files and no matching file.
+Result: PASS.
+
+$ cargo run -- --account [restricted-workspace-account] drive delete [scratch-document-id]
+Expected: Remove the scratch Document created by this test run.
+Observed: Exit 0 and the Document ID was reported deleted.
+Result: PASS.
+
+Reviewer notes:
+- This completes the restricted-account and policy-blocked live acceptance path.
+- The staging-adapter live acceptance path remains before issue closure.
