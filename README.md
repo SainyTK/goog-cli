@@ -160,9 +160,13 @@ goog --account bob@example.com drive ls
 ```sh
 goog drive ls --limit 20
 goog drive ls --type folders --folder FOLDER_ID --json
+goog drive ls --show-all
 goog drive upload ./report.pdf --folder FOLDER_ID
 goog drive download FILE_ID --output ./report.pdf
 ```
+
+Drive listings exclude soft-deleted items by default.
+Use `--show-all` to include them.
 
 ### Docs
 

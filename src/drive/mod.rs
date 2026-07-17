@@ -268,6 +268,7 @@ pub struct ListFilesOptions {
     pub page_size: u32,
     pub page_token: Option<String>,
     pub folder: Option<String>,
+    show_all: bool,
     mode: ListFilesMode,
     files_url: String,
 }
@@ -288,6 +289,7 @@ impl ListFilesOptions {
             page_size,
             page_token: None,
             folder: None,
+            show_all: false,
             mode: ListFilesMode::Files,
             files_url: DRIVE_FILES_URL.to_string(),
         }
@@ -338,6 +340,11 @@ impl ListFilesOptions {
         self
     }
 
+    pub fn with_show_all(mut self) -> Self {
+        self.show_all = true;
+        self
+    }
+
     pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
         self.files_url = files_url.into();
         self
@@ -363,14 +370,17 @@ impl ListFilesOptions {
     }
 
     fn query(&self) -> String {
-        match (self.parent_filter(), self.mode.mime_type_filter()) {
-            (Some(parent_filter), Some(mime_type_filter)) => {
-                format!("{parent_filter} and {mime_type_filter}")
-            }
-            (Some(parent_filter), None) => parent_filter,
-            (None, Some(mime_type_filter)) => mime_type_filter,
-            (None, None) => String::new(),
+        let mut filters = Vec::new();
+        if let Some(parent_filter) = self.parent_filter() {
+            filters.push(parent_filter);
         }
+        if let Some(mime_type_filter) = self.mode.mime_type_filter() {
+            filters.push(mime_type_filter);
+        }
+        if !self.show_all {
+            filters.push("trashed = false".into());
+        }
+        filters.join(" and ")
     }
 
     fn parent_filter(&self) -> Option<String> {

@@ -206,6 +206,9 @@ pub enum DriveCommand {
         /// Drive folder ID to browse
         #[arg(long)]
         folder: Option<String>,
+        /// Include soft-deleted items
+        #[arg(long)]
+        show_all: bool,
         /// Emit one JSON object per row. Items use browse row fields; files and folders use full Drive file JSON
         #[arg(long)]
         json: bool,

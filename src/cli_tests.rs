@@ -460,6 +460,7 @@ fn drive_ls_with_flags() {
         "files",
         "--folder",
         "folder123",
+        "--show-all",
         "--json",
     ])
     .unwrap();
@@ -471,6 +472,7 @@ fn drive_ls_with_flags() {
                     all,
                     type_,
                     folder,
+                    show_all,
                     json,
                 },
         } => {
@@ -478,6 +480,7 @@ fn drive_ls_with_flags() {
             assert!(all);
             assert_eq!(type_, DriveListType::Files);
             assert_eq!(folder.as_deref(), Some("folder123"));
+            assert!(show_all);
             assert!(json);
         }
         _ => panic!("unexpected parse result"),
@@ -495,6 +498,7 @@ fn drive_ls_defaults_to_items() {
                 all: false,
                 type_: DriveListType::Items,
                 folder: None,
+                show_all: false,
                 json: false
             }
         }

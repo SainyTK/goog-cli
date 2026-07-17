@@ -123,7 +123,7 @@ async fn list_files_deserializes_a_single_page_response() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -151,6 +151,29 @@ async fn list_files_deserializes_a_single_page_response() {
 }
 
 #[tokio::test]
+async fn list_files_can_include_soft_deleted_files() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::new(50)
+        .with_show_all()
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    list_files(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
 async fn list_files_can_filter_to_files_inside_a_folder() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -161,7 +184,7 @@ async fn list_files_can_filter_to_files_inside_a_folder() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -199,7 +222,7 @@ async fn list_folders_defaults_to_folders_in_drive_root() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -236,7 +259,7 @@ async fn list_folders_can_filter_to_child_folders_inside_a_parent() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -265,7 +288,7 @@ async fn list_docs_filters_to_native_google_docs() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "mimeType = 'application/vnd.google-apps.document'",
+            "mimeType = 'application/vnd.google-apps.document' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -293,7 +316,7 @@ async fn list_sheets_can_filter_to_native_google_sheets_inside_a_folder() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.spreadsheet'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SHEETS_PAGE_RESPONSE))
         .expect(1)
@@ -322,7 +345,7 @@ async fn list_slides_can_filter_to_native_google_slides_inside_a_folder() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.presentation'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.presentation' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SLIDES_PAGE_RESPONSE))
         .expect(1)
@@ -349,7 +372,7 @@ async fn browse_files_defaults_to_drive_root_without_mime_filter() {
         .and(query_param("pageSize", "50"))
         .and(query_param("orderBy", "name"))
         .and(query_param("fields", DRIVE_FILES_FIELDS))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -371,7 +394,10 @@ async fn browse_files_can_filter_to_children_inside_a_folder() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
-        .and(query_param("q", "'folder-123' in parents"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and trashed = false",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -393,7 +419,7 @@ async fn list_files_escapes_folder_id_in_query_literal() {
         .and(path("/drive/v3/files"))
         .and(query_param(
             "q",
-            r#"'folder\\\'123' in parents and mimeType != 'application/vnd.google-apps.folder'"#,
+            r#"'folder\\\'123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false"#,
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -416,7 +442,7 @@ async fn list_folders_escapes_parent_id_in_query_literal() {
         .and(path("/drive/v3/files"))
         .and(query_param(
             "q",
-            r#"'folder\\\'123' in parents and mimeType = 'application/vnd.google-apps.folder'"#,
+            r#"'folder\\\'123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"#,
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -442,7 +468,7 @@ async fn list_files_sends_next_page_token_and_returns_next_page_token() {
         .and(query_param("pageToken", "token-1"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(EMPTY_PAGE_WITH_TOKEN_RESPONSE))
         .expect(1)
