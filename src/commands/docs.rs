@@ -28,7 +28,7 @@ use crate::docs::{
         InsertTableCommand, InsertTextCommand, PreparedDocsChange, ReplaceTextCommand,
     },
     create_document, extract_style_template, get_document,
-    image_fit::ImageFitConstraints,
+    image_fit::{exact_size_preserves_aspect_ratio, ImageFitConstraints},
     image_metadata::inspect_remote_image_dimensions,
     map::build_document_map,
     map::resolve_content_entry,
@@ -220,6 +220,7 @@ pub fn run<S: AccountStore>(
                     image_uri,
                     width,
                     height,
+                    allow_distortion,
                     max_width,
                     max_height,
                     preserve_aspect_ratio,
@@ -236,10 +237,15 @@ pub fn run<S: AccountStore>(
             runtime.block_on(async {
                 let fit = resolve_remote_image_fit(
                     &image_uri,
-                    max_width,
-                    max_height,
-                    preserve_aspect_ratio,
-                    allow_upscale,
+                    RemoteImageSizingOptions {
+                        width_pt: width,
+                        height_pt: height,
+                        allow_distortion,
+                        max_width_pt: max_width,
+                        max_height_pt: max_height,
+                        preserve_aspect_ratio,
+                        allow_upscale,
+                    },
                 )
                 .await?;
                 run_insert_image_unified_to(
@@ -916,18 +922,49 @@ pub(super) async fn run_replace_text_unified_to<S: AccountStore>(
     .await
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(super) struct RemoteImageSizingOptions {
+    pub width_pt: Option<f64>,
+    pub height_pt: Option<f64>,
+    pub allow_distortion: bool,
+    pub max_width_pt: Option<f64>,
+    pub max_height_pt: Option<f64>,
+    pub preserve_aspect_ratio: bool,
+    pub allow_upscale: bool,
+}
+
 pub(super) async fn resolve_remote_image_fit(
     image_uri: &str,
-    max_width_pt: Option<f64>,
-    max_height_pt: Option<f64>,
-    preserve_aspect_ratio: bool,
-    allow_upscale: bool,
+    options: RemoteImageSizingOptions,
 ) -> Result<Option<InsertImageFit>> {
+    let RemoteImageSizingOptions {
+        width_pt,
+        height_pt,
+        allow_distortion,
+        max_width_pt,
+        max_height_pt,
+        preserve_aspect_ratio,
+        allow_upscale,
+    } = options;
     if max_width_pt.is_none() && max_height_pt.is_none() {
         if preserve_aspect_ratio || allow_upscale {
             bail!(
                 "--preserve-aspect-ratio and --allow-upscale require --max-width or --max-height"
             );
+        }
+        if let (Some(width_pt), Some(height_pt)) = (width_pt, height_pt) {
+            if !allow_distortion {
+                let source = inspect_remote_image_dimensions(image_uri).await?;
+                if !exact_size_preserves_aspect_ratio(source, width_pt, height_pt) {
+                    bail!(
+                        "exact size {width_pt} by {height_pt} points would distort source image {} by {} pixels; use aspect-fit maximums or pass --allow-distortion",
+                        source.width_px,
+                        source.height_px
+                    );
+                }
+            }
+        } else if allow_distortion {
+            bail!("--allow-distortion requires --width and --height");
         }
         return Ok(None);
     }

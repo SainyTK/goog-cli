@@ -2333,6 +2333,9 @@ pub enum DocsImageCommand {
         /// Exact image height in points; requires --width
         #[arg(long, requires = "width", value_parser = parse_positive_finite_points)]
         height: Option<f64>,
+        /// Permit exact width and height to distort the source image
+        #[arg(long, requires_all = ["width", "height"])]
+        allow_distortion: bool,
         /// Maximum image width in points while preserving the source aspect ratio
         #[arg(long, conflicts_with_all = ["width", "height"], value_parser = parse_positive_finite_points)]
         max_width: Option<f64>,

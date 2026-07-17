@@ -1648,6 +1648,47 @@ fn docs_image_insert_parses_aspect_fit_constraints() {
         "index:1",
     ])
     .is_err());
+
+    let Command::Docs {
+        command:
+            DocsCommand::Image {
+                command:
+                    DocsImageCommand::Insert {
+                        allow_distortion, ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--width",
+        "468",
+        "--height",
+        "500",
+        "--allow-distortion",
+        "--at",
+        "index:1",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert!(allow_distortion);
+
+    assert!(parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--allow-distortion",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
 }
 
 #[test]

@@ -1,6 +1,8 @@
 pub mod change;
 pub mod error;
 pub(crate) mod image_fit;
+#[cfg(test)]
+mod image_fit_tests;
 pub(crate) mod image_metadata;
 #[cfg(test)]
 mod image_metadata_tests;

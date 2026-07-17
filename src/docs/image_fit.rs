@@ -79,6 +79,18 @@ pub(crate) fn fit_image(
     })
 }
 
+pub(crate) fn exact_size_preserves_aspect_ratio(
+    source: SourceImageDimensions,
+    width_pt: f64,
+    height_pt: f64,
+) -> bool {
+    let width_from_height =
+        round_output(height_pt * f64::from(source.width_px) / f64::from(source.height_px));
+    let height_from_width =
+        round_output(width_pt * f64::from(source.height_px) / f64::from(source.width_px));
+    width_pt == width_from_height || height_pt == height_from_width
+}
+
 fn round_output(value: f64) -> f64 {
     (value * ROUNDING_FACTOR).round() / ROUNDING_FACTOR
 }

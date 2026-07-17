@@ -70,10 +70,15 @@ async fn remote_image_fit_resolves_source_metadata_and_constraints() {
 
     let fit = resolve_remote_image_fit(
         &format!("{}/portrait.png", server.uri()),
-        Some(468.0),
-        Some(500.0),
-        true,
-        true,
+        RemoteImageSizingOptions {
+            width_pt: None,
+            height_pt: None,
+            allow_distortion: false,
+            max_width_pt: Some(468.0),
+            max_height_pt: Some(500.0),
+            preserve_aspect_ratio: true,
+            allow_upscale: true,
+        },
     )
     .await
     .unwrap()
@@ -84,6 +89,88 @@ async fn remote_image_fit_resolves_source_metadata_and_constraints() {
     assert_eq!(fit.constraints.max_width_pt, Some(468.0));
     assert_eq!(fit.constraints.max_height_pt, Some(500.0));
     assert!(fit.constraints.allow_upscale);
+}
+
+#[tokio::test]
+async fn exact_remote_image_size_requires_explicit_distortion_opt_in() {
+    let mut png = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::new(1_440, 2_534))
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .unwrap();
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/portrait.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(png))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let error = resolve_remote_image_fit(
+        &format!("{}/portrait.png", server.uri()),
+        RemoteImageSizingOptions {
+            width_pt: Some(468.0),
+            height_pt: Some(500.0),
+            allow_distortion: false,
+            max_width_pt: None,
+            max_height_pt: None,
+            preserve_aspect_ratio: false,
+            allow_upscale: false,
+        },
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("exact size 468 by 500 points would distort source image 1440 by 2534 pixels"));
+    assert!(error.to_string().contains("--allow-distortion"));
+}
+
+#[tokio::test]
+async fn exact_remote_image_size_allows_matching_ratio_or_explicit_distortion() {
+    let mut png = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::new(1_440, 2_534))
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .unwrap();
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/portrait.png"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(png))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let matching = resolve_remote_image_fit(
+        &format!("{}/portrait.png", server.uri()),
+        RemoteImageSizingOptions {
+            width_pt: Some(284.136),
+            height_pt: Some(500.0),
+            allow_distortion: false,
+            max_width_pt: None,
+            max_height_pt: None,
+            preserve_aspect_ratio: false,
+            allow_upscale: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matching.is_none());
+
+    let permitted = resolve_remote_image_fit(
+        "https://example.test/unreachable.png",
+        RemoteImageSizingOptions {
+            width_pt: Some(468.0),
+            height_pt: Some(500.0),
+            allow_distortion: true,
+            max_width_pt: None,
+            max_height_pt: None,
+            preserve_aspect_ratio: false,
+            allow_upscale: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(permitted.is_none());
 }
 
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {

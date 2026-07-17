@@ -28,6 +28,22 @@ Expected: Explain the source, native, constrained, and final dimensions without 
 Observed: Source 2172 by 724 pixels resolved from 1629 by 543 native points to 468 by 156 points at scale 0.287 without upscaling.
 Result: PASS.
 
+$ cargo run --quiet -- docs create goog-e2e-issue-110-distortion-opt-in
+Expected: Create a second scratch Document that is safe for exact-size mutation checks in this run.
+Observed: A new Document ID and edit URL were returned.
+Result: PASS.
+
+$ cargo run --quiet -- docs image insert [new-scratch-document-id] https://raw.githubusercontent.com/SainyTK/goog-cli/87a32e2d8bb0986d7273c664f5380d6ba198bbd2/public/goog-cli-wallpaper.png --width 468 --height 500 --at index:1 --json
+Expected: Reject exact dimensions that would distort the 3:1 source before any Docs mutation.
+Observed: Exit 1 reported that 468 by 500 points would distort the 2172 by 724 pixel source and recommended aspect-fit maximums or --allow-distortion.
+Result: PASS.
+
+$ cargo run --quiet -- docs image insert [new-scratch-document-id] https://raw.githubusercontent.com/SainyTK/goog-cli/87a32e2d8bb0986d7273c664f5380d6ba198bbd2/public/goog-cli-wallpaper.png --width 468 --height 500 --allow-distortion --at index:1 --json
+Expected: Explicit distortion opt-in permits the exact-size Docs mutation.
+Observed: documents.batchUpdate returned one insertInlineImage reply with an object ID.
+Result: PASS.
+
 Reviewer notes:
 - The scratch Document was created and mutated only by this test run.
-- The exact-size and page-aware acceptance cases remain separate issue 110 slices.
+- The exact-size safeguard used a new scratch Document created by this test run.
+- The page-aware acceptance cases remain a separate issue 110 slice.
