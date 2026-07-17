@@ -1,4 +1,5 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read};
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
@@ -8,6 +9,65 @@ use crate::docs::image_fit::SourceImageDimensions;
 
 const MAX_METADATA_BYTES: usize = 8 * 1024 * 1024;
 const MAX_SOURCE_DIMENSION_PX: u32 = 100_000;
+const MAX_DOCS_IMAGE_BYTES: u64 = 50 * 1024 * 1024;
+const MAX_DOCS_IMAGE_PIXELS: u64 = 25_000_000;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LocalImageMetadata {
+    pub path: PathBuf,
+    pub mime_type: &'static str,
+    pub size_bytes: u64,
+    pub dimensions: SourceImageDimensions,
+}
+
+pub(crate) fn inspect_local_image(path: &Path) -> Result<LocalImageMetadata> {
+    let canonical_path = path
+        .canonicalize()
+        .with_context(|| format!("failed to resolve local image file: {}", path.display()))?;
+    let metadata = canonical_path
+        .metadata()
+        .with_context(|| format!("failed to read local image file: {}", path.display()))?;
+    if !metadata.is_file() {
+        bail!("local image path is not a file: {}", path.display());
+    }
+    if metadata.len() == 0 {
+        bail!("local image file is empty: {}", path.display());
+    }
+    if metadata.len() >= MAX_DOCS_IMAGE_BYTES {
+        bail!("Google Docs images must be smaller than 50 MB");
+    }
+
+    let mut bytes = Vec::with_capacity((metadata.len() as usize).min(MAX_METADATA_BYTES));
+    std::fs::File::open(&canonical_path)
+        .with_context(|| format!("failed to open local image file: {}", path.display()))?
+        .take(MAX_METADATA_BYTES as u64)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("failed to read local image file: {}", path.display()))?;
+    let format = image::guess_format(&bytes)
+        .with_context(|| format!("local image format is unsupported: {}", path.display()))?;
+    let mime_type = match format {
+        image::ImageFormat::Png => "image/png",
+        image::ImageFormat::Jpeg => "image/jpeg",
+        image::ImageFormat::Gif => "image/gif",
+        _ => bail!("Google Docs images must be PNG, JPEG, or GIF"),
+    };
+    let dimensions = dimensions_from_prefix(&bytes)?.with_context(|| {
+        format!(
+            "could not read image dimensions from local file: {}",
+            path.display()
+        )
+    })?;
+    if u64::from(dimensions.width_px) * u64::from(dimensions.height_px) > MAX_DOCS_IMAGE_PIXELS {
+        bail!("Google Docs images must not exceed 25 megapixels");
+    }
+
+    Ok(LocalImageMetadata {
+        path: canonical_path,
+        mime_type,
+        size_bytes: metadata.len(),
+        dimensions,
+    })
+}
 
 pub(crate) async fn inspect_remote_image_dimensions(
     image_uri: &str,

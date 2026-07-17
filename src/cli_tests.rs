@@ -6,9 +6,9 @@ use crate::cli::{
     CalendarCalendarsCommand, CalendarColorsCommand, CalendarCommand, CalendarEventType,
     CalendarEventsCommand, CalendarEventsOrderBy, CalendarListEntryCommand, CalendarSendUpdates,
     Cli, Command, DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand,
-    DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType, DocsMapType,
-    DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
-    DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
+    DocsHeaderCommand, DocsImageCommand, DocsImageStaging, DocsListCommand, DocsListType,
+    DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand, DocsTextCommand,
+    DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
     SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
     SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
     SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
@@ -1080,7 +1080,7 @@ fn docs_new_high_level_editing_commands_parse() {
     else {
         panic!("unexpected parse result");
     };
-    assert_eq!(image_uri, "https://example.test/image.png");
+    assert_eq!(image_uri.as_deref(), Some("https://example.test/image.png"));
     assert_eq!(width, Some(468.0));
     assert_eq!(height, Some(500.0));
     assert_eq!(at, "page:2,line:1");
@@ -1744,6 +1744,62 @@ fn docs_image_insert_parses_aspect_fit_constraints() {
         "index:1",
     ])
     .is_err());
+}
+
+#[test]
+fn docs_image_insert_accepts_exactly_one_uri_or_local_file_source() {
+    let Command::Docs {
+        command:
+            DocsCommand::Image {
+                command:
+                    DocsImageCommand::Insert {
+                        image_uri,
+                        file,
+                        staging,
+                        staging_command,
+                        ..
+                    },
+            },
+    } = parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "--file",
+        "-dashboard ทดสอบ'quote.png",
+        "--staging",
+        "drive-public",
+        "--at",
+        "index:1",
+        "--dry-run",
+        "--json",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert!(image_uri.is_none());
+    assert_eq!(
+        file.as_deref(),
+        Some(std::path::Path::new("-dashboard ทดสอบ'quote.png"))
+    );
+    assert_eq!(staging, DocsImageStaging::DrivePublic);
+    assert!(staging_command.is_none());
+
+    assert!(parse(&[
+        "docs",
+        "image",
+        "insert",
+        "document-123",
+        "https://example.test/image.png",
+        "--file",
+        "./dashboard.png",
+        "--at",
+        "index:1",
+    ])
+    .is_err());
+    assert!(parse(&["docs", "image", "insert", "document-123", "--at", "index:1",]).is_err());
 }
 
 #[test]

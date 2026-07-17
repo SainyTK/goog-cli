@@ -8,8 +8,8 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
     DocsBreakCommand, DocsCommand, DocsFooterCommand, DocsFootnoteCommand, DocsHeaderCommand,
-    DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand, DocsTableCommand,
-    DocsTextCommand,
+    DocsImageCommand, DocsImageStaging, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand,
+    DocsTableCommand, DocsTextCommand,
 };
 use crate::docs::{
     batch_update_document,
@@ -30,7 +30,7 @@ use crate::docs::{
     },
     create_document, extract_style_template, get_document,
     image_fit::{exact_size_preserves_aspect_ratio, ImageFitConstraints},
-    image_metadata::inspect_remote_image_dimensions,
+    image_metadata::{inspect_local_image, inspect_remote_image_dimensions},
     map::build_document_map,
     map::resolve_content_entry,
     map::search_document_text,
@@ -46,6 +46,123 @@ use crate::docs::{
     StyleTemplate,
 };
 use anyhow::{bail, Context, Result};
+
+pub(super) struct LocalImageDryRunOptions<'a> {
+    pub document_id: &'a str,
+    pub image_path: &'a Path,
+    pub staging: DocsImageStaging,
+    pub staging_command: Option<&'a Path>,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub sizing: RemoteImageSizingOptions,
+    pub selector: InsertTextSelector,
+    pub required_revision_id: Option<String>,
+    pub json: bool,
+    pub documents_url: Option<&'a str>,
+    pub state_path: Option<&'a Path>,
+}
+
+pub(super) async fn write_local_image_dry_run<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: LocalImageDryRunOptions<'_>,
+    out: &mut impl Write,
+) -> Result<()> {
+    let LocalImageDryRunOptions {
+        document_id,
+        image_path,
+        staging,
+        staging_command,
+        width,
+        height,
+        sizing,
+        selector,
+        required_revision_id,
+        json,
+        documents_url,
+        state_path,
+    } = options;
+    if staging == DocsImageStaging::DrivePublic && staging_command.is_some() {
+        bail!("--staging-command cannot be combined with --staging drive-public");
+    }
+    let source = inspect_local_image(image_path)?;
+    let account = account_override.context("local image insertion requires --account EMAIL")?;
+    let account = AuthClient::from_config(config.clone(), store, Some(account))?
+        .account_email()
+        .to_string();
+    let requested = match staging {
+        DocsImageStaging::Auto => "auto",
+        DocsImageStaging::DrivePublic => "drive-public",
+    };
+    let planned_backend = if staging_command.is_some() {
+        "staging-command"
+    } else {
+        "drive-public"
+    };
+    let fit = resolve_local_image_fit(source.dimensions, sizing)?;
+    let mut preview_bytes = Vec::new();
+    run_insert_image_unified_to(
+        config,
+        store,
+        Some(&account),
+        InsertImageCommand {
+            document_id: document_id.to_string(),
+            image_uri: "https://staging.invalid/goog-local-image".into(),
+            width,
+            height,
+            fit,
+            selector,
+            dry_run: true,
+            json,
+            required_revision_id,
+        },
+        &mut preview_bytes,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    if !json {
+        out.write_all(&preview_bytes)
+            .context("failed to write local image Docs preview")?;
+        writeln!(
+            out,
+            "Staging: {} ({}, {} bytes) via {} using account {}",
+            source.path.display(),
+            source.mime_type,
+            source.size_bytes,
+            planned_backend,
+            account
+        )
+        .context("failed to write local image staging dry run")?;
+        return Ok(());
+    }
+    let mut output: serde_json::Value = serde_json::from_slice(&preview_bytes)
+        .context("failed to parse local image Docs preview")?;
+    output["dryRun"] = serde_json::json!(true);
+    output["documentId"] = serde_json::json!(document_id);
+    output["account"] = serde_json::json!(account);
+    output["source"] = serde_json::json!({
+        "path": source.path,
+        "mimeType": source.mime_type,
+        "sizeBytes": source.size_bytes,
+        "dimensions": {
+            "widthPixels": source.dimensions.width_px,
+            "heightPixels": source.dimensions.height_px
+        }
+    });
+    output["staging"] = serde_json::json!({
+            "requested": requested,
+            "plannedBackend": planned_backend,
+            "command": staging_command
+    });
+    output["remoteWritesPerformed"] = serde_json::json!(false);
+    write_json_line(
+        out,
+        &output,
+        "failed to serialize local image staging dry run",
+    )
+}
 
 pub fn run<S: AccountStore>(
     mut cmd: DocsCommand,
@@ -219,6 +336,9 @@ pub fn run<S: AccountStore>(
                 DocsImageCommand::Insert {
                     document_id,
                     image_uri,
+                    file,
+                    staging,
+                    staging_command,
                     width,
                     height,
                     allow_distortion,
@@ -234,6 +354,48 @@ pub fn run<S: AccountStore>(
                     required_revision_id,
                 },
         } => {
+            if let Some(image_path) = file {
+                let selector = insert_text_selector(at)?;
+                if !dry_run {
+                    inspect_local_image(&image_path)?;
+                    bail!(
+                        "local image staging execution is not available yet; use --dry-run to validate the file and staging plan"
+                    );
+                }
+                let runtime =
+                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+                return runtime.block_on(write_local_image_dry_run(
+                    config,
+                    store,
+                    account_override,
+                    LocalImageDryRunOptions {
+                        document_id: &document_id,
+                        image_path: &image_path,
+                        staging,
+                        staging_command: staging_command.as_deref(),
+                        width,
+                        height,
+                        sizing: RemoteImageSizingOptions {
+                            width_pt: width,
+                            height_pt: height,
+                            allow_distortion,
+                            max_width_pt: max_width,
+                            max_height_pt: max_height,
+                            preserve_aspect_ratio,
+                            fit_page,
+                            reserve_height_pt: reserve_height.unwrap_or(0.0),
+                            allow_upscale,
+                        },
+                        selector,
+                        required_revision_id,
+                        json,
+                        documents_url: None,
+                        state_path: None,
+                    },
+                    &mut std::io::stdout(),
+                ));
+            }
+            let image_uri = image_uri.context("provide IMAGE_URI or --file PATH")?;
             let selector = insert_text_selector(at)?;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -938,6 +1100,53 @@ pub(super) struct RemoteImageSizingOptions {
     pub fit_page: bool,
     pub reserve_height_pt: f64,
     pub allow_upscale: bool,
+}
+
+fn resolve_local_image_fit(
+    source: crate::docs::image_fit::SourceImageDimensions,
+    options: RemoteImageSizingOptions,
+) -> Result<Option<InsertImageFit>> {
+    let RemoteImageSizingOptions {
+        width_pt,
+        height_pt,
+        allow_distortion,
+        max_width_pt,
+        max_height_pt,
+        preserve_aspect_ratio,
+        fit_page,
+        reserve_height_pt,
+        allow_upscale,
+    } = options;
+    if max_width_pt.is_none() && max_height_pt.is_none() && !fit_page {
+        if preserve_aspect_ratio || allow_upscale {
+            bail!(
+                "--preserve-aspect-ratio and --allow-upscale require --max-width or --max-height"
+            );
+        }
+        if let (Some(width_pt), Some(height_pt)) = (width_pt, height_pt) {
+            if !allow_distortion && !exact_size_preserves_aspect_ratio(source, width_pt, height_pt)
+            {
+                bail!(
+                    "exact size {width_pt} by {height_pt} points would distort source image {} by {} pixels; use aspect-fit maximums or pass --allow-distortion",
+                    source.width_px,
+                    source.height_px
+                );
+            }
+        } else if allow_distortion {
+            bail!("--allow-distortion requires --width and --height");
+        }
+        return Ok(None);
+    }
+
+    Ok(Some(InsertImageFit {
+        source,
+        constraints: ImageFitConstraints {
+            max_width_pt,
+            max_height_pt,
+            allow_upscale,
+        },
+        page: fit_page.then_some(PageFitOptions { reserve_height_pt }),
+    }))
 }
 
 pub(super) async fn resolve_remote_image_fit(

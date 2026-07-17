@@ -11,7 +11,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::cli::{DocsListType, DocsMapType, DocsSectionBreakType};
+use crate::cli::{DocsImageStaging, DocsListType, DocsMapType, DocsSectionBreakType};
 use crate::docs::change::{
     ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
     CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
@@ -206,6 +206,87 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
         .save_token("alice@example.com", &docs_token())
         .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
+}
+
+#[tokio::test]
+async fn local_image_dry_run_resolves_native_preview_without_remote_writes() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let temp_dir = tempfile::tempdir().unwrap();
+    let image_path = temp_dir.path().join("dashboard with spaces.dat");
+    let mut png = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::new(32, 24))
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .unwrap();
+    std::fs::write(&image_path, &png).unwrap();
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &docs_token())
+        .unwrap();
+    let mut out = Vec::new();
+
+    write_local_image_dry_run(
+        &test_config(),
+        &store,
+        Some("alice@example.com"),
+        LocalImageDryRunOptions {
+            document_id: "document-123",
+            image_path: &image_path,
+            staging: DocsImageStaging::Auto,
+            staging_command: None,
+            width: None,
+            height: None,
+            sizing: RemoteImageSizingOptions {
+                width_pt: None,
+                height_pt: None,
+                allow_distortion: false,
+                max_width_pt: None,
+                max_height_pt: None,
+                preserve_aspect_ratio: false,
+                fit_page: false,
+                reserve_height_pt: 0.0,
+                allow_upscale: false,
+            },
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            required_revision_id: Some("rev-search".into()),
+            json: true,
+            documents_url: Some(&documents_url),
+            state_path: None,
+        },
+        &mut out,
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["dryRun"], true);
+    assert_eq!(output["documentId"], "document-123");
+    assert_eq!(output["account"], "alice@example.com");
+    assert_eq!(output["location"]["index"], 37);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertInlineImage"]["uri"],
+        "https://staging.invalid/goog-local-image"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
+    assert_eq!(output["source"]["mimeType"], "image/png");
+    assert_eq!(output["source"]["sizeBytes"], png.len() as u64);
+    assert_eq!(output["source"]["dimensions"]["widthPixels"], 32);
+    assert_eq!(output["source"]["dimensions"]["heightPixels"], 24);
+    assert_eq!(output["staging"]["requested"], "auto");
+    assert_eq!(output["staging"]["plannedBackend"], "drive-public");
+    assert_eq!(output["remoteWritesPerformed"], false);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method.as_str(), "GET");
 }
 
 fn dry_run_apply_list_command(

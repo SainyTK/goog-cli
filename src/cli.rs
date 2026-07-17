@@ -2332,12 +2332,24 @@ pub enum DocsBreakCommand {
 #[derive(Debug, Subcommand)]
 pub enum DocsImageCommand {
     /// Insert an Inline Image through a high-level Document Map location selector
-    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
+    #[command(
+        after_long_help = DOCS_INSERT_SELECTOR_HELP,
+        group(ArgGroup::new("image_source").required(true).args(["image_uri", "file"]))
+    )]
     Insert {
         /// Document ID or URL to update
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
-        image_uri: String,
+        image_uri: Option<String>,
+        /// Local image file to validate and stage for Google Docs insertion
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+        file: Option<std::path::PathBuf>,
+        /// Backend used to make a local image temporarily reachable by Google Docs
+        #[arg(long, value_enum, default_value_t)]
+        staging: DocsImageStaging,
+        /// Executable adapter used by automatic local-image staging
+        #[arg(long, value_name = "PATH", requires = "file")]
+        staging_command: Option<std::path::PathBuf>,
         /// Exact image width in points; requires --height
         #[arg(long, requires = "height", value_parser = parse_positive_finite_points)]
         width: Option<f64>,
@@ -2378,6 +2390,13 @@ pub enum DocsImageCommand {
         #[arg(long)]
         required_revision_id: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum DocsImageStaging {
+    #[default]
+    Auto,
+    DrivePublic,
 }
 
 #[derive(Debug, Subcommand)]

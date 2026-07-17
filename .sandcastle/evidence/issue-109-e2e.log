@@ -1,0 +1,26 @@
+Issue 109 E2E evidence, redacted
+Result: PASS
+
+Test setup:
+- Account used: [active-account]
+- Fixture used: existing Document from issue 110 acceptance, ID redacted
+- Local image: public/readme/01-api-library.png
+
+Local checks:
+$ cargo test local_image
+Result: PASS. 1 local-image command test passed with 0 failures.
+
+Live checks:
+$ cargo run -- docs image insert [document-id] --file public/readme/01-api-library.png --staging drive-public --at index:1 --dry-run --json --account [active-account]
+Expected: Validate the local PNG, resolve the Document location, show the native insertInlineImage request and drive-public staging plan, and perform no remote writes.
+Observed: Exit 0; account was explicit; MIME type was image/png; dimensions were 2400 by 1524 pixels; location index was 1; request URI used the dry-run staging placeholder; planned backend was drive-public; remoteWritesPerformed was false.
+Result: PASS.
+
+$ cargo run -- docs image insert [document-id] --file Cargo.toml --at index:1 --dry-run --json --account [active-account]
+Expected: Reject unsupported content before reading the Document or creating remote resources.
+Observed: Exit 1 with "local image format is unsupported".
+Result: PASS.
+
+Reviewer notes:
+- This iteration implements validation and complete dry-run planning only.
+- Staging execution and cleanup remain for later issue 109 iterations.
