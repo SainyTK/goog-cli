@@ -56,6 +56,7 @@ fn readme_covers_public_distribution_and_usage_contract() {
         "goog drive ls",
         "goog docs map",
         "--fit-page --reserve-height 72",
+        "reports each image's native point dimensions",
         "Pageless documents require explicit",
         "require `--allow-distortion`",
         "goog sheets values get",

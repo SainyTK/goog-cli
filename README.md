@@ -197,6 +197,7 @@ Pageless documents require explicit `--max-width` and `--max-height` values.
 Exact `--width` and `--height` values are checked against the source aspect ratio and require `--allow-distortion` when they would change it.
 The conversion uses 96 source pixels per inch and 72 Google Docs points per inch, with results rounded to three decimal places.
 For JPEG images, EXIF orientations 5 through 8 swap the encoded width and height so fitting uses the displayed orientation.
+`goog docs map DOCUMENT_ID --type images --json` reports each image's native point dimensions in `layoutMetadata.size`.
 
 ### Sheets
 

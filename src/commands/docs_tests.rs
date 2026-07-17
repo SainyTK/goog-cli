@@ -553,6 +553,47 @@ async fn run_map_json_emits_each_inline_image_in_a_paragraph() {
 }
 
 #[tokio::test]
+async fn run_map_images_json_emits_inline_image_geometry_from_document_tabs() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(tabbed_document_with_inline_image_geometry()),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Images,
+        true,
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let images: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(images.as_array().unwrap().len(), 1);
+    assert_eq!(images[0]["objectId"], "tab-inline-image-1");
+    assert_eq!(
+        images[0]["layoutMetadata"]["size"]["height"]["magnitude"],
+        500
+    );
+    assert_eq!(
+        images[0]["layoutMetadata"]["size"]["width"]["magnitude"],
+        284.136
+    );
+}
+
+#[tokio::test]
 async fn run_search_text_prints_human_matches_from_document_map() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -1290,7 +1331,14 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(images[0]["kind"], "inline-image");
     assert_eq!(images[0]["imageHandle"], "image-1");
     assert_eq!(images[0]["objectId"], "inline-image-1");
-    assert!(images[0].get("layoutMetadata").is_none());
+    assert_eq!(
+        images[0]["layoutMetadata"]["size"]["height"]["magnitude"],
+        156
+    );
+    assert_eq!(
+        images[0]["layoutMetadata"]["size"]["width"]["magnitude"],
+        468
+    );
     assert_eq!(images[1]["kind"], "positioned-image");
     assert_eq!(images[1]["imageHandle"], "image-2");
     assert_eq!(images[1]["objectId"], "positioned-image-1");
@@ -4000,6 +4048,16 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
             "inline-image-1": {
                 "inlineObjectProperties": {
                     "embeddedObject": {
+                        "size": {
+                            "height": {
+                                "magnitude": 156,
+                                "unit": "PT"
+                            },
+                            "width": {
+                                "magnitude": 468,
+                                "unit": "PT"
+                            }
+                        },
                         "imageProperties": {}
                     }
                 }
@@ -4069,5 +4127,46 @@ fn document_with_multiple_inline_images() -> serde_json::Value {
                 }
             ]
         }
+    })
+}
+
+fn tabbed_document_with_inline_image_geometry() -> serde_json::Value {
+    serde_json::json!({
+        "documentId": "document-123",
+        "title": "Tabbed images",
+        "revisionId": "rev-tabbed-images",
+        "tabs": [{
+            "tabProperties": { "tabId": "t.0" },
+            "documentTab": {
+                "body": {
+                    "content": [{
+                        "startIndex": 1,
+                        "endIndex": 2,
+                        "paragraph": {
+                            "elements": [{
+                                "startIndex": 1,
+                                "endIndex": 2,
+                                "inlineObjectElement": {
+                                    "inlineObjectId": "tab-inline-image-1"
+                                }
+                            }]
+                        }
+                    }]
+                },
+                "inlineObjects": {
+                    "tab-inline-image-1": {
+                        "inlineObjectProperties": {
+                            "embeddedObject": {
+                                "size": {
+                                    "height": { "magnitude": 500, "unit": "PT" },
+                                    "width": { "magnitude": 284.136, "unit": "PT" }
+                                },
+                                "imageProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }]
     })
 }

@@ -132,6 +132,7 @@ pub struct ResolvedInsertLocation {
 pub fn build_document_map(document: &Value) -> DocumentMap {
     let mut builder = DocumentMapBuilder::new(
         collect_table_of_contents_page_hints(document),
+        document,
         document.get("positionedObjects"),
     );
 
@@ -564,6 +565,7 @@ struct DocumentMapBuilder<'a> {
     table_count: usize,
     image_count: usize,
     toc_page_hints: Vec<TableOfContentsPageHint>,
+    document: &'a Value,
     positioned_objects: Option<&'a Value>,
 }
 
@@ -581,6 +583,7 @@ struct DocumentMapEntryMetadata {
 impl<'a> DocumentMapBuilder<'a> {
     fn new(
         toc_page_hints: Vec<TableOfContentsPageHint>,
+        document: &'a Value,
         positioned_objects: Option<&'a Value>,
     ) -> Self {
         Self {
@@ -593,6 +596,7 @@ impl<'a> DocumentMapBuilder<'a> {
             table_count: 0,
             image_count: 0,
             toc_page_hints,
+            document,
             positioned_objects,
         }
     }
@@ -646,6 +650,7 @@ impl<'a> DocumentMapBuilder<'a> {
             let image_handle = self.next_image_handle();
             let mut location = self.current_location(element);
             location.index = image.start_index;
+            let layout_metadata = inline_image_layout_metadata(self.document, &image.object_id);
             self.push_entry_with_metadata(
                 location,
                 DocumentMapEntryKind::InlineImage,
@@ -654,6 +659,7 @@ impl<'a> DocumentMapBuilder<'a> {
                 DocumentMapEntryMetadata {
                     image_handle: Some(image_handle),
                     object_id: Some(image.object_id),
+                    layout_metadata,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -963,6 +969,44 @@ const POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS: [&str; 5] = [
     "marginTop",
     "marginBottom",
 ];
+
+fn inline_image_layout_metadata(document: &Value, object_id: &str) -> Option<Value> {
+    let size = document_object(document, "inlineObjects", object_id)?
+        .get("inlineObjectProperties")?
+        .get("embeddedObject")?
+        .get("size")?;
+    Some(serde_json::json!({ "size": size }))
+}
+
+fn document_object<'a>(
+    document: &'a Value,
+    collection: &str,
+    object_id: &str,
+) -> Option<&'a Value> {
+    document
+        .get(collection)
+        .and_then(|objects| objects.get(object_id))
+        .or_else(|| {
+            document
+                .get("tabs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .find_map(|tab| tab_document_object(tab, collection, object_id))
+        })
+}
+
+fn tab_document_object<'a>(tab: &'a Value, collection: &str, object_id: &str) -> Option<&'a Value> {
+    tab.get("documentTab")
+        .and_then(|document_tab| document_object(document_tab, collection, object_id))
+        .or_else(|| {
+            tab.get("childTabs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .find_map(|child| tab_document_object(child, collection, object_id))
+        })
+}
 
 fn positioned_image_layout_metadata(
     positioned_objects: Option<&Value>,
