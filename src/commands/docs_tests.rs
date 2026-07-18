@@ -1,6 +1,4 @@
 use chrono::{Duration, Utc};
-use image::{DynamicImage, ImageFormat, RgbaImage};
-use std::io::Cursor;
 use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -11,20 +9,21 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::cli::{DocsImageStaging, DocsListType, DocsMapType, DocsSectionBreakType};
+use crate::cli::{DocsCompareScope, DocsListType, DocsMapType, DocsSectionBreakType};
 use crate::docs::change::{
     ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
     CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
     InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
-    InsertTextCommand, ReplaceTextCommand,
+    InsertTextCommand, PinTableHeaderRowsCommand, ReplaceTextCommand, SetTableColumnWidthsCommand,
+    StyleTableRowCommand,
 };
-use crate::docs::map::{ContentSelector, InsertTextSelector, RangeSelector};
+use crate::docs::map::{build_document_map, ContentSelector, InsertTextSelector, RangeSelector};
 use crate::docs::style_template::{
     load_style_template_in, save_style_template_in, ListStyleTemplate, NamedStyleTemplate,
     StyleTemplate, TextStyleTemplate,
 };
 use crate::docs::DOCS_SCOPE;
-use crate::drive::DRIVE_SCOPE;
+use crate::drive::{DriveError, DRIVE_SCOPE};
 
 use super::docs::*;
 
@@ -43,6 +42,17 @@ fn test_config() -> Config {
     }
 }
 
+fn comparison_preview(
+    max_differences: usize,
+    difference_pattern: Option<&str>,
+) -> DocumentComparisonPreview<'_> {
+    DocumentComparisonPreview {
+        max_differences,
+        summary_only: false,
+        difference_pattern,
+    }
+}
+
 fn docs_token() -> Token {
     scoped_docs_token("docs-write-access")
 }
@@ -56,705 +66,11 @@ fn scoped_docs_token(access_token: &str) -> Token {
     }
 }
 
-#[tokio::test]
-async fn remote_image_fit_resolves_source_metadata_and_constraints() {
-    let mut png = Vec::new();
-    DynamicImage::ImageRgba8(RgbaImage::new(1_440, 2_534))
-        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-        .unwrap();
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/portrait.png"))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(png))
-        .mount(&server)
-        .await;
-
-    let fit = resolve_remote_image_fit(
-        &format!("{}/portrait.png", server.uri()),
-        RemoteImageSizingOptions {
-            width_pt: None,
-            height_pt: None,
-            allow_distortion: false,
-            max_width_pt: Some(468.0),
-            max_height_pt: Some(500.0),
-            preserve_aspect_ratio: true,
-            fit_page: false,
-            reserve_height_pt: 0.0,
-            allow_upscale: true,
-        },
-    )
-    .await
-    .unwrap()
-    .unwrap();
-
-    assert_eq!(fit.source.width_px, 1_440);
-    assert_eq!(fit.source.height_px, 2_534);
-    assert_eq!(fit.constraints.max_width_pt, Some(468.0));
-    assert_eq!(fit.constraints.max_height_pt, Some(500.0));
-    assert!(fit.constraints.allow_upscale);
-    assert!(fit.page.is_none());
-
-    let page_fit = resolve_remote_image_fit(
-        &format!("{}/portrait.png", server.uri()),
-        RemoteImageSizingOptions {
-            width_pt: None,
-            height_pt: None,
-            allow_distortion: false,
-            max_width_pt: None,
-            max_height_pt: None,
-            preserve_aspect_ratio: false,
-            fit_page: true,
-            reserve_height_pt: 72.0,
-            allow_upscale: false,
-        },
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    assert_eq!(page_fit.page.unwrap().reserve_height_pt, 72.0);
-}
-
-#[tokio::test]
-async fn exact_remote_image_size_requires_explicit_distortion_opt_in() {
-    let mut png = Vec::new();
-    DynamicImage::ImageRgba8(RgbaImage::new(1_440, 2_534))
-        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-        .unwrap();
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/portrait.png"))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(png))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let error = resolve_remote_image_fit(
-        &format!("{}/portrait.png", server.uri()),
-        RemoteImageSizingOptions {
-            width_pt: Some(468.0),
-            height_pt: Some(500.0),
-            allow_distortion: false,
-            max_width_pt: None,
-            max_height_pt: None,
-            preserve_aspect_ratio: false,
-            fit_page: false,
-            reserve_height_pt: 0.0,
-            allow_upscale: false,
-        },
-    )
-    .await
-    .unwrap_err();
-
-    assert!(error
-        .to_string()
-        .contains("exact size 468 by 500 points would distort source image 1440 by 2534 pixels"));
-    assert!(error.to_string().contains("--allow-distortion"));
-}
-
-#[tokio::test]
-async fn exact_remote_image_size_allows_matching_ratio_or_explicit_distortion() {
-    let mut png = Vec::new();
-    DynamicImage::ImageRgba8(RgbaImage::new(1_440, 2_534))
-        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-        .unwrap();
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/portrait.png"))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(png))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let matching = resolve_remote_image_fit(
-        &format!("{}/portrait.png", server.uri()),
-        RemoteImageSizingOptions {
-            width_pt: Some(284.136),
-            height_pt: Some(500.0),
-            allow_distortion: false,
-            max_width_pt: None,
-            max_height_pt: None,
-            preserve_aspect_ratio: false,
-            fit_page: false,
-            reserve_height_pt: 0.0,
-            allow_upscale: false,
-        },
-    )
-    .await
-    .unwrap();
-    assert!(matching.is_none());
-
-    let permitted = resolve_remote_image_fit(
-        "https://example.test/unreachable.png",
-        RemoteImageSizingOptions {
-            width_pt: Some(468.0),
-            height_pt: Some(500.0),
-            allow_distortion: true,
-            max_width_pt: None,
-            max_height_pt: None,
-            preserve_aspect_ratio: false,
-            fit_page: false,
-            reserve_height_pt: 0.0,
-            allow_upscale: false,
-        },
-    )
-    .await
-    .unwrap();
-    assert!(permitted.is_none());
-}
-
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     store
         .save_token("alice@example.com", &docs_token())
         .unwrap();
     AuthClient::from_config(test_config(), store, None).unwrap()
-}
-
-#[tokio::test]
-async fn local_image_dry_run_resolves_native_preview_without_remote_writes() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/docs/v1/documents/document-123"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let documents_url = format!("{}/docs/v1/documents", server.uri());
-    let temp_dir = tempfile::tempdir().unwrap();
-    let image_path = temp_dir.path().join("dashboard with spaces.dat");
-    let mut png = Vec::new();
-    DynamicImage::ImageRgba8(RgbaImage::new(32, 24))
-        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-        .unwrap();
-    std::fs::write(&image_path, &png).unwrap();
-    let store = MemoryStore::default();
-    store
-        .save_token("alice@example.com", &docs_token())
-        .unwrap();
-    let mut out = Vec::new();
-
-    write_local_image_dry_run(
-        &test_config(),
-        &store,
-        Some("alice@example.com"),
-        LocalImageDryRunOptions {
-            document_id: "document-123",
-            image_path: &image_path,
-            staging: DocsImageStaging::Auto,
-            staging_command: None,
-            width: None,
-            height: None,
-            sizing: RemoteImageSizingOptions {
-                width_pt: None,
-                height_pt: None,
-                allow_distortion: false,
-                max_width_pt: None,
-                max_height_pt: None,
-                preserve_aspect_ratio: false,
-                fit_page: false,
-                reserve_height_pt: 0.0,
-                allow_upscale: false,
-            },
-            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
-            required_revision_id: Some("rev-search".into()),
-            json: true,
-            documents_url: Some(&documents_url),
-            state_path: None,
-        },
-        &mut out,
-    )
-    .await
-    .unwrap();
-
-    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(output["dryRun"], true);
-    assert_eq!(output["documentId"], "document-123");
-    assert_eq!(output["account"], "alice@example.com");
-    assert_eq!(output["location"]["index"], 37);
-    assert_eq!(
-        output["requestBody"]["requests"][0]["insertInlineImage"]["uri"],
-        "https://staging.invalid/goog-local-image"
-    );
-    assert_eq!(
-        output["requestBody"]["writeControl"]["requiredRevisionId"],
-        "rev-search"
-    );
-    assert_eq!(output["source"]["mimeType"], "image/png");
-    assert_eq!(output["source"]["sizeBytes"], png.len() as u64);
-    assert_eq!(output["source"]["dimensions"]["widthPixels"], 32);
-    assert_eq!(output["source"]["dimensions"]["heightPixels"], 24);
-    assert_eq!(output["staging"]["requested"], "auto");
-    assert_eq!(output["staging"]["plannedBackend"], "drive-public");
-    assert_eq!(output["remoteWritesPerformed"], false);
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].method.as_str(), "GET");
-}
-
-#[cfg(unix)]
-fn staging_adapter(dir: &std::path::Path) -> std::path::PathBuf {
-    use std::os::unix::fs::PermissionsExt;
-
-    let command = dir.join("staging adapter");
-    let log = dir.join("staging.log");
-    std::fs::write(
-        &command,
-        format!(
-            "#!/bin/sh\nread request\nprintf '%s\\n' \"$request\" >> \"{}\"\ncase \"$request\" in\n  *stage*) printf '%s\\n' '{{\"uri\":\"https://temporary.example/image.png\",\"cleanupToken\":\"opaque-cleanup\"}}' ;;\n  *) printf '%s\\n' '{{}}' ;;\nesac\n",
-            log.display()
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
-    command
-}
-
-fn local_staging_options<'a>(
-    image_path: &'a std::path::Path,
-    staging_command: &'a std::path::Path,
-    documents_url: &'a str,
-) -> LocalImageStagingCommandOptions<'a> {
-    LocalImageStagingCommandOptions {
-        document_id: "document-123",
-        image_path,
-        staging_command,
-        keep_staged: false,
-        width: None,
-        height: None,
-        sizing: RemoteImageSizingOptions {
-            width_pt: None,
-            height_pt: None,
-            allow_distortion: false,
-            max_width_pt: None,
-            max_height_pt: None,
-            preserve_aspect_ratio: false,
-            fit_page: false,
-            reserve_height_pt: 0.0,
-            allow_upscale: false,
-        },
-        selector: InsertTextSelector::PageLine { page: 2, line: 1 },
-        required_revision_id: Some("rev-search".into()),
-        json: true,
-        documents_url: Some(documents_url),
-        state_path: None,
-    }
-}
-
-#[tokio::test]
-#[cfg(unix)]
-async fn staging_command_inserts_then_cleans_up_without_exposing_adapter_secrets() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/docs/v1/documents/document-123"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/docs/v1/documents/document-123:batchUpdate"))
-        .and(body_json(serde_json::json!({
-            "requests": [{"insertInlineImage": {
-                "location": {"index": 37},
-                "uri": "https://temporary.example/image.png"
-            }}],
-            "writeControl": {"requiredRevisionId": "rev-search"}
-        })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "documentId": "document-123", "replies": [{}]
-        })))
-        .mount(&server)
-        .await;
-    let temp_dir = tempfile::tempdir().unwrap();
-    let image_path = temp_dir.path().join("local image.png");
-    let mut png = Vec::new();
-    DynamicImage::ImageRgba8(RgbaImage::new(32, 24))
-        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-        .unwrap();
-    std::fs::write(&image_path, png).unwrap();
-    let adapter = staging_adapter(temp_dir.path());
-    let store = MemoryStore::default();
-    store
-        .save_token("alice@example.com", &docs_token())
-        .unwrap();
-    let documents_url = format!("{}/docs/v1/documents", server.uri());
-    let mut out = Vec::new();
-
-    run_local_image_staging_command(
-        &test_config(),
-        &store,
-        Some("alice@example.com"),
-        local_staging_options(&image_path, &adapter, &documents_url),
-        &mut out,
-    )
-    .await
-    .unwrap();
-
-    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(output["account"], "alice@example.com");
-    assert_eq!(output["staging"]["cleanupCompleted"], true);
-    let rendered = String::from_utf8(out).unwrap();
-    assert!(!rendered.contains("opaque-cleanup"));
-    assert!(!rendered.contains("temporary.example"));
-    let log = std::fs::read_to_string(temp_dir.path().join("staging.log")).unwrap();
-    assert!(log.lines().next().unwrap().contains("stage"));
-    assert!(log.lines().nth(1).unwrap().contains("cleanup"));
-}
-
-#[tokio::test]
-#[cfg(unix)]
-async fn staging_command_cleans_up_after_docs_insertion_failure() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/docs/v1/documents/document-123"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/docs/v1/documents/document-123:batchUpdate"))
-        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
-            "error": {"status": "FAILED_PRECONDITION", "message": "revision mismatch"}
-        })))
-        .mount(&server)
-        .await;
-    let temp_dir = tempfile::tempdir().unwrap();
-    let image_path = temp_dir.path().join("image.png");
-    let mut png = Vec::new();
-    DynamicImage::ImageRgba8(RgbaImage::new(8, 8))
-        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-        .unwrap();
-    std::fs::write(&image_path, png).unwrap();
-    let adapter = staging_adapter(temp_dir.path());
-    let store = MemoryStore::default();
-    store
-        .save_token("alice@example.com", &docs_token())
-        .unwrap();
-    let documents_url = format!("{}/docs/v1/documents", server.uri());
-
-    let error = run_local_image_staging_command(
-        &test_config(),
-        &store,
-        Some("alice@example.com"),
-        local_staging_options(&image_path, &adapter, &documents_url),
-        &mut Vec::new(),
-    )
-    .await
-    .unwrap_err();
-
-    assert!(format!("{error:#}").contains("staging cleanup completed"));
-    let log = std::fs::read_to_string(temp_dir.path().join("staging.log")).unwrap();
-    assert!(log.lines().nth(1).unwrap().contains("cleanup"));
-}
-
-fn docs_and_drive_token() -> Token {
-    let mut token = scoped_docs_token("docs-drive-access");
-    token.scopes.push(DRIVE_SCOPE.into());
-    token
-}
-
-fn local_drive_public_options<'a>(
-    image_path: &'a std::path::Path,
-    documents_url: &'a str,
-    drive_upload_url: &'a str,
-    drive_files_url: &'a str,
-) -> LocalImageDrivePublicOptions<'a> {
-    LocalImageDrivePublicOptions {
-        document_id: "document-123",
-        image_path,
-        keep_staged: false,
-        width: None,
-        height: None,
-        sizing: RemoteImageSizingOptions {
-            width_pt: None,
-            height_pt: None,
-            allow_distortion: false,
-            max_width_pt: None,
-            max_height_pt: None,
-            preserve_aspect_ratio: false,
-            fit_page: false,
-            reserve_height_pt: 0.0,
-            allow_upscale: false,
-        },
-        selector: InsertTextSelector::PageLine { page: 2, line: 1 },
-        required_revision_id: Some("rev-search".into()),
-        json: true,
-        documents_url: Some(documents_url),
-        state_path: None,
-        drive_upload_url: Some(drive_upload_url),
-        drive_files_url: Some(drive_files_url),
-    }
-}
-
-fn local_png(path: &std::path::Path) {
-    let mut png = Vec::new();
-    DynamicImage::ImageRgba8(RgbaImage::new(32, 24))
-        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
-        .unwrap();
-    std::fs::write(path, png).unwrap();
-}
-
-#[tokio::test]
-async fn drive_public_stages_inserts_and_deletes_in_order() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/upload/drive/v3/files"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "staged-image-123",
-            "webViewLink": "https://drive.google.com/file/d/staged-image-123/view"
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/drive/v3/files/staged-image-123/permissions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/docs/v1/documents/document-123"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/docs/v1/documents/document-123:batchUpdate"))
-        .and(body_json(serde_json::json!({
-            "requests": [{"insertInlineImage": {
-                "location": {"index": 37},
-                "uri": "https://drive.google.com/uc?export=download&id=staged-image-123"
-            }}],
-            "writeControl": {"requiredRevisionId": "rev-search"}
-        })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "documentId": "document-123", "replies": [{}]
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("DELETE"))
-        .and(path("/drive/v3/files/staged-image-123"))
-        .respond_with(ResponseTemplate::new(204))
-        .mount(&server)
-        .await;
-    let temp_dir = tempfile::tempdir().unwrap();
-    let image_path = temp_dir.path().join("local image.png");
-    local_png(&image_path);
-    let store = MemoryStore::default();
-    store
-        .save_token("alice@example.com", &docs_and_drive_token())
-        .unwrap();
-    let documents_url = format!("{}/docs/v1/documents", server.uri());
-    let upload_url = format!("{}/upload/drive/v3/files", server.uri());
-    let files_url = format!("{}/drive/v3/files", server.uri());
-    let mut out = Vec::new();
-
-    run_local_image_drive_public(
-        &test_config(),
-        &store,
-        Some("alice@example.com"),
-        local_drive_public_options(&image_path, &documents_url, &upload_url, &files_url),
-        &mut out,
-    )
-    .await
-    .unwrap();
-
-    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(output["staging"]["backend"], "drive-public");
-    assert_eq!(output["staging"]["cleanupCompleted"], true);
-    let requests = server.received_requests().await.unwrap();
-    let operations: Vec<_> = requests
-        .iter()
-        .map(|request| (request.method.as_str(), request.url.path()))
-        .collect();
-    assert_eq!(
-        operations,
-        vec![
-            ("POST", "/upload/drive/v3/files"),
-            ("POST", "/drive/v3/files/staged-image-123/permissions"),
-            ("GET", "/docs/v1/documents/document-123"),
-            ("POST", "/docs/v1/documents/document-123:batchUpdate"),
-            ("DELETE", "/drive/v3/files/staged-image-123"),
-        ]
-    );
-}
-
-#[tokio::test]
-async fn drive_public_policy_block_is_typed_and_deletes_the_upload() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/upload/drive/v3/files"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "blocked-image-123", "webViewLink": "https://drive.invalid/view"
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/drive/v3/files/blocked-image-123/permissions"))
-        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
-            "error": {"errors": [{"reason": "publishOutNotPermitted"}]}
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("DELETE"))
-        .and(path("/drive/v3/files/blocked-image-123"))
-        .respond_with(ResponseTemplate::new(204))
-        .mount(&server)
-        .await;
-    let temp_dir = tempfile::tempdir().unwrap();
-    let image_path = temp_dir.path().join("blocked.png");
-    local_png(&image_path);
-    let store = MemoryStore::default();
-    store
-        .save_token("alice@example.com", &docs_and_drive_token())
-        .unwrap();
-    let documents_url = format!("{}/docs/v1/documents", server.uri());
-    let upload_url = format!("{}/upload/drive/v3/files", server.uri());
-    let files_url = format!("{}/drive/v3/files", server.uri());
-    let mut out = Vec::new();
-
-    let error = run_local_image_drive_public(
-        &test_config(),
-        &store,
-        Some("alice@example.com"),
-        local_drive_public_options(&image_path, &documents_url, &upload_url, &files_url),
-        &mut out,
-    )
-    .await
-    .unwrap_err();
-
-    assert!(format!("{error:#}").contains("staged file cleanup completed"));
-    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(output["code"], "DOCS_IMAGE_STAGING_POLICY_BLOCKED");
-    assert_eq!(output["googleReason"], "publishOutNotPermitted");
-    assert_eq!(output["cleanupCompleted"], true);
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.len(), 3);
-    assert_eq!(requests[2].method.as_str(), "DELETE");
-}
-
-#[tokio::test]
-async fn drive_public_cleanup_failure_returns_account_scoped_cleanup_command() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/upload/drive/v3/files"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "orphaned-image-123", "webViewLink": "https://drive.invalid/view"
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/drive/v3/files/orphaned-image-123/permissions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/docs/v1/documents/document-123"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/docs/v1/documents/document-123:batchUpdate"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "documentId": "document-123", "replies": [{}]
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("DELETE"))
-        .and(path("/drive/v3/files/orphaned-image-123"))
-        .respond_with(ResponseTemplate::new(503).set_body_string("temporary cleanup failure"))
-        .expect(1)
-        .mount(&server)
-        .await;
-    let temp_dir = tempfile::tempdir().unwrap();
-    let image_path = temp_dir.path().join("cleanup failure.png");
-    local_png(&image_path);
-    let store = MemoryStore::default();
-    store
-        .save_token("alice@example.com", &docs_and_drive_token())
-        .unwrap();
-    let documents_url = format!("{}/docs/v1/documents", server.uri());
-    let upload_url = format!("{}/upload/drive/v3/files", server.uri());
-    let files_url = format!("{}/drive/v3/files", server.uri());
-    let mut out = Vec::new();
-
-    let error = run_local_image_drive_public(
-        &test_config(),
-        &store,
-        Some("alice@example.com"),
-        local_drive_public_options(&image_path, &documents_url, &upload_url, &files_url),
-        &mut out,
-    )
-    .await
-    .unwrap_err();
-
-    assert!(format!("{error:#}").contains("insertion succeeded"));
-    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(output["code"], "DOCS_IMAGE_INSERTED_CLEANUP_FAILED");
-    assert_eq!(output["partialSuccess"], true);
-    assert_eq!(output["stagedResourceId"], "orphaned-image-123");
-    assert_eq!(
-        output["cleanupCommand"],
-        serde_json::json!([
-            "goog",
-            "--account",
-            "alice@example.com",
-            "drive",
-            "delete",
-            "orphaned-image-123"
-        ])
-    );
-}
-
-#[tokio::test]
-async fn drive_public_docs_failure_deletes_the_staged_file() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/upload/drive/v3/files"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "failed-image-123", "webViewLink": "https://drive.invalid/view"
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/drive/v3/files/failed-image-123/permissions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/docs/v1/documents/document-123"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/docs/v1/documents/document-123:batchUpdate"))
-        .respond_with(ResponseTemplate::new(409).set_body_json(serde_json::json!({
-            "error": {"status": "FAILED_PRECONDITION", "message": "revision mismatch"}
-        })))
-        .mount(&server)
-        .await;
-    Mock::given(method("DELETE"))
-        .and(path("/drive/v3/files/failed-image-123"))
-        .respond_with(ResponseTemplate::new(204))
-        .mount(&server)
-        .await;
-    let temp_dir = tempfile::tempdir().unwrap();
-    let image_path = temp_dir.path().join("revision mismatch.png");
-    local_png(&image_path);
-    let store = MemoryStore::default();
-    store
-        .save_token("alice@example.com", &docs_and_drive_token())
-        .unwrap();
-    let documents_url = format!("{}/docs/v1/documents", server.uri());
-    let upload_url = format!("{}/upload/drive/v3/files", server.uri());
-    let files_url = format!("{}/drive/v3/files", server.uri());
-
-    let error = run_local_image_drive_public(
-        &test_config(),
-        &store,
-        Some("alice@example.com"),
-        local_drive_public_options(&image_path, &documents_url, &upload_url, &files_url),
-        &mut Vec::new(),
-    )
-    .await
-    .unwrap_err();
-
-    assert!(format!("{error:#}").contains("staged Drive file cleanup completed"));
-    let requests = server.received_requests().await.unwrap();
-    assert_eq!(requests.last().unwrap().method.as_str(), "DELETE");
 }
 
 fn dry_run_apply_list_command(
@@ -1009,6 +325,1430 @@ async fn run_map_prints_human_document_map_for_manual_page_breaks() {
 }
 
 #[tokio::test]
+async fn run_compare_reports_semantic_match_while_ignoring_generated_ids() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-123");
+    source["body"]["content"][3]["paragraph"]["paragraphStyle"]["headingId"] =
+        serde_json::json!("source-heading");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["title"] = serde_json::json!("Copied title");
+    target["revisionId"] = serde_json::json!("target-revision");
+    target["body"]["content"][3]["paragraph"]["paragraphStyle"]["headingId"] =
+        serde_json::json!("target-heading");
+
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/target-456"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(target))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    run_compare_to(
+        &client,
+        CompareDocumentsCommand {
+            source_document_id: "source-123".into(),
+            target_document_id: "target-456".into(),
+            source_account: None,
+            target_account: None,
+            json: true,
+            scope: DocsCompareScope::All,
+            fail_on_difference: false,
+            max_differences: 20,
+            summary_only: false,
+            difference_pattern: None,
+            required_executable_sha256: None,
+            required_source_revision_id: None,
+            required_target_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["reportType"], "goog.docs.compare");
+    assert_eq!(output["reportSchemaVersion"], 1);
+    let compared_at = output["comparedAt"].as_str().unwrap();
+    assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
+    assert!(compared_at.ends_with('Z'));
+    assert_eq!(output["googCliVersion"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(output["googCliExecutionOs"], std::env::consts::OS);
+    assert_eq!(output["googCliExecutionArch"], std::env::consts::ARCH);
+    let executable_path = output["googCliExecutablePath"].as_str().unwrap();
+    assert!(std::path::Path::new(executable_path).is_absolute());
+    assert!(std::path::Path::new(executable_path).is_file());
+    let executable_sha256 = output["googCliExecutableSha256"].as_str().unwrap();
+    assert_eq!(executable_sha256.len(), 64);
+    assert!(executable_sha256
+        .bytes()
+        .all(|byte| byte.is_ascii_hexdigit()));
+    assert_eq!(
+        output["replayCommand"],
+        serde_json::json!([
+            executable_path,
+            "docs",
+            "compare",
+            "source-123",
+            "target-456",
+            "--required-executable-sha256",
+            executable_sha256,
+            "--json",
+            "--scope",
+            "all",
+            "--max-differences",
+            "20",
+            "--required-source-revision-id",
+            "rev-search",
+            "--required-target-revision-id",
+            "target-revision"
+        ])
+    );
+    assert_eq!(output["comparisonScope"], "all");
+    assert_eq!(output["failOnDifference"], false);
+    assert_eq!(output["maxDifferences"], 20);
+    assert_eq!(output["sourceDocumentId"], "source-123");
+    assert_eq!(output["sourceDocumentTitle"], "Searchable");
+    assert_eq!(output["sourceRevisionId"], "rev-search");
+    assert_eq!(
+        output["sourceDocumentUrl"],
+        "https://docs.google.com/document/d/source-123/edit"
+    );
+    assert_eq!(output["targetDocumentId"], "target-456");
+    assert_eq!(output["targetDocumentTitle"], "Copied title");
+    assert_eq!(output["targetRevisionId"], "target-revision");
+    assert_eq!(
+        output["targetDocumentUrl"],
+        "https://docs.google.com/document/d/target-456/edit"
+    );
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["scopes"][0]["scope"], "inventory");
+    assert_eq!(output["scopes"][0]["sourceInventory"]["breaks"], 1);
+    assert_eq!(output["scopes"][1]["scope"], "visual-system");
+    assert_eq!(output["scopes"][2]["scope"], "formatting");
+    assert_eq!(output["scopes"][3]["scope"], "content");
+    assert!(output["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|scope| scope["matches"] == true));
+    assert!(output["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|scope| scope["differenceCount"] == 0));
+}
+
+#[tokio::test]
+async fn run_compare_unified_records_and_replays_the_resolved_account() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-123");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+
+    for (document_id, document) in [("source-123", source), ("target-456", target)] {
+        Mock::given(method("GET"))
+            .and(path(format!("/docs/v1/documents/{document_id}")))
+            .and(header("authorization", "Bearer bob-access"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(document))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut state = RuntimeState::default();
+    state.set_resource_account(resource_key("docs", "source-123"), "bob@example.com");
+    state.set_resource_account(resource_key("docs", "target-456"), "bob@example.com");
+    save_runtime_state_to_path(&state, &state_path).unwrap();
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_compare_unified_to(
+        &config,
+        &store,
+        None,
+        CompareDocumentsCommand {
+            source_document_id: "source-123".into(),
+            target_document_id: "target-456".into(),
+            source_account: None,
+            target_account: None,
+            json: true,
+            scope: DocsCompareScope::All,
+            fail_on_difference: true,
+            max_differences: 20,
+            summary_only: false,
+            difference_pattern: None,
+            required_executable_sha256: None,
+            required_source_revision_id: None,
+            required_target_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["sourceAccount"], "bob@example.com");
+    assert_eq!(output["targetAccount"], "bob@example.com");
+    assert!(output["accountOverride"].is_null());
+    assert_eq!(output["replayCommand"][0], output["googCliExecutablePath"]);
+    assert_eq!(
+        &output["replayCommand"].as_array().unwrap()[1..3],
+        serde_json::json!(["--account", "bob@example.com"])
+            .as_array()
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn run_compare_unified_uses_and_replays_distinct_document_accounts() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-123");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/target-456"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(target))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_compare_unified_to(
+        &config,
+        &store,
+        None,
+        CompareDocumentsCommand {
+            source_document_id: "source-123".into(),
+            target_document_id: "target-456".into(),
+            source_account: Some("alice@example.com".into()),
+            target_account: Some("bob@example.com".into()),
+            json: true,
+            scope: DocsCompareScope::All,
+            fail_on_difference: true,
+            max_differences: 20,
+            summary_only: false,
+            difference_pattern: None,
+            required_executable_sha256: None,
+            required_source_revision_id: None,
+            required_target_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+        None,
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["sourceAccount"], "alice@example.com");
+    assert_eq!(output["targetAccount"], "bob@example.com");
+    assert!(output["replayCommand"]
+        .as_array()
+        .unwrap()
+        .windows(2)
+        .any(|arguments| {
+            arguments[0] == "--source-account" && arguments[1] == "alice@example.com"
+        }));
+    assert!(output["replayCommand"]
+        .as_array()
+        .unwrap()
+        .windows(2)
+        .any(|arguments| {
+            arguments[0] == "--target-account" && arguments[1] == "bob@example.com"
+        }));
+}
+
+#[tokio::test]
+async fn run_compare_reports_content_difference() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-123");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["content"] =
+        serde_json::json!("Changed title\n");
+
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/target-456"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(target))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let error = run_compare_to(
+        &client,
+        CompareDocumentsCommand {
+            source_document_id: "source-123".into(),
+            target_document_id: "target-456".into(),
+            source_account: None,
+            target_account: None,
+            json: false,
+            scope: DocsCompareScope::All,
+            fail_on_difference: true,
+            max_differences: 20,
+            summary_only: false,
+            difference_pattern: None,
+            required_executable_sha256: None,
+            required_source_revision_id: None,
+            required_target_revision_id: None,
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Google Docs comparison found semantic differences"
+    );
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("Report type: goog.docs.compare"));
+    assert!(output.contains("Report schema version: 1"));
+    let compared_at = output
+        .lines()
+        .find_map(|line| line.strip_prefix("Compared at: "))
+        .unwrap();
+    assert!(chrono::DateTime::parse_from_rfc3339(compared_at).is_ok());
+    assert!(compared_at.ends_with('Z'));
+    assert!(output.contains(&format!("goog CLI version: {}", env!("CARGO_PKG_VERSION"))));
+    let execution_platform = output
+        .lines()
+        .find_map(|line| line.strip_prefix("goog CLI execution platform: "))
+        .unwrap();
+    assert_eq!(
+        execution_platform,
+        format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH)
+    );
+    let executable_path = output
+        .lines()
+        .find_map(|line| line.strip_prefix("goog CLI executable path: "))
+        .unwrap();
+    assert!(std::path::Path::new(executable_path).is_absolute());
+    assert!(std::path::Path::new(executable_path).is_file());
+    let executable_fingerprint = output
+        .lines()
+        .find_map(|line| line.strip_prefix("goog CLI executable SHA-256: "))
+        .unwrap();
+    assert_eq!(executable_fingerprint.len(), 64);
+    assert!(executable_fingerprint
+        .bytes()
+        .all(|byte| byte.is_ascii_hexdigit()));
+    assert!(output.contains(&format!(
+        "Replay command: {} docs compare source-123 target-456 --required-executable-sha256 {} --scope all --fail-on-difference --max-differences 20 --required-source-revision-id rev-search --required-target-revision-id rev-search",
+        goog_cli_executable_path().unwrap(),
+        goog_cli_executable_sha256().unwrap()
+    )));
+    assert!(output.contains(
+        "Comparison settings: scope=all, fail-on-difference=yes, max-differences=20, summary-only=no"
+    ));
+    assert!(output.contains(
+        "Source: Searchable [source-123] https://docs.google.com/document/d/source-123/edit [revision rev-search]"
+    ));
+    assert!(output.contains(
+        "Target: Searchable [target-456] https://docs.google.com/document/d/target-456/edit [revision rev-search]"
+    ));
+    assert!(output.contains("inventory        yes"));
+    assert!(output.contains("visual-system    yes"));
+    assert!(output.contains("formatting       yes"));
+    assert!(output.contains("content          no"));
+    assert!(output.contains("Pattern (1): /entries/*/preview"));
+    assert!(output
+        .contains("Example /entries/0/preview: source=\"Project Plan\", target=\"Changed title\""));
+    assert!(
+        output.contains("/entries/0/preview: source=\"Project Plan\", target=\"Changed title\"")
+    );
+    assert!(output.contains("Overall: different"));
+}
+
+#[test]
+fn comparison_revision_guards_reject_drift_and_missing_revision_metadata() {
+    let drift_error = validate_comparison_revision(
+        "source",
+        Some("recorded-revision"),
+        Some("current-revision"),
+    )
+    .unwrap_err();
+    assert_eq!(
+        drift_error.to_string(),
+        "required source revision `recorded-revision` does not match current revision `current-revision`"
+    );
+
+    let missing_error =
+        validate_comparison_revision("target", Some("recorded-revision"), None).unwrap_err();
+    assert_eq!(
+        missing_error.to_string(),
+        "cannot verify required target revision `recorded-revision` because Google did not return a revision ID"
+    );
+
+    validate_comparison_revision("source", Some("same-revision"), Some("same-revision")).unwrap();
+    validate_comparison_revision("target", None, None).unwrap();
+}
+
+#[test]
+fn executable_guard_rejects_binary_drift() {
+    let actual = goog_cli_executable_sha256().unwrap();
+    validate_executable_sha256(Some(actual)).unwrap();
+    validate_executable_sha256(None).unwrap();
+
+    let error = validate_executable_sha256(Some(
+        "0000000000000000000000000000000000000000000000000000000000000000",
+    ))
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "required goog CLI executable SHA-256 `0000000000000000000000000000000000000000000000000000000000000000` does not match running executable SHA-256 `{actual}`"
+        )
+    );
+}
+
+#[test]
+fn compare_scope_limits_output_and_acceptance_to_selected_scope() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["content"] =
+        serde_json::json!("Changed title\n");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::VisualSystem,
+        true,
+        comparison_preview(20, None),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["comparisonScope"], "visual-system");
+    assert_eq!(output["failOnDifference"], true);
+    assert_eq!(output["maxDifferences"], 20);
+    assert_eq!(output["scopes"].as_array().unwrap().len(), 1);
+    assert_eq!(output["scopes"][0]["scope"], "visual-system");
+}
+
+#[test]
+fn formatting_comparison_ignores_prose_positions_and_empty_run_splits() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["content"] =
+        serde_json::json!("Different title with a different length\n");
+    target["body"]["content"][0]["paragraph"]["elements"] = serde_json::json!([
+        {
+            "startIndex": 50,
+            "endIndex": 94,
+            "textRun": { "content": "Different title with a different length" }
+        },
+        {
+            "startIndex": 94,
+            "endIndex": 95,
+            "textRun": { "content": "\n" }
+        }
+    ]);
+    target["body"]["content"][0]["startIndex"] = serde_json::json!(50);
+    target["body"]["content"][0]["endIndex"] = serde_json::json!(95);
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        true,
+        comparison_preview(20, None),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["scopes"][0]["scope"], "formatting");
+    assert_eq!(output["scopes"][0]["differenceCount"], 0);
+}
+
+#[test]
+fn formatting_comparison_reports_paragraph_style_changes() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    let error = write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        true,
+        comparison_preview(20, None),
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Google Docs comparison found semantic differences"
+    );
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], false);
+    assert_eq!(
+        output["scopes"][0]["differences"][0]["path"],
+        "/entries/0/paragraphStyle"
+    );
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"][0],
+        serde_json::json!({
+            "path": "/entries/*/paragraphStyle",
+            "count": 1,
+            "example": {
+                "path": "/entries/0/paragraphStyle",
+                "source": "<missing>",
+                "target": "{\"alignment\":\"CENTER\"}"
+            }
+        })
+    );
+}
+
+#[test]
+fn comparison_groups_repeated_array_differences_by_path_pattern() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    for paragraph in target["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"]["alignment"] = serde_json::json!("CENTER");
+    }
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(1, None),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["totalDifferenceCount"], 2);
+    assert_eq!(output["totalDisplayedDifferenceCount"], 1);
+    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 1);
+    assert!(output.get("totalPreviewDifferenceCount").is_none());
+    assert!(output.get("totalDifferenceCountOutsidePreview").is_none());
+    assert_eq!(output["scopes"][0]["differenceCount"], 2);
+    assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 1);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 1);
+    assert_eq!(
+        output["scopes"][0]["differences"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"][0],
+        serde_json::json!({
+            "path": "/entries/*/paragraphStyle",
+            "count": 2,
+            "example": {
+                "path": "/entries/0/paragraphStyle",
+                "source": "<missing>",
+                "target": "{\"alignment\":\"CENTER\"}"
+            }
+        })
+    );
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"][0]["example"]["path"],
+        output["scopes"][0]["differences"][0]["path"]
+    );
+}
+
+#[test]
+fn comparison_can_suppress_raw_difference_paths() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(0, None),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["totalDifferenceCount"], 1);
+    assert_eq!(output["totalDisplayedDifferenceCount"], 0);
+    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 1);
+    assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 0);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 1);
+    assert!(output["scopes"][0].get("differences").is_none());
+    assert_eq!(output["scopes"][0]["differencePatterns"][0]["count"], 1);
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"][0]["example"]["path"],
+        "/entries/0/paragraphStyle"
+    );
+}
+
+#[test]
+fn summary_only_comparison_suppresses_all_difference_details() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+    let preview = DocumentComparisonPreview {
+        max_differences: 20,
+        summary_only: true,
+        difference_pattern: None,
+    };
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        false,
+        preview,
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["summaryOnly"], true);
+    assert_eq!(output["totalDifferenceCount"], 1);
+    assert_eq!(output["totalDisplayedDifferenceCount"], 0);
+    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 0);
+    assert_eq!(output["totalDifferenceCountHiddenBySummary"], 1);
+    assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 0);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 0);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenBySummary"], 1);
+    assert!(output["scopes"][0].get("differencePatterns").is_none());
+    assert!(output["scopes"][0].get("differences").is_none());
+}
+
+#[test]
+fn summary_only_human_comparison_attributes_suppressed_paths_to_summary_mode() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+    let preview = DocumentComparisonPreview {
+        max_differences: 20,
+        summary_only: true,
+        difference_pattern: None,
+    };
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        preview,
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("1 difference hidden by summary mode"));
+    assert!(!output.contains("... 1 more difference"));
+    assert!(output.contains(
+        "Difference totals: 1 overall (0 displayed, 0 hidden by limit, 1 hidden by summary mode)"
+    ));
+}
+
+#[test]
+fn filtered_summary_only_human_comparison_attributes_matching_paths_to_summary_mode() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+    let preview = DocumentComparisonPreview {
+        max_differences: 20,
+        summary_only: true,
+        difference_pattern: Some("/entries/*/paragraphStyle"),
+    };
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        preview,
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("1 difference hidden by summary mode (matching the preview filter)"));
+    assert!(!output.contains("... 1 more difference matching the preview filter"));
+}
+
+#[test]
+fn comparison_filters_path_previews_by_reported_pattern() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    for paragraph in source["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"] = serde_json::json!({
+            "alignment": "START",
+            "direction": "LEFT_TO_RIGHT"
+        });
+    }
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    for paragraph in target["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"]["alignment"] = serde_json::json!("CENTER");
+        paragraph["paragraph"]["paragraphStyle"]["direction"] = serde_json::json!("RIGHT_TO_LEFT");
+    }
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(1, Some("/entries/*/paragraphStyle/direction")),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["differencePreviewPattern"],
+        "/entries/*/paragraphStyle/direction"
+    );
+    assert_eq!(
+        output["replayCommand"],
+        serde_json::json!([
+            goog_cli_executable_path().unwrap(),
+            "docs",
+            "compare",
+            "document-123",
+            "target-456",
+            "--required-executable-sha256",
+            goog_cli_executable_sha256().unwrap(),
+            "--json",
+            "--scope",
+            "formatting",
+            "--max-differences",
+            "1",
+            "--difference-pattern",
+            "/entries/*/paragraphStyle/direction",
+            "--required-source-revision-id",
+            "rev-search",
+            "--required-target-revision-id",
+            "rev-search"
+        ])
+    );
+    assert_eq!(output["totalDifferenceCount"], 4);
+    assert_eq!(output["totalDisplayedDifferenceCount"], 1);
+    assert_eq!(output["totalDifferenceCountHiddenByLimit"], 1);
+    assert_eq!(output["totalPreviewDifferenceCount"], 2);
+    assert_eq!(output["totalDifferenceCountOutsidePreview"], 2);
+    assert_eq!(output["scopes"][0]["differenceCount"], 4);
+    assert_eq!(output["scopes"][0]["displayedDifferenceCount"], 1);
+    assert_eq!(output["scopes"][0]["differenceCountHiddenByLimit"], 1);
+    assert_eq!(output["scopes"][0]["previewDifferenceCount"], 2);
+    assert_eq!(output["scopes"][0]["differenceCountOutsidePreview"], 2);
+    assert_eq!(
+        output["scopes"][0]["differencePatterns"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        output["scopes"][0]["differences"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        output["scopes"][0]["differences"][0]["path"],
+        "/entries/0/paragraphStyle/direction"
+    );
+}
+
+#[test]
+fn comparison_report_preserves_explicit_account_in_replay_evidence() {
+    let source_map = build_document_map(&searchable_document());
+    let mut target = searchable_document();
+    target["documentId"] = serde_json::json!("target-456");
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison_with_settings(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocumentComparisonSettings {
+            scope: DocsCompareScope::All,
+            fail_on_difference: true,
+            preview: comparison_preview(20, None),
+            account_override: Some("owner@example.com"),
+            source_account: Some("owner@example.com"),
+            target_account: Some("owner@example.com"),
+        },
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["accountOverride"], "owner@example.com");
+    assert_eq!(output["sourceAccount"], "owner@example.com");
+    assert_eq!(output["targetAccount"], "owner@example.com");
+    assert_eq!(
+        output["replayCommand"],
+        serde_json::json!([
+            goog_cli_executable_path().unwrap(),
+            "--account",
+            "owner@example.com",
+            "docs",
+            "compare",
+            "document-123",
+            "target-456",
+            "--required-executable-sha256",
+            goog_cli_executable_sha256().unwrap(),
+            "--json",
+            "--scope",
+            "all",
+            "--fail-on-difference",
+            "--max-differences",
+            "20",
+            "--required-source-revision-id",
+            "rev-search",
+            "--required-target-revision-id",
+            "rev-search"
+        ])
+    );
+
+    let mut human_out = Vec::new();
+    write_document_comparison_with_settings(
+        &mut human_out,
+        &source_map,
+        &target_map,
+        false,
+        DocumentComparisonSettings {
+            scope: DocsCompareScope::All,
+            fail_on_difference: true,
+            preview: comparison_preview(20, None),
+            account_override: Some("owner@example.com"),
+            source_account: Some("owner@example.com"),
+            target_account: Some("owner@example.com"),
+        },
+    )
+    .unwrap();
+    let human_output = String::from_utf8(human_out).unwrap();
+    assert!(human_output.contains("Account override: owner@example.com"));
+    assert!(human_output.contains(&format!(
+        "Replay command: {} --account 'owner@example.com' docs compare",
+        goog_cli_executable_path().unwrap()
+    )));
+}
+
+#[test]
+fn comparison_report_pins_each_account_when_documents_used_different_accounts() {
+    let source_map = build_document_map(&searchable_document());
+    let mut target = searchable_document();
+    target["documentId"] = serde_json::json!("target-456");
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison_with_settings(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocumentComparisonSettings {
+            scope: DocsCompareScope::All,
+            fail_on_difference: false,
+            preview: comparison_preview(20, None),
+            account_override: None,
+            source_account: Some("alice@example.com"),
+            target_account: Some("bob@example.com"),
+        },
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["sourceAccount"], "alice@example.com");
+    assert_eq!(output["targetAccount"], "bob@example.com");
+    assert_eq!(
+        output["replayCommand"],
+        serde_json::json!([
+            goog_cli_executable_path().unwrap(),
+            "docs",
+            "compare",
+            "document-123",
+            "target-456",
+            "--required-executable-sha256",
+            goog_cli_executable_sha256().unwrap(),
+            "--source-account",
+            "alice@example.com",
+            "--target-account",
+            "bob@example.com",
+            "--json",
+            "--scope",
+            "all",
+            "--max-differences",
+            "20",
+            "--required-source-revision-id",
+            "rev-search",
+            "--required-target-revision-id",
+            "rev-search"
+        ])
+    );
+}
+
+#[test]
+fn filtered_human_comparison_distinguishes_matching_and_other_differences() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    for paragraph in source["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"] = serde_json::json!({
+            "alignment": "START",
+            "direction": "LEFT_TO_RIGHT"
+        });
+    }
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    for paragraph in target["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"]["alignment"] = serde_json::json!("CENTER");
+        paragraph["paragraph"]["paragraphStyle"]["direction"] = serde_json::json!("RIGHT_TO_LEFT");
+    }
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(1, Some("/entries/*/paragraphStyle/direction")),
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains(&format!(
+        "Replay command: {} docs compare document-123 target-456 --required-executable-sha256 {} --scope formatting --max-differences 1 --difference-pattern '/entries/*/paragraphStyle/direction'",
+        goog_cli_executable_path().unwrap(),
+        goog_cli_executable_sha256().unwrap()
+    )));
+    assert!(output.contains("... 1 more difference matching the preview filter"));
+    assert!(output.contains("2 differences outside the preview filter"));
+    assert!(output.contains(
+        "Difference totals: 4 overall, 2 matching filter (1 displayed, 1 hidden by limit), 2 outside filter"
+    ));
+    assert!(!output.contains("... 3 more differences"));
+}
+
+#[test]
+fn unfiltered_human_comparison_reports_aggregate_difference_totals() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    for paragraph in target["body"]["content"].as_array_mut().unwrap() {
+        paragraph["paragraph"]["paragraphStyle"]["alignment"] = serde_json::json!("CENTER");
+    }
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(1, None),
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("Difference totals: 2 overall (1 displayed, 1 hidden by limit)"));
+}
+
+#[test]
+fn filtered_human_comparison_treats_an_absent_scope_pattern_as_outside() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    let mut target = searchable_document();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::All,
+        false,
+        comparison_preview(1, Some("/entries/*/paragraphStyle/alignment")),
+    )
+    .unwrap();
+
+    let output = String::from_utf8(out).unwrap();
+    assert!(output.contains("3 differences outside the preview filter"));
+    assert!(!output.contains("... 3 more differences matching the preview filter"));
+}
+
+#[test]
+fn filtered_json_comparison_treats_an_absent_scope_pattern_as_outside() {
+    let mut source = searchable_document();
+    let second_paragraph = source["body"]["content"][0].clone();
+    source["body"]["content"] =
+        serde_json::json!([source["body"]["content"][0].clone(), second_paragraph]);
+    let mut target = searchable_document();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::All,
+        false,
+        comparison_preview(1, Some("/entries/*/paragraphStyle/alignment")),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let inventory = output["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|scope| scope["scope"] == "inventory")
+        .unwrap();
+    assert_eq!(
+        output["totalDifferenceCount"],
+        output["scopes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|scope| scope["differenceCount"].as_u64().unwrap())
+            .sum::<u64>()
+    );
+    assert_eq!(output["totalPreviewDifferenceCount"], 1);
+    assert_eq!(
+        output["totalDifferenceCountOutsidePreview"],
+        output["totalDifferenceCount"].as_u64().unwrap() - 1
+    );
+    assert_eq!(inventory["previewDifferenceCount"], 0);
+    assert_eq!(inventory["displayedDifferenceCount"], 0);
+    assert_eq!(inventory["differenceCountHiddenByLimit"], 0);
+    assert_eq!(
+        inventory["differenceCountOutsidePreview"],
+        inventory["differenceCount"]
+    );
+}
+
+#[test]
+fn comparison_rejects_an_unreported_difference_pattern() {
+    let source = searchable_document();
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"]["alignment"] =
+        serde_json::json!("CENTER");
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    let error = write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(20, Some("/entries/*/paragraphStyle/alignmnt")),
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "difference pattern `/entries/*/paragraphStyle/alignmnt` was not found in the selected comparison scope. Closest reported pattern: `/entries/*/paragraphStyle`. Run without --difference-pattern to list all reported patterns"
+    );
+    assert!(out.is_empty());
+}
+
+#[test]
+fn closest_difference_patterns_rank_typos_before_other_reported_patterns() {
+    let mut source = searchable_document();
+    source["body"]["content"][0]["paragraph"]["paragraphStyle"] = serde_json::json!({
+        "alignment": "START",
+        "direction": "LEFT_TO_RIGHT",
+        "lineSpacing": 100
+    });
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["paragraphStyle"] = serde_json::json!({
+        "alignment": "CENTER",
+        "direction": "RIGHT_TO_LEFT",
+        "lineSpacing": 115
+    });
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    let error = write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        false,
+        DocsCompareScope::Formatting,
+        false,
+        comparison_preview(20, Some("/entries/*/paragraphStyle/lineSpcing")),
+    )
+    .unwrap_err();
+
+    let message = error.to_string();
+    assert!(message.contains("Closest reported patterns: `/entries/*/paragraphStyle/lineSpacing`,"));
+    assert!(message.contains("`/entries/*/paragraphStyle/alignment`"));
+    assert!(message.contains("`/entries/*/paragraphStyle/direction`"));
+    assert!(out.is_empty());
+}
+
+#[test]
+fn formatting_comparison_ignores_font_redundant_with_inherited_named_style() {
+    let mut source = searchable_document();
+    source["namedStyles"] = serde_json::json!({
+        "styles": [
+            {
+                "namedStyleType": "NORMAL_TEXT",
+                "textStyle": {
+                    "weightedFontFamily": { "fontFamily": "Bai Jamjuree", "weight": 400 }
+                }
+            },
+            { "namedStyleType": "TITLE", "textStyle": { "fontSize": { "magnitude": 26, "unit": "PT" } } }
+        ]
+    });
+    source["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["textStyle"] = serde_json::json!({
+        "bold": true,
+        "weightedFontFamily": { "fontFamily": "Bai Jamjuree", "weight": 400 }
+    });
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["body"]["content"][0]["paragraph"]["elements"] = serde_json::json!([
+        {
+            "startIndex": 1,
+            "endIndex": 13,
+            "textRun": { "content": "Project Plan", "textStyle": { "bold": true } }
+        },
+        {
+            "startIndex": 13,
+            "endIndex": 14,
+            "textRun": {
+                "content": "\n",
+                "textStyle": {
+                    "bold": true,
+                    "weightedFontFamily": { "fontFamily": "Bai Jamjuree", "weight": 400 }
+                }
+            }
+        }
+    ]);
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::Formatting,
+        true,
+        comparison_preview(20, None),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["scopes"][0]["differenceCount"], 0);
+}
+
+#[test]
+fn visual_system_comparison_ignores_google_materialized_defaults() {
+    let mut source = searchable_document();
+    source["tabs"] = serde_json::json!([{
+        "tabProperties": { "tabId": "tab-1" },
+        "documentTab": {
+            "documentStyle": { "marginTop": { "magnitude": 72, "unit": "PT" } },
+            "namedStyles": { "styles": [{
+                "namedStyleType": "HEADING_1",
+                "paragraphStyle": {
+                    "namedStyleType": "HEADING_1",
+                    "keepWithNext": true
+                },
+                "textStyle": { "fontSize": { "magnitude": 20, "unit": "PT" } }
+            }] }
+        }
+    }]);
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["tabs"][0]["documentTab"]["documentStyle"]["pageNumberStart"] = serde_json::json!(1);
+    target["tabs"][0]["documentTab"]["namedStyles"]["styles"][0]["paragraphStyle"]
+        ["namedStyleType"] = serde_json::json!("NORMAL_TEXT");
+    target["tabs"][0]["documentTab"]["namedStyles"]["styles"][0]["paragraphStyle"]
+        ["pageBreakBefore"] = serde_json::json!(false);
+    target["tabs"][0]["documentTab"]["namedStyles"]["styles"][0]["textStyle"]["bold"] =
+        serde_json::json!(false);
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::VisualSystem,
+        true,
+        comparison_preview(20, None),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], true);
+    assert_eq!(output["scopes"][0]["differenceCount"], 0);
+}
+
+#[test]
+fn visual_system_comparison_preserves_non_default_page_number_start() {
+    let mut source = searchable_document();
+    source["tabs"] = serde_json::json!([{
+        "tabProperties": { "tabId": "tab-1" },
+        "documentTab": {
+            "documentStyle": { "marginTop": { "magnitude": 72, "unit": "PT" } },
+            "namedStyles": { "styles": [] }
+        }
+    }]);
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("target-456");
+    target["tabs"][0]["documentTab"]["documentStyle"]["pageNumberStart"] = serde_json::json!(2);
+    let source_map = build_document_map(&source);
+    let target_map = build_document_map(&target);
+    let mut out = Vec::new();
+
+    write_document_comparison(
+        &mut out,
+        &source_map,
+        &target_map,
+        true,
+        DocsCompareScope::VisualSystem,
+        false,
+        comparison_preview(20, None),
+    )
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["matches"], false);
+    assert_eq!(
+        output["scopes"][0]["differences"][0]["path"],
+        "/documentStyles/0/documentStyle/pageNumberStart"
+    );
+}
+
+#[test]
+fn comparison_differences_report_paths_missing_values_and_a_bounded_preview() {
+    let source = serde_json::json!({
+        "a/b": [0, 1, 2],
+        "removed": true,
+        "same": "value",
+    });
+    let target = serde_json::json!({
+        "a/b": [10, 11],
+        "added": false,
+        "same": "value",
+    });
+    let mut differences = Vec::new();
+
+    let count = collect_json_differences("", Some(&source), Some(&target), &mut differences, 4);
+
+    assert_eq!(count, 5);
+    assert_eq!(differences.len(), 4);
+    assert_eq!(differences[0].path, "/a~1b/0");
+    assert_eq!(differences[0].source, "0");
+    assert_eq!(differences[0].target, "10");
+    assert_eq!(differences[2].path, "/a~1b/2");
+    assert_eq!(differences[2].target, "<missing>");
+    assert_eq!(differences[3].path, "/added");
+    assert_eq!(differences[3].source, "<missing>");
+}
+
+#[tokio::test]
+async fn run_map_filters_page_and_section_breaks() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(document_with_initial_section_and_page_breaks()),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let mut json_out = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Breaks,
+        true,
+        &mut json_out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let breaks: serde_json::Value = serde_json::from_slice(&json_out).unwrap();
+    assert_eq!(breaks.as_array().unwrap().len(), 3);
+    assert_eq!(breaks[0]["kind"], "section-break");
+    assert_eq!(breaks[0]["location"]["index"], 0);
+    assert_eq!(breaks[0]["sectionType"], "CONTINUOUS");
+    assert_eq!(
+        breaks[0]["sectionStyle"]["contentDirection"],
+        "LEFT_TO_RIGHT"
+    );
+    assert_eq!(breaks[1]["kind"], "page-break");
+    assert_eq!(breaks[1]["location"]["index"], 14);
+    assert_eq!(breaks[1]["preview"], "[page break]");
+    assert_eq!(breaks[2]["kind"], "section-break");
+    assert_eq!(breaks[2]["location"]["index"], 27);
+    assert_eq!(breaks[2]["sectionType"], "NEXT_PAGE");
+    assert_eq!(breaks[2]["sectionStyle"]["defaultHeaderId"], "header-2");
+    assert_eq!(breaks[2]["sectionStyle"]["defaultFooterId"], "footer-2");
+    assert_eq!(breaks[2]["preview"], "[section break: next page]");
+
+    let mut human_out = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Breaks,
+        false,
+        &mut human_out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let human = String::from_utf8(human_out).unwrap();
+    assert!(human.contains("PageBreak"));
+    assert!(human.contains("header:header-2,footer:footer-2"));
+    assert!(human.contains("SectionBreak"));
+    assert!(human.contains("NEXT_PAGE"));
+}
+
+#[tokio::test]
 async fn run_map_json_emits_structured_locations_for_long_document_shape() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -1017,7 +1757,7 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
         .respond_with(
             ResponseTemplate::new(200).set_body_json(long_document_with_toc_and_objects()),
         )
-        .expect(1)
+        .expect(5)
         .mount(&server)
         .await;
 
@@ -1039,25 +1779,237 @@ async fn run_map_json_emits_structured_locations_for_long_document_shape() {
 
     let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
     assert_eq!(output["revisionId"], "rev-long");
-    assert_eq!(output["documentLocations"].as_array().unwrap().len(), 6);
+    assert_eq!(output["documentStyles"].as_array().unwrap().len(), 1);
+    assert_eq!(output["documentStyles"][0]["tabId"], "tab-1");
     assert_eq!(
-        output["entries"][0]["location"]["confidence"],
+        output["documentStyles"][0]["documentStyle"]["pageSize"]["width"]["magnitude"],
+        612
+    );
+    assert_eq!(
+        output["documentStyles"][0]["documentStyle"]["marginTop"]["magnitude"],
+        72
+    );
+    assert_eq!(output["namedStyles"].as_array().unwrap().len(), 1);
+    assert_eq!(output["namedStyles"][0]["tabId"], "tab-1");
+    assert_eq!(
+        output["namedStyles"][0]["namedStyles"]["styles"][0]["namedStyleType"],
+        "NORMAL_TEXT"
+    );
+    assert_eq!(
+        output["namedStyles"][0]["namedStyles"]["styles"][0]["textStyle"]["weightedFontFamily"]
+            ["fontFamily"],
+        "Bai Jamjuree"
+    );
+    assert_eq!(output["documentLocations"].as_array().unwrap().len(), 9);
+    assert_eq!(output["breaks"].as_array().unwrap().len(), 1);
+    assert_eq!(output["entries"][0]["kind"], "table-of-contents");
+    assert_eq!(
+        output["entries"][0]["preview"],
+        "[table of contents: 1 entry]"
+    );
+    assert_eq!(output["entries"][0]["location"]["index"], 1);
+    assert_eq!(output["entries"][0]["textRuns"][0]["startIndex"], 2);
+    assert_eq!(output["entries"][0]["textRuns"][0]["endIndex"], 23);
+    assert_eq!(
+        output["entries"][0]["textRuns"][0]["content"],
+        "วิธีใช้งาน\t3\n"
+    );
+    assert_eq!(
+        output["entries"][0]["textRuns"][0]["textStyle"]["link"]["headingId"],
+        "h.how-to"
+    );
+    assert_eq!(output["entries"][0]["paragraphs"][0]["startIndex"], 2);
+    assert_eq!(output["entries"][0]["paragraphs"][0]["endIndex"], 23);
+    assert_eq!(
+        output["entries"][0]["paragraphs"][0]["content"],
+        "วิธีใช้งาน\t3\n"
+    );
+    assert_eq!(
+        output["entries"][0]["paragraphs"][0]["paragraphStyle"]["namedStyleType"],
+        "NORMAL_TEXT"
+    );
+    assert_eq!(
+        output["entries"][0]["paragraphs"][0]["paragraphStyle"]["indentStart"]["magnitude"],
+        18
+    );
+    assert_eq!(
+        output["entries"][1]["location"]["confidence"],
         "table-of-contents"
     );
-    assert_eq!(output["entries"][0]["location"]["page"], 3);
-    assert_eq!(output["entries"][0]["preview"], "วิธีใช้งาน");
-    assert_eq!(output["entries"][1]["location"]["confidence"], "unknown");
-    assert!(output["entries"][1]["location"]["page"].is_null());
-    assert_eq!(output["entries"][2]["kind"], "table");
-    assert_eq!(output["entries"][2]["preview"], "หัวข้อ | สถานะ");
-    assert_eq!(output["entries"][3]["kind"], "inline-image");
-    assert_eq!(output["entries"][4]["kind"], "positioned-image");
+    assert_eq!(output["entries"][1]["location"]["page"], 3);
+    assert_eq!(output["entries"][1]["preview"], "วิธีใช้งาน");
+    assert_eq!(output["entries"][1]["headingId"], "h.how-to");
     assert_eq!(
-        output["entries"][5]["location"]["confidence"],
+        output["entries"][1]["paragraphStyle"]["alignment"],
+        "CENTER"
+    );
+    assert_eq!(
+        output["entries"][1]["paragraphStyle"]["spaceBelow"]["magnitude"],
+        10
+    );
+    assert_eq!(output["entries"][1]["paragraphStyle"]["keepWithNext"], true);
+    assert_eq!(output["entries"][1]["textRuns"][0]["startIndex"], 24);
+    assert_eq!(output["entries"][1]["textRuns"][0]["endIndex"], 28);
+    assert_eq!(
+        output["entries"][1]["textRuns"][0]["textStyle"]["weightedFontFamily"]["fontFamily"],
+        "Bai Jamjuree"
+    );
+    assert_eq!(output["entries"][1]["textRuns"][1]["startIndex"], 28);
+    assert_eq!(output["entries"][1]["textRuns"][1]["endIndex"], 35);
+    assert_eq!(output["entries"][1]["textRuns"][1]["content"], "ใช้งาน\n");
+    assert_eq!(
+        output["entries"][1]["textRuns"][1]["textStyle"]["underline"],
+        true
+    );
+    assert_eq!(output["entries"][2]["location"]["confidence"], "unknown");
+    assert!(output["entries"][2]["location"]["page"].is_null());
+    assert_eq!(output["entries"][3]["kind"], "table");
+    assert_eq!(output["entries"][3]["preview"], "หัวข้อ | สถานะ");
+    assert_eq!(output["entries"][4]["kind"], "inline-image");
+    assert_eq!(output["entries"][5]["kind"], "positioned-image");
+    assert_eq!(
+        output["entries"][6]["location"]["confidence"],
         "explicit-page-break"
     );
-    assert_eq!(output["entries"][5]["location"]["page"], 2);
-    assert_eq!(output["entries"][5]["location"]["contentLine"], 1);
+    assert_eq!(output["entries"][6]["location"]["page"], 2);
+    assert_eq!(output["entries"][6]["location"]["contentLine"], 1);
+    assert_eq!(output["entries"][7]["preview"], "[non-body inline image]");
+    assert!(output["entries"][7]["location"]["index"].is_null());
+    assert_eq!(
+        output["entries"][8]["preview"],
+        "[non-body positioned image]"
+    );
+    assert!(output["entries"][8]["location"]["index"].is_null());
+    assert_eq!(output["segments"].as_array().unwrap().len(), 3);
+    assert_eq!(output["segments"][0]["kind"], "header");
+    assert_eq!(output["segments"][0]["segmentId"], "header-123");
+    assert_eq!(output["segments"][0]["startIndex"], 0);
+    assert_eq!(output["segments"][0]["endIndex"], 17);
+    assert_eq!(
+        output["segments"][0]["preview"],
+        "Customer contact [page number]"
+    );
+    assert_eq!(output["segments"][0]["autoTextTypes"][0], "PAGE_NUMBER");
+    assert_eq!(output["segments"][0]["autoTexts"][0]["startIndex"], 16);
+    assert_eq!(output["segments"][0]["autoTexts"][0]["endIndex"], 17);
+    assert_eq!(output["segments"][0]["autoTexts"][0]["type"], "PAGE_NUMBER");
+    assert_eq!(
+        output["segments"][0]["autoTexts"][0]["textStyle"]["fontSize"]["magnitude"],
+        10
+    );
+    assert_eq!(output["segments"][0]["textRuns"][0]["startIndex"], 0);
+    assert_eq!(output["segments"][0]["textRuns"][0]["endIndex"], 16);
+    assert_eq!(
+        output["segments"][0]["textRuns"][0]["content"],
+        "Customer contact"
+    );
+    assert_eq!(
+        output["segments"][0]["textRuns"][0]["textStyle"]["weightedFontFamily"]["fontFamily"],
+        "Bai Jamjuree"
+    );
+    assert_eq!(output["segments"][0]["paragraphs"][0]["startIndex"], 0);
+    assert_eq!(output["segments"][0]["paragraphs"][0]["endIndex"], 17);
+    assert_eq!(
+        output["segments"][0]["paragraphs"][0]["content"],
+        "Customer contact"
+    );
+    assert_eq!(
+        output["segments"][0]["paragraphs"][0]["paragraphStyle"]["alignment"],
+        "CENTER"
+    );
+    assert_eq!(
+        output["segments"][0]["paragraphs"][0]["paragraphStyle"]["lineSpacing"],
+        100
+    );
+    assert_eq!(output["segments"][1]["segmentId"], "legacy-header");
+    assert_eq!(output["segments"][1]["preview"], "Legacy header");
+    assert_eq!(
+        output["segments"][1]["textRuns"][0]["content"],
+        "Legacy header\n"
+    );
+    assert_eq!(
+        output["segments"][1]["paragraphs"][0]["paragraphStyle"]["alignment"],
+        "END"
+    );
+    assert_eq!(
+        output["segments"][1]["paragraphs"][0]["paragraphStyle"]["spaceBelow"]["magnitude"],
+        4
+    );
+    assert_eq!(output["segments"][2]["kind"], "footer");
+    assert_eq!(output["segments"][2]["preview"], "[empty footer]");
+    assert_eq!(output["lists"].as_array().unwrap().len(), 1);
+    assert_eq!(output["lists"][0]["listId"], "list-abc");
+    assert_eq!(output["lists"][0]["itemCount"], 1);
+    assert_eq!(output["lists"][0]["nestingLevels"][0], 1);
+    assert_eq!(output["lists"][0]["glyphs"][0]["nestingLevel"], 1);
+    assert_eq!(output["lists"][0]["glyphs"][0]["glyphSymbol"], "○");
+    assert_eq!(
+        output["lists"][0]["preview"],
+        "เอกสารนี้มีข้อความภาษาไทยสำหรับทดสอบ"
+    );
+
+    let mut lists = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Lists,
+        true,
+        &mut lists,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let lists: serde_json::Value = serde_json::from_slice(&lists).unwrap();
+    assert_eq!(lists.as_array().unwrap().len(), 1);
+    assert_eq!(lists[0]["startIndex"], 35);
+    assert_eq!(lists[0]["endIndex"], 74);
+
+    let mut human_lists = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Lists,
+        false,
+        &mut human_lists,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let human_lists = String::from_utf8(human_lists).unwrap();
+    assert!(human_lists.contains("List"));
+    assert!(human_lists.contains("list-abc"));
+    assert!(human_lists.contains("○"));
+
+    let mut segments = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Segments,
+        true,
+        &mut segments,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let segments: serde_json::Value = serde_json::from_slice(&segments).unwrap();
+    assert_eq!(segments.as_array().unwrap().len(), 3);
+    assert_eq!(segments[0]["segmentId"], "header-123");
+
+    let mut human_segments = Vec::new();
+    run_map_to(
+        &client,
+        "document-123".into(),
+        DocsMapType::Segments,
+        false,
+        &mut human_segments,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+    let human_segments = String::from_utf8(human_segments).unwrap();
+    assert!(human_segments.contains("Segment"));
+    assert!(human_segments.contains("header-123"));
+    assert!(human_segments.contains("PAGE_NUMBER"));
 }
 
 #[tokio::test]
@@ -1099,47 +2051,6 @@ async fn run_map_json_emits_each_inline_image_in_a_paragraph() {
     assert_eq!(output["entries"][1]["preview"], "[inline image 2]");
     assert_eq!(output["entries"][0]["location"]["contentLine"], 1);
     assert_eq!(output["entries"][1]["location"]["contentLine"], 1);
-}
-
-#[tokio::test]
-async fn run_map_images_json_emits_inline_image_geometry_from_document_tabs() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/docs/v1/documents/document-123"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(tabbed_document_with_inline_image_geometry()),
-        )
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let store = MemoryStore::default();
-    let client = test_client(&store);
-    let mut out = Vec::new();
-    let documents_url = format!("{}/docs/v1/documents", server.uri());
-
-    run_map_to(
-        &client,
-        "document-123".into(),
-        DocsMapType::Images,
-        true,
-        &mut out,
-        Some(&documents_url),
-    )
-    .await
-    .unwrap();
-
-    let images: serde_json::Value = serde_json::from_slice(&out).unwrap();
-    assert_eq!(images.as_array().unwrap().len(), 1);
-    assert_eq!(images[0]["objectId"], "tab-inline-image-1");
-    assert_eq!(
-        images[0]["layoutMetadata"]["size"]["height"]["magnitude"],
-        500
-    );
-    assert_eq!(
-        images[0]["layoutMetadata"]["size"]["width"]["magnitude"],
-        284.136
-    );
 }
 
 #[tokio::test]
@@ -1876,21 +2787,29 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     .await
     .unwrap();
     let images: serde_json::Value = serde_json::from_slice(&images).unwrap();
-    assert_eq!(images.as_array().unwrap().len(), 2);
+    assert_eq!(images.as_array().unwrap().len(), 4);
     assert_eq!(images[0]["kind"], "inline-image");
     assert_eq!(images[0]["imageHandle"], "image-1");
     assert_eq!(images[0]["objectId"], "inline-image-1");
+    assert_eq!(images[0]["imageAltText"]["title"], "Process overview");
+    assert_eq!(images[0]["paragraphStyle"]["alignment"], "CENTER");
     assert_eq!(
-        images[0]["layoutMetadata"]["size"]["height"]["magnitude"],
-        156
+        images[0]["imageAltText"]["description"],
+        "Workflow from intake to delivery"
     );
     assert_eq!(
         images[0]["layoutMetadata"]["size"]["width"]["magnitude"],
-        468
+        144
+    );
+    assert_eq!(images[0]["layoutMetadata"]["marginLeft"]["magnitude"], 9);
+    assert_eq!(
+        images[0]["layoutMetadata"]["cropProperties"]["cropLeft"],
+        0.1
     );
     assert_eq!(images[1]["kind"], "positioned-image");
     assert_eq!(images[1]["imageHandle"], "image-2");
     assert_eq!(images[1]["objectId"], "positioned-image-1");
+    assert_eq!(images[1]["imageAltText"]["title"], "Page decoration");
     assert!(images[1]["location"]["index"].is_number());
     assert_eq!(
         images[1]["layoutMetadata"]["positioning"]["layout"],
@@ -1903,6 +2822,27 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(
         images[1]["layoutMetadata"]["size"]["height"]["magnitude"],
         72
+    );
+    assert_eq!(images[2]["kind"], "inline-image");
+    assert_eq!(images[2]["objectId"], "header-inline-image");
+    assert!(images[2]["location"]["index"].is_null());
+    assert_eq!(images[2]["preview"], "[non-body inline image]");
+    assert_eq!(
+        images[2]["imageAltText"]["description"],
+        "Customer header logo"
+    );
+    assert_eq!(
+        images[2]["layoutMetadata"]["size"]["height"]["magnitude"],
+        24
+    );
+    assert_eq!(images[3]["kind"], "positioned-image");
+    assert_eq!(images[3]["objectId"], "footer-positioned-image");
+    assert!(images[3]["location"]["index"].is_null());
+    assert_eq!(images[3]["preview"], "[non-body positioned image]");
+    assert_eq!(images[3]["imageAltText"]["title"], "Footer decoration");
+    assert_eq!(
+        images[3]["layoutMetadata"]["positioning"]["layout"],
+        "BEHIND_TEXT"
     );
 
     let mut human_images = Vec::new();
@@ -1922,6 +2862,9 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert!(human_images.contains("inline-image-1"));
     assert!(human_images.contains("image-2"));
     assert!(human_images.contains("positioned-image-1"));
+    assert!(human_images.contains("Image alt text"));
+    assert!(human_images.contains("Process overview"));
+    assert!(human_images.contains("Page decoration"));
 
     let mut tables = Vec::new();
     run_map_to(
@@ -1941,6 +2884,56 @@ async fn run_map_filters_images_and_tables_with_document_map_metadata() {
     assert_eq!(tables[0]["rows"], 1);
     assert_eq!(tables[0]["columns"], 2);
     assert_eq!(tables[0]["preview"], "หัวข้อ | สถานะ");
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableColumnProperties"][0]["width"]["magnitude"],
+        144
+    );
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableColumnProperties"][1]["widthType"],
+        "FIXED_WIDTH"
+    );
+    assert_eq!(tables[0]["layoutMetadata"]["pinnedHeaderRowsCount"], 1);
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableCellStyles"][0][0]["contentAlignment"],
+        "MIDDLE"
+    );
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableCellStyles"][0][0]["backgroundColor"]["color"]
+            ["rgbColor"]["blue"],
+        0.9
+    );
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableCellStyles"][0][0]["borderBottom"]["width"]["magnitude"],
+        1
+    );
+    assert_eq!(
+        tables[0]["layoutMetadata"]["tableCellStyles"][0][1],
+        serde_json::json!({})
+    );
+    assert_eq!(tables[0]["tableCellTextRuns"][0][0][0]["startIndex"], 77);
+    assert_eq!(tables[0]["tableCellTextRuns"][0][0][0]["endIndex"], 84);
+    assert_eq!(
+        tables[0]["tableCellTextRuns"][0][0][0]["textStyle"]["bold"],
+        true
+    );
+    assert_eq!(
+        tables[0]["tableCellTextRuns"][0][1][0]["content"],
+        "สถานะ\n"
+    );
+    assert_eq!(
+        tables[0]["tableCellTextRuns"][0][1][0]["textStyle"],
+        serde_json::json!({"italic": true})
+    );
+    assert_eq!(tables[0]["tableCellParagraphs"][0][0][0]["startIndex"], 77);
+    assert_eq!(tables[0]["tableCellParagraphs"][0][0][0]["endIndex"], 84);
+    assert_eq!(
+        tables[0]["tableCellParagraphs"][0][0][0]["content"],
+        "หัวข้อ\n"
+    );
+    assert_eq!(
+        tables[0]["tableCellParagraphs"][0][0][0]["paragraphStyle"]["alignment"],
+        "CENTER"
+    );
 }
 
 #[tokio::test]
@@ -1963,10 +2956,11 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
         InsertImageCommand {
             document_id: "document-123".into(),
             image_uri: "https://example.test/image.png".into(),
+            selector: Some(InsertTextSelector::PageLine { page: 2, line: 1 }),
+            segment_id: None,
             width: Some(468.0),
-            height: Some(500.0),
+            height: Some(240.0),
             fit: None,
-            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -1990,7 +2984,7 @@ async fn run_insert_image_and_table_dry_run_emit_native_requests() {
         image["requestBody"]["requests"][0]["insertInlineImage"]["objectSize"],
         serde_json::json!({
             "width": { "magnitude": 468.0, "unit": "PT" },
-            "height": { "magnitude": 500.0, "unit": "PT" }
+            "height": { "magnitude": 240.0, "unit": "PT" }
         })
     );
     assert_eq!(
@@ -2141,6 +3135,8 @@ async fn run_create_header_dry_run_emits_native_request() {
         &client,
         CreateHeaderCommand {
             document_id: "document-123".into(),
+            text: None,
+            section_break_index: Some(16),
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -2155,6 +3151,10 @@ async fn run_create_header_dry_run_emits_native_request() {
     assert_eq!(
         output["requestBody"]["requests"][0]["createHeader"]["type"],
         "DEFAULT"
+    );
+    assert_eq!(
+        output["requestBody"]["requests"][0]["createHeader"]["sectionBreakLocation"]["index"],
+        16
     );
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
@@ -2181,6 +3181,8 @@ async fn run_create_footer_dry_run_emits_native_request() {
         &client,
         CreateFooterCommand {
             document_id: "document-123".into(),
+            text: None,
+            section_break_index: None,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -2196,10 +3198,156 @@ async fn run_create_footer_dry_run_emits_native_request() {
         output["requestBody"]["requests"][0]["createFooter"]["type"],
         "DEFAULT"
     );
+    assert!(output["requestBody"]["requests"][0]["createFooter"]["sectionBreakLocation"].is_null());
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
         "rev-search"
     );
+}
+
+#[tokio::test]
+async fn run_create_header_populates_returned_segment_in_guarded_follow_up() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{ "createHeader": { "type": "DEFAULT" } }],
+            "writeControl": { "requiredRevisionId": "rev-search" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{ "createHeader": { "headerId": "header-123" } }],
+            "writeControl": { "requiredRevisionId": "rev-after-header" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{
+                "insertText": {
+                    "endOfSegmentLocation": { "segmentId": "header-123" },
+                    "text": "Confidential"
+                }
+            }],
+            "writeControl": { "requiredRevisionId": "rev-after-header" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}],
+            "writeControl": { "requiredRevisionId": "rev-after-text" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+    run_create_header_to(
+        &client,
+        CreateHeaderCommand {
+            document_id: "document-123".into(),
+            text: Some("Confidential".into()),
+            section_break_index: None,
+            dry_run: false,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["replies"][0]["createHeader"]["headerId"],
+        "header-123"
+    );
+    assert_eq!(output["replies"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        output["writeControl"]["requiredRevisionId"],
+        "rev-after-text"
+    );
+}
+
+#[tokio::test]
+async fn run_create_footer_populates_returned_segment_in_guarded_follow_up() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{ "createFooter": { "type": "DEFAULT" } }],
+            "writeControl": { "requiredRevisionId": "rev-search" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{ "createFooter": { "footerId": "footer-123" } }],
+            "writeControl": { "requiredRevisionId": "rev-after-footer" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{
+                "insertText": {
+                    "endOfSegmentLocation": { "segmentId": "footer-123" },
+                    "text": "Customer proposal"
+                }
+            }],
+            "writeControl": { "requiredRevisionId": "rev-after-footer" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+    run_create_footer_to(
+        &client,
+        CreateFooterCommand {
+            document_id: "document-123".into(),
+            text: Some("Customer proposal".into()),
+            section_break_index: None,
+            dry_run: false,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["replies"][0]["createFooter"]["footerId"],
+        "footer-123"
+    );
+    assert_eq!(output["replies"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -2245,7 +3393,7 @@ async fn run_create_footnote_dry_run_emits_native_request() {
 }
 
 #[tokio::test]
-async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
+async fn run_insert_table_dry_run_plans_structure_before_follow_up_population() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/docs/v1/documents/document-123"))
@@ -2292,20 +3440,8 @@ async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
         4
     );
     assert_eq!(
-        output["requestBody"]["requests"][1]["insertText"]["location"]["index"],
-        63
-    );
-    assert_eq!(
-        output["requestBody"]["requests"][1]["insertText"]["text"],
-        "D2"
-    );
-    assert_eq!(
-        output["requestBody"]["requests"][8]["insertText"]["location"]["index"],
-        48
-    );
-    assert_eq!(
-        output["requestBody"]["requests"][8]["insertText"]["text"],
-        "A1"
+        output["requestBody"]["requests"].as_array().unwrap().len(),
+        1
     );
     assert_eq!(
         output["requestBody"]["writeControl"]["requiredRevisionId"],
@@ -2315,6 +3451,17 @@ async fn run_insert_table_dry_run_populates_csv_data_from_document_end() {
         .as_str()
         .unwrap()
         .contains("A1 | B1 | C1 / A2 | B2 | C2"));
+}
+
+#[test]
+fn inserted_table_handle_uses_the_post_insert_table_index() {
+    let document_map = build_document_map(&editable_table_document());
+
+    assert_eq!(inserted_table_handle(&document_map, 0).unwrap(), "table-1");
+    assert!(inserted_table_handle(&document_map, 1)
+        .unwrap_err()
+        .to_string()
+        .contains("inserted table was not found at Google Docs index 2"));
 }
 
 #[tokio::test]
@@ -2360,10 +3507,10 @@ async fn run_insert_table_dry_run_accepts_tsv_data() {
         output["requestBody"]["requests"][0]["insertTable"]["columns"],
         2
     );
-    assert_eq!(
-        output["requestBody"]["requests"][1]["insertText"]["text"],
-        "Bottom right"
-    );
+    assert!(output["preview"]["summary"]
+        .as_str()
+        .unwrap()
+        .contains("Bottom right"));
 }
 
 #[tokio::test]
@@ -2386,10 +3533,11 @@ async fn run_insert_image_dry_run_human_shows_placeholder_in_context() {
         InsertImageCommand {
             document_id: "document-123".into(),
             image_uri: "https://example.test/image.png".into(),
+            selector: Some(InsertTextSelector::PageLine { page: 2, line: 1 }),
+            segment_id: None,
             width: None,
             height: None,
             fit: None,
-            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
             dry_run: true,
             json: false,
             required_revision_id: None,
@@ -2408,6 +3556,54 @@ async fn run_insert_image_dry_run_human_shows_placeholder_in_context() {
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].method.as_str(), "GET");
+}
+
+#[tokio::test]
+async fn run_insert_image_dry_run_targets_header_or_footer_segment_end() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_insert_image_to(
+        &client,
+        InsertImageCommand {
+            document_id: "document-123".into(),
+            image_uri: "https://example.test/logo.png".into(),
+            selector: None,
+            segment_id: Some("header-123".into()),
+            width: Some(72.0),
+            height: Some(24.0),
+            fit: None,
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(output["location"], serde_json::Value::Null);
+    assert_eq!(
+        output["requestBody"]["requests"][0]["insertInlineImage"]["endOfSegmentLocation"]
+            ["segmentId"],
+        "header-123"
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-search"
+    );
 }
 
 #[tokio::test]
@@ -2524,6 +3720,148 @@ async fn run_edit_table_rejects_dimension_changes_without_supported_resize() {
 }
 
 #[tokio::test]
+async fn run_style_table_row_dry_run_targets_the_selected_native_row() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_table_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_style_table_row_to(
+        &client,
+        StyleTableRowCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            row: 2,
+            column: Some(1),
+            background_color: None,
+            content_alignment: Some(crate::cli::DocsTableCellAlignment::Middle),
+            border_color: Some("#FFFFFF".into()),
+            border_width: Some(1.0),
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-table".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let update = &output["requestBody"]["requests"][0]["updateTableCellStyle"];
+    assert_eq!(update["tableRange"]["tableCellLocation"]["rowIndex"], 1);
+    assert_eq!(update["tableRange"]["tableCellLocation"]["columnIndex"], 0);
+    assert_eq!(update["tableRange"]["columnSpan"], 1);
+    assert_eq!(update["tableCellStyle"]["contentAlignment"], "MIDDLE");
+    assert_eq!(
+        update["tableCellStyle"]["borderTop"]["width"]["magnitude"],
+        1.0
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-table"
+    );
+}
+
+#[tokio::test]
+async fn run_set_table_column_widths_dry_run_targets_each_native_column() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_table_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_set_table_column_widths_to(
+        &client,
+        SetTableColumnWidthsCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            widths: vec![104.25, 363.75],
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-table".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let requests = output["requestBody"]["requests"].as_array().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0]["updateTableColumnProperties"]["columnIndices"],
+        serde_json::json!([0])
+    );
+    assert_eq!(
+        requests[1]["updateTableColumnProperties"]["tableColumnProperties"]["width"],
+        serde_json::json!({ "magnitude": 363.75, "unit": "PT" })
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-table"
+    );
+}
+
+#[tokio::test]
+async fn run_pin_table_header_rows_dry_run_targets_the_native_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(editable_table_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_pin_table_header_rows_to(
+        &client,
+        PinTableHeaderRowsCommand {
+            document_id: "document-123".into(),
+            table_id: "table-1".into(),
+            rows: 1,
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-table".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["requestBody"]["requests"][0]["pinTableHeaderRows"]["pinnedHeaderRowsCount"],
+        1
+    );
+    assert_eq!(
+        output["requestBody"]["writeControl"]["requiredRevisionId"],
+        "rev-table"
+    );
+}
+
+#[tokio::test]
 async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -2542,14 +3880,31 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::Text {
                 text: "matching text".into(),
                 match_number: None,
             },
             bold: true,
             italic: true,
+            underline: true,
             font_size: Some(14.0),
+            font_family: Some("Bai Jamjuree".into()),
             foreground_color: Some("#336699".into()),
+            link_heading_id: Some("h.target-heading".into()),
+            alignment: Some(crate::cli::DocsParagraphAlignment::Justified),
+            direction: Some(crate::cli::DocsParagraphDirection::LeftToRight),
+            space_above: Some(4.0),
+            space_below: Some(10.0),
+            line_spacing: Some(115.0),
+            spacing_mode: Some(crate::cli::DocsParagraphSpacingMode::NeverCollapse),
+            indent_start: Some(36.0),
+            indent_end: Some(12.0),
+            indent_first_line: Some(18.0),
+            keep_with_next: true,
+            keep_lines_together: true,
+            avoid_widow_and_orphan: true,
+            page_break_before: true,
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -2567,12 +3922,76 @@ async fn run_apply_styles_and_list_dry_run_emit_native_requests() {
     assert_eq!(styles["range"]["startIndex"], 17);
     assert_eq!(
         styles["requestBody"]["requests"][1]["updateTextStyle"]["fields"],
-        "bold,italic,fontSize,foregroundColor"
+        "bold,italic,underline,fontSize,weightedFontFamily,foregroundColor,link"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["link"]["headingId"],
+        "h.target-heading"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["underline"],
+        true
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][1]["updateTextStyle"]["textStyle"]["weightedFontFamily"]
+            ["fontFamily"],
+        "Bai Jamjuree"
     );
     assert_eq!(
         styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
             ["namedStyleType"],
         "HEADING_2"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["alignment"],
+        "JUSTIFIED"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["direction"],
+        "LEFT_TO_RIGHT"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["fields"],
+        "namedStyleType,alignment,direction,spaceAbove,spaceBelow,lineSpacing,spacingMode,indentStart,indentEnd,indentFirstLine,keepWithNext,keepLinesTogether,avoidWidowAndOrphan,pageBreakBefore"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["lineSpacing"],
+        115.0
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["spacingMode"],
+        "NEVER_COLLAPSE"
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["indentStart"],
+        serde_json::json!({ "magnitude": 36.0, "unit": "PT" })
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]["indentEnd"],
+        serde_json::json!({ "magnitude": 12.0, "unit": "PT" })
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["indentFirstLine"],
+        serde_json::json!({ "magnitude": 18.0, "unit": "PT" })
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["keepWithNext"],
+        true
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["keepLinesTogether"],
+        true
+    );
+    assert_eq!(
+        styles["requestBody"]["requests"][0]["updateParagraphStyle"]["paragraphStyle"]
+            ["pageBreakBefore"],
+        true
     );
     assert_eq!(
         styles["requestBody"]["writeControl"]["requiredRevisionId"],
@@ -2951,14 +4370,31 @@ async fn run_apply_styles_dry_run_preserves_raw_style_payload() {
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::IndexRange {
                 start_index: 17,
                 end_index: 30,
             },
             bold: false,
             italic: false,
+            underline: false,
             font_size: None,
+            font_family: None,
             foreground_color: None,
+            link_heading_id: None,
+            alignment: None,
+            direction: None,
+            space_above: None,
+            space_below: None,
+            line_spacing: None,
+            spacing_mode: None,
+            indent_start: None,
+            indent_end: None,
+            indent_first_line: None,
+            keep_with_next: false,
+            keep_lines_together: false,
+            avoid_widow_and_orphan: false,
+            page_break_before: false,
             heading: None,
             style_json: Some(
                 serde_json::json!({
@@ -3093,14 +4529,31 @@ async fn run_apply_styles_mutates_with_raw_and_shorthand_payload() {
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::Text {
                 text: "matching text".into(),
                 match_number: None,
             },
             bold: true,
             italic: false,
+            underline: false,
             font_size: None,
+            font_family: None,
             foreground_color: None,
+            link_heading_id: None,
+            alignment: None,
+            direction: None,
+            space_above: None,
+            space_below: None,
+            line_spacing: None,
+            spacing_mode: None,
+            indent_start: None,
+            indent_end: None,
+            indent_first_line: None,
+            keep_with_next: false,
+            keep_lines_together: false,
+            avoid_widow_and_orphan: false,
+            page_break_before: false,
             heading: Some("HEADING_1".into()),
             style_json: Some(r#"{"textStyle":{"strikethrough":true}}"#.into()),
             dry_run: false,
@@ -3175,14 +4628,31 @@ async fn run_apply_styles_uses_cached_heading_style_when_flags_are_omitted() {
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::Text {
                 text: "matching text".into(),
                 match_number: None,
             },
             bold: false,
             italic: false,
+            underline: false,
             font_size: None,
+            font_family: None,
             foreground_color: None,
+            link_heading_id: None,
+            alignment: None,
+            direction: None,
+            space_above: None,
+            space_below: None,
+            line_spacing: None,
+            spacing_mode: None,
+            indent_start: None,
+            indent_end: None,
+            indent_first_line: None,
+            keep_with_next: false,
+            keep_lines_together: false,
+            avoid_widow_and_orphan: false,
+            page_break_before: false,
             heading: Some("HEADING_2".into()),
             style_json: None,
             dry_run: true,
@@ -3299,14 +4769,31 @@ async fn run_apply_styles_posts_heading_and_text_updates_as_separate_batch_updat
         &client,
         ApplyStylesCommand {
             document_id: "document-123".into(),
+            segment_id: None,
             selector: RangeSelector::Text {
                 text: "matching text".into(),
                 match_number: None,
             },
             bold: false,
             italic: false,
+            underline: false,
             font_size: None,
+            font_family: None,
             foreground_color: None,
+            link_heading_id: None,
+            alignment: None,
+            direction: None,
+            space_above: None,
+            space_below: None,
+            line_spacing: None,
+            spacing_mode: None,
+            indent_start: None,
+            indent_end: None,
+            indent_first_line: None,
+            keep_with_next: false,
+            keep_lines_together: false,
+            avoid_widow_and_orphan: false,
+            page_break_before: false,
             heading: Some("HEADING_1".into()),
             style_json: None,
             dry_run: false,
@@ -3487,6 +4974,600 @@ async fn run_create_prints_document_id_and_edit_url() {
         String::from_utf8(out).unwrap(),
         "document-456\thttps://docs.google.com/document/d/document-456/edit\n"
     );
+}
+
+#[tokio::test]
+async fn run_copy_can_emit_a_typed_json_acceptance_record() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .and(wiremock::matchers::query_param(
+            "fields",
+            "id,name,mimeType,webViewLink",
+        ))
+        .and(wiremock::matchers::query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-write-access"))
+        .and(body_json(serde_json::json!({
+            "name": "Customer proposal copy"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "copied-document-456",
+            "name": "Google-confirmed customer proposal copy",
+            "mimeType": "application/vnd.google-apps.document",
+            "webViewLink": "https://docs.google.com/document/d/copied-document-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "drive-write-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let mut out = Vec::new();
+    let drive_files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: None,
+            verify_fidelity: false,
+            json: true,
+        },
+        &mut out,
+        Some(&drive_files_url),
+        None,
+    )
+    .await
+    .unwrap();
+
+    let acceptance: serde_json::Value =
+        serde_json::from_slice(&out).expect("copy acceptance should be valid JSON");
+    assert_eq!(acceptance["reportType"], "goog.docs.copy.acceptance");
+    assert_eq!(acceptance["reportSchemaVersion"], 4);
+    let accepted_at = acceptance["acceptedAt"].as_str().unwrap();
+    assert!(chrono::DateTime::parse_from_rfc3339(accepted_at).is_ok());
+    assert!(accepted_at.ends_with('Z'));
+    assert_eq!(acceptance["account"], "alice@example.com");
+    assert_eq!(acceptance["googCliVersion"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(acceptance["googCliExecutionOs"], std::env::consts::OS);
+    assert_eq!(acceptance["googCliExecutionArch"], std::env::consts::ARCH);
+    assert_eq!(
+        acceptance["googCliExecutablePath"],
+        goog_cli_executable_path().unwrap()
+    );
+    assert_eq!(
+        acceptance["googCliExecutableSha256"],
+        goog_cli_executable_sha256().unwrap()
+    );
+    assert_eq!(acceptance["sourceDocumentId"], "source-document-123");
+    assert_eq!(acceptance["sourceDocumentTitle"], serde_json::Value::Null);
+    assert_eq!(
+        acceptance["sourceDocumentUrl"],
+        "https://docs.google.com/document/d/source-document-123/edit"
+    );
+    assert_eq!(acceptance["copiedDocumentId"], "copied-document-456");
+    assert_eq!(
+        acceptance["copiedDocumentTitle"],
+        "Google-confirmed customer proposal copy"
+    );
+    assert_eq!(
+        acceptance["copiedDocumentUrl"],
+        "https://docs.google.com/document/d/copied-document-456/edit"
+    );
+    assert_eq!(acceptance["fidelityVerified"], false);
+    assert_eq!(acceptance["comparisonReportType"], serde_json::Value::Null);
+    assert_eq!(
+        acceptance["comparisonReportSchemaVersion"],
+        serde_json::Value::Null
+    );
+    assert_eq!(acceptance["fingerprintAlgorithm"], serde_json::Value::Null);
+    assert_eq!(acceptance["verifiedScopes"], serde_json::json!([]));
+    assert_eq!(
+        acceptance["verifiedSourceRevisionId"],
+        serde_json::Value::Null
+    );
+    assert_eq!(
+        acceptance["verifiedCopiedRevisionId"],
+        serde_json::Value::Null
+    );
+    assert_eq!(acceptance["fidelityReplayCommand"], serde_json::Value::Null);
+}
+
+#[tokio::test]
+async fn run_copy_verifies_required_source_revision_before_drive_copy() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .and(wiremock::matchers::query_param("fields", "revisionId"))
+        .and(header("authorization", "Bearer docs-drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "revisionId": "rev-approved"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .and(header("authorization", "Bearer docs-drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "copied-document-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "docs-drive-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DOCS_SCOPE.into(), DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let mut out = Vec::new();
+
+    run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: Some("rev-approved".into()),
+            verify_fidelity: false,
+            json: false,
+        },
+        &mut out,
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "copied-document-456\thttps://docs.google.com/document/d/copied-document-456/edit\n"
+    );
+}
+
+#[tokio::test]
+async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-document-123");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("copied-document-456");
+    target["title"] = serde_json::json!("Google-confirmed customer proposal copy");
+    target["revisionId"] = serde_json::json!("rev-copy");
+
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "copied-document-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .and(wiremock::matchers::query_param("fields", "revisionId"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/copied-document-456"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(target))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "docs-drive-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DOCS_SCOPE.into(), DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let mut out = Vec::new();
+
+    run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: Some("rev-search".into()),
+            verify_fidelity: true,
+            json: true,
+        },
+        &mut out,
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap();
+
+    let records = String::from_utf8(out)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["reportType"], "goog.docs.compare");
+    assert_eq!(records[0]["matches"], true);
+    assert_eq!(records[0]["comparisonScope"], "all");
+    assert_eq!(records[0]["accountOverride"], "alice@example.com");
+    assert_eq!(records[0]["sourceAccount"], "alice@example.com");
+    assert_eq!(records[0]["targetAccount"], "alice@example.com");
+    assert_eq!(
+        &records[0]["replayCommand"].as_array().unwrap()[1..3],
+        ["--account", "alice@example.com"]
+    );
+    assert_eq!(records[1]["reportType"], "goog.docs.copy.acceptance");
+    let accepted_at = records[1]["acceptedAt"].as_str().unwrap();
+    assert!(chrono::DateTime::parse_from_rfc3339(accepted_at).is_ok());
+    assert!(accepted_at.ends_with('Z'));
+    assert_eq!(records[1]["account"], "alice@example.com");
+    assert_eq!(records[1]["googCliVersion"], records[0]["googCliVersion"]);
+    assert_eq!(
+        records[1]["googCliExecutionOs"],
+        records[0]["googCliExecutionOs"]
+    );
+    assert_eq!(
+        records[1]["googCliExecutionArch"],
+        records[0]["googCliExecutionArch"]
+    );
+    assert_eq!(
+        records[1]["googCliExecutablePath"],
+        goog_cli_executable_path().unwrap()
+    );
+    assert_eq!(
+        records[1]["googCliExecutableSha256"],
+        goog_cli_executable_sha256().unwrap()
+    );
+    assert_eq!(
+        records[1]["sourceDocumentUrl"],
+        "https://docs.google.com/document/d/source-document-123/edit"
+    );
+    assert_eq!(records[1]["sourceDocumentTitle"], "Searchable");
+    assert_eq!(records[1]["copiedDocumentId"], "copied-document-456");
+    assert_eq!(
+        records[1]["copiedDocumentTitle"],
+        "Google-confirmed customer proposal copy"
+    );
+    assert_eq!(records[1]["fidelityVerified"], true);
+    assert_eq!(records[1]["reportSchemaVersion"], 4);
+    assert_eq!(records[1]["comparisonReportType"], records[0]["reportType"]);
+    assert_eq!(
+        records[1]["comparisonReportSchemaVersion"],
+        records[0]["reportSchemaVersion"]
+    );
+    assert_eq!(records[1]["fingerprintAlgorithm"], "sha256");
+    assert_eq!(records[1]["verifiedSourceRevisionId"], "rev-search");
+    assert_eq!(records[1]["verifiedCopiedRevisionId"], "rev-copy");
+    assert_eq!(
+        records[1]["fidelityReplayCommand"],
+        records[0]["replayCommand"]
+    );
+    let comparison_scopes = records[0]["scopes"].as_array().unwrap();
+    let accepted_scopes = records[1]["verifiedScopes"].as_array().unwrap();
+    assert_eq!(accepted_scopes.len(), 4);
+    for (comparison_scope, accepted_scope) in comparison_scopes.iter().zip(accepted_scopes) {
+        assert_eq!(accepted_scope["scope"], comparison_scope["scope"]);
+        assert_eq!(
+            accepted_scope["sourceFingerprint"],
+            comparison_scope["sourceFingerprint"]
+        );
+        assert_eq!(
+            accepted_scope["targetFingerprint"],
+            comparison_scope["targetFingerprint"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn run_copy_does_not_report_a_rejected_copy_as_successful() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-document-123");
+    let mut target = source.clone();
+    target["documentId"] = serde_json::json!("copied-document-456");
+    target["title"] = serde_json::json!("Customer proposal copy");
+    target["revisionId"] = serde_json::json!("rev-copy");
+    target["body"]["content"][0]["paragraph"]["elements"][0]["textRun"]["content"] =
+        serde_json::json!("Changed after copy\n");
+
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "copied-document-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/copied-document-456"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(target))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "docs-drive-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DOCS_SCOPE.into(), DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let mut out = Vec::new();
+
+    let error = run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: None,
+            verify_fidelity: true,
+            json: true,
+        },
+        &mut out,
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Google Docs comparison found semantic differences"
+    );
+    let records = String::from_utf8(out)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["reportType"], "goog.docs.compare");
+    assert_eq!(records[0]["matches"], false);
+}
+
+#[tokio::test]
+async fn run_copy_rejects_executable_drift_before_document_access() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let error = run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: Some(
+                "0000000000000000000000000000000000000000000000000000000000000000".into(),
+            ),
+            required_source_revision_id: Some("rev-approved".into()),
+            verify_fidelity: false,
+            json: false,
+        },
+        &mut Vec::new(),
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("does not match running executable SHA-256"));
+}
+
+#[tokio::test]
+async fn run_copy_rejects_stale_source_revision_before_drive_copy() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .and(wiremock::matchers::query_param("fields", "revisionId"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "revisionId": "rev-current"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let error = run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: Some("rev-approved".into()),
+            verify_fidelity: false,
+            json: false,
+        },
+        &mut Vec::new(),
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains(
+        "required source revision `rev-approved` does not match current revision `rev-current`"
+    ));
+}
+
+#[tokio::test]
+async fn run_verified_copy_rejects_stale_source_snapshot_before_drive_copy() {
+    let server = MockServer::start().await;
+    let mut source = searchable_document();
+    source["documentId"] = serde_json::json!("source-document-123");
+    source["revisionId"] = serde_json::json!("rev-current");
+
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/source-document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(source))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/copied-document-456"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let error = run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            required_executable_sha256: None,
+            required_source_revision_id: Some("rev-approved".into()),
+            verify_fidelity: true,
+            json: true,
+        },
+        &mut Vec::new(),
+        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&format!("{}/docs/v1/documents", server.uri())),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(format!("{error:#}").contains(
+        "required source revision `rev-approved` does not match current revision `rev-current`"
+    ));
+}
+
+#[tokio::test]
+async fn run_export_pdf_writes_a_native_drive_export() {
+    let server = MockServer::start().await;
+    let pdf = b"%PDF-1.7\ndocument";
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/export"))
+        .and(wiremock::matchers::query_param(
+            "mimeType",
+            "application/pdf",
+        ))
+        .and(header("authorization", "Bearer drive-read-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(pdf.to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "drive-read-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("document.pdf");
+    let mut out = Vec::new();
+
+    run_export_pdf_to(
+        &client,
+        "document-123".into(),
+        output.clone(),
+        &mut out,
+        Some(&format!("{}/drive/v3/files", server.uri())),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(&output).unwrap(), pdf);
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        format!("{}\t{}\n", output.display(), pdf.len())
+    );
+}
+
+#[test]
+fn pdf_export_access_failures_include_account_and_policy_guidance() {
+    for error in [DriveError::NotFound, DriveError::PermissionDenied] {
+        let message = format!("{:#}", with_pdf_export_context(error));
+
+        assert!(message.contains("confirm the selected account can access the document"));
+        assert!(message.contains("Workspace policies allow downloading, printing, and copying"));
+        assert!(message.contains("use --account EMAIL"));
+    }
 }
 
 #[tokio::test]
@@ -4232,10 +6313,39 @@ fn short_document_with_page_break() -> serde_json::Value {
                             }
                         ]
                     }
+                },
+                {
+                    "startIndex": 27,
+                    "endIndex": 28,
+                    "sectionBreak": {
+                        "sectionStyle": {
+                            "sectionType": "NEXT_PAGE",
+                            "defaultHeaderId": "header-2",
+                            "defaultFooterId": "footer-2"
+                        }
+                    }
                 }
             ]
         }
     })
+}
+
+fn document_with_initial_section_and_page_breaks() -> serde_json::Value {
+    let mut document = short_document_with_page_break();
+    let content = document["body"]["content"].as_array_mut().unwrap();
+    content.insert(
+        0,
+        serde_json::json!({
+            "endIndex": 1,
+            "sectionBreak": {
+                "sectionStyle": {
+                    "sectionType": "CONTINUOUS",
+                    "contentDirection": "LEFT_TO_RIGHT"
+                }
+            }
+        }),
+    );
+    document
 }
 
 fn searchable_document() -> serde_json::Value {
@@ -4446,10 +6556,20 @@ fn editable_table_document() -> serde_json::Value {
 }
 
 fn long_document_with_toc_and_objects() -> serde_json::Value {
-    serde_json::json!({
+    let mut document = serde_json::json!({
         "documentId": "document-123",
-        "title": "คู่มือ Sandcastle",
+        "title": "คู่มือการใช้งาน",
         "revisionId": "rev-long",
+        "lists": {
+            "list-abc": {
+                "listProperties": {
+                    "nestingLevels": [
+                        { "glyphSymbol": "●", "glyphFormat": "%0", "startNumber": 1 },
+                        { "glyphSymbol": "○", "glyphFormat": "%1", "startNumber": 1 }
+                    ]
+                }
+            }
+        },
         "body": {
             "content": [
                 {
@@ -4461,11 +6581,23 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                                 "startIndex": 2,
                                 "endIndex": 23,
                                 "paragraph": {
+                                    "paragraphStyle": {
+                                        "namedStyleType": "NORMAL_TEXT",
+                                        "indentStart": { "magnitude": 18, "unit": "PT" }
+                                    },
                                     "elements": [
                                         {
                                             "startIndex": 2,
                                             "endIndex": 23,
-                                            "textRun": { "content": "วิธีใช้งาน\t3\n" }
+                                            "textRun": {
+                                                "content": "วิธีใช้งาน\t3\n",
+                                                "textStyle": {
+                                                    "link": { "headingId": "h.how-to" },
+                                                    "weightedFontFamily": {
+                                                        "fontFamily": "Bai Jamjuree"
+                                                    }
+                                                }
+                                            }
                                         }
                                     ]
                                 }
@@ -4477,12 +6609,37 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "startIndex": 24,
                     "endIndex": 35,
                     "paragraph": {
-                        "paragraphStyle": { "namedStyleType": "HEADING_1" },
+                        "paragraphStyle": {
+                            "namedStyleType": "HEADING_1",
+                            "headingId": "h.how-to",
+                            "alignment": "CENTER",
+                            "spaceBelow": { "magnitude": 10, "unit": "PT" },
+                            "keepWithNext": true
+                        },
                         "elements": [
                             {
                                 "startIndex": 24,
+                                "endIndex": 28,
+                                "textRun": {
+                                    "content": "วิธี",
+                                    "textStyle": {
+                                        "bold": true,
+                                        "weightedFontFamily": { "fontFamily": "Bai Jamjuree" }
+                                    }
+                                }
+                            },
+                            {
+                                "startIndex": 28,
                                 "endIndex": 35,
-                                "textRun": { "content": "วิธีใช้งาน\n" }
+                                "textRun": {
+                                    "content": "ใช้งาน\n",
+                                    "textStyle": {
+                                        "underline": true,
+                                        "foregroundColor": {
+                                            "color": { "rgbColor": { "red": 0.2 } }
+                                        }
+                                    }
+                                }
                             }
                         ]
                     }
@@ -4491,6 +6648,7 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "startIndex": 35,
                     "endIndex": 74,
                     "paragraph": {
+                        "bullet": { "listId": "list-abc", "nestingLevel": 1 },
                         "paragraphStyle": { "namedStyleType": "NORMAL_TEXT" },
                         "elements": [
                             {
@@ -4505,15 +6663,60 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "startIndex": 74,
                     "endIndex": 103,
                     "table": {
+                        "tableStyle": {
+                            "tableColumnProperties": [
+                                {
+                                    "width": { "magnitude": 144, "unit": "PT" },
+                                    "widthType": "FIXED_WIDTH"
+                                },
+                                {
+                                    "width": { "magnitude": 324, "unit": "PT" },
+                                    "widthType": "FIXED_WIDTH"
+                                }
+                            ]
+                        },
                         "tableRows": [
                             {
+                                "tableRowStyle": { "tableHeader": true },
                                 "tableCells": [
                                     {
-                                        "content": [
+                                        "tableCellStyle": {
+                                            "contentAlignment": "MIDDLE",
+                                            "backgroundColor": {
+                                                "color": {
+                                                    "rgbColor": {
+                                                        "red": 0.7,
+                                                        "green": 0.8,
+                                                        "blue": 0.9
+                                                    }
+                                                }
+                                            },
+                                            "borderBottom": {
+                                                "width": { "magnitude": 1, "unit": "PT" },
+                                                "dashStyle": "SOLID",
+                                                "color": {
+                                                    "color": {
+                                                        "rgbColor": {
+                                                            "red": 1,
+                                                            "green": 1,
+                                                            "blue": 1
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                                "content": [
                                             {
                                                 "paragraph": {
                                                     "elements": [
-                                                        { "textRun": { "content": "หัวข้อ\n" } }
+                                                        {
+                                                            "startIndex": 77,
+                                                            "endIndex": 84,
+                                                            "textRun": {
+                                                                "content": "หัวข้อ\n",
+                                                                "textStyle": { "bold": true }
+                                                            }
+                                                        }
                                                     ]
                                                 }
                                             }
@@ -4524,7 +6727,14 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                                             {
                                                 "paragraph": {
                                                     "elements": [
-                                                        { "textRun": { "content": "สถานะ\n" } }
+                                                        {
+                                                            "startIndex": 85,
+                                                            "endIndex": 91,
+                                                            "textRun": {
+                                                                "content": "สถานะ\n",
+                                                                "textStyle": { "italic": true }
+                                                            }
+                                                        }
                                                     ]
                                                 }
                                             }
@@ -4539,6 +6749,7 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     "startIndex": 103,
                     "endIndex": 104,
                     "paragraph": {
+                        "paragraphStyle": { "alignment": "CENTER" },
                         "elements": [
                             {
                                 "startIndex": 103,
@@ -4593,21 +6804,38 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                 }
             ]
         },
+        "headers": {
+            "legacy-header": {
+                "headerId": "legacy-header",
+                "content": [{
+                    "endIndex": 14,
+                    "paragraph": {
+                        "paragraphStyle": {
+                            "alignment": "END",
+                            "spaceBelow": { "magnitude": 4, "unit": "PT" }
+                        },
+                        "elements": [{
+                            "endIndex": 14,
+                            "textRun": { "content": "Legacy header\n" }
+                        }]
+                    }
+                }]
+            }
+        },
         "inlineObjects": {
             "inline-image-1": {
                 "inlineObjectProperties": {
                     "embeddedObject": {
+                        "title": "Process overview",
+                        "description": "Workflow from intake to delivery",
                         "size": {
-                            "height": {
-                                "magnitude": 156,
-                                "unit": "PT"
-                            },
-                            "width": {
-                                "magnitude": 468,
-                                "unit": "PT"
-                            }
+                            "height": { "magnitude": 81, "unit": "PT" },
+                            "width": { "magnitude": 144, "unit": "PT" }
                         },
-                        "imageProperties": {}
+                        "marginLeft": { "magnitude": 9, "unit": "PT" },
+                        "imageProperties": {
+                            "cropProperties": { "cropLeft": 0.1 }
+                        }
                     }
                 }
             }
@@ -4627,6 +6855,7 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                         }
                     },
                     "embeddedObject": {
+                        "title": "Page decoration",
                         "size": {
                             "height": {
                                 "magnitude": 72,
@@ -4641,8 +6870,131 @@ fn long_document_with_toc_and_objects() -> serde_json::Value {
                     }
                 }
             }
-        }
-    })
+        },
+        "tabs": [{
+            "tabProperties": { "tabId": "tab-1" },
+            "documentTab": {
+                "documentStyle": {
+                    "pageSize": {
+                        "width": { "magnitude": 612, "unit": "PT" },
+                        "height": { "magnitude": 792, "unit": "PT" }
+                    },
+                    "marginTop": { "magnitude": 72, "unit": "PT" }
+                },
+                "namedStyles": {
+                    "styles": [{
+                        "namedStyleType": "NORMAL_TEXT",
+                        "textStyle": {
+                            "weightedFontFamily": {
+                                "fontFamily": "Bai Jamjuree",
+                                "weight": 400
+                            }
+                        }
+                    }]
+                },
+                "headers": {
+                    "header-123": {
+                        "headerId": "header-123",
+                        "content": [{
+                            "endIndex": 17,
+                            "paragraph": {
+                                "paragraphStyle": {
+                                    "alignment": "CENTER",
+                                    "lineSpacing": 100
+                                },
+                                "elements": [
+                                    {
+                                        "startIndex": 0,
+                                        "endIndex": 16,
+                                        "textRun": {
+                                            "content": "Customer contact",
+                                            "textStyle": {
+                                                "weightedFontFamily": {
+                                                    "fontFamily": "Bai Jamjuree",
+                                                    "weight": 400
+                                                }
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "startIndex": 16,
+                                        "endIndex": 17,
+                                        "autoText": {
+                                            "type": "PAGE_NUMBER",
+                                            "textStyle": {
+                                                "fontSize": { "magnitude": 10, "unit": "PT" }
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        }]
+                    }
+                },
+                "footers": {
+                    "footer-123": {
+                        "footerId": "footer-123",
+                        "content": [{
+                            "endIndex": 1,
+                            "paragraph": {
+                                "elements": [{
+                                    "endIndex": 1,
+                                    "textRun": { "content": "\n" }
+                                }]
+                            }
+                        }]
+                    }
+                },
+                "inlineObjects": {
+                    "header-inline-image": {
+                        "inlineObjectProperties": {
+                            "embeddedObject": {
+                                "description": "Customer header logo",
+                                "size": {
+                                    "height": { "magnitude": 24, "unit": "PT" },
+                                    "width": { "magnitude": 48, "unit": "PT" }
+                                },
+                                "imageProperties": {}
+                            }
+                        }
+                    }
+                },
+                "positionedObjects": {
+                    "footer-positioned-image": {
+                        "positionedObjectProperties": {
+                            "positioning": {
+                                "layout": "BEHIND_TEXT"
+                            },
+                            "embeddedObject": {
+                                "title": "Footer decoration",
+                                "size": {
+                                    "height": {
+                                        "magnitude": 24,
+                                        "unit": "PT"
+                                    },
+                                    "width": {
+                                        "magnitude": 48,
+                                        "unit": "PT"
+                                    }
+                                },
+                                "imageProperties": {}
+                            }
+                        }
+                    }
+                }
+            }
+        }]
+    });
+    let table_paragraph = document
+        .pointer_mut("/body/content/3/table/tableRows/0/tableCells/0/content/0")
+        .unwrap();
+    table_paragraph["startIndex"] = serde_json::json!(77);
+    table_paragraph["endIndex"] = serde_json::json!(84);
+    table_paragraph["paragraph"]["paragraphStyle"] = serde_json::json!({
+        "namedStyleType": "NORMAL_TEXT",
+        "alignment": "CENTER"
+    });
+    document
 }
 
 fn document_with_multiple_inline_images() -> serde_json::Value {
@@ -4676,46 +7028,5 @@ fn document_with_multiple_inline_images() -> serde_json::Value {
                 }
             ]
         }
-    })
-}
-
-fn tabbed_document_with_inline_image_geometry() -> serde_json::Value {
-    serde_json::json!({
-        "documentId": "document-123",
-        "title": "Tabbed images",
-        "revisionId": "rev-tabbed-images",
-        "tabs": [{
-            "tabProperties": { "tabId": "t.0" },
-            "documentTab": {
-                "body": {
-                    "content": [{
-                        "startIndex": 1,
-                        "endIndex": 2,
-                        "paragraph": {
-                            "elements": [{
-                                "startIndex": 1,
-                                "endIndex": 2,
-                                "inlineObjectElement": {
-                                    "inlineObjectId": "tab-inline-image-1"
-                                }
-                            }]
-                        }
-                    }]
-                },
-                "inlineObjects": {
-                    "tab-inline-image-1": {
-                        "inlineObjectProperties": {
-                            "embeddedObject": {
-                                "size": {
-                                    "height": { "magnitude": 500, "unit": "PT" },
-                                    "width": { "magnitude": 284.136, "unit": "PT" }
-                                },
-                                "imageProperties": {}
-                            }
-                        }
-                    }
-                }
-            }
-        }]
     })
 }

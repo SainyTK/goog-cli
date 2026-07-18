@@ -8,6 +8,12 @@ pub struct DocumentMap {
     pub document_id: Option<String>,
     pub title: Option<String>,
     pub revision_id: Option<String>,
+    pub document_styles: Vec<DocumentTabStyle>,
+    pub named_styles: Vec<DocumentTabNamedStyles>,
+    pub breaks: Vec<DocumentBreak>,
+    pub blank_paragraphs: Vec<DocumentBlankParagraph>,
+    pub segments: Vec<DocumentSegment>,
+    pub lists: Vec<DocumentList>,
     pub entries: Vec<DocumentMapEntry>,
     pub document_locations: Vec<DocumentLocation>,
     #[serde(skip)]
@@ -20,6 +26,117 @@ pub struct DocumentMap {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DocumentTabStyle {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<String>,
+    pub document_style: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentTabNamedStyles {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab_id: Option<String>,
+    pub named_styles: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentBreak {
+    pub kind: DocumentBreakKind,
+    pub location: DocumentLocation,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section_style: Option<Value>,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DocumentBreakKind {
+    PageBreak,
+    SectionBreak,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentBlankParagraph {
+    pub location: DocumentLocation,
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paragraph_style: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bullet: Option<Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub text_runs: Vec<DocumentTextRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentList {
+    pub list_id: String,
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub item_count: usize,
+    pub nesting_levels: Vec<i64>,
+    pub glyphs: Vec<DocumentListGlyph>,
+    pub preview: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentListGlyph {
+    pub nesting_level: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glyph_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glyph_symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glyph_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_number: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentSegment {
+    pub kind: DocumentSegmentKind,
+    pub segment_id: String,
+    pub start_index: i64,
+    pub end_index: i64,
+    pub preview: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub auto_text_types: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub auto_texts: Vec<DocumentAutoText>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub text_runs: Vec<DocumentTextRun>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub paragraphs: Vec<DocumentParagraph>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentAutoText {
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub type_: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_style: Option<Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DocumentSegmentKind {
+    Header,
+    Footer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DocumentMapEntry {
     pub entry: usize,
     pub location: DocumentLocation,
@@ -27,11 +144,21 @@ pub struct DocumentMapEntry {
     pub style: Option<String>,
     pub preview: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub paragraph_style: Option<Value>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub text_runs: Vec<DocumentTextRun>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub paragraphs: Vec<DocumentParagraph>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heading_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub image_handle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub object_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout_metadata: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_alt_text: Option<DocumentImageAltText>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rows: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -40,6 +167,43 @@ pub struct DocumentMapEntry {
     pub table_handle: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub table_cells: Vec<Vec<DocumentRange>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub table_cell_text_runs: Vec<Vec<Vec<DocumentTextRun>>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub table_cell_paragraphs: Vec<Vec<Vec<DocumentTableCellParagraph>>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentTextRun {
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text_style: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentParagraph {
+    pub start_index: Option<i64>,
+    pub end_index: Option<i64>,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paragraph_style: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bullet: Option<Value>,
+}
+
+pub type DocumentTableCellParagraph = DocumentParagraph;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentImageAltText {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +245,7 @@ pub enum LocationConfidence {
 pub enum DocumentMapEntryKind {
     Heading,
     Paragraph,
+    TableOfContents,
     Table,
     InlineImage,
     PositionedImage,
@@ -130,26 +295,480 @@ pub struct ResolvedInsertLocation {
 }
 
 pub fn build_document_map(document: &Value) -> DocumentMap {
+    let inline_objects = document_object_maps(document, "inlineObjects");
+    let positioned_objects = document_object_maps(document, "positionedObjects");
     let mut builder = DocumentMapBuilder::new(
         collect_table_of_contents_page_hints(document),
-        document,
-        document.get("positionedObjects"),
+        inline_objects.clone(),
+        positioned_objects.clone(),
     );
 
     for content in document_content(document) {
         builder.push_structural_element(content);
     }
+    builder.push_non_body_images(&inline_objects, &positioned_objects);
 
+    let breaks = builder.breaks;
+    let blank_paragraphs = builder.blank_paragraphs;
     let entries = builder.entries;
     DocumentMap {
         document_id: string_field(document, "documentId"),
         title: string_field(document, "title"),
         revision_id: string_field(document, "revisionId"),
+        document_styles: document_styles(document),
+        named_styles: document_named_styles(document),
+        breaks,
+        blank_paragraphs,
+        segments: document_segments(document),
+        lists: document_lists(document),
         document_locations: entries.iter().map(|entry| entry.location.clone()).collect(),
         entries,
         text_blocks: builder.text_blocks,
         insertion_locations: builder.insertion_locations,
         raw_document: document.clone(),
+    }
+}
+
+fn document_named_styles(document: &Value) -> Vec<DocumentTabNamedStyles> {
+    let tab_named_styles = document
+        .get("tabs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|tab| {
+            let named_styles = tab.get("documentTab")?.get("namedStyles")?.clone();
+            let tab_id = tab
+                .get("tabProperties")
+                .and_then(|properties| properties.get("tabId"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            Some(DocumentTabNamedStyles {
+                tab_id,
+                named_styles,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if !tab_named_styles.is_empty() {
+        return tab_named_styles;
+    }
+
+    document
+        .get("namedStyles")
+        .cloned()
+        .map(|named_styles| DocumentTabNamedStyles {
+            tab_id: None,
+            named_styles,
+        })
+        .into_iter()
+        .collect()
+}
+
+fn document_styles(document: &Value) -> Vec<DocumentTabStyle> {
+    let tab_styles = document
+        .get("tabs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|tab| {
+            let document_style = tab.get("documentTab")?.get("documentStyle")?.clone();
+            let tab_id = tab
+                .get("tabProperties")
+                .and_then(|properties| properties.get("tabId"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            Some(DocumentTabStyle {
+                tab_id,
+                document_style,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if !tab_styles.is_empty() {
+        return tab_styles;
+    }
+
+    document
+        .get("documentStyle")
+        .cloned()
+        .map(|document_style| DocumentTabStyle {
+            tab_id: None,
+            document_style,
+        })
+        .into_iter()
+        .collect()
+}
+
+fn document_lists(document: &Value) -> Vec<DocumentList> {
+    let mut accumulators = Vec::<DocumentListAccumulator>::new();
+    collect_list_items(document, &mut accumulators);
+    let list_maps = document_list_maps(document);
+
+    accumulators
+        .into_iter()
+        .map(|list| {
+            let glyphs = list
+                .nesting_levels
+                .iter()
+                .filter_map(|nesting_level| list_glyph(&list_maps, &list.list_id, *nesting_level))
+                .collect();
+            DocumentList {
+                list_id: list.list_id,
+                start_index: list.start_index,
+                end_index: list.end_index,
+                item_count: list.item_count,
+                nesting_levels: list.nesting_levels,
+                glyphs,
+                preview: preview(&list.previews.join(" | ")),
+            }
+        })
+        .collect()
+}
+
+#[derive(Debug)]
+struct DocumentListAccumulator {
+    list_id: String,
+    start_index: Option<i64>,
+    end_index: Option<i64>,
+    item_count: usize,
+    nesting_levels: Vec<i64>,
+    previews: Vec<String>,
+}
+
+fn collect_list_items(value: &Value, lists: &mut Vec<DocumentListAccumulator>) {
+    if let Some(paragraph) = value.get("paragraph") {
+        if let Some(bullet) = paragraph.get("bullet") {
+            if let Some(list_id) = bullet.get("listId").and_then(Value::as_str) {
+                let nesting_level = bullet
+                    .get("nestingLevel")
+                    .and_then(Value::as_i64)
+                    .unwrap_or_default();
+                let start_index = value.get("startIndex").and_then(Value::as_i64);
+                let end_index = value.get("endIndex").and_then(Value::as_i64);
+                let text = preview(&paragraph_text(paragraph));
+                if let Some(list) = lists.iter_mut().find(|list| list.list_id == list_id) {
+                    list.start_index = min_optional(list.start_index, start_index);
+                    list.end_index = max_optional(list.end_index, end_index);
+                    list.item_count += 1;
+                    if !list.nesting_levels.contains(&nesting_level) {
+                        list.nesting_levels.push(nesting_level);
+                        list.nesting_levels.sort_unstable();
+                    }
+                    if !text.is_empty() && list.previews.len() < 3 {
+                        list.previews.push(text);
+                    }
+                } else {
+                    lists.push(DocumentListAccumulator {
+                        list_id: list_id.to_string(),
+                        start_index,
+                        end_index,
+                        item_count: 1,
+                        nesting_levels: vec![nesting_level],
+                        previews: (!text.is_empty()).then_some(text).into_iter().collect(),
+                    });
+                }
+            }
+        }
+    }
+
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_list_items(value, lists);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_list_items(value, lists);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn min_optional(left: Option<i64>, right: Option<i64>) -> Option<i64> {
+    left.into_iter().chain(right).min()
+}
+
+fn max_optional(left: Option<i64>, right: Option<i64>) -> Option<i64> {
+    left.into_iter().chain(right).max()
+}
+
+fn document_list_maps(document: &Value) -> Vec<&Value> {
+    document
+        .get("lists")
+        .into_iter()
+        .chain(
+            document
+                .get("tabs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|tab| tab.get("documentTab"))
+                .filter_map(|document_tab| document_tab.get("lists")),
+        )
+        .collect()
+}
+
+fn list_glyph(
+    list_maps: &[&Value],
+    list_id: &str,
+    nesting_level: i64,
+) -> Option<DocumentListGlyph> {
+    let glyph = list_maps
+        .iter()
+        .find_map(|lists| lists.get(list_id))?
+        .get("listProperties")?
+        .get("nestingLevels")?
+        .as_array()?
+        .get(usize::try_from(nesting_level).ok()?)?;
+    Some(DocumentListGlyph {
+        nesting_level,
+        glyph_type: string_field(glyph, "glyphType"),
+        glyph_symbol: string_field(glyph, "glyphSymbol"),
+        glyph_format: string_field(glyph, "glyphFormat"),
+        start_number: glyph.get("startNumber").and_then(Value::as_i64),
+    })
+}
+
+fn document_segments(document: &Value) -> Vec<DocumentSegment> {
+    let mut segments = Vec::new();
+    for (kind, field) in [
+        (DocumentSegmentKind::Header, "headers"),
+        (DocumentSegmentKind::Footer, "footers"),
+    ] {
+        for segment_map in document_segment_maps(document, field) {
+            let Some(segment_map) = segment_map.as_object() else {
+                continue;
+            };
+            for (segment_id, segment) in segment_map {
+                let mut text = String::new();
+                collect_text_run_content(segment, &mut text);
+                let mut auto_text_types = Vec::new();
+                collect_auto_text_types(segment, &mut auto_text_types);
+                auto_text_types.sort();
+                auto_text_types.dedup();
+                let mut auto_texts = Vec::new();
+                collect_auto_texts(segment, &mut auto_texts);
+                let mut text_runs = Vec::new();
+                collect_text_runs(segment, &mut text_runs);
+                let mut paragraphs = Vec::new();
+                collect_paragraphs(segment, &mut paragraphs);
+                let end_index = max_i64_field(segment, "endIndex").unwrap_or_default();
+                let preview = segment_preview(kind, &text, &auto_text_types);
+                segments.push(DocumentSegment {
+                    kind,
+                    segment_id: segment_id.clone(),
+                    start_index: 0,
+                    end_index,
+                    preview,
+                    auto_text_types,
+                    auto_texts,
+                    text_runs,
+                    paragraphs,
+                });
+            }
+        }
+    }
+    segments.sort_by(|left, right| {
+        (left.kind, left.segment_id.as_str()).cmp(&(right.kind, right.segment_id.as_str()))
+    });
+    segments.dedup_by(|left, right| left.kind == right.kind && left.segment_id == right.segment_id);
+    segments
+}
+
+fn collect_auto_texts(value: &Value, auto_texts: &mut Vec<DocumentAutoText>) {
+    if let Some(auto_text) = value.get("autoText") {
+        if let Some(type_) = auto_text.get("type").and_then(Value::as_str) {
+            auto_texts.push(DocumentAutoText {
+                start_index: value.get("startIndex").and_then(Value::as_i64),
+                end_index: value.get("endIndex").and_then(Value::as_i64),
+                type_: type_.to_string(),
+                text_style: auto_text.get("textStyle").cloned(),
+            });
+        }
+        return;
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_auto_texts(value, auto_texts);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_auto_texts(value, auto_texts);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn document_segment_maps<'a>(document: &'a Value, field: &str) -> Vec<&'a Value> {
+    document
+        .get(field)
+        .into_iter()
+        .chain(
+            document
+                .get("tabs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|tab| tab.get("documentTab"))
+                .filter_map(|document_tab| document_tab.get(field)),
+        )
+        .collect()
+}
+
+fn collect_text_run_content(value: &Value, text: &mut String) {
+    if let Some(content) = value
+        .get("textRun")
+        .and_then(|text_run| text_run.get("content"))
+        .and_then(Value::as_str)
+    {
+        text.push_str(content);
+        return;
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_text_run_content(value, text);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_text_run_content(value, text);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_auto_text_types(value: &Value, types: &mut Vec<String>) {
+    if let Some(auto_text_type) = value
+        .get("autoText")
+        .and_then(|auto_text| auto_text.get("type"))
+        .and_then(Value::as_str)
+    {
+        types.push(auto_text_type.to_string());
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_auto_text_types(value, types);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_auto_text_types(value, types);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_text_runs(value: &Value, text_runs: &mut Vec<DocumentTextRun>) {
+    if value.get("textRun").is_some() {
+        if let Some(text_run) = document_text_run(value) {
+            text_runs.push(text_run);
+        }
+        return;
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_text_runs(value, text_runs);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_text_runs(value, text_runs);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn collect_paragraphs(value: &Value, paragraphs: &mut Vec<DocumentParagraph>) {
+    if let Some(paragraph) = value.get("paragraph") {
+        paragraphs.push(document_paragraph(value, paragraph));
+        return;
+    }
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_paragraphs(value, paragraphs);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_paragraphs(value, paragraphs);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn document_paragraph(element: &Value, paragraph: &Value) -> DocumentParagraph {
+    DocumentParagraph {
+        start_index: min_i64_field(element, "startIndex"),
+        end_index: max_i64_field(element, "endIndex"),
+        content: paragraph_text(paragraph),
+        paragraph_style: paragraph.get("paragraphStyle").cloned(),
+        bullet: paragraph.get("bullet").cloned(),
+    }
+}
+
+fn max_i64_field(value: &Value, field: &str) -> Option<i64> {
+    let own = value.get(field).and_then(Value::as_i64);
+    let descendant = match value {
+        Value::Array(values) => values
+            .iter()
+            .filter_map(|value| max_i64_field(value, field))
+            .max(),
+        Value::Object(values) => values
+            .values()
+            .filter_map(|value| max_i64_field(value, field))
+            .max(),
+        _ => None,
+    };
+    own.into_iter().chain(descendant).max()
+}
+
+fn min_i64_field(value: &Value, field: &str) -> Option<i64> {
+    let own = value.get(field).and_then(Value::as_i64);
+    let descendant = match value {
+        Value::Array(values) => values
+            .iter()
+            .filter_map(|value| min_i64_field(value, field))
+            .min(),
+        Value::Object(values) => values
+            .values()
+            .filter_map(|value| min_i64_field(value, field))
+            .min(),
+        _ => None,
+    };
+    own.into_iter().chain(descendant).min()
+}
+
+fn segment_preview(kind: DocumentSegmentKind, text: &str, auto_text_types: &[String]) -> String {
+    let text_preview = preview(text);
+    let auto_text_preview = auto_text_types
+        .iter()
+        .map(|auto_text_type| auto_text_type.to_ascii_lowercase().replace('_', " "))
+        .collect::<Vec<_>>()
+        .join(", ");
+    match (text_preview.is_empty(), auto_text_preview.is_empty()) {
+        (false, true) => text_preview,
+        (false, false) => format!("{text_preview} [{auto_text_preview}]"),
+        (true, false) => format!("[{auto_text_preview}]"),
+        (true, true) => format!(
+            "[empty {}]",
+            match kind {
+                DocumentSegmentKind::Header => "header",
+                DocumentSegmentKind::Footer => "footer",
+            }
+        ),
     }
 }
 
@@ -556,6 +1175,8 @@ fn display_optional<T: ToString>(value: Option<T>) -> String {
 }
 
 struct DocumentMapBuilder<'a> {
+    breaks: Vec<DocumentBreak>,
+    blank_paragraphs: Vec<DocumentBlankParagraph>,
     entries: Vec<DocumentMapEntry>,
     text_blocks: Vec<DocumentTextBlock>,
     insertion_locations: Vec<DocumentLocation>,
@@ -565,28 +1186,37 @@ struct DocumentMapBuilder<'a> {
     table_count: usize,
     image_count: usize,
     toc_page_hints: Vec<TableOfContentsPageHint>,
-    document: &'a Value,
-    positioned_objects: Option<&'a Value>,
+    inline_objects: Vec<&'a Value>,
+    positioned_objects: Vec<&'a Value>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct DocumentMapEntryMetadata {
+    paragraph_style: Option<Value>,
+    text_runs: Vec<DocumentTextRun>,
+    paragraphs: Vec<DocumentParagraph>,
+    heading_id: Option<String>,
     image_handle: Option<String>,
     object_id: Option<String>,
     layout_metadata: Option<Value>,
+    image_alt_text: Option<DocumentImageAltText>,
     rows: Option<usize>,
     columns: Option<usize>,
     table_handle: Option<String>,
     table_cells: Vec<Vec<DocumentRange>>,
+    table_cell_text_runs: Vec<Vec<Vec<DocumentTextRun>>>,
+    table_cell_paragraphs: Vec<Vec<Vec<DocumentTableCellParagraph>>>,
 }
 
 impl<'a> DocumentMapBuilder<'a> {
     fn new(
         toc_page_hints: Vec<TableOfContentsPageHint>,
-        document: &'a Value,
-        positioned_objects: Option<&'a Value>,
+        inline_objects: Vec<&'a Value>,
+        positioned_objects: Vec<&'a Value>,
     ) -> Self {
         Self {
+            breaks: Vec::new(),
+            blank_paragraphs: Vec::new(),
             entries: Vec::new(),
             text_blocks: Vec::new(),
             insertion_locations: Vec::new(),
@@ -596,7 +1226,7 @@ impl<'a> DocumentMapBuilder<'a> {
             table_count: 0,
             image_count: 0,
             toc_page_hints,
-            document,
+            inline_objects,
             positioned_objects,
         }
     }
@@ -609,10 +1239,60 @@ impl<'a> DocumentMapBuilder<'a> {
         self.push_insertion_location(element);
 
         if let Some(paragraph) = element.get("paragraph") {
+            self.push_page_breaks(paragraph);
             self.push_paragraph(element, paragraph);
+        } else if let Some(section_break) = element.get("sectionBreak") {
+            self.push_section_break(element, section_break);
+        } else if let Some(table_of_contents) = element.get("tableOfContents") {
+            self.push_table_of_contents(element, table_of_contents);
         } else if let Some(table) = element.get("table") {
             self.push_table(element, table);
         }
+    }
+
+    fn push_page_breaks(&mut self, paragraph: &Value) {
+        let Some(elements) = paragraph.get("elements").and_then(Value::as_array) else {
+            return;
+        };
+        for element in elements
+            .iter()
+            .filter(|element| element.get("pageBreak").is_some())
+        {
+            self.breaks.push(DocumentBreak {
+                kind: DocumentBreakKind::PageBreak,
+                location: self.current_location(element),
+                section_type: None,
+                section_style: None,
+                preview: "[page break]".into(),
+            });
+        }
+    }
+
+    fn push_section_break(&mut self, element: &Value, section_break: &Value) {
+        let section_style = section_break.get("sectionStyle").cloned();
+        let section_type = section_style
+            .as_ref()
+            .and_then(|style| style.get("sectionType"))
+            .and_then(Value::as_str)
+            .unwrap_or("UNSPECIFIED")
+            .to_string();
+        let mut location = self.current_location(element);
+        if location.index.is_none() {
+            location.index = element
+                .get("endIndex")
+                .and_then(Value::as_i64)
+                .map(|end_index| end_index.saturating_sub(1));
+        }
+        self.breaks.push(DocumentBreak {
+            kind: DocumentBreakKind::SectionBreak,
+            location,
+            section_type: Some(section_type.clone()),
+            section_style,
+            preview: format!(
+                "[section break: {}]",
+                section_type.to_ascii_lowercase().replace('_', " ")
+            ),
+        });
     }
 
     fn push_paragraph(&mut self, element: &Value, paragraph: &Value) {
@@ -621,7 +1301,22 @@ impl<'a> DocumentMapBuilder<'a> {
         let inline_images = paragraph_inline_images(paragraph);
         let positioned_object_ids = paragraph_positioned_object_ids(paragraph);
         let style = paragraph_style(paragraph);
+        let paragraph_style = paragraph.get("paragraphStyle").cloned();
+        let text_runs = paragraph_text_runs(paragraph);
         let is_heading = style.as_deref().is_some_and(is_heading_style);
+
+        if trimmed_text.is_empty() {
+            let paragraph_metadata = document_paragraph(element, paragraph);
+            self.blank_paragraphs.push(DocumentBlankParagraph {
+                location: self.current_location(element),
+                start_index: paragraph_metadata.start_index,
+                end_index: paragraph_metadata.end_index,
+                content: paragraph_metadata.content,
+                paragraph_style: paragraph_metadata.paragraph_style,
+                bullet: paragraph_metadata.bullet,
+                text_runs: text_runs.clone(),
+            });
+        }
 
         if !trimmed_text.is_empty() {
             self.push_content_line();
@@ -640,7 +1335,23 @@ impl<'a> DocumentMapBuilder<'a> {
                     preview: preview.clone(),
                 });
             }
-            self.push_entry(location, kind, style.clone(), preview);
+            let heading_id = paragraph
+                .get("paragraphStyle")
+                .and_then(|style| style.get("headingId"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            self.push_entry_with_metadata(
+                location,
+                kind,
+                style.clone(),
+                preview,
+                DocumentMapEntryMetadata {
+                    paragraph_style: paragraph_style.clone(),
+                    text_runs,
+                    heading_id,
+                    ..DocumentMapEntryMetadata::default()
+                },
+            );
         } else if !inline_images.is_empty() || !positioned_object_ids.is_empty() {
             self.push_content_line();
         }
@@ -650,16 +1361,20 @@ impl<'a> DocumentMapBuilder<'a> {
             let image_handle = self.next_image_handle();
             let mut location = self.current_location(element);
             location.index = image.start_index;
-            let layout_metadata = inline_image_layout_metadata(self.document, &image.object_id);
+            let layout_metadata =
+                inline_image_layout_metadata(&self.inline_objects, &image.object_id);
+            let image_alt_text = inline_image_alt_text(&self.inline_objects, &image.object_id);
             self.push_entry_with_metadata(
                 location,
                 DocumentMapEntryKind::InlineImage,
                 style.clone(),
                 inline_image_preview(image_index, inline_image_count),
                 DocumentMapEntryMetadata {
+                    paragraph_style: paragraph_style.clone(),
                     image_handle: Some(image_handle),
                     object_id: Some(image.object_id),
                     layout_metadata,
+                    image_alt_text,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -668,16 +1383,19 @@ impl<'a> DocumentMapBuilder<'a> {
         for (object_index, object_id) in positioned_object_ids.into_iter().enumerate() {
             let image_handle = self.next_image_handle();
             let layout_metadata =
-                positioned_image_layout_metadata(self.positioned_objects, &object_id);
+                positioned_image_layout_metadata(&self.positioned_objects, &object_id);
+            let image_alt_text = positioned_image_alt_text(&self.positioned_objects, &object_id);
             self.push_entry_with_metadata(
                 self.current_location(element),
                 DocumentMapEntryKind::PositionedImage,
                 style.clone(),
                 format!("[positioned image {}]", object_index + 1),
                 DocumentMapEntryMetadata {
+                    paragraph_style: paragraph_style.clone(),
                     image_handle: Some(image_handle),
                     object_id: Some(object_id),
                     layout_metadata,
+                    image_alt_text,
                     ..DocumentMapEntryMetadata::default()
                 },
             );
@@ -690,6 +1408,9 @@ impl<'a> DocumentMapBuilder<'a> {
         let (rows, columns) = table_dimensions(table);
         let location = self.current_location(element);
         let table_cells = table_cell_ranges(table, &location);
+        let table_cell_text_runs = table_cell_text_runs(table);
+        let table_cell_paragraphs = table_cell_paragraphs(table);
+        let layout_metadata = table_layout_metadata(table);
         let table_handle = format!("table-{}", self.table_count);
         self.push_entry_with_metadata(
             location,
@@ -701,6 +1422,48 @@ impl<'a> DocumentMapBuilder<'a> {
                 columns: Some(columns),
                 table_handle: Some(table_handle),
                 table_cells,
+                table_cell_text_runs,
+                table_cell_paragraphs,
+                layout_metadata,
+                ..DocumentMapEntryMetadata::default()
+            },
+        );
+    }
+
+    fn push_table_of_contents(&mut self, element: &Value, table_of_contents: &Value) {
+        self.push_content_line();
+        let content = table_of_contents.get("content").and_then(Value::as_array);
+        let entry_count = content
+            .map(|content| {
+                content
+                    .iter()
+                    .filter(|element| element.get("paragraph").is_some())
+                    .count()
+            })
+            .unwrap_or_default();
+        let text_runs = content
+            .into_iter()
+            .flatten()
+            .filter_map(|element| element.get("paragraph"))
+            .flat_map(paragraph_text_runs)
+            .collect();
+        let paragraphs = content
+            .into_iter()
+            .flatten()
+            .filter_map(|element| {
+                let paragraph = element.get("paragraph")?;
+                Some(document_paragraph(element, paragraph))
+            })
+            .collect();
+        let label = if entry_count == 1 { "entry" } else { "entries" };
+        self.push_entry_with_metadata(
+            self.current_location(element),
+            DocumentMapEntryKind::TableOfContents,
+            None,
+            format!("[table of contents: {entry_count} {label}]"),
+            DocumentMapEntryMetadata {
+                text_runs,
+                paragraphs,
                 ..DocumentMapEntryMetadata::default()
             },
         );
@@ -728,20 +1491,52 @@ impl<'a> DocumentMapBuilder<'a> {
         format!("image-{}", self.image_count)
     }
 
-    fn push_entry(
-        &mut self,
-        location: DocumentLocation,
-        kind: DocumentMapEntryKind,
-        style: Option<String>,
-        preview: String,
-    ) {
-        self.push_entry_with_metadata(
-            location,
-            kind,
-            style,
-            preview,
-            DocumentMapEntryMetadata::default(),
-        );
+    fn push_non_body_images(&mut self, inline_objects: &[&Value], positioned_objects: &[&Value]) {
+        let body_object_ids = self
+            .entries
+            .iter()
+            .filter_map(|entry| entry.object_id.as_deref())
+            .collect::<std::collections::HashSet<_>>();
+        let non_body_inline_ids = object_ids_not_in_body(inline_objects, &body_object_ids);
+        let non_body_positioned_ids = object_ids_not_in_body(positioned_objects, &body_object_ids);
+
+        for object_id in non_body_inline_ids {
+            let image_handle = self.next_image_handle();
+            let layout_metadata = inline_image_layout_metadata(inline_objects, &object_id);
+            let image_alt_text = inline_image_alt_text(inline_objects, &object_id);
+            self.push_entry_with_metadata(
+                non_body_image_location(),
+                DocumentMapEntryKind::InlineImage,
+                None,
+                "[non-body inline image]".into(),
+                DocumentMapEntryMetadata {
+                    image_handle: Some(image_handle),
+                    object_id: Some(object_id),
+                    layout_metadata,
+                    image_alt_text,
+                    ..DocumentMapEntryMetadata::default()
+                },
+            );
+        }
+
+        for object_id in non_body_positioned_ids {
+            let image_handle = self.next_image_handle();
+            let layout_metadata = positioned_image_layout_metadata(positioned_objects, &object_id);
+            let image_alt_text = positioned_image_alt_text(positioned_objects, &object_id);
+            self.push_entry_with_metadata(
+                non_body_image_location(),
+                DocumentMapEntryKind::PositionedImage,
+                None,
+                "[non-body positioned image]".into(),
+                DocumentMapEntryMetadata {
+                    image_handle: Some(image_handle),
+                    object_id: Some(object_id),
+                    layout_metadata,
+                    image_alt_text,
+                    ..DocumentMapEntryMetadata::default()
+                },
+            );
+        }
     }
 
     fn push_entry_with_metadata(
@@ -758,13 +1553,20 @@ impl<'a> DocumentMapBuilder<'a> {
             kind,
             style,
             preview,
+            paragraph_style: metadata.paragraph_style,
+            text_runs: metadata.text_runs,
+            paragraphs: metadata.paragraphs,
+            heading_id: metadata.heading_id,
             image_handle: metadata.image_handle,
             object_id: metadata.object_id,
             layout_metadata: metadata.layout_metadata,
+            image_alt_text: metadata.image_alt_text,
             rows: metadata.rows,
             columns: metadata.columns,
             table_handle: metadata.table_handle,
             table_cells: metadata.table_cells,
+            table_cell_text_runs: metadata.table_cell_text_runs,
+            table_cell_paragraphs: metadata.table_cell_paragraphs,
         });
     }
 
@@ -910,6 +1712,26 @@ fn paragraph_text(paragraph: &Value) -> String {
         .collect::<String>()
 }
 
+fn paragraph_text_runs(paragraph: &Value) -> Vec<DocumentTextRun> {
+    paragraph
+        .get("elements")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(document_text_run)
+        .collect()
+}
+
+fn document_text_run(element: &Value) -> Option<DocumentTextRun> {
+    let text_run = element.get("textRun")?;
+    Some(DocumentTextRun {
+        start_index: element.get("startIndex").and_then(Value::as_i64),
+        end_index: element.get("endIndex").and_then(Value::as_i64),
+        content: text_run.get("content")?.as_str()?.to_string(),
+        text_style: text_run.get("textStyle").cloned(),
+    })
+}
+
 fn paragraph_style(paragraph: &Value) -> Option<String> {
     paragraph
         .get("paragraphStyle")
@@ -970,50 +1792,55 @@ const POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS: [&str; 5] = [
     "marginBottom",
 ];
 
-fn inline_image_layout_metadata(document: &Value, object_id: &str) -> Option<Value> {
-    let size = document_object(document, "inlineObjects", object_id)?
+fn inline_image_layout_metadata(inline_objects: &[&Value], object_id: &str) -> Option<Value> {
+    let embedded_object = inline_objects
+        .iter()
+        .find_map(|objects| objects.get(object_id))?
         .get("inlineObjectProperties")?
-        .get("embeddedObject")?
-        .get("size")?;
-    Some(serde_json::json!({ "size": size }))
+        .get("embeddedObject")?;
+    embedded_image_layout_metadata(embedded_object)
 }
 
-fn document_object<'a>(
-    document: &'a Value,
-    collection: &str,
+fn inline_image_alt_text(
+    inline_objects: &[&Value],
     object_id: &str,
-) -> Option<&'a Value> {
-    document
-        .get(collection)
-        .and_then(|objects| objects.get(object_id))
-        .or_else(|| {
-            document
-                .get("tabs")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .find_map(|tab| tab_document_object(tab, collection, object_id))
-        })
+) -> Option<DocumentImageAltText> {
+    let embedded_object = inline_objects
+        .iter()
+        .find_map(|objects| objects.get(object_id))?
+        .get("inlineObjectProperties")?
+        .get("embeddedObject")?;
+    embedded_image_alt_text(embedded_object)
 }
 
-fn tab_document_object<'a>(tab: &'a Value, collection: &str, object_id: &str) -> Option<&'a Value> {
-    tab.get("documentTab")
-        .and_then(|document_tab| document_object(document_tab, collection, object_id))
-        .or_else(|| {
-            tab.get("childTabs")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .find_map(|child| tab_document_object(child, collection, object_id))
-        })
+fn embedded_image_layout_metadata(embedded_object: &Value) -> Option<Value> {
+    let mut metadata = serde_json::Map::new();
+    for field in POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS {
+        if let Some(value) = embedded_object.get(field) {
+            metadata.insert(field.into(), value.clone());
+        }
+    }
+    if let Some(crop_properties) = embedded_object
+        .get("imageProperties")
+        .and_then(|properties| properties.get("cropProperties"))
+    {
+        metadata.insert("cropProperties".into(), crop_properties.clone());
+    }
+
+    if metadata.is_empty() {
+        None
+    } else {
+        Some(Value::Object(metadata))
+    }
 }
 
 fn positioned_image_layout_metadata(
-    positioned_objects: Option<&Value>,
+    positioned_objects: &[&Value],
     object_id: &str,
 ) -> Option<Value> {
-    let properties = positioned_objects?
-        .get(object_id)?
+    let properties = positioned_objects
+        .iter()
+        .find_map(|objects| objects.get(object_id))?
         .get("positionedObjectProperties")?;
     let mut metadata = serde_json::Map::new();
 
@@ -1021,11 +1848,12 @@ fn positioned_image_layout_metadata(
         metadata.insert("positioning".into(), positioning.clone());
     }
 
-    if let Some(embedded_object) = properties.get("embeddedObject") {
-        for field in POSITIONED_IMAGE_EMBEDDED_METADATA_FIELDS {
-            if let Some(value) = embedded_object.get(field) {
-                metadata.insert(field.into(), value.clone());
-            }
+    if let Some(Value::Object(embedded_metadata)) = properties
+        .get("embeddedObject")
+        .and_then(embedded_image_layout_metadata)
+    {
+        for (field, value) in embedded_metadata {
+            metadata.insert(field, value);
         }
     }
 
@@ -1033,6 +1861,79 @@ fn positioned_image_layout_metadata(
         None
     } else {
         Some(Value::Object(metadata))
+    }
+}
+
+fn positioned_image_alt_text(
+    positioned_objects: &[&Value],
+    object_id: &str,
+) -> Option<DocumentImageAltText> {
+    let embedded_object = positioned_objects
+        .iter()
+        .find_map(|objects| objects.get(object_id))?
+        .get("positionedObjectProperties")?
+        .get("embeddedObject")?;
+    embedded_image_alt_text(embedded_object)
+}
+
+fn embedded_image_alt_text(embedded_object: &Value) -> Option<DocumentImageAltText> {
+    let title = nonempty_string_field(embedded_object, "title");
+    let description = nonempty_string_field(embedded_object, "description");
+    if title.is_none() && description.is_none() {
+        None
+    } else {
+        Some(DocumentImageAltText { title, description })
+    }
+}
+
+fn nonempty_string_field(value: &Value, field: &str) -> Option<String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn object_ids_not_in_body(
+    objects: &[&Value],
+    body_object_ids: &std::collections::HashSet<&str>,
+) -> Vec<String> {
+    objects
+        .iter()
+        .filter_map(|objects| objects.as_object())
+        .flat_map(|objects| objects.keys())
+        .filter(|object_id| !body_object_ids.contains(object_id.as_str()))
+        .cloned()
+        .collect()
+}
+
+fn document_object_maps<'a>(document: &'a Value, field: &str) -> Vec<&'a Value> {
+    document
+        .get(field)
+        .filter(|objects| {
+            objects
+                .as_object()
+                .is_some_and(|objects| !objects.is_empty())
+        })
+        .into_iter()
+        .chain(
+            document
+                .get("tabs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|tab| tab.get("documentTab"))
+                .filter_map(|document_tab| document_tab.get(field)),
+        )
+        .collect()
+}
+
+fn non_body_image_location() -> DocumentLocation {
+    DocumentLocation {
+        index: None,
+        page: None,
+        content_line: 0,
+        confidence: LocationConfidence::Unknown,
     }
 }
 
@@ -1088,6 +1989,50 @@ fn table_dimensions(table: &Value) -> (usize, usize) {
     (rows.len(), columns)
 }
 
+fn table_layout_metadata(table: &Value) -> Option<Value> {
+    let mut metadata = table
+        .get("tableStyle")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let table_cell_styles = table
+        .get("tableRows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|row| {
+            row.get("tableCells")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|cell| {
+                    cell.get("tableCellStyle")
+                        .cloned()
+                        .unwrap_or_else(|| Value::Object(serde_json::Map::new()))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    metadata.insert("tableCellStyles".into(), Value::from(table_cell_styles));
+    let pinned_header_rows_count = table
+        .get("tableRows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take_while(|row| {
+            row.get("tableRowStyle")
+                .and_then(|style| style.get("tableHeader"))
+                .and_then(Value::as_bool)
+                == Some(true)
+        })
+        .count();
+    metadata.insert(
+        "pinnedHeaderRowsCount".into(),
+        Value::from(pinned_header_rows_count),
+    );
+    Some(Value::Object(metadata))
+}
+
 fn table_cell_text(cell: &Value) -> String {
     cell.get("content")
         .and_then(Value::as_array)
@@ -1098,6 +2043,58 @@ fn table_cell_text(cell: &Value) -> String {
         .collect::<String>()
         .trim()
         .to_string()
+}
+
+fn table_cell_text_runs(table: &Value) -> Vec<Vec<Vec<DocumentTextRun>>> {
+    table
+        .get("tableRows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|row| {
+            row.get("tableCells")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|cell| {
+                    cell.get("content")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|element| element.get("paragraph"))
+                        .flat_map(paragraph_text_runs)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+fn table_cell_paragraphs(table: &Value) -> Vec<Vec<Vec<DocumentTableCellParagraph>>> {
+    table
+        .get("tableRows")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|row| {
+            row.get("tableCells")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|cell| {
+                    cell.get("content")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|element| {
+                            let paragraph = element.get("paragraph")?;
+                            Some(document_paragraph(element, paragraph))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 fn table_cell_ranges(table: &Value, table_location: &DocumentLocation) -> Vec<Vec<DocumentRange>> {
@@ -1193,4 +2190,98 @@ fn preview(text: &str) -> String {
 
 fn string_field(value: &Value, field: &str) -> Option<String> {
     value.get(field).and_then(Value::as_str).map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::build_document_map;
+
+    #[test]
+    fn build_document_map_preserves_legacy_named_styles() {
+        let document_map = build_document_map(&json!({
+            "documentId": "legacy-document",
+            "namedStyles": {
+                "styles": [{
+                    "namedStyleType": "TITLE",
+                    "textStyle": { "fontSize": { "magnitude": 26, "unit": "PT" } }
+                }]
+            },
+            "body": { "content": [] }
+        }));
+
+        assert_eq!(document_map.named_styles.len(), 1);
+        assert_eq!(document_map.named_styles[0].tab_id, None);
+        assert_eq!(
+            document_map.named_styles[0].named_styles["styles"][0]["namedStyleType"],
+            "TITLE"
+        );
+    }
+
+    #[test]
+    fn build_document_map_preserves_blank_paragraph_text_runs_without_adding_entries() {
+        let document_map = build_document_map(&json!({
+            "documentId": "blank-paragraph-document",
+            "body": {
+                "content": [
+                    {
+                        "startIndex": 1,
+                        "endIndex": 2,
+                        "paragraph": {
+                            "paragraphStyle": {
+                                "namedStyleType": "NORMAL_TEXT",
+                                "spaceBelow": { "magnitude": 10, "unit": "PT" }
+                            },
+                            "elements": [{
+                                "startIndex": 1,
+                                "endIndex": 2,
+                                "textRun": {
+                                    "content": "\n",
+                                    "textStyle": {
+                                        "weightedFontFamily": { "fontFamily": "Bai Jamjuree" },
+                                        "fontSize": { "magnitude": 14, "unit": "PT" }
+                                    }
+                                }
+                            }]
+                        }
+                    },
+                    {
+                        "startIndex": 2,
+                        "endIndex": 10,
+                        "paragraph": {
+                            "elements": [{
+                                "startIndex": 2,
+                                "endIndex": 10,
+                                "textRun": { "content": "Visible\n" }
+                            }]
+                        }
+                    }
+                ]
+            }
+        }));
+
+        assert_eq!(document_map.blank_paragraphs.len(), 1);
+        assert_eq!(document_map.blank_paragraphs[0].start_index, Some(1));
+        assert_eq!(document_map.blank_paragraphs[0].end_index, Some(2));
+        assert_eq!(document_map.blank_paragraphs[0].content, "\n");
+        assert_eq!(
+            document_map.blank_paragraphs[0]
+                .paragraph_style
+                .as_ref()
+                .unwrap()["spaceBelow"]["magnitude"],
+            10
+        );
+        assert_eq!(document_map.blank_paragraphs[0].text_runs.len(), 1);
+        assert_eq!(
+            document_map.blank_paragraphs[0].text_runs[0]
+                .text_style
+                .as_ref()
+                .unwrap()["weightedFontFamily"]["fontFamily"],
+            "Bai Jamjuree"
+        );
+        assert_eq!(document_map.entries.len(), 1);
+        assert_eq!(document_map.entries[0].entry, 1);
+        assert_eq!(document_map.entries[0].preview, "Visible");
+    }
 }

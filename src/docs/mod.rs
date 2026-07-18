@@ -86,6 +86,40 @@ pub struct GetDocumentOptions {
     drive_files_url: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct CopyDocumentOptions {
+    pub source_document_id: String,
+    pub title: String,
+    drive_files_url: String,
+}
+
+impl CopyDocumentOptions {
+    pub fn new(source_document_id: impl Into<String>, title: impl Into<String>) -> Self {
+        Self {
+            source_document_id: source_document_id.into(),
+            title: title.into(),
+            drive_files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_drive_files_url(mut self, drive_files_url: impl Into<String>) -> Self {
+        self.drive_files_url = drive_files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DocsError> {
+        let mut url = drive_file_url(
+            &self.drive_files_url,
+            &self.source_document_id,
+            Some("copy"),
+        )?;
+        url.query_pairs_mut()
+            .append_pair("fields", "id,name,mimeType,webViewLink")
+            .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+}
+
 impl GetDocumentOptions {
     pub fn new(document_id: impl Into<String>) -> Self {
         Self {
@@ -225,6 +259,22 @@ pub async fn create_document<S: AccountStore>(
             .post(options.request_url()?)
             .json(&serde_json::json!({ "title": options.title })),
         DOCS_SCOPES,
+    )
+    .await
+}
+
+/// Copies an existing native Google Doc through Drive so editor-only
+/// components are preserved in the new document.
+pub async fn copy_document<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CopyDocumentOptions,
+) -> Result<Document, DocsError> {
+    send_json_request(
+        client,
+        client
+            .post(options.request_url()?)
+            .json(&serde_json::json!({ "name": options.title })),
+        DRIVE_SCOPES,
     )
     .await
 }

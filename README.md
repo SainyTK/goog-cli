@@ -15,7 +15,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 `goog` currently includes:
 
 - Google Drive file and folder listing, upload, and download commands.
-- Google Docs document listing, creation, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
+- Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
 - Google Slides presentation listing, creation, raw reads, high-level slide/text/image/table/shape edits, and raw batch updates.
 - Google Calendar calendar listing, calendar metadata reads, free/busy lookup, and event list/read/create/update/delete commands.
@@ -174,11 +174,15 @@ Use `--show-all` to include them.
 ```sh
 goog docs list --limit 20
 goog docs create "Q3 Report"
+goog docs copy SOURCE_DOCUMENT_ID "Q3 Report from template"
+goog docs export-pdf DOCUMENT_ID --output ./q3-report.pdf
 goog docs map DOCUMENT_ID
 goog docs map DOCUMENT_ID --type images
 goog docs map DOCUMENT_ID --type tables
 goog docs map DOCUMENT_ID --heading "Summary"
 goog docs text search DOCUMENT_ID "quarterly plan"
+goog docs style copy-named SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
+goog docs style copy-page SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --max-width 468 --max-height 500 --at 'heading:Summary'
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --fit-page --reserve-height 72 --at 'heading:Summary'
@@ -520,19 +524,18 @@ Install local dependencies:
 
 ```sh
 cargo fetch
-npm install
 ```
 
 Run checks before opening a pull request:
 
 ```sh
 cargo fmt --check
+cargo check
 cargo test
-npm run typecheck
 ```
 
-Issues live in GitHub Issues.
-Pick work labeled `ready-for-agent` or `bug` (there is no separate `Sandcastle` label), keep changes scoped to the issue, and link the issue from the pull request.
+Substantial autonomous work uses the [GnHF workflow](docs/agents/gnhf-workflow.md).
+Run GnHF from a clean base branch with its own worktree and pushed branch, then review and test the resulting pull request before merging.
 
 Pull requests should include:
 
