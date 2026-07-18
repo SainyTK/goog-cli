@@ -286,6 +286,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             segment_id: None,
             width: Some(468.0),
             height: Some(240.0),
+            fit: None,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-image".into()),
@@ -315,6 +316,7 @@ fn image_table_style_and_list_changes_build_native_requests() {
             segment_id: Some("header-123".into()),
             width: Some(72.0),
             height: Some(24.0),
+            fit: None,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-image".into()),
@@ -814,6 +816,7 @@ fn image_dimensions_must_be_positive_and_finite() {
         segment_id: None,
         width: Some(0.0),
         height: Some(240.0),
+        fit: None,
         dry_run: true,
         json: true,
         required_revision_id: None,
@@ -843,6 +846,7 @@ fn image_location_requires_exactly_one_body_selector_or_segment() {
         segment_id: None,
         width: None,
         height: None,
+        fit: None,
         dry_run: true,
         json: true,
         required_revision_id: None,
@@ -907,6 +911,7 @@ fn edit_table_and_split_apply_style_requests_are_module_level_behavior() {
         document_locations: Vec::new(),
         text_blocks: Vec::new(),
         insertion_locations: Vec::new(),
+        raw_document: serde_json::Value::Null,
     };
     let temp_dir = tempfile::tempdir().unwrap();
     let table_data = temp_dir.path().join("table.csv");

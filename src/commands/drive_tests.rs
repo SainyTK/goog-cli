@@ -407,7 +407,7 @@ async fn run_ls_defaults_to_drive_root_and_renders_mixed_table() {
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer drive-access"))
         .and(query_param("pageSize", "50"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_MIXED_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -448,7 +448,10 @@ async fn run_ls_filters_to_folder_when_requested() {
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer drive-access"))
         .and(query_param("pageSize", "50"))
-        .and(query_param("q", "'folder-123' in parents"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and trashed = false",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_MIXED_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -485,7 +488,7 @@ async fn run_ls_emits_ndjson_with_drive_native_mime_type_field() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_MIXED_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -528,7 +531,7 @@ async fn run_ls_all_lists_following_pages_and_reports_progress() {
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -537,7 +540,7 @@ async fn run_ls_all_lists_following_pages_and_reports_progress() {
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_SECOND_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -620,7 +623,7 @@ async fn run_list_filters_to_folder_when_requested() {
         .and(query_param("pageSize", "50"))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -661,7 +664,7 @@ async fn run_folder_list_defaults_to_drive_root() {
         .and(query_param("pageSize", "50"))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -703,7 +706,7 @@ async fn run_folder_list_filters_to_parent_when_requested() {
         .and(query_param("pageSize", "50"))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -744,7 +747,7 @@ async fn run_folder_list_emits_ndjson_with_parent_ids() {
         .and(query_param("pageSize", "50"))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -786,7 +789,7 @@ async fn run_folder_list_all_lists_following_pages_and_reports_progress() {
         .and(query_param("pageSize", "2"))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_FIRST_PAGE_RESPONSE))
         .expect(1)
@@ -798,7 +801,7 @@ async fn run_folder_list_all_lists_following_pages_and_reports_progress() {
         .and(query_param("pageToken", "token-2"))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SECOND_PAGE_RESPONSE))
         .expect(1)
@@ -842,7 +845,7 @@ async fn run_list_all_lists_following_pages_and_reports_progress() {
         .and(query_param("pageSize", "2"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FIRST_PAGE_RESPONSE))
         .expect(1)
@@ -854,7 +857,7 @@ async fn run_list_all_lists_following_pages_and_reports_progress() {
         .and(query_param("pageToken", "token-2"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SECOND_PAGE_RESPONSE))
         .expect(1)
@@ -898,7 +901,7 @@ async fn run_list_limit_can_span_multiple_pages_without_all() {
         .and(query_param("pageSize", "2"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FIRST_PAGE_RESPONSE))
         .expect(1)
@@ -910,7 +913,7 @@ async fn run_list_limit_can_span_multiple_pages_without_all() {
         .and(query_param("pageToken", "token-2"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SECOND_PAGE_RESPONSE))
         .expect(1)
@@ -1048,6 +1051,33 @@ async fn run_upload_prints_uploaded_file_id_and_url() {
 }
 
 #[tokio::test]
+async fn run_delete_removes_the_file_and_confirms_its_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+
+    run_delete_to(
+        &client,
+        "file-123",
+        &mut out,
+        Some(&format!("{}/drive/v3/files", server.uri())),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "Deleted\tfile-123\n");
+}
+
+#[tokio::test]
 async fn run_download_unified_falls_back_on_target_access_failure_and_maps_success() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -1109,7 +1139,7 @@ async fn run_ls_files_without_target_stays_on_active_account_and_defaults_to_roo
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType != 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -1131,6 +1161,7 @@ async fn run_ls_files_without_target_stays_on_active_account_and_defaults_to_roo
         false,
         None,
         false,
+        false,
         true,
         &mut out,
         &mut err,
@@ -1147,6 +1178,49 @@ async fn run_ls_files_without_target_stays_on_active_account_and_defaults_to_roo
 }
 
 #[tokio::test]
+async fn run_ls_show_all_includes_soft_deleted_items() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer alice-access"))
+        .and(query_param(
+            "q",
+            "'root' in parents and mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_ls_command_to(
+        &config,
+        &store,
+        None,
+        DriveListKind::Files,
+        None,
+        false,
+        None,
+        true,
+        false,
+        true,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    assert!(String::from_utf8(out).unwrap().contains("Roadmap\tfile-1"));
+    assert!(err.is_empty());
+}
+
+#[tokio::test]
 async fn run_list_unified_tries_mapped_folder_before_active_account() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -1154,7 +1228,7 @@ async fn run_list_unified_tries_mapped_folder_before_active_account() {
         .and(header("authorization", "Bearer bob-access"))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -1181,6 +1255,7 @@ async fn run_list_unified_tries_mapped_folder_before_active_account() {
         false,
         Some("folder-123".into()),
         false,
+        false,
         true,
         &mut out,
         &mut err,
@@ -1201,7 +1276,10 @@ async fn run_ls_unified_browses_target_folder_with_mapped_account() {
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer bob-access"))
-        .and(query_param("q", "'folder-123' in parents"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and trashed = false",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_MIXED_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1227,6 +1305,7 @@ async fn run_ls_unified_browses_target_folder_with_mapped_account() {
         false,
         Some("folder-123".into()),
         false,
+        false,
         true,
         &mut out,
         &mut err,
@@ -1250,7 +1329,7 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
         .expect(1)
@@ -1261,7 +1340,7 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         .and(header("authorization", "Bearer bob-access"))
         .and(query_param(
             "q",
-            "'folder-456' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'folder-456' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -1284,6 +1363,7 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         None,
         false,
         Some("folder-123".into()),
+        false,
         false,
         true,
         &mut denied_out,
@@ -1308,6 +1388,7 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         None,
         false,
         Some("folder-456".into()),
+        false,
         false,
         true,
         &mut mapped_out,
@@ -1412,7 +1493,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1421,7 +1502,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_string(BROWSE_SECOND_PAGE_RESPONSE)
@@ -1451,6 +1532,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
         Some(2),
         true,
         Some("root".into()),
+        false,
         false,
         false,
         &mut out,
@@ -1486,7 +1568,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param("pageSize", "2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1496,7 +1578,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(404).set_body_string("missing for alice"))
         .expect(1)
         .mount(&server)
@@ -1505,7 +1587,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer bob-access"))
         .and(query_param("pageSize", "2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1515,7 +1597,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         .and(header("authorization", "Bearer bob-access"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_SECOND_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1537,6 +1619,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         Some(2),
         true,
         Some("root".into()),
+        false,
         false,
         false,
         &mut out,

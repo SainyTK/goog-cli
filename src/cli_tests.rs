@@ -471,6 +471,7 @@ fn drive_ls_with_flags() {
                     all,
                     type_,
                     folder,
+                    show_all,
                     json,
                 },
         } => {
@@ -478,6 +479,7 @@ fn drive_ls_with_flags() {
             assert!(all);
             assert_eq!(type_, DriveListType::Files);
             assert_eq!(folder.as_deref(), Some("folder123"));
+            assert!(!show_all);
             assert!(json);
         }
         _ => panic!("unexpected parse result"),
@@ -495,6 +497,7 @@ fn drive_ls_defaults_to_items() {
                 all: false,
                 type_: DriveListType::Items,
                 folder: None,
+                show_all: false,
                 json: false
             }
         }
@@ -1275,7 +1278,7 @@ fn docs_new_high_level_editing_commands_parse() {
     else {
         panic!("unexpected parse result");
     };
-    assert_eq!(image_uri, "https://example.test/image.png");
+    assert_eq!(image_uri.as_deref(), Some("https://example.test/image.png"));
     assert_eq!(at.as_deref(), Some("page:2,line:1"));
     assert_eq!(width, Some(468.0));
     assert_eq!(height, Some(240.0));

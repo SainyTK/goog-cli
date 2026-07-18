@@ -11,8 +11,8 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
     DocsBreakCommand, DocsCommand, DocsCompareScope, DocsFooterCommand, DocsFootnoteCommand,
-    DocsHeaderCommand, DocsImageCommand, DocsMapType, DocsNamedRangeCommand, DocsStyleCommand,
-    DocsTableCommand, DocsTextCommand,
+    DocsHeaderCommand, DocsImageCommand, DocsImageStaging, DocsMapType, DocsNamedRangeCommand,
+    DocsStyleCommand, DocsTableCommand, DocsTextCommand,
 };
 use crate::docs::{
     batch_update_document,
@@ -31,12 +31,15 @@ use crate::docs::{
         table_header_style_requests, write_docs_change_preview, ApplyListCommand,
         ApplyStylesCommand, ConfigurePageCommand, CopyNamedStylesCommand, CopyPageStyleCommand,
         CreateFooterCommand, CreateFootnoteCommand, CreateHeaderCommand, CreateNamedRangeCommand,
-        DeleteNamedRangeCommand, EditTableCommand, InsertImageCommand, InsertPageBreakCommand,
-        InsertSectionBreakCommand, InsertTableCommand, InsertTextCommand,
-        PinTableHeaderRowsCommand, PreparedDocsChange, ReplaceTextCommand,
+        DeleteNamedRangeCommand, EditTableCommand, InsertImageCommand, InsertImageFit,
+        InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand, InsertTextCommand,
+        PageFitOptions, PinTableHeaderRowsCommand, PreparedDocsChange, ReplaceTextCommand,
         SetTableColumnWidthsCommand, StyleTableRowCommand, UpdateNamedStyleCommand,
     },
     copy_document, create_document, extract_style_template, get_document,
+    image_fit::{exact_size_preserves_aspect_ratio, ImageFitConstraints},
+    image_metadata::{inspect_local_image, inspect_remote_image_dimensions},
+    image_staging::{cleanup_with_command, safe_command_path, stage_with_command},
     map::build_document_map,
     map::resolve_content_entry,
     map::search_document_text,
@@ -55,11 +58,357 @@ use crate::docs::{
     GetDocumentOptions, StyleTemplate,
 };
 use crate::drive::{
-    export_google_file, DownloadedFile, DriveError, ExportGoogleFileOptions, GoogleFileExportFormat,
+    create_anyone_reader_permission, delete_file, export_google_file, upload, DownloadedFile,
+    DriveError, DriveFileOperationOptions, ExportGoogleFileOptions, GoogleFileExportFormat,
+    UploadFileOptions,
 };
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+
+pub(super) struct LocalImageDryRunOptions<'a> {
+    pub document_id: &'a str,
+    pub image_path: &'a Path,
+    pub staging: DocsImageStaging,
+    pub staging_command: Option<&'a Path>,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub sizing: RemoteImageSizingOptions,
+    pub selector: Option<InsertTextSelector>,
+    pub segment_id: Option<String>,
+    pub required_revision_id: Option<String>,
+    pub json: bool,
+    pub documents_url: Option<&'a str>,
+    pub state_path: Option<&'a Path>,
+}
+
+pub(super) struct LocalImageStagingCommandOptions<'a> {
+    pub document_id: &'a str,
+    pub image_path: &'a Path,
+    pub staging_command: &'a Path,
+    pub keep_staged: bool,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub sizing: RemoteImageSizingOptions,
+    pub selector: Option<InsertTextSelector>,
+    pub segment_id: Option<String>,
+    pub required_revision_id: Option<String>,
+    pub json: bool,
+    pub documents_url: Option<&'a str>,
+    pub state_path: Option<&'a Path>,
+}
+
+pub(super) struct LocalImageDrivePublicOptions<'a> {
+    pub document_id: &'a str,
+    pub image_path: &'a Path,
+    pub keep_staged: bool,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub sizing: RemoteImageSizingOptions,
+    pub selector: Option<InsertTextSelector>,
+    pub segment_id: Option<String>,
+    pub required_revision_id: Option<String>,
+    pub json: bool,
+    pub documents_url: Option<&'a str>,
+    pub state_path: Option<&'a Path>,
+    pub drive_upload_url: Option<&'a str>,
+    pub drive_files_url: Option<&'a str>,
+}
+
+pub(super) async fn run_local_image_drive_public<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: LocalImageDrivePublicOptions<'_>,
+    out: &mut impl Write,
+) -> Result<()> {
+    let account = account_override.context("local image insertion requires --account EMAIL")?;
+    let client = AuthClient::from_config(config.clone(), store, Some(account))?;
+    let account = client.account_email().to_string();
+    let source = inspect_local_image(options.image_path)?;
+    let fit = resolve_local_image_fit(source.dimensions, options.sizing)?;
+    let mut upload_options = UploadFileOptions::new(&source.path).with_mime_type(source.mime_type);
+    if let Some(upload_url) = options.drive_upload_url {
+        upload_options = upload_options.with_upload_url(upload_url);
+    }
+    let uploaded = upload(&client, &upload_options, |_| ())
+        .await
+        .context("failed to upload local image for Google Docs staging")?;
+    let mut file_options = DriveFileOperationOptions::new(&uploaded.id);
+    if let Some(files_url) = options.drive_files_url {
+        file_options = file_options.with_files_url(files_url);
+    }
+    if let Err(permission_error) = create_anyone_reader_permission(&client, &file_options).await {
+        let cleanup = delete_file(&client, &file_options).await;
+        if is_public_sharing_policy_blocked(&permission_error) && options.json {
+            write_json_line(
+                out,
+                &serde_json::json!({
+                    "code": "DOCS_IMAGE_STAGING_POLICY_BLOCKED",
+                    "backend": "drive-public",
+                    "googleReason": "publishOutNotPermitted",
+                    "cleanupCompleted": cleanup.is_ok(),
+                    "account": account,
+                    "nextActions": [
+                        "Configure --staging-command for a permitted HTTPS staging service",
+                        "Use the existing IMAGE_URI form with a caller-hosted image"
+                    ]
+                }),
+                "failed to serialize local image staging policy error",
+            )?;
+        }
+        return match cleanup {
+            Ok(()) => Err(permission_error)
+                .context("Drive public sharing was rejected; staged file cleanup completed"),
+            Err(cleanup_error) => Err(anyhow::anyhow!(
+                "Drive public sharing was rejected and staged file cleanup failed: permission: {permission_error}; cleanup: {cleanup_error}"
+            )),
+        };
+    }
+    let image_uri = format!(
+        "https://drive.google.com/uc?export=download&id={}",
+        uploaded.id
+    );
+    let mut docs_output = Vec::new();
+    let insertion = run_insert_image_unified_to(
+        config,
+        store,
+        Some(&account),
+        InsertImageCommand {
+            document_id: options.document_id.to_string(),
+            image_uri,
+            selector: options.selector,
+            segment_id: options.segment_id,
+            width: options.width,
+            height: options.height,
+            fit,
+            dry_run: false,
+            json: options.json,
+            required_revision_id: options.required_revision_id,
+        },
+        &mut docs_output,
+        options.documents_url,
+        options.state_path,
+    )
+    .await;
+    let cleanup = if options.keep_staged {
+        Ok(())
+    } else {
+        delete_file(&client, &file_options).await
+    };
+    match (insertion, cleanup) {
+        (Err(insertion), Ok(())) => Err(insertion.context("local image insertion failed; staged Drive file cleanup completed")),
+        (Err(insertion), Err(cleanup)) => Err(anyhow::anyhow!(
+            "local image insertion failed and staged Drive file cleanup also failed: insertion: {insertion:#}; cleanup: {cleanup}"
+        )),
+        (Ok(()), Err(cleanup)) => {
+            if options.json {
+                write_json_line(out, &serde_json::json!({
+                    "code": "DOCS_IMAGE_INSERTED_CLEANUP_FAILED",
+                    "partialSuccess": true,
+                    "documentId": options.document_id,
+                    "account": account,
+                    "backend": "drive-public",
+                    "cleanupCompleted": false,
+                    "stagedResourceId": uploaded.id,
+                    "cleanupCommand": ["goog", "--account", account, "drive", "delete", uploaded.id],
+                }), "failed to serialize local image partial-success result")?;
+            }
+            Err(anyhow::anyhow!(cleanup).context("image insertion succeeded but staged Drive file cleanup failed"))
+        }
+        (Ok(()), Ok(())) => {
+            if !options.json {
+                out.write_all(&docs_output).context("failed to write Docs image insertion response")?;
+                writeln!(out, "Staging: drive-public (cleanup {}) using account {}", if options.keep_staged { "skipped" } else { "completed" }, account)
+                    .context("failed to write local image staging result")?;
+                return Ok(());
+            }
+            let mut output: serde_json::Value = serde_json::from_slice(&docs_output)
+                .context("failed to parse Docs image insertion response")?;
+            output["account"] = serde_json::json!(account);
+            output["staging"] = serde_json::json!({
+                "backend": "drive-public",
+                "cleanupCompleted": !options.keep_staged,
+                "keptStaged": options.keep_staged,
+                "stagedResourceId": options.keep_staged.then_some(uploaded.id),
+            });
+            write_json_line(out, &output, "failed to serialize local image insertion result")
+        }
+    }
+}
+
+fn is_public_sharing_policy_blocked(error: &DriveError) -> bool {
+    matches!(error, DriveError::Api { body, .. } if body.contains("publishOutNotPermitted"))
+}
+
+pub(super) async fn run_local_image_staging_command<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: LocalImageStagingCommandOptions<'_>,
+    out: &mut impl Write,
+) -> Result<()> {
+    let account = account_override.context("local image insertion requires --account EMAIL")?;
+    let account = AuthClient::from_config(config.clone(), store, Some(account))?
+        .account_email()
+        .to_string();
+    let source = inspect_local_image(options.image_path)?;
+    let fit = resolve_local_image_fit(source.dimensions, options.sizing)?;
+    let staged = stage_with_command(options.staging_command, &source.path, source.mime_type)?;
+    let mut docs_output = Vec::new();
+    let insertion = run_insert_image_unified_to(
+        config,
+        store,
+        Some(&account),
+        InsertImageCommand {
+            document_id: options.document_id.to_string(),
+            image_uri: staged.uri.clone(),
+            selector: options.selector,
+            segment_id: options.segment_id,
+            width: options.width,
+            height: options.height,
+            fit,
+            dry_run: false,
+            json: options.json,
+            required_revision_id: options.required_revision_id,
+        },
+        &mut docs_output,
+        options.documents_url,
+        options.state_path,
+    )
+    .await;
+    let cleanup = if options.keep_staged {
+        Ok(())
+    } else if let Some(token) = staged.cleanup_token.as_deref() {
+        cleanup_with_command(options.staging_command, token)
+    } else {
+        Ok(())
+    };
+    match (insertion, cleanup) {
+        (Err(insertion), Ok(())) => Err(insertion.context("local image insertion failed; staging cleanup completed")),
+        (Err(insertion), Err(cleanup)) => Err(anyhow::anyhow!(
+            "local image insertion failed and staging cleanup also failed: insertion: {insertion:#}; cleanup: {cleanup:#}"
+        )),
+        (Ok(()), Err(cleanup)) => {
+            if options.json {
+                write_json_line(out, &serde_json::json!({
+                    "code": "DOCS_IMAGE_INSERTED_CLEANUP_FAILED",
+                    "partialSuccess": true,
+                    "documentId": options.document_id,
+                    "account": account,
+                    "backend": "staging-command",
+                    "cleanupCompleted": false,
+                    "stagingCommand": safe_command_path(options.staging_command),
+                }), "failed to serialize local image partial-success result")?;
+            }
+            Err(cleanup.context("image insertion succeeded but staging cleanup failed"))
+        }
+        (Ok(()), Ok(())) => {
+            if !options.json {
+                out.write_all(&docs_output).context("failed to write Docs image insertion response")?;
+                writeln!(out, "Staging: staging-command (cleanup {}) using account {}", if options.keep_staged { "skipped" } else { "completed" }, account)
+                    .context("failed to write local image staging result")?;
+                return Ok(());
+            }
+            let mut output: serde_json::Value = serde_json::from_slice(&docs_output)
+                .context("failed to parse Docs image insertion response")?;
+            output["account"] = serde_json::json!(account);
+            output["staging"] = serde_json::json!({
+                "backend": "staging-command",
+                "cleanupCompleted": !options.keep_staged,
+                "keptStaged": options.keep_staged,
+                "expiresAt": staged.expires_at,
+            });
+            write_json_line(out, &output, "failed to serialize local image insertion result")
+        }
+    }
+}
+
+pub(super) async fn write_local_image_dry_run<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: LocalImageDryRunOptions<'_>,
+    out: &mut impl Write,
+) -> Result<()> {
+    if options.staging == DocsImageStaging::DrivePublic && options.staging_command.is_some() {
+        bail!("--staging-command cannot be combined with --staging drive-public");
+    }
+    let source = inspect_local_image(options.image_path)?;
+    let account = account_override.context("local image insertion requires --account EMAIL")?;
+    let account = AuthClient::from_config(config.clone(), store, Some(account))?
+        .account_email()
+        .to_string();
+    let requested = match options.staging {
+        DocsImageStaging::Auto => "auto",
+        DocsImageStaging::DrivePublic => "drive-public",
+    };
+    let planned_backend = if options.staging_command.is_some() {
+        "staging-command"
+    } else {
+        "drive-public"
+    };
+    let fit = resolve_local_image_fit(source.dimensions, options.sizing)?;
+    let mut preview_bytes = Vec::new();
+    run_insert_image_unified_to(
+        config,
+        store,
+        Some(&account),
+        InsertImageCommand {
+            document_id: options.document_id.to_string(),
+            image_uri: "https://staging.invalid/goog-local-image".into(),
+            selector: options.selector,
+            segment_id: options.segment_id,
+            width: options.width,
+            height: options.height,
+            fit,
+            dry_run: true,
+            json: options.json,
+            required_revision_id: options.required_revision_id,
+        },
+        &mut preview_bytes,
+        options.documents_url,
+        options.state_path,
+    )
+    .await?;
+    if !options.json {
+        out.write_all(&preview_bytes)
+            .context("failed to write local image Docs preview")?;
+        writeln!(
+            out,
+            "Staging: {} ({}, {} bytes) via {} using account {}",
+            source.path.display(),
+            source.mime_type,
+            source.size_bytes,
+            planned_backend,
+            account
+        )
+        .context("failed to write local image staging dry run")?;
+        return Ok(());
+    }
+    let mut output: serde_json::Value = serde_json::from_slice(&preview_bytes)
+        .context("failed to parse local image Docs preview")?;
+    output["dryRun"] = serde_json::json!(true);
+    output["documentId"] = serde_json::json!(options.document_id);
+    output["account"] = serde_json::json!(account);
+    output["source"] = serde_json::json!({
+        "path": source.path,
+        "mimeType": source.mime_type,
+        "sizeBytes": source.size_bytes,
+        "dimensions": { "widthPixels": source.dimensions.width_px, "heightPixels": source.dimensions.height_px }
+    });
+    output["staging"] = serde_json::json!({
+        "requested": requested,
+        "plannedBackend": planned_backend,
+        "command": options.staging_command
+    });
+    output["remoteWritesPerformed"] = serde_json::json!(false);
+    write_json_line(
+        out,
+        &output,
+        "failed to serialize local image staging dry run",
+    )
+}
 
 pub fn run<S: AccountStore>(
     mut cmd: DocsCommand,
@@ -318,37 +667,138 @@ pub fn run<S: AccountStore>(
                 DocsImageCommand::Insert {
                     document_id,
                     image_uri,
+                    file,
+                    staging,
+                    staging_command,
+                    keep_staged,
                     at,
                     segment_id,
                     width,
                     height,
+                    allow_distortion,
+                    max_width,
+                    max_height,
+                    preserve_aspect_ratio,
+                    fit_page,
+                    reserve_height,
+                    allow_upscale,
                     dry_run,
                     json,
                     required_revision_id,
                 },
         } => {
             let selector = at.map(insert_text_selector).transpose()?;
+            let sizing = RemoteImageSizingOptions {
+                width_pt: width,
+                height_pt: height,
+                allow_distortion,
+                max_width_pt: max_width,
+                max_height_pt: max_height,
+                preserve_aspect_ratio,
+                fit_page,
+                reserve_height_pt: reserve_height.unwrap_or(0.0),
+                allow_upscale,
+            };
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_insert_image_unified_to(
-                config,
-                store,
-                account_override,
-                InsertImageCommand {
-                    document_id,
-                    image_uri,
-                    selector,
-                    segment_id,
-                    width,
-                    height,
-                    dry_run,
-                    json,
-                    required_revision_id,
-                },
-                &mut std::io::stdout(),
-                None,
-                None,
-            ))
+            if let Some(image_path) = file {
+                if staging == DocsImageStaging::DrivePublic && staging_command.is_some() {
+                    bail!("--staging-command cannot be combined with --staging drive-public");
+                }
+                if dry_run {
+                    return runtime.block_on(write_local_image_dry_run(
+                        config,
+                        store,
+                        account_override,
+                        LocalImageDryRunOptions {
+                            document_id: &document_id,
+                            image_path: &image_path,
+                            staging,
+                            staging_command: staging_command.as_deref(),
+                            width,
+                            height,
+                            sizing,
+                            selector,
+                            segment_id,
+                            required_revision_id,
+                            json,
+                            documents_url: None,
+                            state_path: None,
+                        },
+                        &mut std::io::stdout(),
+                    ));
+                }
+                if let Some(staging_command) = staging_command.as_deref() {
+                    return runtime.block_on(run_local_image_staging_command(
+                        config,
+                        store,
+                        account_override,
+                        LocalImageStagingCommandOptions {
+                            document_id: &document_id,
+                            image_path: &image_path,
+                            staging_command,
+                            keep_staged,
+                            width,
+                            height,
+                            sizing,
+                            selector,
+                            segment_id,
+                            required_revision_id,
+                            json,
+                            documents_url: None,
+                            state_path: None,
+                        },
+                        &mut std::io::stdout(),
+                    ));
+                }
+                return runtime.block_on(run_local_image_drive_public(
+                    config,
+                    store,
+                    account_override,
+                    LocalImageDrivePublicOptions {
+                        document_id: &document_id,
+                        image_path: &image_path,
+                        keep_staged,
+                        width,
+                        height,
+                        sizing,
+                        selector,
+                        segment_id,
+                        required_revision_id,
+                        json,
+                        documents_url: None,
+                        state_path: None,
+                        drive_upload_url: None,
+                        drive_files_url: None,
+                    },
+                    &mut std::io::stdout(),
+                ));
+            }
+            let image_uri = image_uri.context("provide IMAGE_URI or --file PATH")?;
+            runtime.block_on(async {
+                let fit = resolve_remote_image_fit(&image_uri, sizing).await?;
+                run_insert_image_unified_to(
+                    config,
+                    store,
+                    account_override,
+                    InsertImageCommand {
+                        document_id,
+                        image_uri,
+                        selector,
+                        segment_id,
+                        width,
+                        height,
+                        fit,
+                        dry_run,
+                        json,
+                        required_revision_id,
+                    },
+                    &mut std::io::stdout(),
+                    None,
+                    None,
+                )
+                .await
+            })
         }
         DocsCommand::Break {
             command:
@@ -1411,6 +1861,114 @@ pub(super) async fn run_replace_text_unified_to<S: AccountStore>(
         state_path,
     )
     .await
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct RemoteImageSizingOptions {
+    pub width_pt: Option<f64>,
+    pub height_pt: Option<f64>,
+    pub allow_distortion: bool,
+    pub max_width_pt: Option<f64>,
+    pub max_height_pt: Option<f64>,
+    pub preserve_aspect_ratio: bool,
+    pub fit_page: bool,
+    pub reserve_height_pt: f64,
+    pub allow_upscale: bool,
+}
+
+fn resolve_local_image_fit(
+    source: crate::docs::image_fit::SourceImageDimensions,
+    options: RemoteImageSizingOptions,
+) -> Result<Option<InsertImageFit>> {
+    let RemoteImageSizingOptions {
+        width_pt,
+        height_pt,
+        allow_distortion,
+        max_width_pt,
+        max_height_pt,
+        preserve_aspect_ratio,
+        fit_page,
+        reserve_height_pt,
+        allow_upscale,
+    } = options;
+    if max_width_pt.is_none() && max_height_pt.is_none() && !fit_page {
+        if preserve_aspect_ratio || allow_upscale {
+            bail!(
+                "--preserve-aspect-ratio and --allow-upscale require --max-width or --max-height"
+            );
+        }
+        if let (Some(width_pt), Some(height_pt)) = (width_pt, height_pt) {
+            if !allow_distortion && !exact_size_preserves_aspect_ratio(source, width_pt, height_pt)
+            {
+                bail!(
+                    "exact size {width_pt} by {height_pt} points would distort source image {} by {} pixels; use aspect-fit maximums or pass --allow-distortion",
+                    source.width_px,
+                    source.height_px
+                );
+            }
+        } else if allow_distortion {
+            bail!("--allow-distortion requires --width and --height");
+        }
+        return Ok(None);
+    }
+    Ok(Some(InsertImageFit {
+        source,
+        constraints: ImageFitConstraints {
+            max_width_pt,
+            max_height_pt,
+            allow_upscale,
+        },
+        page: fit_page.then_some(PageFitOptions { reserve_height_pt }),
+    }))
+}
+
+pub(super) async fn resolve_remote_image_fit(
+    image_uri: &str,
+    options: RemoteImageSizingOptions,
+) -> Result<Option<InsertImageFit>> {
+    let RemoteImageSizingOptions {
+        width_pt,
+        height_pt,
+        allow_distortion,
+        max_width_pt,
+        max_height_pt,
+        preserve_aspect_ratio,
+        fit_page,
+        reserve_height_pt,
+        allow_upscale,
+    } = options;
+    if max_width_pt.is_none() && max_height_pt.is_none() && !fit_page {
+        if preserve_aspect_ratio || allow_upscale {
+            bail!(
+                "--preserve-aspect-ratio and --allow-upscale require --max-width or --max-height"
+            );
+        }
+        if let (Some(width_pt), Some(height_pt)) = (width_pt, height_pt) {
+            if !allow_distortion {
+                let source = inspect_remote_image_dimensions(image_uri).await?;
+                if !exact_size_preserves_aspect_ratio(source, width_pt, height_pt) {
+                    bail!(
+                        "exact size {width_pt} by {height_pt} points would distort source image {} by {} pixels; use aspect-fit maximums or pass --allow-distortion",
+                        source.width_px,
+                        source.height_px
+                    );
+                }
+            }
+        } else if allow_distortion {
+            bail!("--allow-distortion requires --width and --height");
+        }
+        return Ok(None);
+    }
+    let source = inspect_remote_image_dimensions(image_uri).await?;
+    Ok(Some(InsertImageFit {
+        source,
+        constraints: ImageFitConstraints {
+            max_width_pt,
+            max_height_pt,
+            allow_upscale,
+        },
+        page: fit_page.then_some(PageFitOptions { reserve_height_pt }),
+    }))
 }
 
 #[cfg(test)]
@@ -3697,6 +4255,7 @@ fn document_map_with_entry(document_map: &DocumentMap, entry: &DocumentMapEntry)
         document_locations: vec![entry.location.clone()],
         text_blocks: Vec::new(),
         insertion_locations: Vec::new(),
+        raw_document: document_map.raw_document.clone(),
     }
 }
 

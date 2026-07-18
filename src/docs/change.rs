@@ -7,11 +7,13 @@ use crate::cli::{
     DocsListType, DocsParagraphAlignment, DocsParagraphDirection, DocsSectionBreakType,
     DocsTableCellAlignment,
 };
+use crate::docs::image_fit::{fit_image, ImageFitConstraints, SourceImageDimensions};
 use crate::docs::map::{
     resolve_insert_text_location, resolve_range_selector, resolve_replace_text_ranges,
     text_block_contains_range, DocumentLocation, DocumentMap, DocumentMapEntry,
     DocumentMapEntryKind, DocumentRange, InsertTextSelector, RangeSelector,
 };
+use crate::docs::page_layout::resolve_body_page_geometry;
 use crate::docs::style_template::StyleTemplate;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,9 +46,22 @@ pub(crate) struct InsertImageCommand {
     pub segment_id: Option<String>,
     pub width: Option<f64>,
     pub height: Option<f64>,
+    pub fit: Option<InsertImageFit>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct InsertImageFit {
+    pub source: SourceImageDimensions,
+    pub constraints: ImageFitConstraints,
+    pub page: Option<PageFitOptions>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PageFitOptions {
+    pub reserve_height_pt: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -412,6 +427,8 @@ struct DocsChangePreview {
     before: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     after: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_sizing: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -454,6 +471,7 @@ impl DocsChangePreview {
             summary,
             before: None,
             after: None,
+            image_sizing: None,
         }
     }
 
@@ -463,7 +481,13 @@ impl DocsChangePreview {
             summary,
             before: Some(before),
             after: Some(after),
+            image_sizing: None,
         }
+    }
+
+    fn with_image_sizing(mut self, image_sizing: Option<serde_json::Value>) -> Self {
+        self.image_sizing = image_sizing;
+        self
     }
 }
 
@@ -531,20 +555,90 @@ pub(crate) fn prepare_insert_image_change(
     if resolved.is_some() == command.segment_id.is_some() {
         bail!("provide exactly one image location: a body selector or --segment-id");
     }
-    let object_size = match (command.width, command.height) {
-        (Some(width), Some(height)) => {
+    let body_index = resolved
+        .as_ref()
+        .and_then(|resolved| resolved.location.index);
+    let (object_size, image_sizing) = match (command.width, command.height, command.fit) {
+        (None, None, Some(fit)) => {
+            let (constraints, page_geometry) = if let Some(page) = fit.page {
+                if !page.reserve_height_pt.is_finite() || page.reserve_height_pt < 0.0 {
+                    bail!("reserved image height must be finite and non-negative");
+                }
+                let index = body_index.context("--fit-page requires a body image location")?;
+                let geometry = resolve_body_page_geometry(&document_map.raw_document, None, index)?;
+                let max_height_pt =
+                    ((geometry.available_height_points - page.reserve_height_pt) * 1_000.0).round()
+                        / 1_000.0;
+                if max_height_pt <= 0.0 {
+                    bail!(
+                        "--reserve-height {} leaves no positive page height for the image",
+                        page.reserve_height_pt
+                    );
+                }
+                let diagnostic = serde_json::json!({
+                    "tabId": geometry.tab_id,
+                    "sectionStartIndex": geometry.section_start_index,
+                    "pageWidthPoints": geometry.page_width_points,
+                    "pageHeightPoints": geometry.page_height_points,
+                    "marginTopPoints": geometry.margin_top_points,
+                    "marginBottomPoints": geometry.margin_bottom_points,
+                    "marginLeftPoints": geometry.margin_left_points,
+                    "marginRightPoints": geometry.margin_right_points,
+                    "availableWidthPoints": geometry.available_width_points,
+                    "availableHeightPoints": geometry.available_height_points,
+                    "reserveHeightPoints": page.reserve_height_pt,
+                    "imageAvailableHeightPoints": max_height_pt
+                });
+                (
+                    ImageFitConstraints {
+                        max_width_pt: Some(geometry.available_width_points),
+                        max_height_pt: Some(max_height_pt),
+                        allow_upscale: fit.constraints.allow_upscale,
+                    },
+                    Some(diagnostic),
+                )
+            } else {
+                (fit.constraints, None)
+            };
+            let fit_result = fit_image(fit.source, constraints)?;
+            let mut sizing = serde_json::json!({
+                "sourceDimensions": { "widthPixels": fit.source.width_px, "heightPixels": fit.source.height_px },
+                "nativeDimensions": { "widthPoints": fit_result.native_width_pt, "heightPoints": fit_result.native_height_pt },
+                "constraints": { "maxWidthPoints": constraints.max_width_pt, "maxHeightPoints": constraints.max_height_pt },
+                "scale": fit_result.scale,
+                "finalDimensions": { "widthPoints": fit_result.width_pt, "heightPoints": fit_result.height_pt },
+                "upscaled": fit_result.upscaled
+            });
+            if let Some(page_geometry) = page_geometry {
+                sizing["pageGeometry"] = page_geometry;
+            }
+            (
+                Some(serde_json::json!({
+                    "width": { "magnitude": fit_result.width_pt, "unit": "PT" },
+                    "height": { "magnitude": fit_result.height_pt, "unit": "PT" }
+                })),
+                Some(sizing),
+            )
+        }
+        (Some(width), Some(height), None) => {
             if !width.is_finite() || width <= 0.0 {
                 bail!("--width must be a finite number greater than zero");
             }
             if !height.is_finite() || height <= 0.0 {
                 bail!("--height must be a finite number greater than zero");
             }
-            Some(serde_json::json!({
-                "width": { "magnitude": width, "unit": "PT" },
-                "height": { "magnitude": height, "unit": "PT" }
-            }))
+            (
+                Some(serde_json::json!({
+                    "width": { "magnitude": width, "unit": "PT" },
+                    "height": { "magnitude": height, "unit": "PT" }
+                })),
+                None,
+            )
         }
-        (None, None) => None,
+        (None, None, None) => (None, None),
+        (Some(_), Some(_), Some(_)) => {
+            bail!("exact image dimensions and aspect-fit constraints cannot be combined")
+        }
         _ => bail!("--width and --height must be provided together"),
     };
     let (location_field, location_value, location, preview) = if let Some(resolved) = resolved {
@@ -567,7 +661,8 @@ pub(crate) fn prepare_insert_image_change(
                     resolved.preview_offset,
                     "[inline image]",
                 ),
-            ),
+            )
+            .with_image_sizing(image_sizing.clone()),
         )
     } else {
         let segment_id = command.segment_id.as_deref().unwrap().trim();
@@ -584,7 +679,8 @@ pub(crate) fn prepare_insert_image_change(
                     "Insert inline image at end of segment {segment_id} from {}",
                     command.image_uri
                 ),
-            ),
+            )
+            .with_image_sizing(image_sizing.clone()),
         )
     };
     let mut insert_inline_image = serde_json::json!({ "uri": command.image_uri });

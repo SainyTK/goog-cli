@@ -42,11 +42,38 @@ fn parse_mail_draft_id(value: &str) -> Result<String, String> {
     }
 }
 
+fn parse_positive_finite_points(value: &str) -> Result<f64, String> {
+    const MAX_IMAGE_DIMENSION_POINTS: f64 = 75_000.0;
+
+    let points = value
+        .parse::<f64>()
+        .map_err(|_| format!("{value:?} is not a valid point dimension"))?;
+    if !points.is_finite() || points <= 0.0 {
+        return Err("point dimensions must be finite and greater than zero".into());
+    }
+    if points > MAX_IMAGE_DIMENSION_POINTS {
+        return Err(format!(
+            "point dimensions must not exceed {MAX_IMAGE_DIMENSION_POINTS}"
+        ));
+    }
+    Ok(points)
+}
+
+fn parse_non_negative_finite_points(value: &str) -> Result<f64, String> {
+    parse_positive_finite_points(value).or_else(|error| {
+        if value.parse::<f64>().ok() == Some(0.0) {
+            Ok(0.0)
+        } else {
+            Err(error)
+        }
+    })
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "goog",
     about = "A terminal-native Google APIs CLI for power users and AI agents",
-    version
+    version = crate::version::DISPLAY_VERSION
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -63,6 +90,12 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Show build version and source provenance
+    Version {
+        /// Emit machine-readable JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Manage Google account authentication
     Auth {
         #[command(subcommand)]
@@ -206,6 +239,9 @@ pub enum DriveCommand {
         /// Drive folder ID to browse
         #[arg(long)]
         folder: Option<String>,
+        /// Include soft-deleted items
+        #[arg(long)]
+        show_all: bool,
         /// Emit one JSON object per row. Items use browse row fields; files and folders use full Drive file JSON
         #[arg(long)]
         json: bool,
@@ -225,6 +261,11 @@ pub enum DriveCommand {
         /// Drive folder ID to upload into
         #[arg(long)]
         folder: Option<String>,
+    },
+    /// Permanently delete a file from Google Drive
+    Delete {
+        /// Drive file ID to delete
+        file_id: String,
     },
 }
 
@@ -2601,6 +2642,7 @@ pub enum DocsImageCommand {
     /// Insert an Inline Image through a body selector or at the end of a header/footer segment
     #[command(
         group(ArgGroup::new("image_location").required(true).multiple(false).args(["at", "segment_id"])),
+        group(ArgGroup::new("image_source").required(true).args(["image_uri", "file"])),
         after_long_help = "Location rules:
   Provide exactly one of --at or --segment-id.
   For a body location, use --at index:N, --at entry:N, --at page:P,line:L, --at heading:TEXT, --at after-heading:TEXT, --at before-heading:TEXT, --at after-text:TEXT, or --at before-text:TEXT.
@@ -2614,7 +2656,19 @@ Write safety:
         /// Document ID or URL to update
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
-        image_uri: String,
+        image_uri: Option<String>,
+        /// Local image file to validate and stage for Google Docs insertion
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+        file: Option<std::path::PathBuf>,
+        /// Backend used to make a local image temporarily reachable by Google Docs
+        #[arg(long, value_enum, default_value_t)]
+        staging: DocsImageStaging,
+        /// Executable adapter used by automatic local-image staging
+        #[arg(long, value_name = "PATH", requires = "file")]
+        staging_command: Option<std::path::PathBuf>,
+        /// Keep the staged resource instead of requesting cleanup
+        #[arg(long, requires = "file")]
+        keep_staged: bool,
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
         at: Option<String>,
@@ -2622,11 +2676,32 @@ Write safety:
         #[arg(long)]
         segment_id: Option<String>,
         /// Image width in points; requires --height
-        #[arg(long, requires = "height")]
+        #[arg(long, requires = "height", value_parser = parse_positive_finite_points)]
         width: Option<f64>,
         /// Image height in points; requires --width
-        #[arg(long, requires = "width")]
+        #[arg(long, requires = "width", value_parser = parse_positive_finite_points)]
         height: Option<f64>,
+        /// Permit exact width and height to distort the source image
+        #[arg(long, requires_all = ["width", "height"])]
+        allow_distortion: bool,
+        /// Maximum image width in points while preserving the source aspect ratio
+        #[arg(long, conflicts_with_all = ["width", "height"], value_parser = parse_positive_finite_points)]
+        max_width: Option<f64>,
+        /// Maximum image height in points while preserving the source aspect ratio
+        #[arg(long, conflicts_with_all = ["width", "height"], value_parser = parse_positive_finite_points)]
+        max_height: Option<f64>,
+        /// Preserve the source aspect ratio when fitting to maximum dimensions
+        #[arg(long)]
+        preserve_aspect_ratio: bool,
+        /// Derive maximum dimensions from the active body section's page size and margins
+        #[arg(long, conflicts_with_all = ["width", "height", "max_width", "max_height"])]
+        fit_page: bool,
+        /// Reserve vertical page space for adjacent content
+        #[arg(long, requires = "fit_page", value_parser = parse_non_negative_finite_points)]
+        reserve_height: Option<f64>,
+        /// Permit fitting to enlarge images beyond native dimensions
+        #[arg(long)]
+        allow_upscale: bool,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2637,6 +2712,13 @@ Write safety:
         #[arg(long)]
         required_revision_id: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum DocsImageStaging {
+    #[default]
+    Auto,
+    DrivePublic,
 }
 
 #[derive(Debug, Subcommand)]
