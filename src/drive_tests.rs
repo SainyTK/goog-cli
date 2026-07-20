@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use wiremock::matchers::{header, method, path, query_param};
+use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Match, Request};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -828,6 +828,41 @@ impl Match for BodyLength {
     fn matches(&self, request: &Request) -> bool {
         request.body.len() == self.0
     }
+}
+
+#[tokio::test]
+async fn create_folder_sends_drive_folder_metadata_and_returns_its_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "id,webViewLink"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(body_json(serde_json::json!({
+            "name": "Candidate CVs",
+            "mimeType": DRIVE_FOLDER_MIME_TYPE,
+            "parents": ["parent-folder-123"]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "folder-456",
+            "webViewLink": "https://drive.google.com/drive/folders/folder-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = CreateFolderOptions::new("Candidate CVs", "parent-folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let folder = create_folder(&client, &options).await.unwrap();
+
+    assert_eq!(folder.id, "folder-456");
+    assert_eq!(
+        folder.web_view_link,
+        "https://drive.google.com/drive/folders/folder-456"
+    );
 }
 
 #[tokio::test]
