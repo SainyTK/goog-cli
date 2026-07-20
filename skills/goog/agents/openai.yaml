@@ -1,0 +1,4 @@
+interface:
+  display_name: "goog"
+  short_description: "Operate Google Workspace through goog CLI"
+  default_prompt: "Use $goog to complete this Google Workspace task through the goog CLI."

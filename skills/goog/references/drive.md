@@ -1,0 +1,84 @@
+# Google Drive operations
+
+Use `goog drive` for Drive browsing and file operations.
+Use the installed `goog` binary outside this repository.
+Inside the goog-cli repository, use `target/debug/goog` when it is current, or `cargo run --` when it is not built.
+
+## Preflight
+
+Run the auth and help checks before live work:
+
+```bash
+goog auth list
+goog drive --help
+```
+
+Use the active account unless the user specifies another authorized account.
+Pass `--account EMAIL` when account routing must remain explicit.
+If a command reports missing scopes, run `goog auth login` once and retry it.
+
+## List and browse
+
+```bash
+goog drive ls
+goog drive ls --type files --limit 25
+goog drive ls --type folders --all
+goog drive ls --folder FOLDER_ID
+goog drive ls --json
+```
+
+Without `--all`, listing defaults to 50 items unless `--limit` is supplied.
+Use `--folder FOLDER_ID` to browse one folder.
+Use `--type items`, `files`, or `folders` to constrain the result.
+Use `--show-all` only when soft-deleted items are intentionally relevant.
+Use `--json` when structured output is needed for follow-up commands.
+
+## Download
+
+```bash
+goog drive download FILE_ID
+goog drive download FILE_ID --output /absolute/path/to/file
+```
+
+Confirm the file ID and destination before downloading.
+Inspect the resulting local file before reporting success.
+
+## Upload
+
+```bash
+goog drive upload /absolute/path/to/file
+goog drive upload /absolute/path/to/file --folder FOLDER_ID
+```
+
+Confirm the local path exists and is the intended file.
+Use `--folder` to place the upload in a specific Drive folder.
+Read the returned resource information and verify the uploaded item with `goog drive ls`.
+
+## Create a folder
+
+```bash
+goog drive mkdir "Project files" --folder PARENT_FOLDER_ID
+```
+
+The parent folder is required.
+Verify the new folder under the expected parent after creation.
+
+## Permanently delete
+
+```bash
+goog drive delete FILE_ID
+```
+
+This command permanently deletes the target.
+Resolve the exact file ID with a read-only listing before running it.
+Do not use a name match alone as deletion authority.
+After deletion, verify that the item no longer appears in the intended location.
+
+## Completion gate
+
+- The command ran against the intended account.
+- The exact file or folder ID was resolved before mutation.
+- Uploads and folders were listed back from the intended parent.
+- Downloads exist at the intended local destination and are readable.
+- Permanent deletion was explicitly requested and verified.
+- The final response includes the useful Drive ID or URL returned by the CLI.
