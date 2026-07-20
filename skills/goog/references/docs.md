@@ -1,9 +1,153 @@
-# Docs command guide
+# Google Docs operations
+
+## Contents
+
+- Required workflow
+- Command selection
+- Editing safety
+- Document quality rules
+- Completion gate
+- Command guide
+  - Choose a creation path
+  - Audit a source document
+  - Compare a source and target
+  - Reuse observed document styles
+  - Define a native style system
+  - Configure page geometry
+  - Protect multi-step edits with revision guards
+  - Insert and replace text
+  - Apply styles
+  - Internal navigation
+  - Images
+  - Headers and footers
+  - Page and section breaks
+  - Tables
+  - Lists
+  - Visual verification
+  - Learn unfamiliar commands
+
+## Required workflow
+
+1. Decide the document's purpose, audience, content structure, and visual hierarchy before writing.
+2. Run `goog auth list` and record the active account before any live mutation.
+3. Run `goog docs --help` and the relevant nested `--help` command before the first mutation.
+4. Choose blank creation for a new design or template copying when editor-only components must be preserved.
+5. Create or inspect the document.
+6. Prefer high-level `goog docs` commands over `batch-update`.
+7. Use dry runs for supported edits, then apply the confirmed operation.
+8. Map the document again after structural edits because indexes and entry numbers can change.
+9. Export the finished document as PDF and inspect every page from top to bottom at 100% zoom, or use an authenticated browser when export is unavailable.
+10. Correct content, hierarchy, tables, spacing, page breaks, and formatting before delivery.
+11. Repeat the available visual inspection path after the last layout-affecting edit.
+12. Return the Google Docs URL and a short description of the finished result.
+
+## Command selection
+
+- Use `goog docs create` for a blank native document.
+- Use `goog docs copy` when a source document contains native tables of contents, page-number auto text, positioned images, first-page headers, or other components that the Docs API cannot create.
+- Use `goog docs compare` for source-to-target inventory, visual-system, formatting, and mapped-content acceptance checks.
+- Use `goog docs get` for raw structure and revision metadata.
+- Use `goog docs map` for readable content locations, headings, tables, and images.
+- Use `goog docs text` for search, insertion, and replacement.
+- Use `goog docs style apply` for text and paragraph styling.
+- Use `goog docs style named` for defining a blank document's native style system.
+- Use `goog docs style copy-named` and `copy-page` for transferring an existing document's visual system to a blank target.
+- Use `goog docs table` for inserting and populating tables.
+- Use `goog docs image`, `break`, `footnote`, `header`, `footer`, `list-format`, and `named-range` for their named document features.
+- Use `goog docs export-pdf` for page-level visual QA.
+
+Use `goog docs batch-update` only when no high-level command supports the required operation.
+Keep any temporary JSON request body in task-local scratch space and remove it after verification.
+
+## Editing safety
+
+- Accept a document ID or full Google Docs URL wherever the command supports either.
+- Use the active account shown by `goog auth list` unless the user specifies another authorized account.
+- Pass `--account EMAIL` when account selection must remain explicit across a multi-step task.
+- If authorization opens an account chooser, select only the recorded active or user-specified account.
+- Never infer an account from browser order, a remembered identity, or unrelated open documents.
+- If a command fails because the account is missing required scopes, run `goog auth login` once and retry.
+- Use `goog auth list` for the auth preflight and do not list unrelated Drive resources.
+- Inspect with `docs map` before targeting content.
+- Prefer semantic selectors such as `heading:`, `after-heading:`, `before-text:`, or `--text` over raw indexes.
+- Run `--dry-run --json` when the command supports it.
+- Use `--required-revision-id` for multi-step or potentially concurrent edits.
+- Capture revision IDs directly from command output and never retype or shorten them manually.
+- Refresh the Document Map after any failed guarded write before retrying.
+- Re-fetch the revision and remap after each structural change.
+- Preserve the existing design during local edits unless the user asks for a redesign.
+- Treat browser inspection as read-only QA and avoid editor keyboard shortcuts that could mutate content.
+- Use an already authenticated native browser session for the recorded account when one is available.
+- If no matching authenticated browser session is available, export the document as PDF and inspect the rendered pages instead.
+- Treat a denied PDF export as a Workspace or file-policy limitation and retry with `--account EMAIL` only when account selection may be the cause.
+- If both browser inspection and PDF export are unavailable, report visual QA as blocked instead of claiming the completion gate passed.
+- Never expose scratch files, request bodies, or internal QA notes in the document.
+
+## Document quality rules
+
+### Plan the reading experience
+
+Identify the intended reader and the decision, understanding, or action the document should enable.
+Choose a form that matches the job, such as a memo, report, proposal, guide, checklist, or reference.
+Build a clear progression from context to substance to outcome.
+
+Use the lightest readable structure for each content type:
+
+- Use prose for explanation and rationale.
+- Use short bullets for independent factors or requirements.
+- Use numbered steps for sequence.
+- Use a table only for repeated records with shared fields.
+- Use a brief callout for a decision, warning, or key takeaway.
+
+### Typography and hierarchy
+
+Use native paragraph styles for titles and headings.
+Keep one title treatment, one body style, and a consistent heading ladder.
+For a clean Google Docs default, use Arial or another common sans serif, black or near-black body text, a restrained blue accent, and comfortable line spacing.
+Avoid decorative rules, excessive color, underlining for emphasis, and too many type sizes.
+Keep paragraphs short enough to scan without turning the document into disconnected fragments.
+
+### Tables and lists
+
+Give short fields narrow columns and explanatory fields more room.
+Keep header labels concise.
+Avoid sentence-length prose in most cells.
+Use consistent alignment and number formatting within each column.
+Use native list formatting so wrapped lines align with the item text.
+
+### Final inspection
+
+Read the complete document in order.
+Open the native document at 100% zoom and inspect every page from top to bottom.
+Check page edges for clipped content, accidental overflow, stranded list items, and unwanted blank pages.
+Check for abrupt transitions, repeated conclusions, orphan headings, empty sections, inconsistent capitalization, and placeholder copy.
+Inspect every table for missing values, broken row structure, and unreadable density.
+Confirm the title, headings, body, lists, and callouts use a coherent visual system.
+Re-fetch the live document after the last mutation and verify that all expected text and structure are present.
+
+## Completion gate
+
+- The requested content is complete and factually consistent.
+- Heading levels form a sensible hierarchy.
+- Tables are used for real row-and-column comparisons, not as generic page layout.
+- Lists use native list formatting.
+- No placeholder, instruction text, or duplicated content remains.
+- Styles are consistent and readable.
+- The native document or its exported PDF has been visually inspected at 100% zoom, including every page edge and any requested page-count limit.
+- When reproducing a source document, `goog docs compare SOURCE TARGET --fail-on-difference` has checked component inventory, named and page styles, formatting, and mapped content properties after generated IDs are removed.
+- When copying a reviewed template, `goog docs copy` pins both the running executable SHA-256 and the reviewed source revision ID, then uses `--verify-fidelity` to gate the completed copy against the source.
+- Retain the final JSON acceptance record with the document identities, edit URLs, account, executable identity, revisions, replay command, and matched fidelity fingerprints.
+- The comparison evidence records its stable report type and schema version.
+- Every reported difference is understood and intentional.
+- The live document has been fetched again after the last write.
+- The final URL opens the intended native Google Doc.
+
+## Command guide
 
 Use `target/debug/goog` in the repository examples below.
 Replace it with `cargo run --` when the debug binary has not been built.
 
-## Choose a creation path
+### Choose a creation path
 
 Create a blank document when the design can be built from supported text, paragraph, list, table, image, header, footer, and page-layout operations:
 
@@ -37,7 +181,7 @@ target/debug/goog docs map DOCUMENT_ID
 target/debug/goog docs map DOCUMENT_ID --json
 ```
 
-## Audit a source document
+### Audit a source document
 
 Before reproducing an existing document, inventory every mapped component instead of sampling only its visible body text:
 
@@ -67,7 +211,7 @@ target/debug/goog docs get SOURCE_DOCUMENT_ID --include-tabs-content
 Classify each source component before choosing the creation path.
 Build supported components with high-level commands, copy the source as a template for editor-only components, and record any policy-limited visual verification separately from structural fidelity.
 
-## Compare a source and target
+### Compare a source and target
 
 When reproducing an existing document, compare fresh source and target maps after the last write.
 Use the high-level comparison command for the complete structural acceptance check:
@@ -184,7 +328,7 @@ Named-style copying transfers the native title, subtitle, heading, and normal-te
 Page copying transfers document mode, page dimensions, margins, and supported first-page or even-page header and footer behavior.
 It does not create source header and footer segments in a blank target.
 
-## Reuse observed document styles
+### Reuse observed document styles
 
 A complete document fetch refreshes a local style template for that document:
 
@@ -220,7 +364,7 @@ Pass `docs table insert --no-auto-style` to preserve Google Docs defaults for th
 Run another complete `docs get` after deliberate design changes so later edits do not use stale observations.
 A partial fetch with `--fields` does not replace the cached template.
 
-## Define a native style system
+### Define a native style system
 
 When a blank document needs a new visual system instead of one copied from a source, define its native styles before authoring the body.
 Preview each named-style update before applying it:
@@ -239,7 +383,7 @@ Use `--tab-id` for a non-default document tab and `--required-revision-id` when 
 After defining the style system, apply the native paragraph style to content with `docs style apply --paragraph-style` so later changes propagate consistently.
 Use `copy-named` instead when an approved source document already contains the intended visual system.
 
-## Configure page geometry
+### Configure page geometry
 
 Set page dimensions and margins before adding layout-sensitive content to a blank document.
 Preview the complete geometry first, then apply the same values:
@@ -257,7 +401,7 @@ Use the map's tab-scoped `documentStyles` metadata to verify the stored page siz
 Use `--required-revision-id` when concurrent edits are possible.
 Use `copy-page` instead when the target must inherit an approved source document's page mode, geometry, margins, and supported header or footer behavior.
 
-## Protect multi-step edits with revision guards
+### Protect multi-step edits with revision guards
 
 Capture the current revision immediately before a related sequence of edits:
 
@@ -278,7 +422,7 @@ Fetch a new revision and remap the document after every successful structural ed
 If a guarded write fails, discard the old revision and location, then fetch and map again before rebuilding the edit.
 Never shorten, retype, or reuse a revision ID from an earlier editing session.
 
-## Insert and replace text
+### Insert and replace text
 
 ```bash
 target/debug/goog docs text insert DOCUMENT_ID $'Executive summary\n' --at index:1 --dry-run --json
@@ -291,7 +435,7 @@ target/debug/goog docs text replace DOCUMENT_ID 'Draft' 'Final' --dry-run --json
 Quote selectors and text containing spaces.
 Use ANSI-C shell quoting for intentional newlines.
 
-## Apply styles
+### Apply styles
 
 Build the document hierarchy with native paragraph styles, then add only the explicit typography and layout properties the design requires:
 
@@ -319,7 +463,7 @@ target/debug/goog docs map DOCUMENT_ID --json
 The customer reference uses explicit paragraph spacing, line spacing, alignment, indentation, direction, custom fonts, and pagination controls.
 Do not rely on visual similarity alone when these native properties can be verified through the map.
 
-## Internal navigation
+### Internal navigation
 
 Map the document after the heading structure is final and copy the target heading's native `headingId` from the JSON output:
 
@@ -344,7 +488,7 @@ The Docs API cannot create a native table of contents.
 Copy a template when the document requires an editor-managed table of contents with page numbers and automatic entry updates.
 Use heading links to build a manual navigation list only when automatic TOC behavior is unnecessary.
 
-## Images
+### Images
 
 Insert body images from a publicly reachable URI.
 Provide both dimensions in points when the layout needs a predictable image footprint:
@@ -374,7 +518,7 @@ target/debug/goog docs image insert DOCUMENT_ID 'https://example.com/company-mar
 Inline image insertion cannot create positioned or floating images.
 Copy a template when those editor-only image components are required.
 
-## Headers and footers
+### Headers and footers
 
 Create and populate the default header and footer for the first section, previewing each write before applying it:
 
@@ -410,7 +554,7 @@ target/debug/goog docs footer create DOCUMENT_ID --section-break-index SECTION_B
 The Docs API cannot create first-page header content or page-number auto text in a blank document.
 Copy a template when those editor-only components are required.
 
-## Page and section breaks
+### Page and section breaks
 
 Use an explicit page break when the following content must begin on a new page without creating a new section:
 
@@ -433,7 +577,7 @@ Google can insert a newline while creating a section break, so use the remapped 
 Use `--page-break-before` in `docs style apply` when the page boundary is an intentional property of a paragraph style rather than a standalone document element.
 Map after every break insertion because all following body indexes and entry locations can change.
 
-## Tables
+### Tables
 
 ```bash
 target/debug/goog docs style apply DOCUMENT_ID --text 'Key metrics' --paragraph-style HEADING_1
@@ -464,7 +608,7 @@ Omit `--column` to style a complete row, or include it to target one cell.
 Cell styling also supports `--content-alignment top|middle|bottom` and paired `--border-color` plus `--border-width` controls.
 Map the document again after table changes and inspect the resulting `layoutMetadata`, `pinnedHeaderRowsCount`, and cell styles.
 
-## Lists
+### Lists
 
 Insert list items as separate paragraphs, then apply one formatting operation over the complete contiguous range so the items share one native list:
 
@@ -491,7 +635,7 @@ target/debug/goog docs text insert DOCUMENT_ID $'Prepare delivery\n\tReview cont
 Google removes those leading tabs when it creates the native list and uses them to determine nesting levels.
 Map again after formatting and inspect the list's item count, nesting levels, and glyph metadata.
 
-## Visual verification
+### Visual verification
 
 Export the completed native document and inspect every rendered page at 100% zoom:
 
@@ -510,7 +654,7 @@ Template copying preserves source components, but it does not bypass restriction
 Use an authenticated browser for visual inspection when export remains unavailable.
 If neither path is available, report visual QA as blocked.
 
-## Learn unfamiliar commands
+### Learn unfamiliar commands
 
 ```bash
 target/debug/goog docs --help
