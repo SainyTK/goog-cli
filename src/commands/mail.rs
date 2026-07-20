@@ -12,7 +12,7 @@ use crate::cli::MailCommand;
 use crate::mail::{
     create_draft, decode_base64url, download_attachment, get_message, list_messages,
     parse_message_reference, resolve_message_reference, update_draft, CreateDraftOptions,
-    DownloadAttachmentOptions, DraftAttachment, DraftMessage, GetMessageOptions,
+    DownloadAttachmentOptions, DraftAttachment, DraftBodyFormat, DraftMessage, GetMessageOptions,
     ListMessagesOptions, MailError, MessageReference, MessageSummary, UpdateDraftOptions,
 };
 
@@ -82,6 +82,7 @@ pub fn run<S: AccountStore>(
             bcc,
             subject,
             body,
+            html,
             attachment,
             json,
         } => {
@@ -96,6 +97,7 @@ pub fn run<S: AccountStore>(
                 bcc,
                 subject,
                 body,
+                html,
                 attachments,
             };
             match draft_id {
@@ -126,6 +128,7 @@ pub(super) struct CreateDraftInput {
     pub bcc: Vec<String>,
     pub subject: String,
     pub body: String,
+    pub html: bool,
     pub attachments: Vec<DraftAttachmentInput>,
 }
 
@@ -477,6 +480,7 @@ fn attachment_download_options(
 fn create_draft_options(input: CreateDraftInput, drafts_url: Option<&str>) -> CreateDraftOptions {
     let mut options =
         CreateDraftOptions::new(input.to, input.cc, input.bcc, input.subject, input.body)
+            .with_body_format(draft_body_format(input.html))
             .with_attachments(
                 input
                     .attachments
@@ -507,6 +511,7 @@ fn update_draft_options(
             bcc: input.bcc,
             subject: input.subject,
             body: input.body,
+            body_format: draft_body_format(input.html),
             attachments: input
                 .attachments
                 .into_iter()
@@ -522,6 +527,14 @@ fn update_draft_options(
         options = options.with_drafts_url(drafts_url);
     }
     options
+}
+
+fn draft_body_format(html: bool) -> DraftBodyFormat {
+    if html {
+        DraftBodyFormat::Html
+    } else {
+        DraftBodyFormat::PlainText
+    }
 }
 
 fn get_message_options(message_id: String, messages_url: Option<&str>) -> GetMessageOptions {

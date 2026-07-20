@@ -452,6 +452,7 @@ Draft body.\r\n",
             bcc: vec!["Dave <dave@example.com>".into()],
             subject: "Status update".into(),
             body: "Hello Bob,\n\nDraft body.".into(),
+            html: false,
             attachments: vec![],
         },
         false,
@@ -469,7 +470,60 @@ draft-123\tmessage-123\tthread-123\n"
 }
 
 #[tokio::test]
-async fn run_draft_create_posts_multipart_message_with_attachment() {
+async fn run_draft_create_posts_html_message() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(DraftRawMessageMatcher {
+            expected: "To: alice@example.com\r\n\
+Subject: Rich draft\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: text/html; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+<p>Hello <strong>Alice</strong>.</p>\r\n",
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123", "threadId": "thread-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_create_to(
+        &client,
+        CreateDraftInput {
+            to: vec!["alice@example.com".into()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Rich draft".into(),
+            body: "<p>Hello <strong>Alice</strong>.</p>".into(),
+            html: true,
+            attachments: vec![],
+        },
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
+draft-123\tmessage-123\tthread-123\n"
+    );
+}
+
+#[tokio::test]
+async fn run_draft_create_posts_html_multipart_message_with_attachment() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/gmail/v1/users/me/drafts"))
@@ -481,10 +535,10 @@ MIME-Version: 1.0\r\n\
 Content-Type: multipart/mixed; boundary=\"goog-cli-draft-boundary\"\r\n\
 \r\n\
 --goog-cli-draft-boundary\r\n\
-Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Type: text/html; charset=UTF-8\r\n\
 Content-Transfer-Encoding: 8bit\r\n\
 \r\n\
-See attached.\r\n\
+<p>See <mark>attached</mark>.</p>\r\n\
 --goog-cli-draft-boundary\r\n\
 Content-Type: application/pdf; name=\"invoice.pdf\"\r\n\
 Content-Disposition: attachment; filename=\"invoice.pdf\"\r\n\
@@ -513,7 +567,8 @@ aGVsbG8gYXR0YWNobWVudA==\r\n\
             cc: vec![],
             bcc: vec![],
             subject: "Attached draft".into(),
-            body: "See attached.".into(),
+            body: "<p>See <mark>attached</mark>.</p>".into(),
+            html: true,
             attachments: vec![DraftAttachmentInput {
                 filename: "invoice.pdf".into(),
                 content_type: "application/pdf".into(),
@@ -535,7 +590,7 @@ draft-123\tmessage-123\tthread-123\n"
 }
 
 #[tokio::test]
-async fn run_draft_edit_puts_replacement_message_with_attachment() {
+async fn run_draft_edit_puts_html_replacement_message_with_attachment() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/gmail/v1/users/me/drafts/draft-123"))
@@ -548,10 +603,10 @@ MIME-Version: 1.0\r\n\
 Content-Type: multipart/mixed; boundary=\"goog-cli-draft-boundary\"\r\n\
 \r\n\
 --goog-cli-draft-boundary\r\n\
-Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Type: text/html; charset=UTF-8\r\n\
 Content-Transfer-Encoding: 8bit\r\n\
 \r\n\
-Updated body.\r\n\
+<p><strong>Updated</strong> body.</p>\r\n\
 --goog-cli-draft-boundary\r\n\
 Content-Type: text/plain; name=\"notes.txt\"\r\n\
 Content-Disposition: attachment; filename=\"notes.txt\"\r\n\
@@ -581,7 +636,8 @@ dXBkYXRlZCBhdHRhY2htZW50\r\n\
             cc: vec![],
             bcc: vec![],
             subject: "Updated draft".into(),
-            body: "Updated body.".into(),
+            body: "<p><strong>Updated</strong> body.</p>".into(),
+            html: true,
             attachments: vec![DraftAttachmentInput {
                 filename: "notes.txt".into(),
                 content_type: "text/plain".into(),
@@ -648,6 +704,7 @@ async fn run_draft_create_emits_json_response() {
             bcc: vec![],
             subject: "Hello alice".into(),
             body: "Body".into(),
+            html: false,
             attachments: vec![],
         },
         true,

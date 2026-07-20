@@ -3024,7 +3024,8 @@ fn mail_draft_create_with_body_flags() {
         "--subject",
         "Draft subject",
         "--body",
-        "Hello from goog",
+        "<p>Hello from <strong>goog</strong></p>",
+        "--html",
         "--json",
     ])
     .unwrap();
@@ -3038,6 +3039,7 @@ fn mail_draft_create_with_body_flags() {
                     bcc,
                     subject,
                     body,
+                    html,
                     attachment,
                     json,
                 },
@@ -3047,7 +3049,11 @@ fn mail_draft_create_with_body_flags() {
             assert_eq!(cc, ["carol@example.com"]);
             assert_eq!(bcc, ["dave@example.com"]);
             assert_eq!(subject, "Draft subject");
-            assert_eq!(body.as_deref(), Some("Hello from goog"));
+            assert_eq!(
+                body.as_deref(),
+                Some("<p>Hello from <strong>goog</strong></p>")
+            );
+            assert!(html);
             assert!(attachment.is_empty());
             assert!(json);
         }
@@ -3132,6 +3138,7 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
                     bcc,
                     subject,
                     body,
+                    html,
                     attachment,
                     json,
                 },
@@ -3142,6 +3149,7 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
             assert!(bcc.is_empty());
             assert_eq!(subject, "Updated draft");
             assert_eq!(body.as_deref(), Some("Updated body"));
+            assert!(!html);
             assert_eq!(attachment, ["./updated.pdf"]);
             assert!(json);
         }

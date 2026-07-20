@@ -317,6 +317,7 @@ pub struct CreateDraftOptions {
     pub bcc: Vec<String>,
     pub subject: String,
     pub body: String,
+    pub body_format: DraftBodyFormat,
     pub attachments: Vec<DraftAttachment>,
     drafts_url: String,
 }
@@ -335,7 +336,23 @@ pub struct DraftMessage {
     pub bcc: Vec<String>,
     pub subject: String,
     pub body: String,
+    pub body_format: DraftBodyFormat,
     pub attachments: Vec<DraftAttachment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DraftBodyFormat {
+    PlainText,
+    Html,
+}
+
+impl DraftBodyFormat {
+    fn mime_type(self) -> &'static str {
+        match self {
+            Self::PlainText => "text/plain",
+            Self::Html => "text/html",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -359,6 +376,7 @@ impl CreateDraftOptions {
             bcc,
             subject: subject.into(),
             body: body.into(),
+            body_format: DraftBodyFormat::PlainText,
             attachments: Vec::new(),
             drafts_url: GMAIL_DRAFTS_URL.to_string(),
         }
@@ -366,6 +384,11 @@ impl CreateDraftOptions {
 
     pub fn with_attachments(mut self, attachments: Vec<DraftAttachment>) -> Self {
         self.attachments = attachments;
+        self
+    }
+
+    pub fn with_body_format(mut self, body_format: DraftBodyFormat) -> Self {
+        self.body_format = body_format;
         self
     }
 
@@ -385,6 +408,7 @@ impl CreateDraftOptions {
             bcc: self.bcc.clone(),
             subject: self.subject.clone(),
             body: self.body.clone(),
+            body_format: self.body_format,
             attachments: self.attachments.clone(),
         })?;
         Ok(serde_json::json!({
@@ -683,7 +707,10 @@ fn build_draft_raw_message(message: &DraftMessage) -> Result<String, MailError> 
     raw.push_str("MIME-Version: 1.0\r\n");
 
     if message.attachments.is_empty() {
-        raw.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
+        raw.push_str(&format!(
+            "Content-Type: {}; charset=UTF-8\r\n",
+            message.body_format.mime_type()
+        ));
         raw.push_str("Content-Transfer-Encoding: 8bit\r\n");
         raw.push_str("\r\n");
         raw.push_str(&normalize_body_newlines(&message.body));
@@ -695,7 +722,10 @@ fn build_draft_raw_message(message: &DraftMessage) -> Result<String, MailError> 
     ));
     raw.push_str("\r\n");
     raw.push_str(&format!("--{DRAFT_BOUNDARY}\r\n"));
-    raw.push_str("Content-Type: text/plain; charset=UTF-8\r\n");
+    raw.push_str(&format!(
+        "Content-Type: {}; charset=UTF-8\r\n",
+        message.body_format.mime_type()
+    ));
     raw.push_str("Content-Transfer-Encoding: 8bit\r\n");
     raw.push_str("\r\n");
     raw.push_str(&normalize_body_newlines(&message.body));
