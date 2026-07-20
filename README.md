@@ -369,6 +369,7 @@ goog mail list --limit 10
 goog mail list 'from:alerts@example.com newer_than:7d'
 goog mail read MESSAGE_ID
 goog mail draft --to teammate@example.com --subject 'Status update' --body @./message.txt --attachment ./report.pdf
+goog mail draft --to teammate@example.com --subject 'Rich update' --body '<p><strong>Important</strong>: <mark>review today</mark></p>' --html
 goog mail download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
 ```
 

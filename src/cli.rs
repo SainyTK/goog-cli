@@ -2599,9 +2599,12 @@ pub enum MailCommand {
         /// Draft subject
         #[arg(long)]
         subject: String,
-        /// Plain text draft body, @path for a body file, or - for stdin
+        /// Draft body, @path for a body file, or - for stdin. Plain text unless --html is set.
         #[arg(long)]
         body: Option<String>,
+        /// Treat the draft body as HTML instead of plain text
+        #[arg(long)]
+        html: bool,
         /// Local file to attach to the draft. Repeat for multiple attachments.
         #[arg(long)]
         attachment: Vec<String>,

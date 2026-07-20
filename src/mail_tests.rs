@@ -212,6 +212,7 @@ async fn update_draft_puts_to_gmail_draft_endpoint() {
             bcc: vec![],
             subject: "Updated subject".into(),
             body: "Updated body".into(),
+            body_format: DraftBodyFormat::PlainText,
             attachments: Vec::new(),
         },
     )
