@@ -262,6 +262,14 @@ pub enum DriveCommand {
         #[arg(long)]
         folder: Option<String>,
     },
+    /// Create a folder in Google Drive
+    Mkdir {
+        /// Name for the new folder
+        name: String,
+        /// Parent Drive folder ID
+        #[arg(long)]
+        folder: String,
+    },
     /// Permanently delete a file from Google Drive
     Delete {
         /// Drive file ID to delete

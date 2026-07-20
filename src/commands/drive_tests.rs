@@ -9,7 +9,7 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::drive::{DriveFile, DRIVE_SCOPE};
+use crate::drive::{CreateFolderOptions, DriveFile, DRIVE_SCOPE};
 
 use super::drive::*;
 
@@ -1047,6 +1047,59 @@ async fn run_upload_prints_uploaded_file_id_and_url() {
     assert_eq!(
         String::from_utf8(out).unwrap(),
         "file-123\thttps://drive.google.com/file/d/file-123/view\n"
+    );
+}
+
+#[tokio::test]
+async fn run_mkdir_uses_parent_folder_account_and_prints_folder_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer alice-access"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(BodyContains(br#""parents":["parent-folder-123"]"#))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(BodyContains(br#""name":"Candidate CVs""#))
+        .and(BodyContains(
+            br#""mimeType":"application/vnd.google-apps.folder""#,
+        ))
+        .and(BodyContains(br#""parents":["parent-folder-123"]"#))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "folder-456",
+            "webViewLink": "https://drive.google.com/drive/folders/folder-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let options = CreateFolderOptions::new("Candidate CVs", "parent-folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    run_mkdir_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "folder-456\thttps://drive.google.com/drive/folders/folder-456\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "parent-folder-123")),
+        Some("bob@example.com")
     );
 }
 

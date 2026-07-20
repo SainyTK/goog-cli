@@ -27,6 +27,7 @@ pub(crate) const GOOGLE_DOC_MIME_TYPE: &str = "application/vnd.google-apps.docum
 pub(crate) const GOOGLE_SHEET_MIME_TYPE: &str = "application/vnd.google-apps.spreadsheet";
 pub(crate) const GOOGLE_SLIDES_MIME_TYPE: &str = "application/vnd.google-apps.presentation";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
+const CREATE_FOLDER_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
 const DEFAULT_UPLOAD_MIME_TYPE: &str = "application/octet-stream";
@@ -113,6 +114,44 @@ pub struct UploadedFile {
     pub id: String,
     #[serde(rename = "webViewLink")]
     pub web_view_link: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct CreatedFolder {
+    pub id: String,
+    #[serde(rename = "webViewLink")]
+    pub web_view_link: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateFolderOptions {
+    pub name: String,
+    pub parent_folder: String,
+    files_url: String,
+}
+
+impl CreateFolderOptions {
+    pub fn new(name: impl Into<String>, parent_folder: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            parent_folder: parent_folder.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.query_pairs_mut()
+            .append_pair("fields", CREATE_FOLDER_RESPONSE_FIELDS)
+            .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -313,6 +352,14 @@ struct UploadMetadata {
     parents: Option<Vec<String>>,
 }
 
+#[derive(Debug, Serialize)]
+struct CreateFolderMetadata<'a> {
+    name: &'a str,
+    #[serde(rename = "mimeType")]
+    mime_type: &'static str,
+    parents: [&'a str; 1],
+}
+
 #[derive(Debug, Clone)]
 pub struct ListFilesOptions {
     pub page_size: u32,
@@ -490,6 +537,29 @@ pub async fn list_files<S: AccountStore>(
         .map_err(DriveError::Auth)?;
 
     parse_files_response(response).await
+}
+
+pub async fn create_folder<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CreateFolderOptions,
+) -> Result<CreatedFolder, DriveError> {
+    let metadata = CreateFolderMetadata {
+        name: &options.name,
+        mime_type: DRIVE_FOLDER_MIME_TYPE,
+        parents: [&options.parent_folder],
+    };
+    let response = client
+        .send_with_scopes(
+            client.post(options.request_url()?).json(&metadata),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<CreatedFolder>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
 
 pub async fn download<S, F>(

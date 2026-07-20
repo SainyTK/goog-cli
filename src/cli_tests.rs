@@ -579,6 +579,30 @@ fn drive_upload_with_folder() {
 }
 
 #[test]
+fn drive_mkdir_requires_a_name_and_parent_folder() {
+    let cli = parse(&[
+        "drive",
+        "mkdir",
+        "Candidate CVs",
+        "--folder",
+        "parent-folder-123",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Drive {
+            command: DriveCommand::Mkdir { name, folder },
+        } => {
+            assert_eq!(name, "Candidate CVs");
+            assert_eq!(folder, "parent-folder-123");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&["drive", "mkdir", "Candidate CVs"]).is_err());
+}
+
+#[test]
 fn docs_get_with_document_id() {
     let cli = parse(&["docs", "get", "document-123"]).unwrap();
     match cli.command {
