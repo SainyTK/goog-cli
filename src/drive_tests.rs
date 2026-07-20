@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use wiremock::matchers::{header, method, path, query_param};
+use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Match, Request};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -123,7 +123,7 @@ async fn list_files_deserializes_a_single_page_response() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -151,6 +151,29 @@ async fn list_files_deserializes_a_single_page_response() {
 }
 
 #[tokio::test]
+async fn list_files_can_include_soft_deleted_files() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::new(50)
+        .with_show_all()
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    list_files(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
 async fn list_files_can_filter_to_files_inside_a_folder() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -161,7 +184,7 @@ async fn list_files_can_filter_to_files_inside_a_folder() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -199,7 +222,7 @@ async fn list_folders_defaults_to_folders_in_drive_root() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -236,7 +259,7 @@ async fn list_folders_can_filter_to_child_folders_inside_a_parent() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -265,7 +288,7 @@ async fn list_docs_filters_to_native_google_docs() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "mimeType = 'application/vnd.google-apps.document'",
+            "mimeType = 'application/vnd.google-apps.document' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -293,7 +316,7 @@ async fn list_sheets_can_filter_to_native_google_sheets_inside_a_folder() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.spreadsheet'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SHEETS_PAGE_RESPONSE))
         .expect(1)
@@ -322,7 +345,7 @@ async fn list_slides_can_filter_to_native_google_slides_inside_a_folder() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.presentation'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.presentation' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SLIDES_PAGE_RESPONSE))
         .expect(1)
@@ -349,7 +372,7 @@ async fn browse_files_defaults_to_drive_root_without_mime_filter() {
         .and(query_param("pageSize", "50"))
         .and(query_param("orderBy", "name"))
         .and(query_param("fields", DRIVE_FILES_FIELDS))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -371,7 +394,10 @@ async fn browse_files_can_filter_to_children_inside_a_folder() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
-        .and(query_param("q", "'folder-123' in parents"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and trashed = false",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -393,7 +419,7 @@ async fn list_files_escapes_folder_id_in_query_literal() {
         .and(path("/drive/v3/files"))
         .and(query_param(
             "q",
-            r#"'folder\\\'123' in parents and mimeType != 'application/vnd.google-apps.folder'"#,
+            r#"'folder\\\'123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false"#,
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -416,7 +442,7 @@ async fn list_folders_escapes_parent_id_in_query_literal() {
         .and(path("/drive/v3/files"))
         .and(query_param(
             "q",
-            r#"'folder\\\'123' in parents and mimeType = 'application/vnd.google-apps.folder'"#,
+            r#"'folder\\\'123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"#,
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -442,7 +468,7 @@ async fn list_files_sends_next_page_token_and_returns_next_page_token() {
         .and(query_param("pageToken", "token-1"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(EMPTY_PAGE_WITH_TOKEN_RESPONSE))
         .expect(1)
@@ -805,6 +831,41 @@ impl Match for BodyLength {
 }
 
 #[tokio::test]
+async fn create_folder_sends_drive_folder_metadata_and_returns_its_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "id,webViewLink"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(body_json(serde_json::json!({
+            "name": "Candidate CVs",
+            "mimeType": DRIVE_FOLDER_MIME_TYPE,
+            "parents": ["parent-folder-123"]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "folder-456",
+            "webViewLink": "https://drive.google.com/drive/folders/folder-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = CreateFolderOptions::new("Candidate CVs", "parent-folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let folder = create_folder(&client, &options).await.unwrap();
+
+    assert_eq!(folder.id, "folder-456");
+    assert_eq!(
+        folder.web_view_link,
+        "https://drive.google.com/drive/folders/folder-456"
+    );
+}
+
+#[tokio::test]
 async fn upload_small_file_uses_multipart_upload_and_returns_drive_location() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -953,4 +1014,91 @@ async fn upload_returns_drive_error_for_permission_denied_response() {
     let err = upload(&client, &options, |_| ()).await.unwrap_err();
 
     assert!(matches!(err, DriveError::PermissionDenied));
+}
+
+#[tokio::test]
+async fn upload_uses_explicit_image_mime_type_in_metadata_and_media_part() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .and(query_param("uploadType", "multipart"))
+        .and(BodyContains(br#""mimeType":"image/png""#))
+        .and(BodyContains(b"Content-Type: image/png"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "image-123",
+            "webViewLink": "https://drive.google.com/file/d/image-123/view"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("image.png");
+    std::fs::write(&path, b"png bytes").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = UploadFileOptions::new(&path)
+        .with_mime_type("image/png")
+        .with_upload_url(format!("{}/upload/drive/v3/files", server.uri()));
+
+    let uploaded = upload(&client, &options, |_| ()).await.unwrap();
+
+    assert_eq!(uploaded.id, "image-123");
+}
+
+#[tokio::test]
+async fn create_anyone_reader_permission_preserves_google_policy_reason() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/image-123/permissions"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(BodyContains(br#""type":"anyone""#))
+        .and(BodyContains(br#""role":"reader""#))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": {
+                "code": 400,
+                "errors": [{"reason": "publishOutNotPermitted"}]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("image-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let error = create_anyone_reader_permission(&client, &options)
+        .await
+        .unwrap_err();
+
+    match error {
+        DriveError::Api { status, body } => {
+            assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+            assert!(body.contains("publishOutNotPermitted"));
+        }
+        other => panic!("expected Drive API error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn delete_file_removes_the_staged_drive_resource() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/image-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("image-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    delete_file(&client, &options).await.unwrap();
 }

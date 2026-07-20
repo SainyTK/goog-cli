@@ -1,6 +1,6 @@
 [package]
 name = "goog"
-version = "0.2.5"
+version = "0.2.6-preview.1"
 edition = "2021"
 
 [[bin]]
@@ -31,7 +31,8 @@ bytes = "1"
 futures-util = "0.3"
 base64 = "0.22"
 tempfile = "3"
-image = { version = "0.25.10", default-features = false, features = ["png"] }
+image = { version = "0.25.10", default-features = false, features = ["gif", "jpeg", "png", "webp"] }
+kamadak-exif = "0.6"
 
 [dev-dependencies]
 wiremock = "0.6"
