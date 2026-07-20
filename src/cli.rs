@@ -42,11 +42,38 @@ fn parse_mail_draft_id(value: &str) -> Result<String, String> {
     }
 }
 
+fn parse_positive_finite_points(value: &str) -> Result<f64, String> {
+    const MAX_IMAGE_DIMENSION_POINTS: f64 = 75_000.0;
+
+    let points = value
+        .parse::<f64>()
+        .map_err(|_| format!("{value:?} is not a valid point dimension"))?;
+    if !points.is_finite() || points <= 0.0 {
+        return Err("point dimensions must be finite and greater than zero".into());
+    }
+    if points > MAX_IMAGE_DIMENSION_POINTS {
+        return Err(format!(
+            "point dimensions must not exceed {MAX_IMAGE_DIMENSION_POINTS}"
+        ));
+    }
+    Ok(points)
+}
+
+fn parse_non_negative_finite_points(value: &str) -> Result<f64, String> {
+    parse_positive_finite_points(value).or_else(|error| {
+        if value.parse::<f64>().ok() == Some(0.0) {
+            Ok(0.0)
+        } else {
+            Err(error)
+        }
+    })
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "goog",
     about = "A terminal-native Google APIs CLI for power users and AI agents",
-    version
+    version = crate::version::DISPLAY_VERSION
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -63,6 +90,12 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Show build version and source provenance
+    Version {
+        /// Emit machine-readable JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Manage Google account authentication
     Auth {
         #[command(subcommand)]
@@ -152,7 +185,7 @@ pub enum AuthCommand {
         email: String,
     },
     /// Export full auth state to a file for use with GOOG_TOKEN_FILE in
-    /// headless environments such as Sandcastle. The output file grants
+    /// headless environments and automated runs. The output file grants
     /// access to every account it contains, within their authorized scopes --
     /// never commit it, and delete it once the headless environment no longer
     /// needs it.
@@ -206,6 +239,9 @@ pub enum DriveCommand {
         /// Drive folder ID to browse
         #[arg(long)]
         folder: Option<String>,
+        /// Include soft-deleted items
+        #[arg(long)]
+        show_all: bool,
         /// Emit one JSON object per row. Items use browse row fields; files and folders use full Drive file JSON
         #[arg(long)]
         json: bool,
@@ -225,6 +261,11 @@ pub enum DriveCommand {
         /// Drive folder ID to upload into
         #[arg(long)]
         folder: Option<String>,
+    },
+    /// Permanently delete a file from Google Drive
+    Delete {
+        /// Drive file ID to delete
+        file_id: String,
     },
 }
 
@@ -1857,7 +1898,20 @@ impl DocsCommand {
     pub fn normalize_document_id(&mut self) {
         let document_id = match self {
             DocsCommand::Create { .. } | DocsCommand::List { .. } => return,
-            DocsCommand::Map { document_id, .. }
+            DocsCommand::Copy {
+                source_document_id, ..
+            } => source_document_id,
+            DocsCommand::Compare {
+                source_document_id,
+                target_document_id,
+                ..
+            } => {
+                *source_document_id = crate::docs::extract_document_id(source_document_id);
+                *target_document_id = crate::docs::extract_document_id(target_document_id);
+                return;
+            }
+            DocsCommand::ExportPdf { document_id, .. }
+            | DocsCommand::Map { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. } => document_id,
             DocsCommand::ListFormat { command } => match command {
@@ -1865,7 +1919,23 @@ impl DocsCommand {
             },
             DocsCommand::Style { command } => match command {
                 DocsStyleCommand::Apply { document_id, .. }
+                | DocsStyleCommand::Named { document_id, .. }
+                | DocsStyleCommand::Page { document_id, .. }
                 | DocsStyleCommand::Template { document_id, .. } => document_id,
+                DocsStyleCommand::CopyNamed {
+                    source_document_id,
+                    target_document_id,
+                    ..
+                }
+                | DocsStyleCommand::CopyPage {
+                    source_document_id,
+                    target_document_id,
+                    ..
+                } => {
+                    *source_document_id = crate::docs::extract_document_id(source_document_id);
+                    *target_document_id = crate::docs::extract_document_id(target_document_id);
+                    return;
+                }
             },
             DocsCommand::Header { command } => match command {
                 DocsHeaderCommand::Create { document_id, .. } => document_id,
@@ -1885,7 +1955,10 @@ impl DocsCommand {
             },
             DocsCommand::Table { command } => match command {
                 DocsTableCommand::Insert { document_id, .. }
-                | DocsTableCommand::Edit { document_id, .. } => document_id,
+                | DocsTableCommand::Edit { document_id, .. }
+                | DocsTableCommand::Columns { document_id, .. }
+                | DocsTableCommand::HeaderRows { document_id, .. }
+                | DocsTableCommand::Style { document_id, .. } => document_id,
             },
             DocsCommand::NamedRange { command } => match command {
                 DocsNamedRangeCommand::Create { document_id, .. }
@@ -1929,6 +2002,109 @@ Notes:
     Create {
         /// Title for the new Google Docs Document
         title: String,
+    },
+    /// Copy an existing Google Doc as a reusable template
+    #[command(after_long_help = "Output shape:
+  Prints the accepted copied Document ID and its Google Docs edit URL, tab-separated.
+  With --verify-fidelity, the tab-separated success output is withheld unless every semantic scope matches.
+  With --json, emits newline-delimited JSON and withholds the typed copy acceptance record unless fidelity verification succeeds.
+  Verified comparison replay commands pin the resolved account used for both documents.
+  Verified acceptance records identify both document IDs, Google-confirmed titles, and edit URLs, the resolved account, goog CLI version, execution OS and architecture, running executable path and SHA-256, acceptance time, the exact source and copied revisions, the comparison report type and schema, the fingerprint algorithm, the replay command, and the four matched scope fingerprints.
+
+Notes:
+  Copying preserves document components that the Google Docs API cannot create directly, including native tables of contents, page-number auto text, positioned images, and first-page header content.
+  Use --required-executable-sha256 to reject the copy if the running goog binary differs from the reviewed binary.
+  Use --required-source-revision-id to reject the copy if the source changed after it was inspected.
+  Use --verify-fidelity to capture and validate the source before copying, then compare the completed copy with that exact snapshot across every semantic scope.
+  Workspace or source-file download, print, and copy restrictions can remain effective on the copied document.
+  SOURCE_DOCUMENT_ID accepts either a bare Document ID or a full Google Docs or Drive URL.")]
+    Copy {
+        /// Existing Google Doc to copy, as a Document ID or URL
+        source_document_id: String,
+        /// Title for the copied Google Doc
+        title: String,
+        /// Reject the copy unless the running goog executable has this SHA-256
+        #[arg(long)]
+        required_executable_sha256: Option<String>,
+        /// Reject the copy unless the source is at this revision
+        #[arg(long)]
+        required_source_revision_id: Option<String>,
+        /// Compare the completed copy with the source and fail if they differ
+        #[arg(long)]
+        verify_fidelity: bool,
+        /// Emit newline-delimited JSON comparison and acceptance records
+        #[arg(long)]
+        json: bool,
+    },
+    /// Compare the semantic fidelity of two Google Docs
+    #[command(after_long_help = "Notes:
+  Compares component inventory, named and page styles, formatting, and mapped content properties.
+  Use --scope to compare only inventory, visual-system, formatting, or content properties.
+  Mismatches include complete path-pattern counts, a representative example for every pattern, and JSON Pointer previews with source and target values.
+  Use --max-differences to control how many paths are shown per scope, or set it to 0 to suppress raw path previews.
+  Use --summary-only to suppress mismatch patterns and raw paths while retaining fingerprints, counts, and acceptance behavior.
+  Use --difference-pattern to show concrete paths for one reported pattern while retaining complete counts and acceptance behavior.
+  Human-readable reports summarize total, displayed, and limit-hidden differences; filtered reports also separate matching paths from differences outside the selected pattern.
+  JSON reports expose report-level and per-scope totals for displayed paths, paths hidden by --max-differences, and paths hidden by --summary-only; filtered reports also distinguish matching paths from differences outside the selected pattern.
+  Reports include a stable report type, schema version, revision-guarded replay command, the UTC comparison time, goog CLI version, execution OS and architecture, executable path and SHA-256, comparison settings, and identify both live documents by title, ID, edit URL, compared revision ID, and the account that accessed each document.
+  Replay commands pin and verify the recorded goog executable path and SHA-256, plus the resolved account shared by both documents, or use --source-account and --target-account when the accounts differ.
+  Use --required-executable-sha256 to reject a comparison before document access when the running goog binary differs from the recorded executable.
+  Use --required-source-revision-id and --required-target-revision-id to reject evidence replay after either document changes.
+  An unknown difference pattern is rejected with the closest reported patterns so a typo cannot produce an empty, misleading preview.
+  Use --fail-on-difference to return a nonzero exit status when any scope differs.
+  Google-assigned object, heading, segment, and list IDs are ignored.
+  Visual-system comparison ignores equivalent defaults that Google materializes after style copying.
+  A matching result still requires page-level visual inspection for final acceptance.
+  Both document arguments accept a bare Document ID or a full Google Docs or Drive URL.")]
+    Compare {
+        /// Source Google Doc to use as the fidelity reference
+        source_document_id: String,
+        /// Target Google Doc to validate
+        target_document_id: String,
+        /// Account to use for the source document
+        #[arg(long)]
+        source_account: Option<String>,
+        /// Account to use for the target document
+        #[arg(long)]
+        target_account: Option<String>,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Comparison scope to evaluate
+        #[arg(long, value_enum, default_value_t = DocsCompareScope::All)]
+        scope: DocsCompareScope,
+        /// Return a nonzero exit status when any comparison scope differs
+        #[arg(long)]
+        fail_on_difference: bool,
+        /// Maximum mismatch paths to show per comparison scope
+        #[arg(long, default_value_t = 20)]
+        max_differences: u32,
+        /// Suppress mismatch patterns and paths while retaining summary counts
+        #[arg(long)]
+        summary_only: bool,
+        /// Show mismatch path previews only for this reported pattern
+        #[arg(long)]
+        difference_pattern: Option<String>,
+        /// Reject the comparison unless the running goog executable has this SHA-256
+        #[arg(long)]
+        required_executable_sha256: Option<String>,
+        /// Reject the comparison unless the source is at this revision
+        #[arg(long)]
+        required_source_revision_id: Option<String>,
+        /// Reject the comparison unless the target is at this revision
+        #[arg(long)]
+        required_target_revision_id: Option<String>,
+    },
+    /// Export a native Google Doc as a PDF file
+    #[command(after_long_help = "Notes:
+  Google Drive can deny export when the selected account cannot access the document or when file or Workspace policies disable downloading, printing, or copying.
+  Use --account EMAIL when multiple accounts are authorized and the document belongs to a specific account.")]
+    ExportPdf {
+        /// Document ID or URL to export
+        document_id: String,
+        /// Destination PDF path
+        #[arg(long, short)]
+        output: String,
     },
     /// Print a high-level map of editable Google Docs content, or retrieve one selected block
     #[command(after_long_help = DOCS_CONTENT_SELECTOR_HELP)]
@@ -2085,6 +2261,9 @@ pub enum DocsStyleCommand {
         /// Raw Google Docs UTF-16 range end
         #[arg(long)]
         to_index: Option<i64>,
+        /// Header or footer segment ID containing the explicit index range
+        #[arg(long, requires_all = ["from_index", "to_index"])]
+        segment_id: Option<Box<String>>,
         /// Document Map Entry number
         #[arg(long)]
         entry: Option<usize>,
@@ -2106,18 +2285,91 @@ pub enum DocsStyleCommand {
         /// Apply italic text style
         #[arg(long)]
         italic: bool,
+        /// Apply underline text style
+        #[arg(long)]
+        underline: bool,
         /// Font size in points
         #[arg(long)]
         font_size: Option<f64>,
+        /// Font family name such as Arial or Bai Jamjuree
+        #[arg(long)]
+        font_family: Option<String>,
         /// Foreground color as #RRGGBB
         #[arg(long)]
         foreground_color: Option<String>,
+        /// Link the selected text to a Google Docs heading ID
+        #[arg(long)]
+        link_heading_id: Option<Box<String>>,
+        /// Paragraph alignment
+        #[arg(long, value_enum)]
+        alignment: Option<DocsParagraphAlignment>,
+        /// Paragraph text direction
+        #[arg(long, value_enum)]
+        direction: Option<DocsParagraphDirection>,
+        /// Space before the paragraph in points
+        #[arg(long)]
+        space_above: Option<f64>,
+        /// Space after the paragraph in points
+        #[arg(long)]
+        space_below: Option<f64>,
+        /// Line spacing as a percentage of normal, where normal is 100
+        #[arg(long)]
+        line_spacing: Option<f64>,
+        /// Paragraph spacing behavior, including whether list spacing collapses
+        #[arg(long, value_enum)]
+        spacing_mode: Option<DocsParagraphSpacingMode>,
+        /// Paragraph start indent in points
+        #[arg(long)]
+        indent_start: Option<f64>,
+        /// Paragraph end indent in points
+        #[arg(long)]
+        indent_end: Option<f64>,
+        /// Paragraph first-line indent in points
+        #[arg(long)]
+        indent_first_line: Option<f64>,
+        /// Keep each selected paragraph on the same page as the following paragraph
+        #[arg(long)]
+        keep_with_next: bool,
+        /// Prevent page breaks within each selected paragraph
+        #[arg(long)]
+        keep_lines_together: bool,
+        /// Prevent a single line from being stranded at the top or bottom of a page
+        #[arg(long)]
+        avoid_widow_and_orphan: bool,
+        /// Start each selected paragraph on a new page
+        #[arg(long)]
+        page_break_before: bool,
         /// Named paragraph style such as HEADING_1
         #[arg(long = "paragraph-style", value_name = "PARAGRAPH_STYLE")]
         heading: Option<String>,
         /// Raw Google Docs style JSON with optional textStyle and paragraphStyle objects
         #[arg(long)]
-        style_json: Option<String>,
+        style_json: Option<Box<String>>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<Box<String>>,
+        /// Ignore the cached style template for this document
+        #[arg(long)]
+        no_cached_style: bool,
+    },
+    /// Update a native named style such as HEADING_1
+    Named {
+        /// Document ID or URL to update
+        document_id: String,
+        /// Native named style type such as NORMAL_TEXT, TITLE, or HEADING_1
+        named_style: String,
+        /// Google Docs style JSON with textStyle and/or paragraphStyle objects
+        #[arg(long)]
+        style_json: Box<String>,
+        /// Document tab containing the named style; defaults to the first tab
+        #[arg(long)]
+        tab_id: Option<String>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2127,9 +2379,88 @@ pub enum DocsStyleCommand {
         /// Require the document to still be at this revision before applying the edit
         #[arg(long)]
         required_revision_id: Option<String>,
-        /// Ignore the cached style template for this document
+    },
+    /// Copy all native named styles from one Google Doc to another
+    CopyNamed {
+        /// Source Document ID or URL whose named styles should be copied
+        source_document_id: String,
+        /// Target Document ID or URL to update
+        target_document_id: String,
+        /// Source document tab containing the named styles; defaults to the first tab
         #[arg(long)]
-        no_cached_style: bool,
+        source_tab_id: Option<String>,
+        /// Target document tab to update; defaults to the first tab
+        #[arg(long)]
+        target_tab_id: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the target document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Copy page mode, layout, and header/footer behavior from one Google Doc to another
+    CopyPage {
+        /// Source Document ID or URL whose page layout should be copied
+        source_document_id: String,
+        /// Target Document ID or URL to update
+        target_document_id: String,
+        /// Source document tab containing the page style; defaults to the first tab
+        #[arg(long)]
+        source_tab_id: Option<String>,
+        /// Target document tab to update; defaults to the first tab
+        #[arg(long)]
+        target_tab_id: Option<String>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the target document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Configure page size and document margins in points
+    Page {
+        /// Document ID or URL to update
+        document_id: String,
+        /// Page width in points; requires --page-height
+        #[arg(long, requires = "page_height")]
+        page_width: Option<f64>,
+        /// Page height in points; requires --page-width
+        #[arg(long, requires = "page_width")]
+        page_height: Option<f64>,
+        /// Top page margin in points
+        #[arg(long)]
+        margin_top: Option<f64>,
+        /// Bottom page margin in points
+        #[arg(long)]
+        margin_bottom: Option<f64>,
+        /// Left page margin in points
+        #[arg(long)]
+        margin_left: Option<f64>,
+        /// Right page margin in points
+        #[arg(long)]
+        margin_right: Option<f64>,
+        /// Header margin in points
+        #[arg(long)]
+        margin_header: Option<f64>,
+        /// Footer margin in points
+        #[arg(long)]
+        margin_footer: Option<f64>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
     },
     /// Read the locally cached style template for a Google Doc
     Template {
@@ -2203,16 +2534,23 @@ pub enum DocsTextCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsHeaderCommand {
-    /// Create the document's default header, returning its headerId
+    /// Create a default header, returning its headerId
     #[command(after_long_help = "Output shape:
   Prints the raw documents.batchUpdate response JSON, which includes the new headerId under replies[0].createHeader.headerId.
 
 Notes:
-  Always creates the DEFAULT header for the document's first section; there is no per-section header support today.
-  Edit the header's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned headerId segment.")]
+  Omitting --section-break-index creates the DEFAULT header for the document's first section.
+  Use a section break startIndex from docs get to create a header for a later section.
+  Pass --text to populate the new header without a raw batch-update request.")]
     Create {
         /// Document ID or URL to update
         document_id: String,
+        /// Text to insert into the new header
+        #[arg(long)]
+        text: Option<String>,
+        /// Section break startIndex for the section that should own the header
+        #[arg(long)]
+        section_break_index: Option<usize>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2227,16 +2565,23 @@ Notes:
 
 #[derive(Debug, Subcommand)]
 pub enum DocsFooterCommand {
-    /// Create the document's default footer, returning its footerId
+    /// Create a default footer, returning its footerId
     #[command(after_long_help = "Output shape:
   Prints the raw documents.batchUpdate response JSON, which includes the new footerId under replies[0].createFooter.footerId.
 
 Notes:
-  Always creates the DEFAULT footer for the document's first section; there is no per-section footer support today.
-  Edit the footer's own content with `goog docs text insert`/`goog docs batch-update`, targeting a location inside the returned footerId segment.")]
+  Omitting --section-break-index creates the DEFAULT footer for the document's first section.
+  Use a section break startIndex from docs get to create a footer for a later section.
+  Pass --text to populate the new footer without a raw batch-update request.")]
     Create {
         /// Document ID or URL to update
         document_id: String,
+        /// Text to insert into the new footer
+        #[arg(long)]
+        text: Option<String>,
+        /// Section break startIndex for the section that should own the footer
+        #[arg(long)]
+        section_break_index: Option<usize>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2294,16 +2639,69 @@ pub enum DocsBreakCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsImageCommand {
-    /// Insert an Inline Image through a high-level Document Map location selector
-    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
+    /// Insert an Inline Image through a body selector or at the end of a header/footer segment
+    #[command(
+        group(ArgGroup::new("image_location").required(true).multiple(false).args(["at", "segment_id"])),
+        group(ArgGroup::new("image_source").required(true).args(["image_uri", "file"])),
+        after_long_help = "Location rules:
+  Provide exactly one of --at or --segment-id.
+  For a body location, use --at index:N, --at entry:N, --at page:P,line:L, --at heading:TEXT, --at after-heading:TEXT, --at before-heading:TEXT, --at after-text:TEXT, or --at before-text:TEXT.
+  Use --segment-id with a headerId or footerId returned by `docs header create`, `docs footer create`, or `docs get`; the image is inserted at the end of that segment.
+
+Write safety:
+  Use --dry-run to preview without calling documents.batchUpdate.
+  Use --required-revision-id REVISION_ID to reject writes against a changed document."
+    )]
     Insert {
         /// Document ID or URL to update
         document_id: String,
         /// Publicly reachable image URI for Google Docs insertInlineImage
-        image_uri: String,
+        image_uri: Option<String>,
+        /// Local image file to validate and stage for Google Docs insertion
+        #[arg(long, value_name = "PATH", allow_hyphen_values = true)]
+        file: Option<std::path::PathBuf>,
+        /// Backend used to make a local image temporarily reachable by Google Docs
+        #[arg(long, value_enum, default_value_t)]
+        staging: DocsImageStaging,
+        /// Executable adapter used by automatic local-image staging
+        #[arg(long, value_name = "PATH", requires = "file")]
+        staging_command: Option<std::path::PathBuf>,
+        /// Keep the staged resource instead of requesting cleanup
+        #[arg(long, requires = "file")]
+        keep_staged: bool,
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
-        at: String,
+        at: Option<String>,
+        /// Header or footer segment ID; inserts the image at the end of that segment
+        #[arg(long)]
+        segment_id: Option<String>,
+        /// Image width in points; requires --height
+        #[arg(long, requires = "height", value_parser = parse_positive_finite_points)]
+        width: Option<f64>,
+        /// Image height in points; requires --width
+        #[arg(long, requires = "width", value_parser = parse_positive_finite_points)]
+        height: Option<f64>,
+        /// Permit exact width and height to distort the source image
+        #[arg(long, requires_all = ["width", "height"])]
+        allow_distortion: bool,
+        /// Maximum image width in points while preserving the source aspect ratio
+        #[arg(long, conflicts_with_all = ["width", "height"], value_parser = parse_positive_finite_points)]
+        max_width: Option<f64>,
+        /// Maximum image height in points while preserving the source aspect ratio
+        #[arg(long, conflicts_with_all = ["width", "height"], value_parser = parse_positive_finite_points)]
+        max_height: Option<f64>,
+        /// Preserve the source aspect ratio when fitting to maximum dimensions
+        #[arg(long)]
+        preserve_aspect_ratio: bool,
+        /// Derive maximum dimensions from the active body section's page size and margins
+        #[arg(long, conflicts_with_all = ["width", "height", "max_width", "max_height"])]
+        fit_page: bool,
+        /// Reserve vertical page space for adjacent content
+        #[arg(long, requires = "fit_page", value_parser = parse_non_negative_finite_points)]
+        reserve_height: Option<f64>,
+        /// Permit fitting to enlarge images beyond native dimensions
+        #[arg(long)]
+        allow_upscale: bool,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2314,6 +2712,13 @@ pub enum DocsImageCommand {
         #[arg(long)]
         required_revision_id: Option<String>,
     },
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum DocsImageStaging {
+    #[default]
+    Auto,
+    DrivePublic,
 }
 
 #[derive(Debug, Subcommand)]
@@ -2390,6 +2795,81 @@ pub enum DocsTableCommand {
         /// Allow future structural table resizing
         #[arg(long)]
         resize: bool,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Set fixed widths for every column in a table
+    Columns {
+        /// Document ID or URL to update
+        document_id: String,
+        /// Table handle from `docs map --type tables`, such as table-3
+        #[arg(long)]
+        table_id: String,
+        /// Column widths in points, in left-to-right order
+        #[arg(long, required = true, value_delimiter = ',', num_args = 1..)]
+        widths: Vec<f64>,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Pin leading table rows so they repeat as headers across pages
+    HeaderRows {
+        /// Document ID or URL to update
+        document_id: String,
+        /// Table handle from `docs map --type tables`, such as table-3
+        #[arg(long)]
+        table_id: String,
+        /// Number of leading rows to repeat; use 0 to unpin all header rows
+        #[arg(long)]
+        rows: usize,
+        /// Preview the edit without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before applying the edit
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Apply visual styling to one table row or cell
+    Style {
+        /// Document ID or URL to update
+        document_id: String,
+        /// Table handle from `docs map --type tables`, such as table-3
+        #[arg(long)]
+        table_id: String,
+        /// One-based table row number to style
+        #[arg(long)]
+        row: usize,
+        /// Optional one-based column number to target a single cell
+        #[arg(long)]
+        column: Option<usize>,
+        /// Cell background color as #RRGGBB
+        #[arg(long)]
+        background_color: Option<String>,
+        /// Vertical alignment for cell content
+        #[arg(long)]
+        content_alignment: Option<DocsTableCellAlignment>,
+        /// Color for all four cell borders as #RRGGBB; requires --border-width
+        #[arg(long, requires = "border_width")]
+        border_color: Option<String>,
+        /// Width for all four cell borders in points; requires --border-color
+        #[arg(long, requires = "border_color")]
+        border_width: Option<f64>,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2542,13 +3022,99 @@ pub enum DocsListType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsParagraphAlignment {
+    Start,
+    Center,
+    End,
+    Justified,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsParagraphDirection {
+    LeftToRight,
+    RightToLeft,
+}
+
+impl DocsParagraphDirection {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            DocsParagraphDirection::LeftToRight => "LEFT_TO_RIGHT",
+            DocsParagraphDirection::RightToLeft => "RIGHT_TO_LEFT",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsParagraphSpacingMode {
+    CollapseLists,
+    NeverCollapse,
+}
+
+impl DocsParagraphSpacingMode {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            DocsParagraphSpacingMode::CollapseLists => "COLLAPSE_LISTS",
+            DocsParagraphSpacingMode::NeverCollapse => "NEVER_COLLAPSE",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DocsTableCellAlignment {
+    Top,
+    Middle,
+    Bottom,
+}
+
+impl DocsTableCellAlignment {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            DocsTableCellAlignment::Top => "TOP",
+            DocsTableCellAlignment::Middle => "MIDDLE",
+            DocsTableCellAlignment::Bottom => "BOTTOM",
+        }
+    }
+}
+
+impl DocsParagraphAlignment {
+    pub fn api_value(self) -> &'static str {
+        match self {
+            DocsParagraphAlignment::Start => "START",
+            DocsParagraphAlignment::Center => "CENTER",
+            DocsParagraphAlignment::End => "END",
+            DocsParagraphAlignment::Justified => "JUSTIFIED",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum DocsMapType {
     /// All map entries
     All,
+    /// Explicit page and section breaks
+    Breaks,
     /// Inline and positioned images
     Images,
+    /// Native paragraph lists
+    Lists,
     /// Tables
     Tables,
+    /// Header and footer segments
+    Segments,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, serde::Serialize)]
+pub enum DocsCompareScope {
+    /// Compare every semantic scope
+    All,
+    /// Compare component counts and inventory
+    Inventory,
+    /// Compare native named styles and page styles
+    VisualSystem,
+    /// Compare formatting and layout independently of prose and positions
+    Formatting,
+    /// Compare mapped content and component properties
+    Content,
 }
 
 #[derive(Debug, Subcommand)]

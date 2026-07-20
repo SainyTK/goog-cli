@@ -1,4 +1,4 @@
 /target
-node_modules
-.sandcastle-tmp
+.DS_Store
+.gnhf/runs/
 .scratch/

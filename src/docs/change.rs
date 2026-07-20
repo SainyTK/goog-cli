@@ -3,12 +3,17 @@ use std::io::Write;
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
 
-use crate::cli::{DocsListType, DocsSectionBreakType};
+use crate::cli::{
+    DocsListType, DocsParagraphAlignment, DocsParagraphDirection, DocsSectionBreakType,
+    DocsTableCellAlignment,
+};
+use crate::docs::image_fit::{fit_image, ImageFitConstraints, SourceImageDimensions};
 use crate::docs::map::{
     resolve_insert_text_location, resolve_range_selector, resolve_replace_text_ranges,
     text_block_contains_range, DocumentLocation, DocumentMap, DocumentMapEntry,
     DocumentMapEntryKind, DocumentRange, InsertTextSelector, RangeSelector,
 };
+use crate::docs::page_layout::resolve_body_page_geometry;
 use crate::docs::style_template::StyleTemplate;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,14 +38,30 @@ pub(crate) struct ReplaceTextCommand {
     pub required_revision_id: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InsertImageCommand {
     pub document_id: String,
     pub image_uri: String,
-    pub selector: InsertTextSelector,
+    pub selector: Option<InsertTextSelector>,
+    pub segment_id: Option<String>,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub fit: Option<InsertImageFit>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct InsertImageFit {
+    pub source: SourceImageDimensions,
+    pub constraints: ImageFitConstraints,
+    pub page: Option<PageFitOptions>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PageFitOptions {
+    pub reserve_height_pt: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +86,8 @@ pub(crate) struct InsertSectionBreakCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CreateHeaderCommand {
     pub document_id: String,
+    pub text: Option<String>,
+    pub section_break_index: Option<usize>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -73,6 +96,8 @@ pub(crate) struct CreateHeaderCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CreateFooterCommand {
     pub document_id: String,
+    pub text: Option<String>,
+    pub section_break_index: Option<usize>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -112,19 +137,104 @@ pub(crate) struct EditTableCommand {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub(crate) struct StyleTableRowCommand {
+    pub document_id: String,
+    pub table_id: String,
+    pub row: usize,
+    pub column: Option<usize>,
+    pub background_color: Option<String>,
+    pub content_alignment: Option<DocsTableCellAlignment>,
+    pub border_color: Option<String>,
+    pub border_width: Option<f64>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SetTableColumnWidthsCommand {
+    pub document_id: String,
+    pub table_id: String,
+    pub widths: Vec<f64>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PinTableHeaderRowsCommand {
+    pub document_id: String,
+    pub table_id: String,
+    pub rows: usize,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ApplyStylesCommand {
     pub document_id: String,
     pub selector: RangeSelector,
+    pub segment_id: Option<String>,
     pub bold: bool,
     pub italic: bool,
+    pub underline: bool,
     pub font_size: Option<f64>,
+    pub font_family: Option<String>,
     pub foreground_color: Option<String>,
+    pub link_heading_id: Option<String>,
+    pub alignment: Option<DocsParagraphAlignment>,
+    pub direction: Option<DocsParagraphDirection>,
+    pub space_above: Option<f64>,
+    pub space_below: Option<f64>,
+    pub line_spacing: Option<f64>,
+    pub spacing_mode: Option<crate::cli::DocsParagraphSpacingMode>,
+    pub indent_start: Option<f64>,
+    pub indent_end: Option<f64>,
+    pub indent_first_line: Option<f64>,
+    pub keep_with_next: bool,
+    pub keep_lines_together: bool,
+    pub avoid_widow_and_orphan: bool,
+    pub page_break_before: bool,
     pub heading: Option<String>,
     pub style_json: Option<String>,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
     pub no_auto_style: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UpdateNamedStyleCommand {
+    pub document_id: String,
+    pub named_style: String,
+    pub style_json: String,
+    pub tab_id: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CopyNamedStylesCommand {
+    pub source_document_id: String,
+    pub target_document_id: String,
+    pub source_tab_id: Option<String>,
+    pub target_tab_id: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CopyPageStyleCommand {
+    pub source_document_id: String,
+    pub target_document_id: String,
+    pub source_tab_id: Option<String>,
+    pub target_tab_id: Option<String>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,6 +247,22 @@ pub(crate) struct ApplyListCommand {
     pub json: bool,
     pub required_revision_id: Option<String>,
     pub no_auto_style: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ConfigurePageCommand {
+    pub document_id: String,
+    pub page_width: Option<f64>,
+    pub page_height: Option<f64>,
+    pub margin_top: Option<f64>,
+    pub margin_bottom: Option<f64>,
+    pub margin_left: Option<f64>,
+    pub margin_right: Option<f64>,
+    pub margin_header: Option<f64>,
+    pub margin_footer: Option<f64>,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,6 +427,8 @@ struct DocsChangePreview {
     before: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     after: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_sizing: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -326,6 +454,14 @@ impl PreparedDocsChange {
             Self::HighLevel(change) => change.preview.command.as_str(),
         }
     }
+
+    pub fn location_index(&self) -> Option<i64> {
+        match self {
+            Self::InsertText(change) => change.location.index,
+            Self::ReplaceText(_) => None,
+            Self::HighLevel(change) => change.location.as_ref().and_then(|location| location.index),
+        }
+    }
 }
 
 impl DocsChangePreview {
@@ -335,6 +471,7 @@ impl DocsChangePreview {
             summary,
             before: None,
             after: None,
+            image_sizing: None,
         }
     }
 
@@ -344,7 +481,13 @@ impl DocsChangePreview {
             summary,
             before: Some(before),
             after: Some(after),
+            image_sizing: None,
         }
+    }
+
+    fn with_image_sizing(mut self, image_sizing: Option<serde_json::Value>) -> Self {
+        self.image_sizing = image_sizing;
+        self
     }
 }
 
@@ -404,38 +547,159 @@ pub(crate) fn prepare_insert_image_change(
     document_map: &DocumentMap,
     command: &InsertImageCommand,
 ) -> Result<PreparedDocsChange> {
-    let resolved = resolve_insert_text_location(document_map, &command.selector)?;
-    let Some(index) = resolved.location.index else {
-        bail!("image insert selector resolved without a Google Docs index");
+    let resolved = command
+        .selector
+        .as_ref()
+        .map(|selector| resolve_insert_text_location(document_map, selector))
+        .transpose()?;
+    if resolved.is_some() == command.segment_id.is_some() {
+        bail!("provide exactly one image location: a body selector or --segment-id");
+    }
+    let body_index = resolved
+        .as_ref()
+        .and_then(|resolved| resolved.location.index);
+    let (object_size, image_sizing) = match (command.width, command.height, command.fit) {
+        (None, None, Some(fit)) => {
+            let (constraints, page_geometry) = if let Some(page) = fit.page {
+                if !page.reserve_height_pt.is_finite() || page.reserve_height_pt < 0.0 {
+                    bail!("reserved image height must be finite and non-negative");
+                }
+                let index = body_index.context("--fit-page requires a body image location")?;
+                let geometry = resolve_body_page_geometry(&document_map.raw_document, None, index)?;
+                let max_height_pt =
+                    ((geometry.available_height_points - page.reserve_height_pt) * 1_000.0).round()
+                        / 1_000.0;
+                if max_height_pt <= 0.0 {
+                    bail!(
+                        "--reserve-height {} leaves no positive page height for the image",
+                        page.reserve_height_pt
+                    );
+                }
+                let diagnostic = serde_json::json!({
+                    "tabId": geometry.tab_id,
+                    "sectionStartIndex": geometry.section_start_index,
+                    "pageWidthPoints": geometry.page_width_points,
+                    "pageHeightPoints": geometry.page_height_points,
+                    "marginTopPoints": geometry.margin_top_points,
+                    "marginBottomPoints": geometry.margin_bottom_points,
+                    "marginLeftPoints": geometry.margin_left_points,
+                    "marginRightPoints": geometry.margin_right_points,
+                    "availableWidthPoints": geometry.available_width_points,
+                    "availableHeightPoints": geometry.available_height_points,
+                    "reserveHeightPoints": page.reserve_height_pt,
+                    "imageAvailableHeightPoints": max_height_pt
+                });
+                (
+                    ImageFitConstraints {
+                        max_width_pt: Some(geometry.available_width_points),
+                        max_height_pt: Some(max_height_pt),
+                        allow_upscale: fit.constraints.allow_upscale,
+                    },
+                    Some(diagnostic),
+                )
+            } else {
+                (fit.constraints, None)
+            };
+            let fit_result = fit_image(fit.source, constraints)?;
+            let mut sizing = serde_json::json!({
+                "sourceDimensions": { "widthPixels": fit.source.width_px, "heightPixels": fit.source.height_px },
+                "nativeDimensions": { "widthPoints": fit_result.native_width_pt, "heightPoints": fit_result.native_height_pt },
+                "constraints": { "maxWidthPoints": constraints.max_width_pt, "maxHeightPoints": constraints.max_height_pt },
+                "scale": fit_result.scale,
+                "finalDimensions": { "widthPoints": fit_result.width_pt, "heightPoints": fit_result.height_pt },
+                "upscaled": fit_result.upscaled
+            });
+            if let Some(page_geometry) = page_geometry {
+                sizing["pageGeometry"] = page_geometry;
+            }
+            (
+                Some(serde_json::json!({
+                    "width": { "magnitude": fit_result.width_pt, "unit": "PT" },
+                    "height": { "magnitude": fit_result.height_pt, "unit": "PT" }
+                })),
+                Some(sizing),
+            )
+        }
+        (Some(width), Some(height), None) => {
+            if !width.is_finite() || width <= 0.0 {
+                bail!("--width must be a finite number greater than zero");
+            }
+            if !height.is_finite() || height <= 0.0 {
+                bail!("--height must be a finite number greater than zero");
+            }
+            (
+                Some(serde_json::json!({
+                    "width": { "magnitude": width, "unit": "PT" },
+                    "height": { "magnitude": height, "unit": "PT" }
+                })),
+                None,
+            )
+        }
+        (None, None, None) => (None, None),
+        (Some(_), Some(_), Some(_)) => {
+            bail!("exact image dimensions and aspect-fit constraints cannot be combined")
+        }
+        _ => bail!("--width and --height must be provided together"),
     };
+    let (location_field, location_value, location, preview) = if let Some(resolved) = resolved {
+        let Some(index) = resolved.location.index else {
+            bail!("image insert selector resolved without a Google Docs index");
+        };
+        (
+            "location",
+            serde_json::json!({ "index": index }),
+            Some(resolved.location),
+            DocsChangePreview::with_context(
+                "image insert",
+                format!(
+                    "Insert inline image at index {index} from {}",
+                    command.image_uri
+                ),
+                resolved.preview_before.clone(),
+                insert_preview_text(
+                    &resolved.preview_before,
+                    resolved.preview_offset,
+                    "[inline image]",
+                ),
+            )
+            .with_image_sizing(image_sizing.clone()),
+        )
+    } else {
+        let segment_id = command.segment_id.as_deref().unwrap().trim();
+        if segment_id.is_empty() {
+            bail!("--segment-id cannot be empty");
+        }
+        (
+            "endOfSegmentLocation",
+            serde_json::json!({ "segmentId": segment_id }),
+            None,
+            DocsChangePreview::new(
+                "image insert",
+                format!(
+                    "Insert inline image at end of segment {segment_id} from {}",
+                    command.image_uri
+                ),
+            )
+            .with_image_sizing(image_sizing.clone()),
+        )
+    };
+    let mut insert_inline_image = serde_json::json!({ "uri": command.image_uri });
+    insert_inline_image[location_field] = location_value;
+    if let Some(object_size) = object_size {
+        insert_inline_image["objectSize"] = object_size;
+    }
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
-            "insertInlineImage": {
-                "location": { "index": index },
-                "uri": command.image_uri
-            }
+            "insertInlineImage": insert_inline_image
         })],
         command.required_revision_id.as_deref(),
     );
-    let preview_after = insert_preview_text(
-        &resolved.preview_before,
-        resolved.preview_offset,
-        "[inline image]",
-    );
     Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
-        location: Some(resolved.location),
+        location,
         range: None,
         request_body,
-        preview: DocsChangePreview::with_context(
-            "image insert",
-            format!(
-                "Insert inline image at index {index} from {}",
-                command.image_uri
-            ),
-            resolved.preview_before,
-            preview_after,
-        ),
+        preview,
     }))
 }
 
@@ -515,23 +779,30 @@ pub(crate) fn prepare_create_header_change(
     document_map: &DocumentMap,
     command: &CreateHeaderCommand,
 ) -> PreparedDocsChange {
+    let mut create_header = serde_json::json!({ "type": "DEFAULT" });
+    if let Some(index) = command.section_break_index {
+        create_header["sectionBreakLocation"] = serde_json::json!({ "index": index });
+    }
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
-            "createHeader": {
-                "type": "DEFAULT"
-            }
+            "createHeader": create_header
         })],
         command.required_revision_id.as_deref(),
+    );
+    let target = command.section_break_index.map_or_else(
+        || "the document's first section".to_string(),
+        |index| format!("the section beginning at section break index {index}"),
+    );
+    let summary = command.text.as_ref().map_or_else(
+        || format!("Create the DEFAULT header for {target}"),
+        |text| format!("Create the DEFAULT header for {target} and insert {text:?}"),
     );
     PreparedDocsChange::HighLevel(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
         location: None,
         range: None,
         request_body,
-        preview: DocsChangePreview::new(
-            "header create",
-            "Create the document's DEFAULT header".to_string(),
-        ),
+        preview: DocsChangePreview::new("header create", summary),
     })
 }
 
@@ -539,23 +810,30 @@ pub(crate) fn prepare_create_footer_change(
     document_map: &DocumentMap,
     command: &CreateFooterCommand,
 ) -> PreparedDocsChange {
+    let mut create_footer = serde_json::json!({ "type": "DEFAULT" });
+    if let Some(index) = command.section_break_index {
+        create_footer["sectionBreakLocation"] = serde_json::json!({ "index": index });
+    }
     let request_body = request_body_with_revision(
         vec![serde_json::json!({
-            "createFooter": {
-                "type": "DEFAULT"
-            }
+            "createFooter": create_footer
         })],
         command.required_revision_id.as_deref(),
+    );
+    let target = command.section_break_index.map_or_else(
+        || "the document's first section".to_string(),
+        |index| format!("the section beginning at section break index {index}"),
+    );
+    let summary = command.text.as_ref().map_or_else(
+        || format!("Create the DEFAULT footer for {target}"),
+        |text| format!("Create the DEFAULT footer for {target} and insert {text:?}"),
     );
     PreparedDocsChange::HighLevel(DocsHighLevelChange {
         revision_id: document_map.revision_id.clone(),
         location: None,
         range: None,
         request_body,
-        preview: DocsChangePreview::new(
-            "footer create",
-            "Create the document's DEFAULT footer".to_string(),
-        ),
+        preview: DocsChangePreview::new("footer create", summary),
     })
 }
 
@@ -607,16 +885,13 @@ pub(crate) fn prepare_insert_table_change(
     let Some(index) = resolved.location.index else {
         bail!("table insert selector resolved without a Google Docs index");
     };
-    let mut requests = vec![serde_json::json!({
+    let requests = vec![serde_json::json!({
         "insertTable": {
             "location": { "index": index },
             "rows": dimensions.rows,
             "columns": dimensions.columns
         }
     })];
-    if let Some(data) = &data {
-        requests.extend(insert_table_data_requests(index, data));
-    }
     let request_body =
         request_body_with_revision(requests, command.required_revision_id.as_deref());
     let summary = if let Some(data) = &data {
@@ -666,42 +941,6 @@ fn explicit_table_dimensions(
         bail!("table insert requires --rows and --columns to be greater than zero");
     }
     Ok(TableDimensions { rows, columns })
-}
-
-fn insert_table_data_requests(table_index: i64, data: &TableData) -> Vec<serde_json::Value> {
-    let mut requests = Vec::new();
-    let column_count = data.dimensions().columns;
-    for (row_index, row) in data.rows().iter().enumerate().rev() {
-        for (column_index, text) in row.iter().enumerate().rev() {
-            if text.is_empty() {
-                continue;
-            }
-            requests.push(serde_json::json!({
-                "insertText": {
-                    "location": {
-                        "index": inserted_table_cell_text_index(
-                            table_index,
-                            row_index,
-                            column_index,
-                            column_count
-                        )
-                    },
-                    "text": text
-                }
-            }));
-        }
-    }
-    requests
-}
-
-fn inserted_table_cell_text_index(
-    table_index: i64,
-    row_index: usize,
-    column_index: usize,
-    column_count: usize,
-) -> i64 {
-    let row_stride = (column_count as i64 * 2) + 1;
-    table_index + 4 + (row_index as i64 * row_stride) + (column_index as i64 * 2)
 }
 
 pub(crate) fn prepare_edit_table_change(
@@ -756,6 +995,233 @@ pub(crate) fn prepare_edit_table_change(
     }))
 }
 
+pub(crate) fn prepare_style_table_row_change(
+    document_map: &DocumentMap,
+    command: &StyleTableRowCommand,
+) -> Result<PreparedDocsChange> {
+    let table = resolve_table_handle(document_map, &command.table_id)?;
+    if command.row == 0 || command.row > table.table_cells.len() {
+        bail!(
+            "table style --row must be between 1 and {} for {}",
+            table.table_cells.len(),
+            command.table_id
+        );
+    }
+    let column_span = table.table_cells[command.row - 1].len();
+    if column_span == 0 {
+        bail!("selected table row does not expose editable cells");
+    }
+    let (column_index, column_span) = match command.column {
+        Some(column) if column == 0 || column > column_span => bail!(
+            "table style --column must be between 1 and {} for row {} of {}",
+            column_span,
+            command.row,
+            command.table_id
+        ),
+        Some(column) => (column - 1, 1),
+        None => (0, column_span),
+    };
+    if command.border_color.is_some() != command.border_width.is_some() {
+        bail!("--border-color and --border-width must be provided together");
+    }
+    if command.background_color.is_none()
+        && command.content_alignment.is_none()
+        && command.border_color.is_none()
+    {
+        bail!(
+            "table style requires --background-color, --content-alignment, or paired --border-color and --border-width"
+        );
+    }
+    let table_start_index = table
+        .location
+        .index
+        .context("selected table does not expose a Google Docs index")?;
+    let mut table_cell_style = serde_json::Map::new();
+    let mut fields = Vec::new();
+    if let Some(background_color) = command.background_color.as_deref() {
+        table_cell_style.insert(
+            "backgroundColor".into(),
+            foreground_color_payload(background_color)?,
+        );
+        fields.push("backgroundColor");
+    }
+    if let Some(content_alignment) = command.content_alignment {
+        table_cell_style.insert(
+            "contentAlignment".into(),
+            serde_json::json!(content_alignment.api_value()),
+        );
+        fields.push("contentAlignment");
+    }
+    if let (Some(border_color), Some(border_width)) =
+        (command.border_color.as_deref(), command.border_width)
+    {
+        if !border_width.is_finite() || border_width < 0.0 {
+            bail!("--border-width must be a finite, non-negative point value");
+        }
+        let border = serde_json::json!({
+            "color": foreground_color_payload(border_color)?,
+            "dashStyle": "SOLID",
+            "width": { "magnitude": border_width, "unit": "PT" }
+        });
+        for side in ["borderTop", "borderBottom", "borderLeft", "borderRight"] {
+            table_cell_style.insert(side.into(), border.clone());
+            fields.push(side);
+        }
+    }
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "updateTableCellStyle": {
+                "tableCellStyle": table_cell_style,
+                "tableRange": {
+                    "tableCellLocation": {
+                        "tableStartLocation": { "index": table_start_index },
+                        "rowIndex": command.row - 1,
+                        "columnIndex": column_index
+                    },
+                    "rowSpan": 1,
+                    "columnSpan": column_span
+                },
+                "fields": fields.join(",")
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(table.location.clone()),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "table style",
+            match command.column {
+                Some(column) => format!(
+                    "Style cell at row {}, column {} of {}",
+                    command.row, column, command.table_id
+                ),
+                None => format!("Style row {} of {}", command.row, command.table_id),
+            },
+        ),
+    }))
+}
+
+pub(crate) fn prepare_set_table_column_widths_change(
+    document_map: &DocumentMap,
+    command: &SetTableColumnWidthsCommand,
+) -> Result<PreparedDocsChange> {
+    let table = resolve_table_handle(document_map, &command.table_id)?;
+    let column_count = table
+        .columns
+        .context("selected table does not expose its column count")?;
+    if command.widths.len() != column_count {
+        bail!(
+            "table columns --widths requires {} values for {}, but received {}",
+            column_count,
+            command.table_id,
+            command.widths.len()
+        );
+    }
+    if let Some((column_index, width)) = command
+        .widths
+        .iter()
+        .enumerate()
+        .find(|(_, width)| !width.is_finite() || **width < 5.0)
+    {
+        bail!(
+            "table columns width {} must be a finite value of at least 5 points, but received {}",
+            column_index + 1,
+            width
+        );
+    }
+    let table_start_index = table
+        .location
+        .index
+        .context("selected table does not expose a Google Docs index")?;
+    let requests = command
+        .widths
+        .iter()
+        .enumerate()
+        .map(|(column_index, width)| {
+            serde_json::json!({
+                "updateTableColumnProperties": {
+                    "tableStartLocation": { "index": table_start_index },
+                    "columnIndices": [column_index],
+                    "tableColumnProperties": {
+                        "widthType": "FIXED_WIDTH",
+                        "width": { "magnitude": width, "unit": "PT" }
+                    },
+                    "fields": "width,widthType"
+                }
+            })
+        })
+        .collect();
+    let request_body =
+        request_body_with_revision(requests, command.required_revision_id.as_deref());
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(table.location.clone()),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "table columns",
+            format!(
+                "Set {} column widths on {} to {} points",
+                column_count,
+                command.table_id,
+                command
+                    .widths
+                    .iter()
+                    .map(|width| width.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_pin_table_header_rows_change(
+    document_map: &DocumentMap,
+    command: &PinTableHeaderRowsCommand,
+) -> Result<PreparedDocsChange> {
+    let table = resolve_table_handle(document_map, &command.table_id)?;
+    let row_count = table
+        .rows
+        .context("selected table does not expose its row count")?;
+    if command.rows > row_count {
+        bail!(
+            "table header-rows --rows must be between 0 and {} for {}, but received {}",
+            row_count,
+            command.table_id,
+            command.rows
+        );
+    }
+    let table_start_index = table
+        .location
+        .index
+        .context("selected table does not expose a Google Docs index")?;
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "pinTableHeaderRows": {
+                "tableStartLocation": { "index": table_start_index },
+                "pinnedHeaderRowsCount": command.rows
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: Some(table.location.clone()),
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "table header-rows",
+            format!(
+                "Pin {} leading header row(s) on {}",
+                command.rows, command.table_id
+            ),
+        ),
+    }))
+}
+
 fn edit_table_requests(
     table_cells: &[Vec<DocumentRange>],
     data: &[Vec<String>],
@@ -786,7 +1252,15 @@ pub(crate) fn prepare_apply_styles_change(
     command: &ApplyStylesCommand,
     style_template: Option<&StyleTemplate>,
 ) -> Result<PreparedDocsChange> {
+    let segment_id = command.segment_id.as_deref().map(str::trim);
+    if segment_id.is_some_and(str::is_empty) {
+        bail!("--segment-id cannot be empty");
+    }
+    if segment_id.is_some() && !matches!(command.selector, RangeSelector::IndexRange { .. }) {
+        bail!("style apply --segment-id requires --from-index and --to-index");
+    }
     let range = resolve_range_selector(document_map, &command.selector)?;
+    let request_range = docs_range_in_segment(&range, segment_id);
     let raw_payload = raw_style_payload(command.style_json.as_deref())?;
 
     let has_heading = command.heading.is_some();
@@ -803,16 +1277,13 @@ pub(crate) fn prepare_apply_styles_change(
         has_heading,
         cached_text_style,
     )?;
-    let (paragraph_style, paragraph_fields) = paragraph_style_payload(
-        command.heading.as_deref(),
-        raw_payload.paragraph_style,
-        cached_paragraph_style,
-    )?;
+    let (paragraph_style, paragraph_fields) =
+        paragraph_style_payload(command, raw_payload.paragraph_style, cached_paragraph_style)?;
     let mut requests = Vec::new();
     if !paragraph_fields.is_empty() {
         requests.push(serde_json::json!({
             "updateParagraphStyle": {
-                "range": docs_range(&range),
+                "range": request_range,
                 "paragraphStyle": paragraph_style,
                 "fields": paragraph_fields.join(",")
             }
@@ -821,7 +1292,7 @@ pub(crate) fn prepare_apply_styles_change(
     if !fields.is_empty() {
         requests.push(serde_json::json!({
             "updateTextStyle": {
-                "range": docs_range(&range),
+                "range": request_range,
                 "textStyle": text_style,
                 "fields": fields.join(",")
             }
@@ -843,6 +1314,205 @@ pub(crate) fn prepare_apply_styles_change(
                 "Apply styles to range {}..{}",
                 range.start_index, range.end_index
             ),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_update_named_style_change(
+    document_map: &DocumentMap,
+    command: &UpdateNamedStyleCommand,
+) -> Result<PreparedDocsChange> {
+    let named_style = command.named_style.trim();
+    const NAMED_STYLE_TYPES: [&str; 9] = [
+        "NORMAL_TEXT",
+        "TITLE",
+        "SUBTITLE",
+        "HEADING_1",
+        "HEADING_2",
+        "HEADING_3",
+        "HEADING_4",
+        "HEADING_5",
+        "HEADING_6",
+    ];
+    if !NAMED_STYLE_TYPES.contains(&named_style) {
+        bail!(
+            "named style must be one of NORMAL_TEXT, TITLE, SUBTITLE, or HEADING_1 through HEADING_6"
+        );
+    }
+    let tab_id = command.tab_id.as_deref().map(str::trim);
+    if tab_id.is_some_and(str::is_empty) {
+        bail!("--tab-id cannot be empty");
+    }
+
+    let style_value: serde_json::Value = serde_json::from_str(&command.style_json)
+        .context("failed to parse --style-json as Google Docs style JSON")?;
+    let has_style_container = style_value.as_object().is_some_and(|style| {
+        style.contains_key("textStyle") || style.contains_key("paragraphStyle")
+    });
+    if !has_style_container {
+        bail!("style named requires textStyle and/or paragraphStyle in --style-json");
+    }
+    let raw_payload = raw_style_payload(Some(&command.style_json))?;
+    if raw_payload
+        .paragraph_style
+        .as_ref()
+        .is_some_and(|style| style.contains_key("namedStyleType"))
+    {
+        bail!(
+            "paragraphStyle.namedStyleType cannot be updated; select the native style with the NAMED_STYLE argument"
+        );
+    }
+
+    let mut named_style_payload = serde_json::Map::new();
+    named_style_payload.insert(
+        "namedStyleType".into(),
+        serde_json::Value::String(named_style.into()),
+    );
+    let mut fields = vec!["namedStyleType".to_string()];
+    if let Some(text_style) = raw_payload.text_style {
+        fields.push("textStyle".into());
+        fields.extend(text_style.keys().map(|key| format!("textStyle.{key}")));
+        named_style_payload.insert("textStyle".into(), serde_json::Value::Object(text_style));
+    }
+    if let Some(paragraph_style) = raw_payload.paragraph_style {
+        fields.push("paragraphStyle".into());
+        fields.extend(
+            paragraph_style
+                .keys()
+                .map(|key| format!("paragraphStyle.{key}")),
+        );
+        named_style_payload.insert(
+            "paragraphStyle".into(),
+            serde_json::Value::Object(paragraph_style),
+        );
+    }
+
+    let mut update = serde_json::json!({
+        "namedStyle": serde_json::Value::Object(named_style_payload),
+        "fields": fields.join(",")
+    });
+    if let Some(tab_id) = tab_id {
+        update["tabId"] = serde_json::Value::String(tab_id.into());
+    }
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({ "updateNamedStyle": update })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "style named",
+            format!("Update native named style {named_style}"),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_copy_named_styles_change(
+    source_map: &DocumentMap,
+    target_map: &DocumentMap,
+    command: &CopyNamedStylesCommand,
+) -> Result<PreparedDocsChange> {
+    let source_tab_id = command.source_tab_id.as_deref().map(str::trim);
+    let target_tab_id = command.target_tab_id.as_deref().map(str::trim);
+    if source_tab_id.is_some_and(str::is_empty) {
+        bail!("--source-tab-id cannot be empty");
+    }
+    if target_tab_id.is_some_and(str::is_empty) {
+        bail!("--target-tab-id cannot be empty");
+    }
+    let source = if let Some(tab_id) = source_tab_id {
+        source_map
+            .named_styles
+            .iter()
+            .find(|styles| styles.tab_id.as_deref() == Some(tab_id))
+            .with_context(|| format!("source document has no named styles for tab {tab_id}"))?
+    } else {
+        source_map
+            .named_styles
+            .first()
+            .context("source document has no native named styles")?
+    };
+    let styles = source
+        .named_styles
+        .get("styles")
+        .and_then(serde_json::Value::as_array)
+        .context("source document returned malformed native named styles")?;
+
+    let mut requests = Vec::new();
+    for source_style in styles {
+        let Some(named_style) = source_style
+            .get("namedStyleType")
+            .and_then(serde_json::Value::as_str)
+        else {
+            continue;
+        };
+        let mut payload = serde_json::Map::new();
+        if let Some(text_style) = source_style
+            .get("textStyle")
+            .and_then(serde_json::Value::as_object)
+        {
+            payload.insert(
+                "textStyle".into(),
+                serde_json::Value::Object(text_style.clone()),
+            );
+        }
+        if let Some(paragraph_style) = source_style
+            .get("paragraphStyle")
+            .and_then(serde_json::Value::as_object)
+        {
+            let mut paragraph_style = paragraph_style.clone();
+            paragraph_style.remove("namedStyleType");
+            paragraph_style.remove("headingId");
+            if !paragraph_style.is_empty() {
+                payload.insert(
+                    "paragraphStyle".into(),
+                    serde_json::Value::Object(paragraph_style),
+                );
+            }
+        }
+        if payload.is_empty() {
+            continue;
+        }
+        let single = prepare_update_named_style_change(
+            target_map,
+            &UpdateNamedStyleCommand {
+                document_id: command.target_document_id.clone(),
+                named_style: named_style.into(),
+                style_json: serde_json::Value::Object(payload).to_string(),
+                tab_id: target_tab_id.map(str::to_string),
+                dry_run: command.dry_run,
+                json: command.json,
+                required_revision_id: None,
+            },
+        )?;
+        let PreparedDocsChange::HighLevel(single) = single else {
+            unreachable!("named style updates are always high-level changes")
+        };
+        requests.extend(
+            single.request_body["requests"]
+                .as_array()
+                .expect("named style request list")
+                .iter()
+                .cloned(),
+        );
+    }
+    if requests.is_empty() {
+        bail!("source document has no copyable native named styles");
+    }
+    let copied_count = requests.len();
+    let request_body =
+        request_body_with_revision(requests, command.required_revision_id.as_deref());
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: target_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "style copy-named",
+            format!("Copy {copied_count} native named styles from the source document"),
         ),
     }))
 }
@@ -887,6 +1557,156 @@ pub(crate) fn prepare_apply_list_change(
             format!(
                 "Apply list preset to range {}..{}",
                 range.start_index, range.end_index
+            ),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_configure_page_change(
+    document_map: &DocumentMap,
+    command: &ConfigurePageCommand,
+) -> Result<PreparedDocsChange> {
+    if command.page_width.is_some() != command.page_height.is_some() {
+        bail!("--page-width and --page-height must be provided together");
+    }
+
+    let mut style = serde_json::Map::new();
+    let mut fields = Vec::new();
+    if let (Some(width), Some(height)) = (command.page_width, command.page_height) {
+        if !width.is_finite() || width <= 0.0 {
+            bail!("--page-width must be a finite, positive point value");
+        }
+        if !height.is_finite() || height <= 0.0 {
+            bail!("--page-height must be a finite, positive point value");
+        }
+        style.insert(
+            "pageSize".into(),
+            serde_json::json!({
+                "width": { "magnitude": width, "unit": "PT" },
+                "height": { "magnitude": height, "unit": "PT" }
+            }),
+        );
+        fields.push("pageSize");
+    }
+
+    for (field, flag, value) in [
+        ("marginTop", "--margin-top", command.margin_top),
+        ("marginBottom", "--margin-bottom", command.margin_bottom),
+        ("marginLeft", "--margin-left", command.margin_left),
+        ("marginRight", "--margin-right", command.margin_right),
+        ("marginHeader", "--margin-header", command.margin_header),
+        ("marginFooter", "--margin-footer", command.margin_footer),
+    ] {
+        let Some(value) = value else {
+            continue;
+        };
+        if !value.is_finite() || value < 0.0 {
+            bail!("{flag} must be a finite, non-negative point value");
+        }
+        style.insert(
+            field.into(),
+            serde_json::json!({ "magnitude": value, "unit": "PT" }),
+        );
+        fields.push(field);
+    }
+
+    if fields.is_empty() {
+        bail!("style page requires a page size or at least one margin");
+    }
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "updateDocumentStyle": {
+                "documentStyle": style,
+                "fields": fields.join(",")
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "style page",
+            format!("Configure document page fields: {}", fields.join(", ")),
+        ),
+    }))
+}
+
+pub(crate) fn prepare_copy_page_style_change(
+    source_map: &DocumentMap,
+    target_map: &DocumentMap,
+    command: &CopyPageStyleCommand,
+) -> Result<PreparedDocsChange> {
+    let source_tab_id = command.source_tab_id.as_deref().map(str::trim);
+    let target_tab_id = command.target_tab_id.as_deref().map(str::trim);
+    if source_tab_id.is_some_and(str::is_empty) {
+        bail!("--source-tab-id cannot be empty");
+    }
+    if target_tab_id.is_some_and(str::is_empty) {
+        bail!("--target-tab-id cannot be empty");
+    }
+    let source = if let Some(tab_id) = source_tab_id {
+        source_map
+            .document_styles
+            .iter()
+            .find(|style| style.tab_id.as_deref() == Some(tab_id))
+            .with_context(|| format!("source document has no page style for tab {tab_id}"))?
+    } else {
+        source_map
+            .document_styles
+            .first()
+            .context("source document has no page style")?
+    };
+
+    let source_style = source
+        .document_style
+        .as_object()
+        .context("source document returned malformed page style")?;
+    let mut style = serde_json::Map::new();
+    let mut fields = Vec::new();
+    for field in [
+        "documentFormat",
+        "pageSize",
+        "marginTop",
+        "marginBottom",
+        "marginLeft",
+        "marginRight",
+        "marginHeader",
+        "marginFooter",
+        "useFirstPageHeaderFooter",
+        "useEvenPageHeaderFooter",
+    ] {
+        if let Some(value) = source_style.get(field) {
+            style.insert(field.into(), value.clone());
+            fields.push(field);
+        }
+    }
+    if fields.is_empty() {
+        bail!("source document has no copyable page layout");
+    }
+    let mut update = serde_json::json!({
+        "documentStyle": style,
+        "fields": fields.join(",")
+    });
+    if let Some(tab_id) = target_tab_id {
+        update["tabId"] = serde_json::Value::String(tab_id.into());
+    }
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({ "updateDocumentStyle": update })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: target_map.revision_id.clone(),
+        location: None,
+        range: None,
+        request_body,
+        preview: DocsChangePreview::new(
+            "style copy-page",
+            format!(
+                "Copy {} page layout fields from the source document",
+                fields.len()
             ),
         ),
     }))
@@ -979,11 +1799,19 @@ pub(crate) fn request_body_with_revision(
     body
 }
 
-fn docs_range(range: &DocumentRange) -> serde_json::Value {
-    serde_json::json!({
+fn docs_range_in_segment(range: &DocumentRange, segment_id: Option<&str>) -> serde_json::Value {
+    let mut value = serde_json::json!({
         "startIndex": range.start_index,
         "endIndex": range.end_index
-    })
+    });
+    if let Some(segment_id) = segment_id {
+        value["segmentId"] = serde_json::json!(segment_id);
+    }
+    value
+}
+
+fn docs_range(range: &DocumentRange) -> serde_json::Value {
+    docs_range_in_segment(range, None)
 }
 
 #[derive(Debug, Default)]
@@ -1057,6 +1885,9 @@ fn text_style_payload(
             payload.set_field("italic", serde_json::Value::Bool(italic));
         }
     }
+    if command.underline {
+        payload.set_field("underline", serde_json::Value::Bool(true));
+    }
     if let Some(font_size) = command.font_size {
         payload.set_field(
             "fontSize",
@@ -1070,6 +1901,15 @@ fn text_style_payload(
             );
         }
     }
+    if let Some(font_family) = &command.font_family {
+        if font_family.trim().is_empty() {
+            bail!("--font-family cannot be empty");
+        }
+        payload.set_field(
+            "weightedFontFamily",
+            serde_json::json!({ "fontFamily": font_family }),
+        );
+    }
     if let Some(color) = &command.foreground_color {
         payload.set_field("foregroundColor", foreground_color_payload(color)?);
     } else if has_heading && !payload.contains_field("foregroundColor") {
@@ -1077,11 +1917,17 @@ fn text_style_payload(
             payload.set_field("foregroundColor", foreground_color_payload(color)?);
         }
     }
+    if let Some(heading_id) = &command.link_heading_id {
+        if heading_id.trim().is_empty() {
+            bail!("--link-heading-id cannot be empty");
+        }
+        payload.set_field("link", serde_json::json!({ "headingId": heading_id }));
+    }
     Ok(payload.into_json_parts())
 }
 
 fn paragraph_style_payload(
-    heading: Option<&str>,
+    command: &ApplyStylesCommand,
     raw_paragraph_style: Option<StyleObject>,
     cached_paragraph_style: Option<serde_json::Value>,
 ) -> Result<(serde_json::Value, Vec<String>)> {
@@ -1090,10 +1936,114 @@ fn paragraph_style_payload(
         .transpose()?;
     let mut payload =
         StylePayloadParts::from_base_and_raw(base_paragraph_style, raw_paragraph_style);
-    if let Some(heading) = heading {
+    if let Some(heading) = &command.heading {
         payload.set_field_first("namedStyleType", serde_json::Value::String(heading.into()));
     }
+    if let Some(alignment) = command.alignment {
+        payload.set_field(
+            "alignment",
+            serde_json::Value::String(alignment.api_value().into()),
+        );
+    }
+    if let Some(direction) = command.direction {
+        payload.set_field(
+            "direction",
+            serde_json::Value::String(direction.api_value().into()),
+        );
+    }
+    set_paragraph_spacing(
+        &mut payload,
+        "spaceAbove",
+        "--space-above",
+        command.space_above,
+    )?;
+    set_paragraph_spacing(
+        &mut payload,
+        "spaceBelow",
+        "--space-below",
+        command.space_below,
+    )?;
+    if let Some(line_spacing) = command.line_spacing {
+        if !line_spacing.is_finite() || line_spacing <= 0.0 {
+            bail!("--line-spacing must be a finite, positive percentage");
+        }
+        payload.set_field("lineSpacing", serde_json::json!(line_spacing));
+    }
+    if let Some(spacing_mode) = command.spacing_mode {
+        payload.set_field(
+            "spacingMode",
+            serde_json::Value::String(spacing_mode.api_value().into()),
+        );
+    }
+    set_paragraph_dimension(
+        &mut payload,
+        "indentStart",
+        "--indent-start",
+        command.indent_start,
+    )?;
+    set_paragraph_dimension(
+        &mut payload,
+        "indentEnd",
+        "--indent-end",
+        command.indent_end,
+    )?;
+    set_paragraph_dimension(
+        &mut payload,
+        "indentFirstLine",
+        "--indent-first-line",
+        command.indent_first_line,
+    )?;
+    if command.keep_with_next {
+        payload.set_field("keepWithNext", serde_json::Value::Bool(true));
+    }
+    if command.keep_lines_together {
+        payload.set_field("keepLinesTogether", serde_json::Value::Bool(true));
+    }
+    if command.avoid_widow_and_orphan {
+        payload.set_field("avoidWidowAndOrphan", serde_json::Value::Bool(true));
+    }
+    if command.page_break_before {
+        payload.set_field("pageBreakBefore", serde_json::Value::Bool(true));
+    }
     Ok(payload.into_json_parts())
+}
+
+fn set_paragraph_dimension(
+    payload: &mut StylePayloadParts,
+    field: &str,
+    flag: &str,
+    value: Option<f64>,
+) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if !value.is_finite() || value < 0.0 {
+        bail!("{flag} must be a finite, non-negative point value");
+    }
+    payload.set_field(
+        field,
+        serde_json::json!({ "magnitude": value, "unit": "PT" }),
+    );
+    Ok(())
+}
+
+fn set_paragraph_spacing(
+    payload: &mut StylePayloadParts,
+    field: &str,
+    flag: &str,
+    value: Option<f64>,
+) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if !value.is_finite() || value < 0.0 {
+        bail!("{flag} must be a finite, non-negative point value");
+    }
+    payload.set_field(
+        field,
+        serde_json::json!({ "magnitude": value, "unit": "PT" }),
+    );
+    Ok(())
 }
 
 struct StylePayloadParts {

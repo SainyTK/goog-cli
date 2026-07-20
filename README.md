@@ -15,7 +15,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 `goog` currently includes:
 
 - Google Drive file and folder listing, upload, and download commands.
-- Google Docs document listing, creation, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
+- Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
 - Google Slides presentation listing, creation, raw reads, high-level slide/text/image/table/shape edits, and raw batch updates.
 - Google Calendar calendar listing, calendar metadata reads, free/busy lookup, and event list/read/create/update/delete commands.
@@ -160,21 +160,34 @@ goog --account bob@example.com drive ls
 ```sh
 goog drive ls --limit 20
 goog drive ls --type folders --folder FOLDER_ID --json
+goog drive ls --show-all
 goog drive upload ./report.pdf --folder FOLDER_ID
+goog drive delete FILE_ID
 goog drive download FILE_ID --output ./report.pdf
 ```
+
+Drive listings exclude soft-deleted items by default.
+Use `--show-all` to include them.
 
 ### Docs
 
 ```sh
 goog docs list --limit 20
 goog docs create "Q3 Report"
+goog docs copy SOURCE_DOCUMENT_ID "Q3 Report from template"
+goog docs export-pdf DOCUMENT_ID --output ./q3-report.pdf
 goog docs map DOCUMENT_ID
 goog docs map DOCUMENT_ID --type images
 goog docs map DOCUMENT_ID --type tables
 goog docs map DOCUMENT_ID --heading "Summary"
 goog docs text search DOCUMENT_ID "quarterly plan"
+goog docs style copy-named SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
+goog docs style copy-page SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
+goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --max-width 468 --max-height 500 --at 'heading:Summary'
+goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --fit-page --reserve-height 72 --at 'heading:Summary'
+goog --account alice@example.com docs image insert DOCUMENT_ID --file ./chart.png --staging drive-public --at 'heading:Summary'
+goog --account alice@example.com docs image insert DOCUMENT_ID --file ./chart.png --staging-command ./stage-image --at 'heading:Summary'
 goog docs break page DOCUMENT_ID --at 'heading:Summary'
 goog docs break section DOCUMENT_ID --section-type next-page --at 'heading:Appendix'
 goog docs header create DOCUMENT_ID
@@ -184,6 +197,16 @@ goog docs named-range create DOCUMENT_ID "highlights" --text "quarterly plan"
 goog docs named-range delete DOCUMENT_ID --name "highlights"
 goog docs batch-update DOCUMENT_ID --requests ./requests.json
 ```
+
+Maximum image dimensions preserve the source aspect ratio and do not upscale by default.
+`--fit-page` derives the image bounds from the active body section's page size and margins, while `--reserve-height` leaves vertical space for nearby content.
+Pageless documents require explicit `--max-width` and `--max-height` values.
+Exact `--width` and `--height` values are checked against the source aspect ratio and require `--allow-distortion` when they would change it.
+The conversion uses 96 source pixels per inch and 72 Google Docs points per inch, with results rounded to three decimal places.
+For JPEG images, EXIF orientations 5 through 8 swap the encoded width and height so fitting uses the displayed orientation.
+`goog docs map DOCUMENT_ID --type images --json` reports each image's native point dimensions in `layoutMetadata.size`.
+Local images use cleanup-aware Drive public staging by default, or a JSON stdin and stdout adapter when public Drive sharing is unavailable.
+See [Local Docs image staging](docs/local-docs-image-staging.md) for both backend contracts and cleanup behavior.
 
 ### Sheets
 
@@ -394,6 +417,15 @@ Install a specific Canonical Release with:
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.2.3
 ```
 
+Check which release source produced the installed binary with:
+
+```sh
+goog version --json
+```
+
+For a Canonical Release, compare `sourceTag` and `gitCommit` with the tag and commit on the corresponding GitHub Release.
+`releaseChannel` identifies a stable, preview, or development build, and `dirty` must be `false` for a published binary.
+
 Users outside the binary release support matrix can install from source with Cargo:
 
 ```sh
@@ -493,19 +525,18 @@ Install local dependencies:
 
 ```sh
 cargo fetch
-npm install
 ```
 
 Run checks before opening a pull request:
 
 ```sh
 cargo fmt --check
+cargo check
 cargo test
-npm run typecheck
 ```
 
-Issues live in GitHub Issues.
-Pick work labeled `ready-for-agent` or `bug` (there is no separate `Sandcastle` label), keep changes scoped to the issue, and link the issue from the pull request.
+Substantial autonomous work uses the [GnHF workflow](docs/agents/gnhf-workflow.md).
+Run GnHF from a clean base branch with its own worktree and pushed branch, then review and test the resulting pull request before merging.
 
 Pull requests should include:
 

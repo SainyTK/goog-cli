@@ -92,6 +92,31 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
+#[test]
+fn document_map_preserves_legacy_document_style() {
+    let document_map = build_document_map(&serde_json::json!({
+        "documentId": "document-123",
+        "documentStyle": {
+            "pageSize": {
+                "width": { "magnitude": 595.28, "unit": "PT" },
+                "height": { "magnitude": 841.89, "unit": "PT" }
+            },
+            "marginLeft": { "magnitude": 72, "unit": "PT" }
+        }
+    }));
+
+    assert_eq!(document_map.document_styles.len(), 1);
+    assert_eq!(document_map.document_styles[0].tab_id, None);
+    assert_eq!(
+        document_map.document_styles[0].document_style["pageSize"]["width"]["magnitude"],
+        595.28
+    );
+    assert_eq!(
+        document_map.document_styles[0].document_style["marginLeft"]["magnitude"],
+        72
+    );
+}
+
 #[tokio::test]
 async fn get_document_fetches_raw_google_docs_document() {
     let server = MockServer::start().await;
