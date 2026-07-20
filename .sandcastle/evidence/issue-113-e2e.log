@@ -1,0 +1,50 @@
+Issue 113 E2E evidence, redacted
+Result: PASS
+
+Test setup:
+- Account used: [active-account].
+- Fixture used: a new Draft created by this run and renamed with a goog-e2e prefix.
+- Skipped fixture: none.
+- CLI binary: checks used the development binary through cargo run --quiet --.
+
+Local checks:
+$ cargo test commands::mail_tests::run_draft
+Expected: request-level tests cover plain text, standalone HTML, HTML with an attachment, HTML editing, and JSON output.
+Observed: 5 tests passed and 0 failed.
+Result: PASS.
+
+$ cargo test
+Expected: the complete regression suite remains green.
+Observed: 1,082 unit tests, 4 distribution artifact tests, and 0 doc tests passed.
+Result: PASS.
+
+Live checks:
+$ cargo run --quiet -- auth list --json
+Expected: the development CLI can use an already-authorized Account without opening a new consent flow.
+Observed: 5 configured Accounts were listed and one was active.
+Result: PASS.
+
+$ cargo run --quiet -- mail draft --to [active-account] --subject '[subject redacted]' --body '[HTML body with strong and mark elements redacted]' --html --json
+Expected: Gmail creates a Draft through the real CLI path and returns Draft and Message identifiers.
+Observed: JSON contained a Draft ID, a Message ID, the DRAFT label, and a thread ID.
+Result: PASS.
+
+$ cargo run --quiet -- mail read [created-message-id] --json
+Expected: Gmail stores the new Draft body as HTML.
+Observed: payload.mimeType was text/html, the Content-Type header was text/html; charset=UTF-8, and body data was present.
+Result: PASS.
+
+$ cargo run --quiet -- mail draft [created-draft-id] --to [active-account] --subject '[subject redacted]' --body '[updated HTML body with strong and highlighted span elements redacted]' --html --json
+Expected: editing the Draft preserves HTML mode and reuses the same Draft ID.
+Observed: JSON contained the same Draft ID, a replacement Message ID, the DRAFT label, and a thread ID.
+Result: PASS.
+
+$ cargo run --quiet -- mail read [replacement-message-id] --json
+Expected: Gmail stores the edited Draft body as HTML.
+Observed: payload.mimeType was text/html, the Content-Type header was text/html; charset=UTF-8, and body data was present.
+Result: PASS.
+
+Reviewer notes:
+- No additional browser consent prompt appeared during the live checks.
+- The live Draft remains in the active Account because goog has no Draft delete command.
+- Account addresses, Draft and Message IDs, subjects, bodies, snippets, and personal headers were redacted.
