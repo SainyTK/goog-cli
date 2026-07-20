@@ -43,9 +43,13 @@ fn main() {
     };
 
     let (display_version, release_channel) = match exact_source_tag.as_deref() {
-        Some(tag) if tag == format!("v{semantic_version}") => (semantic_version.clone(), "stable"),
-        Some(tag) if tag.starts_with(&format!("v{semantic_version}-preview.")) => {
-            (tag.trim_start_matches('v').to_owned(), "preview")
+        Some(tag) if tag == format!("v{semantic_version}") => {
+            let release_channel = if semantic_version.contains("-preview.") {
+                "preview"
+            } else {
+                "stable"
+            };
+            (semantic_version.clone(), release_channel)
         }
         _ => {
             let distance = distance

@@ -35,7 +35,7 @@ with open(path, encoding="utf-8") as version_file:
     actual = json.load(version_file)
 
 expected = {
-    "semanticVersion": version.split("-preview.", 1)[0],
+    "semanticVersion": version,
     "displayVersion": version,
     "gitCommit": commit,
     "dirty": False,

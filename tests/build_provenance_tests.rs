@@ -35,7 +35,7 @@ fn build_metadata_distinguishes_release_development_and_archive_states() {
     git(&checkout, &["commit", "-m", "tagged release"]);
     git(&checkout, &["tag", "v0.2.5"]);
 
-    let tagged = metadata(&build_script, &checkout, &[]);
+    let tagged = metadata(&build_script, &checkout, "0.2.5", &[]);
     assert_eq!(tagged["GOOG_DISPLAY_VERSION"], "0.2.5");
     assert_eq!(tagged["GOOG_RELEASE_CHANNEL"], "stable");
     assert_eq!(tagged["GOOG_GIT_DISTANCE"], "0");
@@ -44,7 +44,7 @@ fn build_metadata_distinguishes_release_development_and_archive_states() {
     fs::write(checkout.join("tracked.txt"), "one commit ahead\n").unwrap();
     git(&checkout, &["add", "tracked.txt"]);
     git(&checkout, &["commit", "-m", "development commit"]);
-    let ahead = metadata(&build_script, &checkout, &[]);
+    let ahead = metadata(&build_script, &checkout, "0.2.5", &[]);
     let short_commit = &ahead["GOOG_GIT_COMMIT"][..7];
     assert_eq!(
         ahead["GOOG_DISPLAY_VERSION"],
@@ -54,7 +54,7 @@ fn build_metadata_distinguishes_release_development_and_archive_states() {
     assert_eq!(ahead["GOOG_GIT_DISTANCE"], "1");
 
     fs::write(checkout.join("tracked.txt"), "dirty tracked change\n").unwrap();
-    let dirty = metadata(&build_script, &checkout, &[]);
+    let dirty = metadata(&build_script, &checkout, "0.2.5", &[]);
     assert_eq!(dirty["GOOG_GIT_DIRTY"], "true");
     assert!(dirty["GOOG_DISPLAY_VERSION"].ends_with(".dirty"));
 
@@ -64,7 +64,7 @@ fn build_metadata_distinguishes_release_development_and_archive_states() {
         "ignored by policy\n",
     )
     .unwrap();
-    let untracked = metadata(&build_script, &checkout, &[]);
+    let untracked = metadata(&build_script, &checkout, "0.2.5", &[]);
     assert_eq!(untracked["GOOG_GIT_DIRTY"], "false");
     assert_eq!(
         untracked["GOOG_DISPLAY_VERSION"],
@@ -82,9 +82,10 @@ fn build_metadata_distinguishes_release_development_and_archive_states() {
         ("GOOG_BUILD_GIT_DISTANCE", "0"),
         ("GOOG_BUILD_SOURCE_TAG", "v0.2.5-preview.2"),
     ];
-    let archived_once = metadata(&build_script, &archive, &supplied);
-    let archived_twice = metadata(&build_script, &archive, &supplied);
+    let archived_once = metadata(&build_script, &archive, "0.2.5-preview.2", &supplied);
+    let archived_twice = metadata(&build_script, &archive, "0.2.5-preview.2", &supplied);
     assert_eq!(archived_once, archived_twice);
+    assert_eq!(archived_once["GOOG_SEMANTIC_VERSION"], "0.2.5-preview.2");
     assert_eq!(archived_once["GOOG_DISPLAY_VERSION"], "0.2.5-preview.2");
     assert_eq!(archived_once["GOOG_RELEASE_CHANNEL"], "preview");
     assert_eq!(archived_once["GOOG_BUILD_TARGET"], "test-target");
@@ -93,12 +94,13 @@ fn build_metadata_distinguishes_release_development_and_archive_states() {
 fn metadata(
     build_script: &Path,
     working_directory: &Path,
+    package_version: &str,
     supplied: &[(&str, &str)],
 ) -> HashMap<String, String> {
     let mut command = Command::new(build_script);
     command
         .current_dir(working_directory)
-        .env("CARGO_PKG_VERSION", "0.2.5")
+        .env("CARGO_PKG_VERSION", package_version)
         .env("TARGET", "test-target");
     for name in BUILD_ENVIRONMENT {
         command.env_remove(name);
