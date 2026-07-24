@@ -113,7 +113,11 @@ fn fetch_latest_release(includes_preview: bool) -> Option<Version> {
         .ok()?
         .json::<Vec<GitHubRelease>>()
         .ok()?;
-    release
+    select_latest_release(release, includes_preview)
+}
+
+fn select_latest_release(releases: Vec<GitHubRelease>, includes_preview: bool) -> Option<Version> {
+    releases
         .into_iter()
         .filter(|release| !release.draft)
         .filter_map(|release| Version::parse(release.tag_name.trim_start_matches('v')).ok())
@@ -179,4 +183,37 @@ fn unix_timestamp() -> Option<u64> {
         .duration_since(UNIX_EPOCH)
         .ok()
         .map(|age| age.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{select_latest_release, GitHubRelease};
+    use semver::Version;
+
+    fn release(tag_name: &str) -> GitHubRelease {
+        GitHubRelease {
+            tag_name: tag_name.to_owned(),
+            draft: false,
+        }
+    }
+
+    #[test]
+    fn stable_release_checks_ignore_preview_candidates() {
+        let latest = select_latest_release(
+            vec![release("v999.0.0-preview.2"), release("v998.0.0")],
+            false,
+        );
+
+        assert_eq!(latest, Some(Version::parse("998.0.0").unwrap()));
+    }
+
+    #[test]
+    fn preview_release_checks_consider_preview_and_stable_candidates() {
+        let latest = select_latest_release(
+            vec![release("v999.0.0-preview.2"), release("v998.0.0")],
+            true,
+        );
+
+        assert_eq!(latest, Some(Version::parse("999.0.0-preview.2").unwrap()));
+    }
 }

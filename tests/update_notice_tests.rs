@@ -124,17 +124,22 @@ fn run_version(releases_url: &str, cache_path: &std::path::Path) -> std::process
 }
 
 #[test]
-fn preview_commands_can_update_to_a_newer_preview_release() {
+fn commands_follow_the_current_release_channel_when_checking_updates() {
     let (releases_url, server) =
         serve_releases(r#"[{"tag_name":"v999.0.0-preview.2"},{"tag_name":"v998.0.0"}]"#);
     let cache_dir = tempfile::tempdir().unwrap();
     let output = run_version(&releases_url, &cache_dir.path().join("update-check.json"));
     server.join().unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
+    let expected_version = if env!("CARGO_PKG_VERSION").contains("-preview.") {
+        "999.0.0-preview.2"
+    } else {
+        "998.0.0"
+    };
 
     assert!(output.status.success());
-    assert!(stderr.contains("Update available: goog 999.0.0-preview.2"));
-    assert!(stderr.contains("--version v999.0.0-preview.2"));
+    assert!(stderr.contains(&format!("Update available: goog {expected_version}")));
+    assert!(stderr.contains(&format!("--version v{expected_version}")));
 }
 
 fn serve_releases(body: impl Into<String>) -> (String, thread::JoinHandle<()>) {
