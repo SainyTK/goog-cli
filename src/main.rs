@@ -8,9 +8,26 @@ use goog::{
 };
 
 fn main() {
-    if let Err(err) = run(Cli::parse()) {
-        eprintln!("error: {err:#}");
-        std::process::exit(1);
+    let update_check = goog::update::start();
+    let exit_code = match Cli::try_parse() {
+        Ok(cli) => match run(cli) {
+            Ok(()) => 0,
+            Err(err) => {
+                eprintln!("error: {err:#}");
+                1
+            }
+        },
+        Err(error) => {
+            let exit_code = error.exit_code();
+            let _ = error.print();
+            exit_code
+        }
+    };
+
+    update_check.finish();
+
+    if exit_code != 0 {
+        std::process::exit(exit_code);
     }
 }
 

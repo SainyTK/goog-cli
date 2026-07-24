@@ -30,6 +30,10 @@ Install `goog` on macOS or Linux with:
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
 ```
 
+`goog` checks the canonical GitHub Release for a newer version and caches the result for 24 hours.
+When an update is available, every command prints the available version and the installer command on stderr.
+Update checks do not change command exit status or JSON output, and commands continue normally when GitHub is unavailable.
+
 ## OAuth Setup
 
 Create a Google OAuth client for a desktop or web application, then configure `goog` once:
