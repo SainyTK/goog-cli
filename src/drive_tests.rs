@@ -153,10 +153,11 @@ async fn list_comments_returns_comment_and_reply_json() {
     let comments = list_comments(&client, &options).await.unwrap();
 
     assert_eq!(comments.len(), 1);
-    assert_eq!(comments[0]["id"], "comment-123");
-    assert_eq!(comments[0]["replies"][0]["id"], "reply-123");
+    assert_eq!(comments[0].id, "comment-123");
+    let replies = comments[0].replies.as_ref().unwrap();
+    assert_eq!(replies[0].id, "reply-123");
     assert_eq!(
-        comments[0]["replies"][0]["mentionedEmailAddresses"][0],
+        replies[0].mentioned_email_addresses.as_ref().unwrap()[0],
         "reviewer@example.com"
     );
 }
@@ -192,8 +193,8 @@ async fn list_comments_fetches_every_page() {
     let comments = list_comments(&client, &options).await.unwrap();
 
     assert_eq!(comments.len(), 2);
-    assert_eq!(comments[0]["id"], "comment-1");
-    assert_eq!(comments[1]["id"], "comment-2");
+    assert_eq!(comments[0].id, "comment-1");
+    assert_eq!(comments[1].id, "comment-2");
 }
 
 #[tokio::test]
@@ -220,7 +221,7 @@ async fn list_comments_open_filter_excludes_resolved_comments() {
     let comments = list_comments(&client, &options).await.unwrap();
 
     assert_eq!(comments.len(), 1);
-    assert_eq!(comments[0]["id"], "comment-open");
+    assert_eq!(comments[0].id, "comment-open");
 }
 
 #[tokio::test]
@@ -252,8 +253,8 @@ async fn create_comment_reply_posts_text_and_returns_reply_json() {
 
     let reply = create_comment_reply(&client, &options).await.unwrap();
 
-    assert_eq!(reply["id"], "reply-789");
-    assert_eq!(reply["content"], "Updated as requested.");
+    assert_eq!(reply.id, "reply-789");
+    assert_eq!(reply.content.as_deref(), Some("Updated as requested."));
 }
 
 #[tokio::test]
@@ -285,10 +286,10 @@ async fn create_comment_posts_content_and_returns_comment_json() {
 
     let comment = create_comment(&client, &options).await.unwrap();
 
-    assert_eq!(comment["id"], "comment-789");
+    assert_eq!(comment.id, "comment-789");
     assert_eq!(
-        comment["content"],
-        "@reviewer@example.com 👀 Please review this."
+        comment.content.as_deref(),
+        Some("@reviewer@example.com 👀 Please review this.")
     );
 }
 
@@ -321,10 +322,10 @@ async fn update_comment_patches_replacement_content() {
 
     let comment = update_comment(&client, &options).await.unwrap();
 
-    assert_eq!(comment["id"], "comment-456");
+    assert_eq!(comment.id, "comment-456");
     assert_eq!(
-        comment["content"],
-        "@reviewer@example.com ✏️ Updated comment."
+        comment.content.as_deref(),
+        Some("@reviewer@example.com ✏️ Updated comment.")
     );
 }
 
@@ -377,8 +378,11 @@ async fn resolve_comment_posts_resolve_action_and_optional_content() {
 
     let reply = resolve_comment(&client, &options).await.unwrap();
 
-    assert_eq!(reply["action"], "resolve");
-    assert_eq!(reply["content"], "@reviewer@example.com ✅ Addressed.");
+    assert_eq!(reply.action.as_deref(), Some("resolve"));
+    assert_eq!(
+        reply.content.as_deref(),
+        Some("@reviewer@example.com ✅ Addressed.")
+    );
 }
 
 #[tokio::test]
@@ -404,8 +408,8 @@ async fn resolve_comment_omits_content_when_not_provided() {
 
     let reply = resolve_comment(&client, &options).await.unwrap();
 
-    assert_eq!(reply["action"], "resolve");
-    assert!(reply.get("content").is_none());
+    assert_eq!(reply.action.as_deref(), Some("resolve"));
+    assert!(reply.content.is_none());
 }
 
 #[test]

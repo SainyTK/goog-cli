@@ -99,7 +99,7 @@ The command works with Google Docs, Sheets, Slides, and other Drive files that s
 Use the exact comment ID returned by `comments` when editing, replying, resolving, or deleting.
 Repeat `--mention EMAIL` to prefix email mentions.
 Include ordinary emoji directly in `--text` when desired.
-`comment-resolve` marks the thread resolved and can create a final reply in the same request.
+`comment-resolve` marks the Comment resolved and can create a final Reply in the same request.
 `comment-delete` permanently removes the target comment.
 List the comments again after every mutation.
 Use `comments --open` to verify that a resolved comment is absent.

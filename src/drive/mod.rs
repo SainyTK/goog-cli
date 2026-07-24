@@ -93,12 +93,111 @@ pub struct FilesPage {
     pub next_page_token: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveCommentAuthor {
+    #[serde(rename = "displayName", skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub me: Option<bool>,
+    #[serde(rename = "permissionId", skip_serializing_if = "Option::is_none")]
+    pub permission_id: Option<String>,
+    #[serde(rename = "photoLink", skip_serializing_if = "Option::is_none")]
+    pub photo_link: Option<String>,
+    #[serde(rename = "emailAddress", skip_serializing_if = "Option::is_none")]
+    pub email_address: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveQuotedFileContent {
+    #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveCommentReply {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<DriveCommentAuthor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(rename = "createdTime", skip_serializing_if = "Option::is_none")]
+    pub created_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+    #[serde(rename = "htmlContent", skip_serializing_if = "Option::is_none")]
+    pub html_content: Option<String>,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(
+        rename = "mentionedEmailAddresses",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mentioned_email_addresses: Option<Vec<String>>,
+    #[serde(rename = "modifiedTime", skip_serializing_if = "Option::is_none")]
+    pub modified_time: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveComment {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
+    #[serde(
+        rename = "assigneeEmailAddress",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub assignee_email_address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<DriveCommentAuthor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(rename = "createdTime", skip_serializing_if = "Option::is_none")]
+    pub created_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+    #[serde(rename = "htmlContent", skip_serializing_if = "Option::is_none")]
+    pub html_content: Option<String>,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(
+        rename = "mentionedEmailAddresses",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mentioned_email_addresses: Option<Vec<String>>,
+    #[serde(rename = "modifiedTime", skip_serializing_if = "Option::is_none")]
+    pub modified_time: Option<String>,
+    #[serde(rename = "quotedFileContent", skip_serializing_if = "Option::is_none")]
+    pub quoted_file_content: Option<DriveQuotedFileContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replies: Option<Vec<DriveCommentReply>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<bool>,
+}
+
 #[derive(Debug, Deserialize)]
 struct CommentsPage {
     #[serde(default)]
-    comments: Vec<serde_json::Value>,
+    comments: Vec<DriveComment>,
     #[serde(rename = "nextPageToken")]
     next_page_token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CommentContentRequest<'a> {
+    content: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct ResolveCommentRequest<'a> {
+    action: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -914,7 +1013,7 @@ pub async fn list_files<S: AccountStore>(
 pub async fn list_comments<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ListCommentsOptions,
-) -> Result<Vec<serde_json::Value>, DriveError> {
+) -> Result<Vec<DriveComment>, DriveError> {
     let mut comments = Vec::new();
     let mut page_token = None;
 
@@ -932,9 +1031,8 @@ pub async fn list_comments<S: AccountStore>(
             .await
             .map_err(|error| DriveError::InvalidResponse(error.to_string()))?;
         if options.open_only {
-            page.comments.retain(|comment| {
-                comment.get("resolved").and_then(serde_json::Value::as_bool) != Some(true)
-            });
+            page.comments
+                .retain(|comment| comment.resolved != Some(true));
         }
         comments.append(&mut page.comments);
         match page.next_page_token {
@@ -947,19 +1045,20 @@ pub async fn list_comments<S: AccountStore>(
 pub async fn create_comment<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &CreateCommentOptions,
-) -> Result<serde_json::Value, DriveError> {
+) -> Result<DriveComment, DriveError> {
+    let body = CommentContentRequest {
+        content: &options.content,
+    };
     let response = client
         .send_with_scopes(
-            client
-                .post(options.request_url()?)
-                .json(&serde_json::json!({"content": options.content})),
+            client.post(options.request_url()?).json(&body),
             DRIVE_SCOPES,
         )
         .await
         .map_err(DriveError::Auth)?;
     let response = ensure_success_response(response).await?;
     response
-        .json::<serde_json::Value>()
+        .json::<DriveComment>()
         .await
         .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
@@ -967,19 +1066,20 @@ pub async fn create_comment<S: AccountStore>(
 pub async fn create_comment_reply<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &CreateCommentReplyOptions,
-) -> Result<serde_json::Value, DriveError> {
+) -> Result<DriveCommentReply, DriveError> {
+    let body = CommentContentRequest {
+        content: &options.text,
+    };
     let response = client
         .send_with_scopes(
-            client
-                .post(options.request_url()?)
-                .json(&serde_json::json!({"content": options.text})),
+            client.post(options.request_url()?).json(&body),
             DRIVE_SCOPES,
         )
         .await
         .map_err(DriveError::Auth)?;
     let response = ensure_success_response(response).await?;
     response
-        .json::<serde_json::Value>()
+        .json::<DriveCommentReply>()
         .await
         .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
@@ -987,19 +1087,22 @@ pub async fn create_comment_reply<S: AccountStore>(
 pub async fn update_comment<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &UpdateCommentOptions,
-) -> Result<serde_json::Value, DriveError> {
+) -> Result<DriveComment, DriveError> {
+    let body = CommentContentRequest {
+        content: &options.content,
+    };
     let response = client
         .send_with_scopes(
             client
                 .request(Method::PATCH, options.request_url()?)
-                .json(&serde_json::json!({"content": options.content})),
+                .json(&body),
             DRIVE_SCOPES,
         )
         .await
         .map_err(DriveError::Auth)?;
     let response = ensure_success_response(response).await?;
     response
-        .json::<serde_json::Value>()
+        .json::<DriveComment>()
         .await
         .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
@@ -1019,11 +1122,11 @@ pub async fn delete_comment<S: AccountStore>(
 pub async fn resolve_comment<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &ResolveCommentOptions,
-) -> Result<serde_json::Value, DriveError> {
-    let mut body = serde_json::json!({"action": "resolve"});
-    if let Some(content) = &options.content {
-        body["content"] = serde_json::Value::String(content.clone());
-    }
+) -> Result<DriveCommentReply, DriveError> {
+    let body = ResolveCommentRequest {
+        action: "resolve",
+        content: options.content.as_deref(),
+    };
     let response = client
         .send_with_scopes(
             client.post(options.request_url()?).json(&body),
@@ -1033,7 +1136,7 @@ pub async fn resolve_comment<S: AccountStore>(
         .map_err(DriveError::Auth)?;
     let response = ensure_success_response(response).await?;
     response
-        .json::<serde_json::Value>()
+        .json::<DriveCommentReply>()
         .await
         .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }

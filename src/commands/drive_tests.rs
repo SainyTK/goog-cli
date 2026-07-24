@@ -414,6 +414,40 @@ async fn run_comments_outputs_one_json_document_with_nested_replies() {
 }
 
 #[tokio::test]
+async fn run_comments_preserves_empty_reply_and_mention_arrays() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{
+                "id": "comment-123",
+                "mentionedEmailAddresses": [],
+                "replies": []
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comments_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"comments\":[{\"id\":\"comment-123\",\"mentionedEmailAddresses\":[],\"replies\":[]}]}\n"
+    );
+}
+
+#[tokio::test]
 async fn run_comments_falls_back_and_maps_the_file_account() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

@@ -17,10 +17,10 @@ use crate::drive::{
     convert_office_file, create_comment, create_comment_reply, create_folder, delete_comment,
     download, list_comments, list_files, resolve_comment, trash_file, update_comment, upload,
     CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, CreatedFolder,
-    DeleteCommentOptions, DownloadFileOptions, DownloadedFile, DriveError, DriveFile,
-    DriveFileOperationOptions, ListCommentsOptions, ListFilesOptions, OfficeConversionOptions,
-    OfficeConversionResult, OfficeConversionTarget, ResolveCommentOptions, UpdateCommentOptions,
-    UploadFileOptions, UploadedFile, DRIVE_FOLDER_MIME_TYPE,
+    DeleteCommentOptions, DownloadFileOptions, DownloadedFile, DriveComment, DriveCommentReply,
+    DriveError, DriveFile, DriveFileOperationOptions, ListCommentsOptions, ListFilesOptions,
+    OfficeConversionOptions, OfficeConversionResult, OfficeConversionTarget, ResolveCommentOptions,
+    UpdateCommentOptions, UploadFileOptions, UploadedFile, DRIVE_FOLDER_MIME_TYPE,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -1138,13 +1138,13 @@ async fn list_comments_with_drive_unified_access<S: AccountStore>(
     target_resource_key: &str,
     options: &ListCommentsOptions,
     state_path: Option<&Path>,
-) -> DriveResult<Vec<serde_json::Value>> {
+) -> DriveResult<Vec<DriveComment>> {
     UnifiedAccess::run(
         config,
         account_override,
         target_resource_key,
         state_path,
-        |account| -> AccessFuture<'_, Vec<serde_json::Value>, DriveError> {
+        |account| -> AccessFuture<'_, Vec<DriveComment>, DriveError> {
             Box::pin(list_comments_as_account(config, store, options, account))
         },
         is_target_access_failure,
@@ -1159,13 +1159,13 @@ async fn create_comment_with_drive_unified_access<S: AccountStore>(
     target_resource_key: &str,
     options: &CreateCommentOptions,
     state_path: Option<&Path>,
-) -> DriveResult<serde_json::Value> {
+) -> DriveResult<DriveComment> {
     UnifiedAccess::run(
         config,
         account_override,
         target_resource_key,
         state_path,
-        |account| -> AccessFuture<'_, serde_json::Value, DriveError> {
+        |account| -> AccessFuture<'_, DriveComment, DriveError> {
             Box::pin(create_comment_as_account(config, store, options, account))
         },
         is_target_access_failure,
@@ -1178,7 +1178,7 @@ async fn create_comment_as_account<S: AccountStore>(
     store: &S,
     options: &CreateCommentOptions,
     account: String,
-) -> DriveResult<serde_json::Value> {
+) -> DriveResult<DriveComment> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     create_comment(&client, options).await
 }
@@ -1190,13 +1190,13 @@ async fn update_comment_with_drive_unified_access<S: AccountStore>(
     target_resource_key: &str,
     options: &UpdateCommentOptions,
     state_path: Option<&Path>,
-) -> DriveResult<serde_json::Value> {
+) -> DriveResult<DriveComment> {
     UnifiedAccess::run(
         config,
         account_override,
         target_resource_key,
         state_path,
-        |account| -> AccessFuture<'_, serde_json::Value, DriveError> {
+        |account| -> AccessFuture<'_, DriveComment, DriveError> {
             Box::pin(update_comment_as_account(config, store, options, account))
         },
         is_target_access_failure,
@@ -1209,7 +1209,7 @@ async fn update_comment_as_account<S: AccountStore>(
     store: &S,
     options: &UpdateCommentOptions,
     account: String,
-) -> DriveResult<serde_json::Value> {
+) -> DriveResult<DriveComment> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     update_comment(&client, options).await
 }
@@ -1252,13 +1252,13 @@ async fn resolve_comment_with_drive_unified_access<S: AccountStore>(
     target_resource_key: &str,
     options: &ResolveCommentOptions,
     state_path: Option<&Path>,
-) -> DriveResult<serde_json::Value> {
+) -> DriveResult<DriveCommentReply> {
     UnifiedAccess::run(
         config,
         account_override,
         target_resource_key,
         state_path,
-        |account| -> AccessFuture<'_, serde_json::Value, DriveError> {
+        |account| -> AccessFuture<'_, DriveCommentReply, DriveError> {
             Box::pin(resolve_comment_as_account(config, store, options, account))
         },
         is_target_access_failure,
@@ -1271,7 +1271,7 @@ async fn resolve_comment_as_account<S: AccountStore>(
     store: &S,
     options: &ResolveCommentOptions,
     account: String,
-) -> DriveResult<serde_json::Value> {
+) -> DriveResult<DriveCommentReply> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     resolve_comment(&client, options).await
 }
@@ -1281,7 +1281,7 @@ async fn list_comments_as_account<S: AccountStore>(
     store: &S,
     options: &ListCommentsOptions,
     account: String,
-) -> DriveResult<Vec<serde_json::Value>> {
+) -> DriveResult<Vec<DriveComment>> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     list_comments(&client, options).await
 }
@@ -1293,13 +1293,13 @@ async fn create_comment_reply_with_drive_unified_access<S: AccountStore>(
     target_resource_key: &str,
     options: &CreateCommentReplyOptions,
     state_path: Option<&Path>,
-) -> DriveResult<serde_json::Value> {
+) -> DriveResult<DriveCommentReply> {
     UnifiedAccess::run(
         config,
         account_override,
         target_resource_key,
         state_path,
-        |account| -> AccessFuture<'_, serde_json::Value, DriveError> {
+        |account| -> AccessFuture<'_, DriveCommentReply, DriveError> {
             Box::pin(create_comment_reply_as_account(
                 config, store, options, account,
             ))
@@ -1314,7 +1314,7 @@ async fn create_comment_reply_as_account<S: AccountStore>(
     store: &S,
     options: &CreateCommentReplyOptions,
     account: String,
-) -> DriveResult<serde_json::Value> {
+) -> DriveResult<DriveCommentReply> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     create_comment_reply(&client, options).await
 }
