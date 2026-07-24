@@ -41,6 +41,9 @@ goog drive download FILE_ID --output /absolute/path/to/file
 ```
 
 Confirm the file ID and destination before downloading.
+Native Google Docs download as editable `.docx` files, Google Sheets as `.xlsx`, and Google Slides as `.pptx`.
+When `--output` is omitted, `goog` adds the matching Office extension to the Drive file name.
+An explicit `--output` path is used exactly as provided.
 Inspect the resulting local file before reporting success.
 
 ## Upload

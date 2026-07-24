@@ -80,6 +80,8 @@ pub struct DownloadedFile {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoogleFileExportFormat {
+    Word,
+    Excel,
     PowerPoint,
     Pdf,
 }
@@ -87,6 +89,8 @@ pub enum GoogleFileExportFormat {
 impl GoogleFileExportFormat {
     fn mime_type(self) -> &'static str {
         match self {
+            Self::Word => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            Self::Excel => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             Self::PowerPoint => {
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             }
@@ -96,15 +100,35 @@ impl GoogleFileExportFormat {
 
     fn has_valid_signature(self, signature: &[u8]) -> bool {
         match self {
-            Self::PowerPoint => signature.starts_with(b"PK\x03\x04"),
+            Self::Word | Self::Excel | Self::PowerPoint => signature.starts_with(b"PK\x03\x04"),
             Self::Pdf => signature.starts_with(b"%PDF-"),
         }
     }
 
     fn display_name(self) -> &'static str {
         match self {
+            Self::Word => "Word",
+            Self::Excel => "Excel",
             Self::PowerPoint => "PowerPoint",
             Self::Pdf => "PDF",
+        }
+    }
+
+    fn file_extension(self) -> &'static str {
+        match self {
+            Self::Word => "docx",
+            Self::Excel => "xlsx",
+            Self::PowerPoint => "pptx",
+            Self::Pdf => "pdf",
+        }
+    }
+
+    fn for_google_mime_type(mime_type: &str) -> Option<Self> {
+        match mime_type {
+            GOOGLE_DOC_MIME_TYPE => Some(Self::Word),
+            GOOGLE_SHEET_MIME_TYPE => Some(Self::Excel),
+            GOOGLE_SLIDES_MIME_TYPE => Some(Self::PowerPoint),
+            _ => None,
         }
     }
 }
@@ -267,7 +291,7 @@ impl DownloadFileOptions {
 
     fn metadata_url(&self) -> Result<Url, DriveError> {
         let mut url = self.file_url()?;
-        url.query_pairs_mut().append_pair("fields", "name");
+        url.query_pairs_mut().append_pair("fields", "name,mimeType");
         Ok(url)
     }
 
@@ -341,6 +365,8 @@ impl ExportGoogleFileOptions {
 #[derive(Debug, Deserialize)]
 struct FileMetadata {
     name: String,
+    #[serde(rename = "mimeType")]
+    mime_type: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -571,15 +597,20 @@ where
     S: AccountStore,
     F: FnMut(u64),
 {
+    let metadata = fetch_metadata(client, options).await?;
+    let export_format = GoogleFileExportFormat::for_google_mime_type(&metadata.mime_type);
     let path = match &options.output {
         Some(output) => output.clone(),
-        None => {
-            let metadata = fetch_metadata(client, options).await?;
-            std::env::current_dir()
-                .map_err(DriveError::Io)?
-                .join(metadata.name)
-        }
+        None => std::env::current_dir()
+            .map_err(DriveError::Io)?
+            .join(default_download_name(&metadata.name, export_format)),
     };
+
+    if let Some(format) = export_format {
+        let export_options = ExportGoogleFileOptions::new(&options.file_id, format, path)
+            .with_files_url(&options.files_url);
+        return export_google_file(client, &export_options, progress).await;
+    }
 
     let response = client
         .send_with_scopes(client.get(options.media_url()?), DRIVE_SCOPES)
@@ -600,6 +631,21 @@ where
 
     file.flush().await.map_err(DriveError::Io)?;
     Ok(DownloadedFile { path, bytes })
+}
+
+fn default_download_name(name: &str, export_format: Option<GoogleFileExportFormat>) -> String {
+    let Some(export_format) = export_format else {
+        return name.to_string();
+    };
+    let extension = export_format.file_extension();
+    if Path::new(name)
+        .extension()
+        .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+    {
+        name.to_string()
+    } else {
+        format!("{name}.{extension}")
+    }
 }
 
 pub async fn export_google_file<S, F>(
