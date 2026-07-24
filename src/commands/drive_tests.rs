@@ -9,7 +9,9 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::drive::{CreateFolderOptions, DriveFile, DRIVE_SCOPE};
+use crate::drive::{
+    CreateFolderOptions, DriveFile, OfficeConversionOptions, OfficeConversionTarget, DRIVE_SCOPE,
+};
 
 use super::drive::*;
 
@@ -1099,6 +1101,56 @@ async fn run_mkdir_uses_parent_folder_account_and_prints_folder_location() {
         load_runtime_state_from_path(&state_path)
             .unwrap()
             .account_for_resource(&resource_key("drive", "parent-folder-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_convert_uses_source_file_account_and_prints_document_id_and_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-document-123/copy"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-document-123/copy"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(BodyContains(
+            br#""mimeType":"application/vnd.google-apps.document""#,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "native-document-456",
+            "webViewLink": "https://docs.google.com/document/d/native-document-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let options =
+        OfficeConversionOptions::new("office-document-123", OfficeConversionTarget::Document)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    run_convert_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "native-document-456\thttps://docs.google.com/document/d/native-document-456/edit\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "office-document-123")),
         Some("bob@example.com")
     );
 }

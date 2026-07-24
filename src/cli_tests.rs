@@ -8,14 +8,15 @@ use crate::cli::{
     Cli, Command, DocsBreakCommand, DocsCommand, DocsCompareScope, DocsFooterCommand,
     DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType,
     DocsMapType, DocsNamedRangeCommand, DocsParagraphAlignment, DocsStyleCommand, DocsTableCommand,
-    DocsTextCommand, DriveCommand, DriveListType, MailCommand, SheetsBorderEdge, SheetsBorderStyle,
-    SheetsCommand, SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
-    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
-    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
-    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
-    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
-    SlidesDeckCommand, SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand,
-    SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
+    DocsTextCommand, DriveCommand, DriveListType, DriveOfficeConversionTarget, MailCommand,
+    SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition,
+    SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
+    SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
+    SheetsSortOrder, SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection,
+    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
+    SheetsWrapStrategy, SlidesCommand, SlidesDeckCommand, SlidesImageReplaceMethod,
+    SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType,
+    SlidesSlideCommand, SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -576,6 +577,56 @@ fn drive_upload_with_folder() {
         } => assert_eq!(folder.as_deref(), Some("folder123")),
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn drive_convert_requires_a_file_id_and_document_or_spreadsheet_target() {
+    let doc = parse(&[
+        "drive",
+        "convert",
+        "office-document-123",
+        "--to",
+        "google-doc",
+    ])
+    .unwrap();
+    match doc.command {
+        Command::Drive {
+            command: DriveCommand::Convert { file_id, to },
+        } => {
+            assert_eq!(file_id, "office-document-123");
+            assert_eq!(to, DriveOfficeConversionTarget::GoogleDoc);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    let sheet = parse(&[
+        "drive",
+        "convert",
+        "office-spreadsheet-456",
+        "--to",
+        "google-sheet",
+    ])
+    .unwrap();
+    assert!(matches!(
+        sheet.command,
+        Command::Drive {
+            command: DriveCommand::Convert {
+                to: DriveOfficeConversionTarget::GoogleSheet,
+                ..
+            }
+        }
+    ));
+
+    assert!(parse(&["drive", "convert", "office-document-123"]).is_err());
+    assert!(parse(&["drive", "convert", "--to", "google-doc"]).is_err());
+    assert!(parse(&[
+        "drive",
+        "convert",
+        "office-document-123",
+        "--to",
+        "google-slide"
+    ])
+    .is_err());
 }
 
 #[test]

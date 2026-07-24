@@ -75,6 +75,11 @@ _Avoid_: Authenticate, connect, authorize
 A Google Drive resource that can contain files and other Folders.
 _Avoid_: Directory, collection
 
+**Office Conversion**:
+The Drive operation that copies an uploaded DOCX file into a Document or an uploaded XLSX file into a Spreadsheet.
+Office Conversion creates the result in the source file's parent Folder and leaves the Office source unchanged.
+_Avoid_: Native file conversion, import, from-office
+
 ### Docs
 
 **Document**:
