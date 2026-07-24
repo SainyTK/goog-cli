@@ -99,6 +99,7 @@ Inspect the resulting draft through `goog mail` before reporting success.
 ### Sheets
 
 - `goog sheets list`, `create`, and `get` discover and inspect spreadsheets.
+- `goog sheets comments` and the `comment-*` commands manage Spreadsheet comments and replies.
 - `goog sheets values` reads, updates, appends, and clears cells, rows, columns, tables, and ranges.
 - `goog sheets sheet` adds, deletes, renames, cleans, formats, validates, and protects sheets and ranges.
 - `goog sheets batch-update` is the raw structural fallback when no high-level command fits.
@@ -108,6 +109,7 @@ Read [Google Sheets](references/sheets.md) before Sheets work.
 ### Slides
 
 - `goog slides list`, `create`, and `get` discover and inspect presentations.
+- `goog slides comments` and the `comment-*` commands manage presentation comments and replies.
 - `goog slides deck` authors or inspects complete decks.
 - `goog slides slide` creates and manages slides.
 - `goog slides text-box`, `image`, `video`, `shape`, `line`, and `table` add content.

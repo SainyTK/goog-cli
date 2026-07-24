@@ -10,7 +10,7 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SlidesCommand, SlidesDeckCommand, SlidesImageReplaceMethod, SlidesLineCategory,
+    DriveCommand, SlidesCommand, SlidesDeckCommand, SlidesImageReplaceMethod, SlidesLineCategory,
     SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand,
     SlidesZOrderOperation,
 };
@@ -58,6 +58,104 @@ pub fn run<S: AccountStore>(
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             run_with_runtime(run_create_to(&client, title, &mut std::io::stdout(), None))
         }
+        SlidesCommand::Comments {
+            presentation_id,
+            open,
+        } => super::drive::run(
+            DriveCommand::Comments {
+                file_id: presentation_id,
+                open,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SlidesCommand::CommentCreate {
+            presentation_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentCreate {
+                file_id: presentation_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SlidesCommand::CommentEdit {
+            presentation_id,
+            comment_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentEdit {
+                file_id: presentation_id,
+                comment_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SlidesCommand::CommentReply {
+            presentation_id,
+            comment_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentReply {
+                file_id: presentation_id,
+                comment_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SlidesCommand::CommentResolve {
+            presentation_id,
+            comment_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentResolve {
+                file_id: presentation_id,
+                comment_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SlidesCommand::CommentDelete {
+            presentation_id,
+            comment_id,
+        } => super::drive::run(
+            DriveCommand::CommentDelete {
+                file_id: presentation_id,
+                comment_id,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
         SlidesCommand::Deck {
             command:
                 SlidesDeckCommand::Inspect {

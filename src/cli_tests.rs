@@ -3515,6 +3515,194 @@ fn sheets_get_with_spreadsheet_id() {
 }
 
 #[test]
+fn sheets_comments_accepts_spreadsheet_id_and_open_filter() {
+    let cli = parse(&["sheets", "comments", "spreadsheet-123", "--open"]).unwrap();
+
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Comments {
+                    spreadsheet_id,
+                    open,
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert!(open);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_comment_create_accepts_text_and_mentions() {
+    let cli = parse(&[
+        "sheets",
+        "comment-create",
+        "spreadsheet-123",
+        "--text",
+        "Please review this.",
+        "--mention",
+        "reviewer@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::CommentCreate {
+                    spreadsheet_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(text, "Please review this.");
+            assert_eq!(mentions, vec!["reviewer@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_comment_edit_accepts_replacement_content() {
+    let cli = parse(&[
+        "sheets",
+        "comment-edit",
+        "spreadsheet-123",
+        "--comment-id",
+        "comment-456",
+        "--text",
+        "Updated comment.",
+        "--mention",
+        "reviewer@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::CommentEdit {
+                    spreadsheet_id,
+                    comment_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(comment_id, "comment-456");
+            assert_eq!(text, "Updated comment.");
+            assert_eq!(mentions, vec!["reviewer@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_comment_reply_accepts_text_and_mentions() {
+    let cli = parse(&[
+        "sheets",
+        "comment-reply",
+        "spreadsheet-123",
+        "--comment-id",
+        "comment-456",
+        "--text",
+        "Updated as requested.",
+        "--mention",
+        "owner@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::CommentReply {
+                    spreadsheet_id,
+                    comment_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(comment_id, "comment-456");
+            assert_eq!(text, "Updated as requested.");
+            assert_eq!(mentions, vec!["owner@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_comment_resolve_accepts_optional_reply_content() {
+    let cli = parse(&[
+        "sheets",
+        "comment-resolve",
+        "spreadsheet-123",
+        "--comment-id",
+        "comment-456",
+        "--text",
+        "Addressed.",
+        "--mention",
+        "reviewer@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::CommentResolve {
+                    spreadsheet_id,
+                    comment_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(comment_id, "comment-456");
+            assert_eq!(text.as_deref(), Some("Addressed."));
+            assert_eq!(mentions, vec!["reviewer@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&[
+        "sheets",
+        "comment-resolve",
+        "spreadsheet-123",
+        "--comment-id",
+        "comment-456",
+    ])
+    .is_ok());
+}
+
+#[test]
+fn sheets_comment_delete_requires_comment_id() {
+    let cli = parse(&[
+        "sheets",
+        "comment-delete",
+        "spreadsheet-123",
+        "--comment-id",
+        "comment-456",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::CommentDelete {
+                    spreadsheet_id,
+                    comment_id,
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(comment_id, "comment-456");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&["sheets", "comment-delete", "spreadsheet-123"]).is_err());
+}
+
+#[test]
 fn sheets_create_with_title() {
     let cli = parse(&["sheets", "create", "Quarterly Plan"]).unwrap();
     match cli.command {
@@ -3538,6 +3726,203 @@ fn slides_create_with_title() {
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn slides_comments_accepts_presentation_url_and_open_filter() {
+    let cli = parse(&[
+        "slides",
+        "comments",
+        "https://docs.google.com/presentation/d/presentation-123/edit",
+        "--open",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::Comments {
+                    presentation_id,
+                    open,
+                },
+        } => {
+            assert_eq!(
+                presentation_id,
+                "https://docs.google.com/presentation/d/presentation-123/edit"
+            );
+            assert!(open);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_comment_create_accepts_text_and_mentions() {
+    let cli = parse(&[
+        "slides",
+        "comment-create",
+        "presentation-123",
+        "--text",
+        "Please review this.",
+        "--mention",
+        "reviewer@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::CommentCreate {
+                    presentation_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(text, "Please review this.");
+            assert_eq!(mentions, vec!["reviewer@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_comment_edit_accepts_replacement_content() {
+    let cli = parse(&[
+        "slides",
+        "comment-edit",
+        "presentation-123",
+        "--comment-id",
+        "comment-456",
+        "--text",
+        "Updated comment.",
+        "--mention",
+        "reviewer@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::CommentEdit {
+                    presentation_id,
+                    comment_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(comment_id, "comment-456");
+            assert_eq!(text, "Updated comment.");
+            assert_eq!(mentions, vec!["reviewer@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_comment_reply_accepts_text_and_mentions() {
+    let cli = parse(&[
+        "slides",
+        "comment-reply",
+        "presentation-123",
+        "--comment-id",
+        "comment-456",
+        "--text",
+        "Updated as requested.",
+        "--mention",
+        "owner@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::CommentReply {
+                    presentation_id,
+                    comment_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(comment_id, "comment-456");
+            assert_eq!(text, "Updated as requested.");
+            assert_eq!(mentions, vec!["owner@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn slides_comment_resolve_accepts_optional_reply_content() {
+    let cli = parse(&[
+        "slides",
+        "comment-resolve",
+        "presentation-123",
+        "--comment-id",
+        "comment-456",
+        "--text",
+        "Addressed.",
+        "--mention",
+        "reviewer@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::CommentResolve {
+                    presentation_id,
+                    comment_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(comment_id, "comment-456");
+            assert_eq!(text.as_deref(), Some("Addressed."));
+            assert_eq!(mentions, vec!["reviewer@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&[
+        "slides",
+        "comment-resolve",
+        "presentation-123",
+        "--comment-id",
+        "comment-456",
+    ])
+    .is_ok());
+}
+
+#[test]
+fn slides_comment_delete_requires_comment_id() {
+    let cli = parse(&[
+        "slides",
+        "comment-delete",
+        "presentation-123",
+        "--comment-id",
+        "comment-456",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Slides {
+            command:
+                SlidesCommand::CommentDelete {
+                    presentation_id,
+                    comment_id,
+                },
+        } => {
+            assert_eq!(presentation_id, "presentation-123");
+            assert_eq!(comment_id, "comment-456");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&["slides", "comment-delete", "presentation-123"]).is_err());
 }
 
 #[test]

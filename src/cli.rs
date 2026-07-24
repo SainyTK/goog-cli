@@ -386,6 +386,24 @@ impl SlidesCommand {
             | SlidesCommand::Get {
                 presentation_id, ..
             }
+            | SlidesCommand::Comments {
+                presentation_id, ..
+            }
+            | SlidesCommand::CommentCreate {
+                presentation_id, ..
+            }
+            | SlidesCommand::CommentEdit {
+                presentation_id, ..
+            }
+            | SlidesCommand::CommentReply {
+                presentation_id, ..
+            }
+            | SlidesCommand::CommentResolve {
+                presentation_id, ..
+            }
+            | SlidesCommand::CommentDelete {
+                presentation_id, ..
+            }
             | SlidesCommand::BatchUpdate {
                 presentation_id, ..
             }
@@ -514,6 +532,75 @@ pub enum SlidesCommand {
     Create {
         /// Title for the new Google Slides presentation
         title: String,
+    },
+    /// List comments and replies for a presentation as JSON
+    Comments {
+        /// Presentation ID or URL
+        presentation_id: String,
+        /// Include only unresolved comments
+        #[arg(long)]
+        open: bool,
+    },
+    /// Create an unanchored comment on a presentation
+    CommentCreate {
+        /// Presentation ID or URL
+        presentation_id: String,
+        /// Comment text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the comment
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Edit an existing presentation comment
+    CommentEdit {
+        /// Presentation ID or URL
+        presentation_id: String,
+        /// Comment ID to edit
+        #[arg(long)]
+        comment_id: String,
+        /// Replacement comment text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the comment
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Reply to a comment on a presentation
+    CommentReply {
+        /// Presentation ID or URL
+        presentation_id: String,
+        /// Comment ID to reply to
+        #[arg(long)]
+        comment_id: String,
+        /// Reply text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the reply
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Resolve an existing presentation comment
+    CommentResolve {
+        /// Presentation ID or URL
+        presentation_id: String,
+        /// Comment ID to resolve
+        #[arg(long)]
+        comment_id: String,
+        /// Optional reply text to include with the resolution
+        #[arg(long)]
+        text: Option<String>,
+        /// Email address to mention at the start of the reply
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Delete an existing presentation comment
+    CommentDelete {
+        /// Presentation ID or URL
+        presentation_id: String,
+        /// Comment ID to delete
+        #[arg(long)]
+        comment_id: String,
     },
     /// Author, inspect, and verify complete presentations
     Deck {
@@ -3507,6 +3594,75 @@ Notes:
         /// Emit newline-delimited JSON
         #[arg(long)]
         json: bool,
+    },
+    /// List comments and replies for a Spreadsheet as JSON
+    Comments {
+        /// Spreadsheet ID
+        spreadsheet_id: String,
+        /// Include only unresolved comments
+        #[arg(long)]
+        open: bool,
+    },
+    /// Create an unanchored comment on a Spreadsheet
+    CommentCreate {
+        /// Spreadsheet ID
+        spreadsheet_id: String,
+        /// Comment text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the comment
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Edit an existing Spreadsheet comment
+    CommentEdit {
+        /// Spreadsheet ID
+        spreadsheet_id: String,
+        /// Comment ID to edit
+        #[arg(long)]
+        comment_id: String,
+        /// Replacement comment text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the comment
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Reply to a comment on a Spreadsheet
+    CommentReply {
+        /// Spreadsheet ID
+        spreadsheet_id: String,
+        /// Comment ID to reply to
+        #[arg(long)]
+        comment_id: String,
+        /// Reply text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the reply
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Resolve an existing Spreadsheet comment
+    CommentResolve {
+        /// Spreadsheet ID
+        spreadsheet_id: String,
+        /// Comment ID to resolve
+        #[arg(long)]
+        comment_id: String,
+        /// Optional reply text to include with the resolution
+        #[arg(long)]
+        text: Option<String>,
+        /// Email address to mention at the start of the reply
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Delete an existing Spreadsheet comment
+    CommentDelete {
+        /// Spreadsheet ID
+        spreadsheet_id: String,
+        /// Comment ID to delete
+        #[arg(long)]
+        comment_id: String,
     },
     /// Read raw spreadsheet metadata
     Get {

@@ -8,6 +8,7 @@
 - Completion gate
 - Command guide
   - Create and inspect
+  - Manage comments
   - Write values and formulas
   - Structure and format
   - Controlled inputs
@@ -116,6 +117,23 @@ target/debug/goog sheets get SPREADSHEET_ID \
 
 Do not emit complete grid data without a narrow `--fields` selector.
 Large raw responses waste context and make verification harder.
+
+### Manage comments
+
+```bash
+target/debug/goog sheets comments SPREADSHEET_ID
+target/debug/goog sheets comments SPREADSHEET_ID --open
+target/debug/goog sheets comment-create SPREADSHEET_ID --text "Please review."
+target/debug/goog sheets comment-edit SPREADSHEET_ID --comment-id COMMENT_ID --text "Updated comment."
+target/debug/goog sheets comment-reply SPREADSHEET_ID --comment-id COMMENT_ID --text "Updated as requested."
+target/debug/goog sheets comment-resolve SPREADSHEET_ID --comment-id COMMENT_ID --text "Addressed."
+target/debug/goog sheets comment-delete SPREADSHEET_ID --comment-id COMMENT_ID
+```
+
+Spreadsheet comments use the Google Drive comment model and are unanchored at the file level when created by the CLI.
+List comments after every mutation and use `comments --open` to confirm that a resolved comment is absent.
+Use the exact comment ID returned by the list or create command.
+Repeat `--mention EMAIL` on create, edit, reply, or resolve when the comment should notify specific collaborators.
 
 ### Write values and formulas
 

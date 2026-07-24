@@ -78,6 +78,7 @@ _Avoid_: Directory, collection
 **Comment**:
 Feedback attached to a Drive file, optionally associated with quoted content and containing zero or more Replies.
 Comments can belong to Documents, Spreadsheets, presentations, and other Drive files that support commenting.
+Sheets and Slides expose service-specific comment commands, but Drive remains the owning module for Comment behavior.
 _Avoid_: Document comment, note
 
 **Reply**:
