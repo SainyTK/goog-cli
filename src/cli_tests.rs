@@ -630,6 +630,25 @@ fn drive_convert_requires_a_file_id_and_document_or_spreadsheet_target() {
 }
 
 #[test]
+fn drive_trash_requires_a_file_id() {
+    let cli = parse(&["drive", "trash", "office-document-123"]).unwrap();
+
+    match cli.command {
+        Command::Drive {
+            command: DriveCommand::Trash { file_id },
+        } => assert_eq!(file_id, "office-document-123"),
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&["drive", "trash"]).is_err());
+}
+
+#[test]
+fn drive_permanent_delete_is_not_available() {
+    assert!(parse(&["drive", "delete", "office-document-123"]).is_err());
+}
+
+#[test]
 fn drive_mkdir_requires_a_name_and_parent_folder() {
     let cli = parse(&[
         "drive",

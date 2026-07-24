@@ -278,9 +278,9 @@ pub enum DriveCommand {
         #[arg(long)]
         folder: String,
     },
-    /// Permanently delete a file from Google Drive
-    Delete {
-        /// Drive file ID to delete
+    /// Move a file to Google Drive trash
+    Trash {
+        /// Drive file ID to move to trash
         file_id: String,
     },
 }

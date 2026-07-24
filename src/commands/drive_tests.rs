@@ -1156,30 +1156,57 @@ async fn run_convert_uses_source_file_account_and_prints_document_id_and_url() {
 }
 
 #[tokio::test]
-async fn run_delete_removes_the_file_and_confirms_its_id() {
+async fn run_trash_uses_source_file_account_and_confirms_its_id() {
     let server = MockServer::start().await;
-    Mock::given(method("DELETE"))
-        .and(path("/drive/v3/files/file-123"))
-        .and(query_param("supportsAllDrives", "true"))
-        .and(header("authorization", "Bearer drive-access"))
-        .respond_with(ResponseTemplate::new(204))
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/office-document-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
         .expect(1)
         .mount(&server)
         .await;
-    let store = MemoryStore::default();
-    let client = test_client(&store);
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/office-document-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(BodyContains(br#""trashed":true"#))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "office-document-123",
+            "trashed": true
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let files_url = format!("{}/drive/v3/files", server.uri());
     let mut out = Vec::new();
 
-    run_delete_to(
-        &client,
-        "file-123",
+    run_trash_unified_to(
+        &config,
+        &store,
+        None,
+        "office-document-123".into(),
         &mut out,
-        Some(&format!("{}/drive/v3/files", server.uri())),
+        Some(&files_url),
+        Some(&state_path),
     )
     .await
     .unwrap();
 
-    assert_eq!(String::from_utf8(out).unwrap(), "Deleted\tfile-123\n");
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Trashed\toffice-document-123\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "office-document-123")),
+        Some("bob@example.com")
+    );
 }
 
 #[tokio::test]

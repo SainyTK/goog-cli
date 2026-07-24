@@ -7,7 +7,7 @@ use futures_util::{stream, StreamExt};
 use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, LOCATION};
 use std::path::{Path, PathBuf};
 
-use reqwest::{Body, Response, StatusCode};
+use reqwest::{Body, Method, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio_util::io::ReaderStream;
@@ -957,6 +957,24 @@ pub async fn delete_file<S: AccountStore>(
 ) -> Result<(), DriveError> {
     let response = client
         .send_with_scopes(client.delete(options.file_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response).await?;
+    Ok(())
+}
+
+pub async fn trash_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DriveFileOperationOptions,
+) -> Result<(), DriveError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .request(Method::PATCH, options.file_url()?)
+                .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
+                .json(&serde_json::json!({ "trashed": true })),
+            DRIVE_SCOPES,
+        )
         .await
         .map_err(DriveError::Auth)?;
     ensure_success_response(response).await?;

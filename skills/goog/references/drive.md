@@ -75,16 +75,17 @@ goog drive mkdir "Project files" --folder PARENT_FOLDER_ID
 The parent folder is required.
 Verify the new folder under the expected parent after creation.
 
-## Permanently delete
+## Move to trash
 
 ```bash
-goog drive delete FILE_ID
+goog drive trash FILE_ID
 ```
 
-This command permanently deletes the target.
+This command moves the target to Google Drive trash so it can still be recovered.
 Resolve the exact file ID with a read-only listing before running it.
-Do not use a name match alone as deletion authority.
-After deletion, verify that the item no longer appears in the intended location.
+Do not use a name match alone as trash authority.
+The CLI does not expose permanent deletion.
+After moving the file to trash, verify that it no longer appears in the intended location.
 
 ## Completion gate
 
@@ -92,5 +93,5 @@ After deletion, verify that the item no longer appears in the intended location.
 - The exact file or folder ID was resolved before mutation.
 - Uploads, conversions, and folders were listed back from the intended parent.
 - Downloads exist at the intended local destination and are readable.
-- Permanent deletion was explicitly requested and verified.
+- Trashed files no longer appear in their former location.
 - The final response includes the useful Drive ID or URL returned by the CLI.

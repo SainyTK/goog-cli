@@ -1165,3 +1165,29 @@ async fn delete_file_removes_the_staged_drive_resource() {
 
     delete_file(&client, &options).await.unwrap();
 }
+
+#[tokio::test]
+async fn trash_file_marks_the_drive_resource_as_trashed() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/office-document-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(body_json(serde_json::json!({
+            "trashed": true
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "office-document-123",
+            "trashed": true
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("office-document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    trash_file(&client, &options).await.unwrap();
+}
