@@ -13,8 +13,9 @@ Users can pass `--channel preview` to install the latest preview pre-release or 
 
 The public installer entrypoint is `install.sh` at the repository root so users and contributors can inspect the same path used by the one-line install command.
 
-Every `goog` invocation checks Canonical Releases in parallel with command execution.
-Stable builds consider stable releases, while preview builds consider both preview releases and newer stable releases.
+Every `goog` invocation checks published versions in parallel with command execution.
+Stable builds consider Canonical Releases.
+Preview builds consider both Preview Releases and newer Canonical Releases.
 Known updates are cached locally for 24 hours, no-update results are refreshed after 15 minutes, and failed checks are retried after one hour.
 When a newer semantic version is known, the CLI prints its version and a public installer command pinned to that exact tag on stderr after all command output, including help, version, and error paths.
 The check is advisory: network, cache, and response failures stay silent and never change command output on stdout or command exit status.

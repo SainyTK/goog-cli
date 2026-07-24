@@ -48,17 +48,10 @@ struct GitHubRelease {
     draft: bool,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum ReleaseTrack {
-    Stable,
-    Preview,
-}
-
 #[derive(Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateCache {
-    release_track: Option<ReleaseTrack>,
+    includes_preview: Option<bool>,
     last_checked_at: Option<u64>,
     last_attempt_at: Option<u64>,
     latest_version: Option<String>,
@@ -72,13 +65,13 @@ pub fn start() -> UpdateCheck {
 
 fn check() -> Option<UpdateNotice> {
     let current = Version::parse(env!("CARGO_PKG_VERSION")).ok()?;
-    let release_track = release_track(&current);
+    let includes_preview = !current.pre.is_empty();
     let cache_path = cache_path()?;
     let now = unix_timestamp()?;
     let mut cache = load_cache(&cache_path).unwrap_or_default();
-    if cache.release_track != Some(release_track) {
+    if cache.includes_preview != Some(includes_preview) {
         cache = UpdateCache {
-            release_track: Some(release_track),
+            includes_preview: Some(includes_preview),
             ..UpdateCache::default()
         };
     }
@@ -86,7 +79,7 @@ fn check() -> Option<UpdateNotice> {
         cached_version(&cache)
     } else {
         cache.last_attempt_at = Some(now);
-        match fetch_latest_release(release_track) {
+        match fetch_latest_release(includes_preview) {
             Some(latest) => {
                 cache.last_checked_at = Some(now);
                 cache.last_attempt_at = None;
@@ -104,15 +97,7 @@ fn check() -> Option<UpdateNotice> {
     (latest > current).then_some(UpdateNotice { current, latest })
 }
 
-fn release_track(current: &Version) -> ReleaseTrack {
-    if current.pre.is_empty() {
-        ReleaseTrack::Stable
-    } else {
-        ReleaseTrack::Preview
-    }
-}
-
-fn fetch_latest_release(release_track: ReleaseTrack) -> Option<Version> {
+fn fetch_latest_release(includes_preview: bool) -> Option<Version> {
     let release_url =
         std::env::var("GOOG_UPDATE_CHECK_URL").unwrap_or_else(|_| RELEASES_URL.into());
     let client = reqwest::blocking::Client::builder()
@@ -132,7 +117,7 @@ fn fetch_latest_release(release_track: ReleaseTrack) -> Option<Version> {
         .into_iter()
         .filter(|release| !release.draft)
         .filter_map(|release| Version::parse(release.tag_name.trim_start_matches('v')).ok())
-        .filter(|version| release_track == ReleaseTrack::Preview || version.pre.is_empty())
+        .filter(|version| includes_preview || version.pre.is_empty())
         .max()
 }
 

@@ -5,7 +5,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 #[test]
-fn successful_commands_show_a_newer_release_without_corrupting_json_output() {
+fn successful_commands_show_a_newer_canonical_release_without_corrupting_json_output() {
     let (releases_url, server) = serve_releases(r#"[{"tag_name":"v999.0.0"}]"#);
     let cache_dir = tempfile::tempdir().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_goog"))
@@ -35,7 +35,7 @@ fn successful_commands_show_a_newer_release_without_corrupting_json_output() {
 }
 
 #[test]
-fn known_newer_release_is_shown_from_cache_without_network() {
+fn known_newer_canonical_release_is_shown_from_cache_without_network() {
     let (releases_url, server) = serve_releases(r#"[{"tag_name":"v999.0.0"}]"#);
     let cache_dir = tempfile::tempdir().unwrap();
     let cache_path = cache_dir.path().join("update-check.json");
@@ -52,7 +52,7 @@ fn known_newer_release_is_shown_from_cache_without_network() {
 }
 
 #[test]
-fn help_output_also_shows_a_newer_release() {
+fn help_output_also_shows_a_newer_canonical_release() {
     let (releases_url, server) = serve_releases(r#"[{"tag_name":"v999.0.0"}]"#);
     let cache_dir = tempfile::tempdir().unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_goog"))
@@ -76,7 +76,7 @@ fn help_output_also_shows_a_newer_release() {
 }
 
 #[test]
-fn current_release_does_not_show_an_update_notice() {
+fn current_preview_release_does_not_show_an_update_notice() {
     let (releases_url, server) = serve_releases(format!(
         r#"[{{"tag_name":"v{}"}}]"#,
         env!("CARGO_PKG_VERSION")
@@ -92,7 +92,7 @@ fn current_release_does_not_show_an_update_notice() {
 }
 
 #[test]
-fn command_errors_also_show_a_known_newer_release() {
+fn command_errors_also_show_a_known_newer_canonical_release() {
     let (releases_url, server) = serve_releases(r#"[{"tag_name":"v999.0.0"}]"#);
     let cache_dir = tempfile::tempdir().unwrap();
     let cache_path = cache_dir.path().join("update-check.json");
@@ -150,7 +150,7 @@ fn serve_releases(body: impl Into<String>) -> (String, thread::JoinHandle<()>) {
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     assert!(
                         Instant::now() < deadline,
-                        "the CLI did not request the latest release"
+                        "the CLI did not request published releases"
                     );
                     thread::sleep(Duration::from_millis(10));
                 }
