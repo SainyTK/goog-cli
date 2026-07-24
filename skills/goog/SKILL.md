@@ -66,6 +66,12 @@ Delete it when the headless or automated run no longer needs it.
 - `goog drive upload` uploads a local file.
 - `goog drive convert` performs Office Conversion from an uploaded DOCX or XLSX file to a Document or Spreadsheet.
 - `goog drive mkdir` creates a folder.
+- `goog drive comments` lists a file's comments and replies.
+- `goog drive comment-create` creates an unanchored file comment.
+- `goog drive comment-edit` replaces comment content.
+- `goog drive comment-reply` replies to a file comment.
+- `goog drive comment-resolve` resolves a comment with an optional reply.
+- `goog drive comment-delete` permanently deletes a comment.
 - `goog drive trash` moves a file to Google Drive trash.
 
 Read [Google Drive](references/drive.md) before Drive work.

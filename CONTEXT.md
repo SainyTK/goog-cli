@@ -75,6 +75,20 @@ _Avoid_: Authenticate, connect, authorize
 A Google Drive resource that can contain files and other Folders.
 _Avoid_: Directory, collection
 
+**Comment**:
+Feedback attached to a Drive file, optionally associated with quoted content and containing zero or more Replies.
+Comments can belong to Documents, Spreadsheets, presentations, and other Drive files that support commenting.
+_Avoid_: Document comment, note
+
+**Reply**:
+A response attached to one Comment.
+_Avoid_: Comment response, thread message
+
+**Resolution**:
+A Reply action that marks its parent Comment resolved.
+An optional final reply can be included with the action.
+_Avoid_: Close, archive
+
 **Office Conversion**:
 The Drive operation that copies an uploaded DOCX file into a Document or an uploaded XLSX file into a Spreadsheet.
 Office Conversion creates the result in the source file's parent Folder and leaves the Office source unchanged.

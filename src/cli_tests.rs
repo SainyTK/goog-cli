@@ -673,6 +673,215 @@ fn drive_mkdir_requires_a_name_and_parent_folder() {
 }
 
 #[test]
+fn drive_comments_accepts_file_id_and_open_filter() {
+    let cli = parse(&["drive", "comments", "document-123", "--open"]).unwrap();
+
+    match cli.command {
+        Command::Drive {
+            command: DriveCommand::Comments { file_id, open },
+        } => {
+            assert_eq!(file_id, "document-123");
+            assert!(open);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn drive_comment_commands_reject_emoji_option() {
+    assert!(parse(&[
+        "drive",
+        "comment-create",
+        "document-123",
+        "--text",
+        "Please review.",
+        "--emoji",
+        "👀",
+    ])
+    .is_err());
+}
+
+#[test]
+fn drive_comment_reply_requires_comment_id_and_text() {
+    let cli = parse(&[
+        "drive",
+        "comment-reply",
+        "document-123",
+        "--comment-id",
+        "comment-456",
+        "--text",
+        "Updated as requested.",
+        "--mention",
+        "reviewer@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Drive {
+            command:
+                DriveCommand::CommentReply {
+                    file_id,
+                    comment_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(file_id, "document-123");
+            assert_eq!(comment_id, "comment-456");
+            assert_eq!(text, "Updated as requested.");
+            assert_eq!(mentions, vec!["reviewer@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&[
+        "drive",
+        "comment-reply",
+        "document-123",
+        "--comment-id",
+        "comment-456"
+    ])
+    .is_err());
+}
+
+#[test]
+fn drive_comment_create_accepts_mentions() {
+    let cli = parse(&[
+        "drive",
+        "comment-create",
+        "document-123",
+        "--text",
+        "Please review this.",
+        "--mention",
+        "reviewer@example.com",
+        "--mention",
+        "owner@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Drive {
+            command:
+                DriveCommand::CommentCreate {
+                    file_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(file_id, "document-123");
+            assert_eq!(text, "Please review this.");
+            assert_eq!(mentions, vec!["reviewer@example.com", "owner@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn drive_comment_edit_requires_comment_id_and_accepts_content_options() {
+    let cli = parse(&[
+        "drive",
+        "comment-edit",
+        "document-123",
+        "--comment-id",
+        "comment-456",
+        "--text",
+        "Updated comment.",
+        "--mention",
+        "reviewer@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Drive {
+            command:
+                DriveCommand::CommentEdit {
+                    file_id,
+                    comment_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(file_id, "document-123");
+            assert_eq!(comment_id, "comment-456");
+            assert_eq!(text, "Updated comment.");
+            assert_eq!(mentions, vec!["reviewer@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn drive_comment_delete_requires_comment_id() {
+    let cli = parse(&[
+        "drive",
+        "comment-delete",
+        "document-123",
+        "--comment-id",
+        "comment-456",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Drive {
+            command:
+                DriveCommand::CommentDelete {
+                    file_id,
+                    comment_id,
+                },
+        } => {
+            assert_eq!(file_id, "document-123");
+            assert_eq!(comment_id, "comment-456");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&["drive", "comment-delete", "document-123"]).is_err());
+}
+
+#[test]
+fn drive_comment_resolve_accepts_optional_reply_content() {
+    let cli = parse(&[
+        "drive",
+        "comment-resolve",
+        "document-123",
+        "--comment-id",
+        "comment-456",
+        "--text",
+        "Addressed.",
+        "--mention",
+        "reviewer@example.com",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Drive {
+            command:
+                DriveCommand::CommentResolve {
+                    file_id,
+                    comment_id,
+                    text,
+                    mentions,
+                },
+        } => {
+            assert_eq!(file_id, "document-123");
+            assert_eq!(comment_id, "comment-456");
+            assert_eq!(text.as_deref(), Some("Addressed."));
+            assert_eq!(mentions, vec!["reviewer@example.com"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    assert!(parse(&[
+        "drive",
+        "comment-resolve",
+        "document-123",
+        "--comment-id",
+        "comment-456",
+    ])
+    .is_ok());
+}
+
+#[test]
 fn docs_get_with_document_id() {
     let cli = parse(&["docs", "get", "document-123"]).unwrap();
     match cli.command {

@@ -112,6 +112,311 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
+struct AbsentQueryParam(&'static str);
+
+impl Match for AbsentQueryParam {
+    fn matches(&self, request: &Request) -> bool {
+        !request.url.query_pairs().any(|(name, _)| name == self.0)
+    }
+}
+
+#[tokio::test]
+async fn list_comments_returns_comment_and_reply_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "100"))
+        .and(query_param("includeDeleted", "false"))
+        .and(query_param("fields", DRIVE_COMMENTS_FIELDS))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{
+                "id": "comment-123",
+                "content": "Please clarify this section.",
+                "resolved": false,
+                "replies": [{
+                    "id": "reply-123",
+                    "content": "@reviewer@example.com I will update it.",
+                    "mentionedEmailAddresses": ["reviewer@example.com"]
+                }]
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comments = list_comments(&client, &options).await.unwrap();
+
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].id, "comment-123");
+    let replies = comments[0].replies.as_ref().unwrap();
+    assert_eq!(replies[0].id, "reply-123");
+    assert_eq!(
+        replies[0].mentioned_email_addresses.as_ref().unwrap()[0],
+        "reviewer@example.com"
+    );
+}
+
+#[tokio::test]
+async fn list_comments_fetches_every_page() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(AbsentQueryParam("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{"id": "comment-1", "resolved": false}],
+            "nextPageToken": "page-2"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(query_param("pageToken", "page-2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{"id": "comment-2", "resolved": true}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comments = list_comments(&client, &options).await.unwrap();
+
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0].id, "comment-1");
+    assert_eq!(comments[1].id, "comment-2");
+}
+
+#[tokio::test]
+async fn list_comments_open_filter_excludes_resolved_comments() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [
+                {"id": "comment-open", "resolved": false},
+                {"id": "comment-resolved", "resolved": true}
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListCommentsOptions::new("document-123")
+        .with_open_only()
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comments = list_comments(&client, &options).await.unwrap();
+
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].id, "comment-open");
+}
+
+#[tokio::test]
+async fn create_comment_reply_posts_text_and_returns_reply_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", DRIVE_COMMENT_REPLY_FIELDS))
+        .and(body_json(serde_json::json!({
+            "content": "Updated as requested."
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "content": "Updated as requested.",
+            "createdTime": "2026-07-24T10:00:00.000Z"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        CreateCommentReplyOptions::new("document-123", "comment-456", "Updated as requested.")
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let reply = create_comment_reply(&client, &options).await.unwrap();
+
+    assert_eq!(reply.id, "reply-789");
+    assert_eq!(reply.content.as_deref(), Some("Updated as requested."));
+}
+
+#[tokio::test]
+async fn create_comment_posts_content_and_returns_comment_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", DRIVE_COMMENT_MUTATION_FIELDS))
+        .and(body_json(serde_json::json!({
+            "content": "@reviewer@example.com 👀 Please review this."
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "comment-789",
+            "content": "@reviewer@example.com 👀 Please review this.",
+            "htmlContent": "<a href=\"mailto:reviewer@example.com\">reviewer@example.com</a> 👀 Please review this."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = CreateCommentOptions::new(
+        "document-123",
+        "@reviewer@example.com 👀 Please review this.",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comment = create_comment(&client, &options).await.unwrap();
+
+    assert_eq!(comment.id, "comment-789");
+    assert_eq!(
+        comment.content.as_deref(),
+        Some("@reviewer@example.com 👀 Please review this.")
+    );
+}
+
+#[tokio::test]
+async fn update_comment_patches_replacement_content() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/document-123/comments/comment-456"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", DRIVE_COMMENT_MUTATION_FIELDS))
+        .and(body_json(serde_json::json!({
+            "content": "@reviewer@example.com ✏️ Updated comment."
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "comment-456",
+            "content": "@reviewer@example.com ✏️ Updated comment."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = UpdateCommentOptions::new(
+        "document-123",
+        "comment-456",
+        "@reviewer@example.com ✏️ Updated comment.",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comment = update_comment(&client, &options).await.unwrap();
+
+    assert_eq!(comment.id, "comment-456");
+    assert_eq!(
+        comment.content.as_deref(),
+        Some("@reviewer@example.com ✏️ Updated comment.")
+    );
+}
+
+#[tokio::test]
+async fn delete_comment_removes_the_comment() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/document-123/comments/comment-456"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DeleteCommentOptions::new("document-123", "comment-456")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    delete_comment(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
+async fn resolve_comment_posts_resolve_action_and_optional_content() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", DRIVE_COMMENT_REPLY_FIELDS))
+        .and(body_json(serde_json::json!({
+            "action": "resolve",
+            "content": "@reviewer@example.com ✅ Addressed."
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "action": "resolve",
+            "content": "@reviewer@example.com ✅ Addressed."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ResolveCommentOptions::new("document-123", "comment-456")
+        .with_content("@reviewer@example.com ✅ Addressed.")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let reply = resolve_comment(&client, &options).await.unwrap();
+
+    assert_eq!(reply.action.as_deref(), Some("resolve"));
+    assert_eq!(
+        reply.content.as_deref(),
+        Some("@reviewer@example.com ✅ Addressed.")
+    );
+}
+
+#[tokio::test]
+async fn resolve_comment_omits_content_when_not_provided() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .and(body_json(serde_json::json!({"action": "resolve"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "action": "resolve"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ResolveCommentOptions::new("document-123", "comment-456")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let reply = resolve_comment(&client, &options).await.unwrap();
+
+    assert_eq!(reply.action.as_deref(), Some("resolve"));
+    assert!(reply.content.is_none());
+}
+
+#[test]
+fn comment_reply_fields_exclude_google_unsupported_assignee_field() {
+    assert!(!DRIVE_COMMENT_REPLY_FIELDS.contains("assigneeEmailAddress"));
+}
+
 #[tokio::test]
 async fn list_files_deserializes_a_single_page_response() {
     let server = MockServer::start().await;

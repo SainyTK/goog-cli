@@ -78,6 +78,32 @@ goog drive mkdir "Project files" --folder PARENT_FOLDER_ID
 The parent folder is required.
 Verify the new folder under the expected parent after creation.
 
+## Comments and replies
+
+```bash
+goog drive comments FILE_ID
+goog drive comments FILE_ID --open
+goog drive comment-create FILE_ID --text "Please review." --mention reviewer@example.com
+goog drive comment-edit FILE_ID --comment-id COMMENT_ID --text "Updated comment."
+goog drive comment-reply FILE_ID --comment-id COMMENT_ID --text "Updated as requested." --mention owner@example.com
+goog drive comment-resolve FILE_ID --comment-id COMMENT_ID
+goog drive comment-resolve FILE_ID --comment-id COMMENT_ID --text "Addressed."
+goog drive comment-delete FILE_ID --comment-id COMMENT_ID
+```
+
+`comments` emits one JSON object containing every non-deleted comment and its nested replies.
+It follows Drive pagination automatically.
+Use `--open` to include only unresolved comments.
+The command works with Google Docs, Sheets, Slides, and other Drive files that support comments.
+`comment-create` creates an unanchored file comment.
+Use the exact comment ID returned by `comments` when editing, replying, resolving, or deleting.
+Repeat `--mention EMAIL` to prefix email mentions.
+Include ordinary emoji directly in `--text` when desired.
+`comment-resolve` marks the Comment resolved and can create a final Reply in the same request.
+`comment-delete` permanently removes the target comment.
+List the comments again after every mutation.
+Use `comments --open` to verify that a resolved comment is absent.
+
 ## Move to trash
 
 ```bash
@@ -96,5 +122,9 @@ After moving the file to trash, verify that it no longer appears in the intended
 - The exact file or folder ID was resolved before mutation.
 - Uploads, conversions, and folders were listed back from the intended parent.
 - Downloads exist at the intended local destination and are readable.
+- Comment reads include the expected comment and nested replies.
+- Comment mutations were read back from the same file.
+- Resolved comments are absent from `comments --open`.
+- Deleted comments no longer appear in the default comment listing.
 - Trashed files no longer appear in their former location.
 - The final response includes the useful Drive ID or URL returned by the CLI.

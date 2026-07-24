@@ -10,7 +10,9 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::drive::{
-    CreateFolderOptions, DriveFile, OfficeConversionOptions, OfficeConversionTarget, DRIVE_SCOPE,
+    CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, DeleteCommentOptions,
+    DriveFile, ListCommentsOptions, OfficeConversionOptions, OfficeConversionTarget,
+    ResolveCommentOptions, UpdateCommentOptions, DRIVE_SCOPE,
 };
 
 use super::drive::*;
@@ -219,6 +221,303 @@ fn write_ndjson_uses_drive_api_field_names() {
     assert_eq!(
         rendered,
         "{\"name\":\"Roadmap\",\"id\":\"file-1\",\"parentIds\":[\"folder-123\",\"folder-456\"],\"mimeType\":\"application/vnd.google-apps.document\",\"modifiedTime\":\"2026-06-24T10:15:00.000Z\"}\n"
+    );
+}
+
+#[test]
+fn compose_comment_content_prefixes_mentions() {
+    assert_eq!(
+        compose_comment_content(
+            "👀 Please review this.",
+            &[
+                "reviewer@example.com".to_string(),
+                "owner@example.com".to_string(),
+            ],
+        ),
+        "@reviewer@example.com @owner@example.com 👀 Please review this."
+    );
+}
+
+#[tokio::test]
+async fn run_comment_create_outputs_the_created_comment_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(BodyContains(
+            "\"content\":\"@reviewer@example.com 👀 Please review this.\"".as_bytes(),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "comment-789",
+            "content": "@reviewer@example.com 👀 Please review this."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = CreateCommentOptions::new(
+        "document-123",
+        "@reviewer@example.com 👀 Please review this.",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_create_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"content\":\"@reviewer@example.com 👀 Please review this.\",\"id\":\"comment-789\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comment_edit_outputs_the_updated_comment_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/document-123/comments/comment-456"))
+        .and(BodyContains(
+            "\"content\":\"@reviewer@example.com ✏️ Updated comment.\"".as_bytes(),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "comment-456",
+            "content": "@reviewer@example.com ✏️ Updated comment."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = UpdateCommentOptions::new(
+        "document-123",
+        "comment-456",
+        "@reviewer@example.com ✏️ Updated comment.",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_edit_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"content\":\"@reviewer@example.com ✏️ Updated comment.\",\"id\":\"comment-456\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comment_delete_outputs_machine_readable_confirmation() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/document-123/comments/comment-456"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = DeleteCommentOptions::new("document-123", "comment-456")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_delete_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"commentId\":\"comment-456\",\"deleted\":true}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comment_resolve_outputs_the_resolution_reply_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .and(BodyContains(
+            "\"action\":\"resolve\",\"content\":\"✅ Addressed.\"".as_bytes(),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "action": "resolve",
+            "content": "✅ Addressed."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = ResolveCommentOptions::new("document-123", "comment-456")
+        .with_content("✅ Addressed.")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_resolve_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"action\":\"resolve\",\"content\":\"✅ Addressed.\",\"id\":\"reply-789\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comments_outputs_one_json_document_with_nested_replies() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{
+                "id": "comment-123",
+                "resolved": false,
+                "replies": [{"id": "reply-123", "content": "Done."}]
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comments_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"comments\":[{\"id\":\"comment-123\",\"replies\":[{\"content\":\"Done.\",\"id\":\"reply-123\"}],\"resolved\":false}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comments_preserves_empty_reply_and_mention_arrays() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{
+                "id": "comment-123",
+                "mentionedEmailAddresses": [],
+                "replies": []
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comments_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"comments\":[{\"id\":\"comment-123\",\"mentionedEmailAddresses\":[],\"replies\":[]}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comments_falls_back_and_maps_the_file_account() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{"id": "comment-123", "resolved": false}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comments_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "document-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_comment_reply_outputs_the_created_reply_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "content": "Updated as requested."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options =
+        CreateCommentReplyOptions::new("document-123", "comment-456", "Updated as requested.")
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_reply_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"content\":\"Updated as requested.\",\"id\":\"reply-789\"}\n"
     );
 }
 

@@ -278,6 +278,75 @@ pub enum DriveCommand {
         #[arg(long)]
         folder: String,
     },
+    /// Create an unanchored comment on a Google Drive file
+    CommentCreate {
+        /// Drive file ID
+        file_id: String,
+        /// Comment text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the comment
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Edit an existing Google Drive comment
+    CommentEdit {
+        /// Drive file ID
+        file_id: String,
+        /// Comment ID to edit
+        #[arg(long)]
+        comment_id: String,
+        /// Replacement comment text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the comment
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Delete an existing Google Drive comment
+    CommentDelete {
+        /// Drive file ID
+        file_id: String,
+        /// Comment ID to delete
+        #[arg(long)]
+        comment_id: String,
+    },
+    /// Resolve an existing Google Drive comment
+    CommentResolve {
+        /// Drive file ID
+        file_id: String,
+        /// Comment ID to resolve
+        #[arg(long)]
+        comment_id: String,
+        /// Optional reply text to include with the resolution
+        #[arg(long)]
+        text: Option<String>,
+        /// Email address to mention at the start of the reply
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// List comments and replies for a Google Drive file as JSON
+    Comments {
+        /// Drive file ID
+        file_id: String,
+        /// Include only unresolved comments
+        #[arg(long)]
+        open: bool,
+    },
+    /// Reply to a comment on a Google Drive file
+    CommentReply {
+        /// Drive file ID
+        file_id: String,
+        /// Comment ID to reply to
+        #[arg(long)]
+        comment_id: String,
+        /// Reply text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the reply
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
     /// Move a file to Google Drive trash
     Trash {
         /// Drive file ID to move to trash

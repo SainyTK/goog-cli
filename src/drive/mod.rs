@@ -22,6 +22,26 @@ const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
 pub(super) const DRIVE_FILES_FIELDS: &str =
     "nextPageToken,files(id,name,parents,mimeType,modifiedTime)";
+pub(super) const DRIVE_COMMENTS_FIELDS: &str = concat!(
+    "nextPageToken,comments(",
+    "id,kind,createdTime,modifiedTime,resolved,anchor,",
+    "quotedFileContent(mimeType,value),",
+    "author(displayName,kind,me,permissionId,photoLink,emailAddress),",
+    "content,htmlContent,deleted,mentionedEmailAddresses,assigneeEmailAddress,replies(",
+    "id,kind,createdTime,modifiedTime,action,",
+    "author(displayName,kind,me,permissionId,photoLink,emailAddress),",
+    "content,htmlContent,deleted,mentionedEmailAddresses))"
+);
+pub(super) const DRIVE_COMMENT_REPLY_FIELDS: &str = concat!(
+    "id,kind,createdTime,modifiedTime,action,",
+    "author(displayName,kind,me,permissionId,photoLink,emailAddress),",
+    "content,htmlContent,deleted"
+);
+pub(super) const DRIVE_COMMENT_MUTATION_FIELDS: &str = concat!(
+    "id,kind,createdTime,modifiedTime,",
+    "author(displayName,kind,me,permissionId,photoLink,emailAddress),",
+    "content,htmlContent,deleted"
+);
 pub(crate) const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 pub(crate) const GOOGLE_DOC_MIME_TYPE: &str = "application/vnd.google-apps.document";
 pub(crate) const GOOGLE_SHEET_MIME_TYPE: &str = "application/vnd.google-apps.spreadsheet";
@@ -71,6 +91,113 @@ pub struct FilesPage {
     pub files: Vec<DriveFile>,
     #[serde(rename = "nextPageToken")]
     pub next_page_token: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveCommentAuthor {
+    #[serde(rename = "displayName", skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub me: Option<bool>,
+    #[serde(rename = "permissionId", skip_serializing_if = "Option::is_none")]
+    pub permission_id: Option<String>,
+    #[serde(rename = "photoLink", skip_serializing_if = "Option::is_none")]
+    pub photo_link: Option<String>,
+    #[serde(rename = "emailAddress", skip_serializing_if = "Option::is_none")]
+    pub email_address: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveQuotedFileContent {
+    #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveCommentReply {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<DriveCommentAuthor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(rename = "createdTime", skip_serializing_if = "Option::is_none")]
+    pub created_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+    #[serde(rename = "htmlContent", skip_serializing_if = "Option::is_none")]
+    pub html_content: Option<String>,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(
+        rename = "mentionedEmailAddresses",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mentioned_email_addresses: Option<Vec<String>>,
+    #[serde(rename = "modifiedTime", skip_serializing_if = "Option::is_none")]
+    pub modified_time: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveComment {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
+    #[serde(
+        rename = "assigneeEmailAddress",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub assignee_email_address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<DriveCommentAuthor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(rename = "createdTime", skip_serializing_if = "Option::is_none")]
+    pub created_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+    #[serde(rename = "htmlContent", skip_serializing_if = "Option::is_none")]
+    pub html_content: Option<String>,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(
+        rename = "mentionedEmailAddresses",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mentioned_email_addresses: Option<Vec<String>>,
+    #[serde(rename = "modifiedTime", skip_serializing_if = "Option::is_none")]
+    pub modified_time: Option<String>,
+    #[serde(rename = "quotedFileContent", skip_serializing_if = "Option::is_none")]
+    pub quoted_file_content: Option<DriveQuotedFileContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replies: Option<Vec<DriveCommentReply>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommentsPage {
+    #[serde(default)]
+    comments: Vec<DriveComment>,
+    #[serde(rename = "nextPageToken")]
+    next_page_token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CommentContentRequest<'a> {
+    content: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct ResolveCommentRequest<'a> {
+    action: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -462,6 +589,258 @@ pub struct ListFilesOptions {
     files_url: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ListCommentsOptions {
+    pub file_id: String,
+    open_only: bool,
+    files_url: String,
+}
+
+impl ListCommentsOptions {
+    pub fn new(file_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            open_only: false,
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub fn with_open_only(mut self) -> Self {
+        self.open_only = true;
+        self
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self, page_token: Option<&str>) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments");
+        {
+            let mut query = url.query_pairs_mut();
+            query
+                .append_pair("pageSize", "100")
+                .append_pair("includeDeleted", "false")
+                .append_pair("fields", DRIVE_COMMENTS_FIELDS);
+            if let Some(page_token) = page_token {
+                query.append_pair("pageToken", page_token);
+            }
+        }
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateCommentOptions {
+    pub file_id: String,
+    pub content: String,
+    files_url: String,
+}
+
+impl CreateCommentOptions {
+    pub fn new(file_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            content: content.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments");
+        url.query_pairs_mut()
+            .append_pair("fields", DRIVE_COMMENT_MUTATION_FIELDS);
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateCommentReplyOptions {
+    pub file_id: String,
+    pub comment_id: String,
+    pub text: String,
+    files_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateCommentOptions {
+    pub file_id: String,
+    pub comment_id: String,
+    pub content: String,
+    files_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteCommentOptions {
+    pub file_id: String,
+    pub comment_id: String,
+    files_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolveCommentOptions {
+    pub file_id: String,
+    pub comment_id: String,
+    pub content: Option<String>,
+    files_url: String,
+}
+
+impl ResolveCommentOptions {
+    pub fn new(file_id: impl Into<String>, comment_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            comment_id: comment_id.into(),
+            content: None,
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub fn with_content(mut self, content: impl Into<String>) -> Self {
+        self.content = Some(content.into());
+        self
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments")
+            .push(&self.comment_id)
+            .push("replies");
+        url.query_pairs_mut()
+            .append_pair("fields", DRIVE_COMMENT_REPLY_FIELDS);
+        Ok(url)
+    }
+}
+
+impl DeleteCommentOptions {
+    pub fn new(file_id: impl Into<String>, comment_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            comment_id: comment_id.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments")
+            .push(&self.comment_id);
+        Ok(url)
+    }
+}
+
+impl UpdateCommentOptions {
+    pub fn new(
+        file_id: impl Into<String>,
+        comment_id: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        Self {
+            file_id: file_id.into(),
+            comment_id: comment_id.into(),
+            content: content.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments")
+            .push(&self.comment_id);
+        url.query_pairs_mut()
+            .append_pair("fields", DRIVE_COMMENT_MUTATION_FIELDS);
+        Ok(url)
+    }
+}
+
+impl CreateCommentReplyOptions {
+    pub fn new(
+        file_id: impl Into<String>,
+        comment_id: impl Into<String>,
+        text: impl Into<String>,
+    ) -> Self {
+        Self {
+            file_id: file_id.into(),
+            comment_id: comment_id.into(),
+            text: text.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments")
+            .push(&self.comment_id)
+            .push("replies");
+        url.query_pairs_mut()
+            .append_pair("fields", DRIVE_COMMENT_REPLY_FIELDS);
+        Ok(url)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ListFilesMode {
     Files,
@@ -629,6 +1008,137 @@ pub async fn list_files<S: AccountStore>(
         .map_err(DriveError::Auth)?;
 
     parse_files_response(response).await
+}
+
+pub async fn list_comments<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ListCommentsOptions,
+) -> Result<Vec<DriveComment>, DriveError> {
+    let mut comments = Vec::new();
+    let mut page_token = None;
+
+    loop {
+        let response = client
+            .send_with_scopes(
+                client.get(options.request_url(page_token.as_deref())?),
+                DRIVE_SCOPES,
+            )
+            .await
+            .map_err(DriveError::Auth)?;
+        let response = ensure_success_response(response).await?;
+        let mut page = response
+            .json::<CommentsPage>()
+            .await
+            .map_err(|error| DriveError::InvalidResponse(error.to_string()))?;
+        if options.open_only {
+            page.comments
+                .retain(|comment| comment.resolved != Some(true));
+        }
+        comments.append(&mut page.comments);
+        match page.next_page_token {
+            Some(token) => page_token = Some(token),
+            None => return Ok(comments),
+        }
+    }
+}
+
+pub async fn create_comment<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CreateCommentOptions,
+) -> Result<DriveComment, DriveError> {
+    let body = CommentContentRequest {
+        content: &options.content,
+    };
+    let response = client
+        .send_with_scopes(
+            client.post(options.request_url()?).json(&body),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<DriveComment>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
+}
+
+pub async fn create_comment_reply<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CreateCommentReplyOptions,
+) -> Result<DriveCommentReply, DriveError> {
+    let body = CommentContentRequest {
+        content: &options.text,
+    };
+    let response = client
+        .send_with_scopes(
+            client.post(options.request_url()?).json(&body),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<DriveCommentReply>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
+}
+
+pub async fn update_comment<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateCommentOptions,
+) -> Result<DriveComment, DriveError> {
+    let body = CommentContentRequest {
+        content: &options.content,
+    };
+    let response = client
+        .send_with_scopes(
+            client
+                .request(Method::PATCH, options.request_url()?)
+                .json(&body),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<DriveComment>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
+}
+
+pub async fn delete_comment<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DeleteCommentOptions,
+) -> Result<(), DriveError> {
+    let response = client
+        .send_with_scopes(client.delete(options.request_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response).await?;
+    Ok(())
+}
+
+pub async fn resolve_comment<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ResolveCommentOptions,
+) -> Result<DriveCommentReply, DriveError> {
+    let body = ResolveCommentRequest {
+        action: "resolve",
+        content: options.content.as_deref(),
+    };
+    let response = client
+        .send_with_scopes(
+            client.post(options.request_url()?).json(&body),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<DriveCommentReply>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
 
 pub async fn create_folder<S: AccountStore>(

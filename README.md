@@ -166,10 +166,23 @@ goog drive convert OFFICE_FILE_ID --to google-doc
 goog drive convert OFFICE_FILE_ID --to google-sheet
 goog drive trash FILE_ID
 goog drive download FILE_ID --output ./report.pdf
+goog drive comments FILE_ID
+goog drive comments FILE_ID --open
+goog drive comment-create FILE_ID --text "Please review." --mention reviewer@example.com
+goog drive comment-edit FILE_ID --comment-id COMMENT_ID --text "Updated comment."
+goog drive comment-reply FILE_ID --comment-id COMMENT_ID --text "Updated as requested." --mention owner@example.com
+goog drive comment-resolve FILE_ID --comment-id COMMENT_ID --text "Addressed."
+goog drive comment-delete FILE_ID --comment-id COMMENT_ID
 ```
 
 Drive listings exclude soft-deleted items by default.
 Use `--show-all` to include them.
+`drive comments` fetches every comment page and emits one JSON object containing comments and their replies.
+Use `--open` to keep only unresolved comments.
+Comments are Drive resources, so the commands work with Google Docs, Sheets, Slides, and other supported Drive files.
+Repeat `--mention EMAIL` to prefix email mentions.
+Include ordinary emoji directly in `--text` when desired.
+`comment-resolve` accepts an optional reply, while `comment-delete` permanently removes the comment.
 
 ### Docs
 

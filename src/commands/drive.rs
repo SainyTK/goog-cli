@@ -14,10 +14,13 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{DriveCommand, DriveListType, DriveOfficeConversionTarget};
 use crate::drive::{
-    convert_office_file, create_folder, download, list_files, trash_file, upload,
-    CreateFolderOptions, CreatedFolder, DownloadFileOptions, DownloadedFile, DriveError, DriveFile,
-    DriveFileOperationOptions, ListFilesOptions, OfficeConversionOptions, OfficeConversionResult,
-    OfficeConversionTarget, UploadFileOptions, UploadedFile, DRIVE_FOLDER_MIME_TYPE,
+    convert_office_file, create_comment, create_comment_reply, create_folder, delete_comment,
+    download, list_comments, list_files, resolve_comment, trash_file, update_comment, upload,
+    CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, CreatedFolder,
+    DeleteCommentOptions, DownloadFileOptions, DownloadedFile, DriveComment, DriveCommentReply,
+    DriveError, DriveFile, DriveFileOperationOptions, ListCommentsOptions, ListFilesOptions,
+    OfficeConversionOptions, OfficeConversionResult, OfficeConversionTarget, ResolveCommentOptions,
+    UpdateCommentOptions, UploadFileOptions, UploadedFile, DRIVE_FOLDER_MIME_TYPE,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -30,6 +33,19 @@ const SHEETS_TABLE_HEADER: &str = "NAME\tSPREADSHEET ID\tPARENT FOLDER IDS\tMODI
 const SLIDES_TABLE_HEADER: &str = "NAME\tPRESENTATION ID\tPARENT FOLDER IDS\tMODIFIED";
 
 type DriveResult<T> = std::result::Result<T, DriveError>;
+
+pub(super) fn compose_comment_content(text: &str, mentions: &[String]) -> String {
+    let mention_parts = mentions.iter().filter_map(|email| {
+        let email = email.trim().trim_start_matches('@');
+        (!email.is_empty()).then(|| format!("@{email}"))
+    });
+    let text = text.trim();
+
+    mention_parts
+        .chain((!text.is_empty()).then_some(text.to_string()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DriveListKind {
@@ -149,6 +165,119 @@ pub fn run<S: AccountStore>(
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             let options = CreateFolderOptions::new(name, folder);
             runtime.block_on(run_mkdir_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentCreate {
+            file_id,
+            text,
+            mentions,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let content = compose_comment_content(&text, &mentions);
+            anyhow::ensure!(!content.is_empty(), "comment content cannot be empty");
+            let options = CreateCommentOptions::new(file_id, content);
+            runtime.block_on(run_comment_create_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentEdit {
+            file_id,
+            comment_id,
+            text,
+            mentions,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let content = compose_comment_content(&text, &mentions);
+            anyhow::ensure!(!content.is_empty(), "comment content cannot be empty");
+            let options = UpdateCommentOptions::new(file_id, comment_id, content);
+            runtime.block_on(run_comment_edit_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentDelete {
+            file_id,
+            comment_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let options = DeleteCommentOptions::new(file_id, comment_id);
+            runtime.block_on(run_comment_delete_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentResolve {
+            file_id,
+            comment_id,
+            text,
+            mentions,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let content = compose_comment_content(text.as_deref().unwrap_or_default(), &mentions);
+            let mut options = ResolveCommentOptions::new(file_id, comment_id);
+            if !content.is_empty() {
+                options = options.with_content(content);
+            }
+            runtime.block_on(run_comment_resolve_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::Comments { file_id, open } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let mut options = ListCommentsOptions::new(file_id);
+            if open {
+                options = options.with_open_only();
+            }
+            runtime.block_on(run_comments_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentReply {
+            file_id,
+            comment_id,
+            text,
+            mentions,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let content = compose_comment_content(&text, &mentions);
+            anyhow::ensure!(!content.is_empty(), "reply content cannot be empty");
+            let options = CreateCommentReplyOptions::new(file_id, comment_id, content);
+            runtime.block_on(run_comment_reply_unified_to(
                 config,
                 store,
                 account_override,
@@ -404,6 +533,165 @@ pub(super) async fn run_upload_to<S: AccountStore>(
 
     writeln!(out, "{}\t{}", uploaded.id, uploaded.web_view_link)
         .context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comments_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: ListCommentsOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let comments = list_comments_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to list Google Drive comments")?;
+
+    serde_json::to_writer(&mut *out, &serde_json::json!({"comments": comments}))
+        .context("failed to serialize Google Drive comments")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_create_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: CreateCommentOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let comment = create_comment_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to create Google Drive comment")?;
+
+    serde_json::to_writer(&mut *out, &comment)
+        .context("failed to serialize Google Drive comment")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_edit_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: UpdateCommentOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let comment = update_comment_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to edit Google Drive comment")?;
+
+    serde_json::to_writer(&mut *out, &comment)
+        .context("failed to serialize Google Drive comment")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_delete_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: DeleteCommentOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    delete_comment_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to delete Google Drive comment")?;
+
+    serde_json::to_writer(
+        &mut *out,
+        &serde_json::json!({"commentId": options.comment_id, "deleted": true}),
+    )
+    .context("failed to serialize Google Drive comment deletion")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_resolve_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: ResolveCommentOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let reply = resolve_comment_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to resolve Google Drive comment")?;
+
+    serde_json::to_writer(&mut *out, &reply)
+        .context("failed to serialize Google Drive resolution reply")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_reply_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: CreateCommentReplyOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let reply = create_comment_reply_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to reply to Google Drive comment")?;
+
+    serde_json::to_writer(&mut *out, &reply)
+        .context("failed to serialize Google Drive comment reply")?;
+    writeln!(out).context("failed to write output")?;
     Ok(())
 }
 
@@ -841,6 +1129,194 @@ async fn upload_with_drive_unified_access<S: AccountStore>(
         is_target_access_failure,
     )
     .await
+}
+
+async fn list_comments_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &ListCommentsOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<Vec<DriveComment>> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, Vec<DriveComment>, DriveError> {
+            Box::pin(list_comments_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn create_comment_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &CreateCommentOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<DriveComment> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DriveComment, DriveError> {
+            Box::pin(create_comment_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn create_comment_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &CreateCommentOptions,
+    account: String,
+) -> DriveResult<DriveComment> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    create_comment(&client, options).await
+}
+
+async fn update_comment_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &UpdateCommentOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<DriveComment> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DriveComment, DriveError> {
+            Box::pin(update_comment_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn update_comment_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &UpdateCommentOptions,
+    account: String,
+) -> DriveResult<DriveComment> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    update_comment(&client, options).await
+}
+
+async fn delete_comment_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &DeleteCommentOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<()> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, (), DriveError> {
+            Box::pin(delete_comment_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn delete_comment_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &DeleteCommentOptions,
+    account: String,
+) -> DriveResult<()> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    delete_comment(&client, options).await
+}
+
+async fn resolve_comment_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &ResolveCommentOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<DriveCommentReply> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DriveCommentReply, DriveError> {
+            Box::pin(resolve_comment_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn resolve_comment_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &ResolveCommentOptions,
+    account: String,
+) -> DriveResult<DriveCommentReply> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    resolve_comment(&client, options).await
+}
+
+async fn list_comments_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &ListCommentsOptions,
+    account: String,
+) -> DriveResult<Vec<DriveComment>> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    list_comments(&client, options).await
+}
+
+async fn create_comment_reply_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &CreateCommentReplyOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<DriveCommentReply> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DriveCommentReply, DriveError> {
+            Box::pin(create_comment_reply_as_account(
+                config, store, options, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn create_comment_reply_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &CreateCommentReplyOptions,
+    account: String,
+) -> DriveResult<DriveCommentReply> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    create_comment_reply(&client, options).await
 }
 
 async fn create_folder_with_drive_unified_access<S: AccountStore>(
