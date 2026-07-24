@@ -953,6 +953,69 @@ async fn create_folder_sends_drive_folder_metadata_and_returns_its_location() {
 }
 
 #[tokio::test]
+async fn office_conversion_copies_source_as_a_document_and_returns_its_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-document-123/copy"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "id,webViewLink"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(body_json(serde_json::json!({
+            "mimeType": GOOGLE_DOC_MIME_TYPE
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "native-document-456",
+            "webViewLink": "https://docs.google.com/document/d/native-document-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        OfficeConversionOptions::new("office-document-123", OfficeConversionTarget::Document)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let converted = convert_office_file(&client, &options).await.unwrap();
+
+    assert_eq!(converted.id, "native-document-456");
+    assert_eq!(
+        converted.web_view_link,
+        "https://docs.google.com/document/d/native-document-456/edit"
+    );
+}
+
+#[tokio::test]
+async fn office_conversion_can_create_a_spreadsheet() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-spreadsheet-123/copy"))
+        .and(BodyContains(
+            br#""mimeType":"application/vnd.google-apps.spreadsheet""#,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "native-spreadsheet-456",
+            "webViewLink": "https://docs.google.com/spreadsheets/d/native-spreadsheet-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = OfficeConversionOptions::new(
+        "office-spreadsheet-123",
+        OfficeConversionTarget::Spreadsheet,
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let converted = convert_office_file(&client, &options).await.unwrap();
+
+    assert_eq!(converted.id, "native-spreadsheet-456");
+}
+
+#[tokio::test]
 async fn upload_small_file_uses_multipart_upload_and_returns_drive_location() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -1188,4 +1251,30 @@ async fn delete_file_removes_the_staged_drive_resource() {
         .with_files_url(format!("{}/drive/v3/files", server.uri()));
 
     delete_file(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
+async fn trash_file_marks_the_drive_resource_as_trashed() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/office-document-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(body_json(serde_json::json!({
+            "trashed": true
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "office-document-123",
+            "trashed": true
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("office-document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    trash_file(&client, &options).await.unwrap();
 }

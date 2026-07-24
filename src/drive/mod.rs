@@ -7,7 +7,7 @@ use futures_util::{stream, StreamExt};
 use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, LOCATION};
 use std::path::{Path, PathBuf};
 
-use reqwest::{Body, Response, StatusCode};
+use reqwest::{Body, Method, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio_util::io::ReaderStream;
@@ -28,6 +28,7 @@ pub(crate) const GOOGLE_SHEET_MIME_TYPE: &str = "application/vnd.google-apps.spr
 pub(crate) const GOOGLE_SLIDES_MIME_TYPE: &str = "application/vnd.google-apps.presentation";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 const CREATE_FOLDER_RESPONSE_FIELDS: &str = "id,webViewLink";
+const CONVERT_FILE_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
 const DEFAULT_UPLOAD_MIME_TYPE: &str = "application/octet-stream";
@@ -145,6 +146,65 @@ pub struct CreatedFolder {
     pub id: String,
     #[serde(rename = "webViewLink")]
     pub web_view_link: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct OfficeConversionResult {
+    pub id: String,
+    #[serde(rename = "webViewLink")]
+    pub web_view_link: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfficeConversionTarget {
+    Document,
+    Spreadsheet,
+}
+
+impl OfficeConversionTarget {
+    fn mime_type(self) -> &'static str {
+        match self {
+            Self::Document => GOOGLE_DOC_MIME_TYPE,
+            Self::Spreadsheet => GOOGLE_SHEET_MIME_TYPE,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OfficeConversionOptions {
+    pub file_id: String,
+    pub target: OfficeConversionTarget,
+    files_url: String,
+}
+
+impl OfficeConversionOptions {
+    pub fn new(file_id: impl Into<String>, target: OfficeConversionTarget) -> Self {
+        Self {
+            file_id: file_id.into(),
+            target,
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("copy");
+        url.query_pairs_mut()
+            .append_pair("fields", CONVERT_FILE_RESPONSE_FIELDS)
+            .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -384,6 +444,12 @@ struct CreateFolderMetadata<'a> {
     #[serde(rename = "mimeType")]
     mime_type: &'static str,
     parents: [&'a str; 1],
+}
+
+#[derive(Debug, Serialize)]
+struct ConvertFileMetadata {
+    #[serde(rename = "mimeType")]
+    mime_type: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -740,6 +806,26 @@ where
     }
 }
 
+pub async fn convert_office_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &OfficeConversionOptions,
+) -> Result<OfficeConversionResult, DriveError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .post(options.request_url()?)
+                .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
+                .json(&ConvertFileMetadata {
+                    mime_type: options.target.mime_type(),
+                }),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+
+    parse_office_conversion_response(response).await
+}
+
 async fn upload_multipart<S, F>(
     client: &AuthClient<'_, S>,
     options: &UploadFileOptions,
@@ -923,6 +1009,24 @@ pub async fn delete_file<S: AccountStore>(
     Ok(())
 }
 
+pub async fn trash_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DriveFileOperationOptions,
+) -> Result<(), DriveError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .request(Method::PATCH, options.file_url()?)
+                .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
+                .json(&serde_json::json!({ "trashed": true })),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response).await?;
+    Ok(())
+}
+
 fn multipart_body(header: Bytes, file: tokio::fs::File, footer: Bytes) -> Body {
     let header = stream::once(async move { Ok::<Bytes, std::io::Error>(header) });
     let file = ReaderStream::new(file);
@@ -958,6 +1062,16 @@ async fn parse_uploaded_file_response(response: Response) -> Result<UploadedFile
     let response = ensure_success_response(response).await?;
     response
         .json::<UploadedFile>()
+        .await
+        .map_err(|e| DriveError::InvalidResponse(e.to_string()))
+}
+
+async fn parse_office_conversion_response(
+    response: Response,
+) -> Result<OfficeConversionResult, DriveError> {
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<OfficeConversionResult>()
         .await
         .map_err(|e| DriveError::InvalidResponse(e.to_string()))
 }
