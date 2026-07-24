@@ -35,7 +35,7 @@ Every reference is one jump from this file and is self-contained.
 - [Google Docs](references/docs.md): Create, copy, inspect, edit, style, compare, export, and visually verify documents.
 - [Google Sheets](references/sheets.md): Create, read, write, structure, format, and visually verify spreadsheets.
 - [Google Slides](references/slides.md): Plan, create, edit, inspect, render, and visually verify presentations.
-- [Google Drive](references/drive.md): List, browse, upload, download, create folders, and permanently delete files.
+- [Google Drive](references/drive.md): List, browse, upload, download, convert Office files, create folders, and move files to trash.
 - [Google Calendar](references/calendar.md): Manage calendars, calendar-list entries, events, sharing rules, colors, and free-busy queries.
 
 Do not search for nested reference files.
@@ -64,6 +64,7 @@ Delete it when the headless or automated run no longer needs it.
 - `goog drive ls` lists or browses files and folders.
 - `goog drive download` downloads a Drive file.
 - `goog drive upload` uploads a local file.
+- `goog drive convert` performs Office Conversion from an uploaded DOCX or XLSX file to a Document or Spreadsheet.
 - `goog drive mkdir` creates a folder.
 - `goog drive comments` lists a file's comments and replies.
 - `goog drive comment-create` creates an unanchored file comment.
@@ -71,7 +72,7 @@ Delete it when the headless or automated run no longer needs it.
 - `goog drive comment-reply` replies to a file comment.
 - `goog drive comment-resolve` resolves a comment with an optional reply.
 - `goog drive comment-delete` permanently deletes a comment.
-- `goog drive delete` permanently deletes a file.
+- `goog drive trash` moves a file to Google Drive trash.
 
 Read [Google Drive](references/drive.md) before Drive work.
 

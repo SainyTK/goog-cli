@@ -41,6 +41,9 @@ goog drive download FILE_ID --output /absolute/path/to/file
 ```
 
 Confirm the file ID and destination before downloading.
+Native Google Docs download as editable `.docx` files, Google Sheets as `.xlsx`, and Google Slides as `.pptx`.
+When `--output` is omitted, `goog` adds the matching Office extension to the Drive file name.
+An explicit `--output` path is used exactly as provided.
 Inspect the resulting local file before reporting success.
 
 ## Upload
@@ -53,6 +56,18 @@ goog drive upload /absolute/path/to/file --folder FOLDER_ID
 Confirm the local path exists and is the intended file.
 Use `--folder` to place the upload in a specific Drive folder.
 Read the returned resource information and verify the uploaded item with `goog drive ls`.
+
+## Convert an Office file
+
+```bash
+goog drive convert DOCX_FILE_ID --to google-doc
+goog drive convert XLSX_FILE_ID --to google-sheet
+```
+
+The source must already be stored in Drive.
+Office Conversion creates a new Document or Spreadsheet in the source file's parent Folder and leaves the Office source unchanged.
+The command prints the new Document or Spreadsheet ID and URL separated by a tab.
+Verify the result with `goog drive ls --folder PARENT_FOLDER_ID`, then read it with `goog docs get` or `goog sheets get`.
 
 ## Create a folder
 
@@ -89,26 +104,27 @@ Include ordinary emoji directly in `--text` when desired.
 List the comments again after every mutation.
 Use `comments --open` to verify that a resolved comment is absent.
 
-## Permanently delete
+## Move to trash
 
 ```bash
-goog drive delete FILE_ID
+goog drive trash FILE_ID
 ```
 
-This command permanently deletes the target.
+This command moves the target to Google Drive trash so it can still be recovered.
 Resolve the exact file ID with a read-only listing before running it.
-Do not use a name match alone as deletion authority.
-After deletion, verify that the item no longer appears in the intended location.
+Do not use a name match alone as trash authority.
+The CLI does not expose permanent deletion.
+After moving the file to trash, verify that it no longer appears in the intended location.
 
 ## Completion gate
 
 - The command ran against the intended account.
 - The exact file or folder ID was resolved before mutation.
-- Uploads and folders were listed back from the intended parent.
+- Uploads, conversions, and folders were listed back from the intended parent.
 - Downloads exist at the intended local destination and are readable.
 - Comment reads include the expected comment and nested replies.
 - Comment mutations were read back from the same file.
 - Resolved comments are absent from `comments --open`.
 - Deleted comments no longer appear in the default comment listing.
-- Permanent deletion was explicitly requested and verified.
+- Trashed files no longer appear in their former location.
 - The final response includes the useful Drive ID or URL returned by the CLI.

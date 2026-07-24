@@ -12,13 +12,14 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{DriveCommand, DriveListType};
+use crate::cli::{DriveCommand, DriveListType, DriveOfficeConversionTarget};
 use crate::drive::{
-    create_comment, create_comment_reply, create_folder, delete_comment, delete_file, download,
-    list_comments, list_files, resolve_comment, update_comment, upload, CreateCommentOptions,
-    CreateCommentReplyOptions, CreateFolderOptions, CreatedFolder, DeleteCommentOptions,
-    DownloadFileOptions, DownloadedFile, DriveError, DriveFile, DriveFileOperationOptions,
-    ListCommentsOptions, ListFilesOptions, ResolveCommentOptions, UpdateCommentOptions,
+    convert_office_file, create_comment, create_comment_reply, create_folder, delete_comment,
+    download, list_comments, list_files, resolve_comment, trash_file, update_comment, upload,
+    CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, CreatedFolder,
+    DeleteCommentOptions, DownloadFileOptions, DownloadedFile, DriveError, DriveFile,
+    DriveFileOperationOptions, ListCommentsOptions, ListFilesOptions, OfficeConversionOptions,
+    OfficeConversionResult, OfficeConversionTarget, ResolveCommentOptions, UpdateCommentOptions,
     UploadFileOptions, UploadedFile, DRIVE_FOLDER_MIME_TYPE,
 };
 
@@ -146,6 +147,19 @@ pub fn run<S: AccountStore>(
                 ))
             }
         }
+        DriveCommand::Convert { file_id, to } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let options = OfficeConversionOptions::new(file_id, to.into());
+            runtime.block_on(run_convert_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
         DriveCommand::Mkdir { name, folder } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -272,16 +286,27 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DriveCommand::Delete { file_id } => {
+        DriveCommand::Trash { file_id } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            let client = AuthClient::from_config(config.clone(), store, account_override)?;
-            runtime.block_on(run_delete_to(
-                &client,
-                &file_id,
+            runtime.block_on(run_trash_unified_to(
+                config,
+                store,
+                account_override,
+                file_id,
                 &mut std::io::stdout(),
                 None,
+                None,
             ))
+        }
+    }
+}
+
+impl From<DriveOfficeConversionTarget> for OfficeConversionTarget {
+    fn from(value: DriveOfficeConversionTarget) -> Self {
+        match value {
+            DriveOfficeConversionTarget::GoogleDoc => Self::Document,
+            DriveOfficeConversionTarget::GoogleSheet => Self::Spreadsheet,
         }
     }
 }
@@ -511,23 +536,6 @@ pub(super) async fn run_upload_to<S: AccountStore>(
     Ok(())
 }
 
-pub(super) async fn run_delete_to<S: AccountStore>(
-    client: &AuthClient<'_, S>,
-    file_id: &str,
-    out: &mut impl Write,
-    files_url: Option<&str>,
-) -> Result<()> {
-    let mut options = DriveFileOperationOptions::new(file_id);
-    if let Some(files_url) = files_url {
-        options = options.with_files_url(files_url);
-    }
-    delete_file(client, &options)
-        .await
-        .context("failed to delete Google Drive file")?;
-    writeln!(out, "Deleted\t{file_id}").context("failed to write output")?;
-    Ok(())
-}
-
 pub(super) async fn run_comments_unified_to<S: AccountStore>(
     config: &Config,
     store: &S,
@@ -708,6 +716,60 @@ pub(super) async fn run_mkdir_unified_to<S: AccountStore>(
     .context("failed to create Google Drive folder")?;
 
     writeln!(out, "{}\t{}", folder.id, folder.web_view_link).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_convert_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: OfficeConversionOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let converted = convert_office_file_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to convert Google Drive file")?;
+
+    writeln!(out, "{}\t{}", converted.id, converted.web_view_link)
+        .context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_trash_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    file_id: String,
+    out: &mut impl Write,
+    files_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let mut options = DriveFileOperationOptions::new(file_id.clone());
+    if let Some(files_url) = files_url {
+        options = options.with_files_url(files_url);
+    }
+    let target_resource_key = resource_key("drive", &file_id);
+    trash_file_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to move Google Drive file to trash")?;
+
+    writeln!(out, "Trashed\t{file_id}").context("failed to write output")?;
     Ok(())
 }
 
@@ -1276,6 +1338,70 @@ async fn create_folder_with_drive_unified_access<S: AccountStore>(
         is_target_access_failure,
     )
     .await
+}
+
+async fn convert_office_file_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &OfficeConversionOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<OfficeConversionResult> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, OfficeConversionResult, DriveError> {
+            Box::pin(convert_office_file_as_account(
+                config, store, options, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn trash_file_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &DriveFileOperationOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<()> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, (), DriveError> {
+            Box::pin(trash_file_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn trash_file_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &DriveFileOperationOptions,
+    account: String,
+) -> DriveResult<()> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    trash_file(&client, options).await
+}
+
+async fn convert_office_file_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &OfficeConversionOptions,
+    account: String,
+) -> DriveResult<OfficeConversionResult> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    convert_office_file(&client, options).await
 }
 
 async fn create_folder_as_account<S: AccountStore>(

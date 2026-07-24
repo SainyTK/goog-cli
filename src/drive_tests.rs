@@ -834,6 +834,17 @@ async fn download_streams_binary_response_to_explicit_output_path() {
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-1"))
         .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "name,mimeType"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "download.bin",
+            "mimeType": "application/octet-stream"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .and(header("authorization", "Bearer drive-access"))
         .and(query_param("alt", "media"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"hello\x00drive".to_vec()))
         .expect(1)
@@ -862,6 +873,17 @@ async fn download_streams_binary_response_to_explicit_output_path() {
 #[tokio::test]
 async fn download_requests_supports_all_drives_for_shared_drive_files() {
     let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/shared-file-1"))
+        .and(query_param("fields", "name,mimeType"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "shared.bin",
+            "mimeType": "application/octet-stream"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/shared-file-1"))
         .and(query_param("alt", "media"))
@@ -911,9 +933,10 @@ async fn download_uses_drive_file_name_in_current_directory_by_default() {
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-1"))
         .and(header("authorization", "Bearer drive-access"))
-        .and(query_param("fields", "name"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "name": "report.txt"
+            "name": "report.txt",
+            "mimeType": "text/plain"
         })))
         .expect(1)
         .mount(&server)
@@ -948,11 +971,75 @@ async fn download_uses_drive_file_name_in_current_directory_by_default() {
 }
 
 #[tokio::test]
+async fn download_uses_editable_office_extensions_for_documents_spreadsheets_and_presentations() {
+    let server = MockServer::start().await;
+    let cases = [
+        (
+            "document-123",
+            "Quarterly plan",
+            GOOGLE_DOC_MIME_TYPE,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "Quarterly plan.docx",
+        ),
+        (
+            "spreadsheet-123",
+            "Financial model",
+            GOOGLE_SHEET_MIME_TYPE,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Financial model.xlsx",
+        ),
+        (
+            "presentation-123",
+            "Board review",
+            GOOGLE_SLIDES_MIME_TYPE,
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "Board review.pptx",
+        ),
+    ];
+    for (file_id, name, google_mime_type, export_mime_type, _) in cases {
+        Mock::given(method("GET"))
+            .and(path(format!("/drive/v3/files/{file_id}")))
+            .and(query_param("fields", "name,mimeType"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "name": name,
+                "mimeType": google_mime_type
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/drive/v3/files/{file_id}/export")))
+            .and(query_param("mimeType", export_mime_type))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PK\x03\x04office".to_vec()))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    for (file_id, _, _, _, expected_name) in cases {
+        let options = DownloadFileOptions::new(file_id)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+        let downloaded = download(&client, &options, |_| {}).await.unwrap();
+
+        assert_eq!(
+            downloaded.path.canonicalize().unwrap(),
+            temp.path().join(expected_name).canonicalize().unwrap()
+        );
+        assert_eq!(std::fs::read(downloaded.path).unwrap(), b"PK\x03\x04office");
+    }
+}
+
+#[tokio::test]
 async fn download_returns_drive_error_for_not_found_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/missing-file"))
-        .and(query_param("alt", "media"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(404).set_body_string("not found"))
         .expect(1)
         .mount(&server)
@@ -975,7 +1062,7 @@ async fn download_returns_drive_error_for_permission_denied_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/private-file"))
-        .and(query_param("alt", "media"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
         .expect(1)
         .mount(&server)
@@ -1164,6 +1251,69 @@ async fn create_folder_sends_drive_folder_metadata_and_returns_its_location() {
         folder.web_view_link,
         "https://drive.google.com/drive/folders/folder-456"
     );
+}
+
+#[tokio::test]
+async fn office_conversion_copies_source_as_a_document_and_returns_its_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-document-123/copy"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "id,webViewLink"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(body_json(serde_json::json!({
+            "mimeType": GOOGLE_DOC_MIME_TYPE
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "native-document-456",
+            "webViewLink": "https://docs.google.com/document/d/native-document-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        OfficeConversionOptions::new("office-document-123", OfficeConversionTarget::Document)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let converted = convert_office_file(&client, &options).await.unwrap();
+
+    assert_eq!(converted.id, "native-document-456");
+    assert_eq!(
+        converted.web_view_link,
+        "https://docs.google.com/document/d/native-document-456/edit"
+    );
+}
+
+#[tokio::test]
+async fn office_conversion_can_create_a_spreadsheet() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-spreadsheet-123/copy"))
+        .and(BodyContains(
+            br#""mimeType":"application/vnd.google-apps.spreadsheet""#,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "native-spreadsheet-456",
+            "webViewLink": "https://docs.google.com/spreadsheets/d/native-spreadsheet-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = OfficeConversionOptions::new(
+        "office-spreadsheet-123",
+        OfficeConversionTarget::Spreadsheet,
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let converted = convert_office_file(&client, &options).await.unwrap();
+
+    assert_eq!(converted.id, "native-spreadsheet-456");
 }
 
 #[tokio::test]
@@ -1402,4 +1552,30 @@ async fn delete_file_removes_the_staged_drive_resource() {
         .with_files_url(format!("{}/drive/v3/files", server.uri()));
 
     delete_file(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
+async fn trash_file_marks_the_drive_resource_as_trashed() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/office-document-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(body_json(serde_json::json!({
+            "trashed": true
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "office-document-123",
+            "trashed": true
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("office-document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    trash_file(&client, &options).await.unwrap();
 }

@@ -89,6 +89,16 @@ A Reply action that marks its parent Comment resolved.
 An optional final reply can be included with the action.
 _Avoid_: Close, archive
 
+**Office Conversion**:
+The Drive operation that copies an uploaded DOCX file into a Document or an uploaded XLSX file into a Spreadsheet.
+Office Conversion creates the result in the source file's parent Folder and leaves the Office source unchanged.
+_Avoid_: Native file conversion, import, from-office
+
+**Trash**:
+The recoverable Drive state for a file or Folder removed from normal listings.
+The CLI can move a resource to Trash but does not expose permanent deletion.
+_Avoid_: Delete, remove
+
 ### Docs
 
 **Document**:

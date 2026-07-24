@@ -246,11 +246,11 @@ pub enum DriveCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Download a file from Google Drive
+    /// Download a Drive file, exporting native Workspace files to editable Office formats
     Download {
         /// Drive file ID to download
         file_id: String,
-        /// Destination path (defaults to current directory)
+        /// Destination path (defaults to the Drive name with an Office extension when exported)
         #[arg(long, short)]
         output: Option<String>,
     },
@@ -261,6 +261,14 @@ pub enum DriveCommand {
         /// Drive folder ID to upload into
         #[arg(long)]
         folder: Option<String>,
+    },
+    /// Convert an Office file in Drive to a Document or Spreadsheet
+    Convert {
+        /// Drive file ID for the uploaded Office file
+        file_id: String,
+        /// Document or Spreadsheet type to create
+        #[arg(long, value_enum)]
+        to: DriveOfficeConversionTarget,
     },
     /// Create a folder in Google Drive
     Mkdir {
@@ -339,11 +347,17 @@ pub enum DriveCommand {
         #[arg(long = "mention")]
         mentions: Vec<String>,
     },
-    /// Permanently delete a file from Google Drive
-    Delete {
-        /// Drive file ID to delete
+    /// Move a file to Google Drive trash
+    Trash {
+        /// Drive file ID to move to trash
         file_id: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DriveOfficeConversionTarget {
+    GoogleDoc,
+    GoogleSheet,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
