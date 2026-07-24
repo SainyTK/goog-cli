@@ -246,11 +246,11 @@ pub enum DriveCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Download a file from Google Drive
+    /// Download a Drive file, exporting native Workspace files to editable Office formats
     Download {
         /// Drive file ID to download
         file_id: String,
-        /// Destination path (defaults to current directory)
+        /// Destination path (defaults to the Drive name with an Office extension when exported)
         #[arg(long, short)]
         output: Option<String>,
     },

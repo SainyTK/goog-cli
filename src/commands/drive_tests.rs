@@ -1215,6 +1215,7 @@ async fn run_download_unified_falls_back_on_target_access_failure_and_maps_succe
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-123"))
         .and(header("authorization", "Bearer alice-access"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
         .expect(1)
         .mount(&server)
@@ -1222,6 +1223,7 @@ async fn run_download_unified_falls_back_on_target_access_failure_and_maps_succe
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-123"))
         .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(404).set_body_string("missing for bob"))
         .expect(1)
         .mount(&server)
@@ -1229,6 +1231,18 @@ async fn run_download_unified_falls_back_on_target_access_failure_and_maps_succe
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-123"))
         .and(header("authorization", "Bearer carol-access"))
+        .and(query_param("fields", "name,mimeType"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "download.txt",
+            "mimeType": "text/plain"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer carol-access"))
+        .and(query_param("alt", "media"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"hello drive".to_vec()))
         .expect(1)
         .mount(&server)
@@ -1261,6 +1275,110 @@ async fn run_download_unified_falls_back_on_target_access_failure_and_maps_succe
             .account_for_resource(&resource_key("drive", "file-123")),
         Some("carol@example.com")
     );
+}
+
+#[tokio::test]
+async fn run_download_unified_exports_a_native_google_document_as_word() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(query_param("fields", "name,mimeType"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "Quarterly plan",
+            "mimeType": "application/vnd.google-apps.document"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/export"))
+        .and(query_param(
+            "mimeType",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PK\x03\x04word".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = test_config();
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = temp_dir.path().join("quarterly-plan.docx");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_download_unified_to(
+        &config,
+        &store,
+        None,
+        "document-123".into(),
+        Some(output.clone()),
+        true,
+        Some(&files_url),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(output).unwrap(), b"PK\x03\x04word");
+}
+
+#[tokio::test]
+async fn run_download_unified_exports_a_native_google_spreadsheet_as_excel() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/spreadsheet-123"))
+        .and(query_param("fields", "name,mimeType"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "Financial model",
+            "mimeType": "application/vnd.google-apps.spreadsheet"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/spreadsheet-123/export"))
+        .and(query_param(
+            "mimeType",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PK\x03\x04excel".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = test_config();
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = temp_dir.path().join("financial-model.xlsx");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_download_unified_to(
+        &config,
+        &store,
+        None,
+        "spreadsheet-123".into(),
+        Some(output.clone()),
+        true,
+        Some(&files_url),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(output).unwrap(), b"PK\x03\x04excel");
 }
 
 #[tokio::test]
