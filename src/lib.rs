@@ -7,6 +7,7 @@ pub mod drive;
 pub mod mail;
 pub mod sheets;
 pub mod slides;
+pub mod update;
 pub mod version;
 
 #[cfg(test)]
