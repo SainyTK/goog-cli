@@ -236,6 +236,13 @@ See [Local Docs image staging](docs/local-docs-image-staging.md) for both backen
 goog sheets create "Quarterly Plan"
 goog sheets list --limit 20
 goog sheets get SPREADSHEET_ID --fields 'properties.title,sheets.properties'
+goog sheets comments SPREADSHEET_ID
+goog sheets comments SPREADSHEET_ID --open
+goog sheets comment-create SPREADSHEET_ID --text "Please review." --mention reviewer@example.com
+goog sheets comment-edit SPREADSHEET_ID --comment-id COMMENT_ID --text "Updated comment."
+goog sheets comment-reply SPREADSHEET_ID --comment-id COMMENT_ID --text "Updated as requested."
+goog sheets comment-resolve SPREADSHEET_ID --comment-id COMMENT_ID --text "Addressed."
+goog sheets comment-delete SPREADSHEET_ID --comment-id COMMENT_ID
 goog sheets sheet add SPREADSHEET_ID "Raw Data"
 goog sheets sheet rename SPREADSHEET_ID 123456789 "Archive"
 goog sheets sheet move SPREADSHEET_ID 123456789 0
@@ -329,6 +336,13 @@ goog slides list --limit 20
 goog slides create "Quarterly Review"
 goog slides get PRESENTATION_ID
 goog slides get PRESENTATION_ID --fields 'presentationId,title,slides(objectId)' --json
+goog slides comments PRESENTATION_ID
+goog slides comments PRESENTATION_ID --open
+goog slides comment-create PRESENTATION_ID --text "Please review." --mention reviewer@example.com
+goog slides comment-edit PRESENTATION_ID --comment-id COMMENT_ID --text "Updated comment."
+goog slides comment-reply PRESENTATION_ID --comment-id COMMENT_ID --text "Updated as requested."
+goog slides comment-resolve PRESENTATION_ID --comment-id COMMENT_ID --text "Addressed."
+goog slides comment-delete PRESENTATION_ID --comment-id COMMENT_ID
 goog slides slide create PRESENTATION_ID --layout title-and-body --object-id agenda-slide
 goog slides slide duplicate PRESENTATION_ID SLIDE_OBJECT_ID --object-id copied-slide --insertion-index 1
 goog slides slide move PRESENTATION_ID --page-id SLIDE_OBJECT_ID --insertion-index 1

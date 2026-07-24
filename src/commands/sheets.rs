@@ -10,12 +10,12 @@ use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
-    SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition,
-    SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
-    SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
-    SheetsSortOrder, SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
-    SheetsWrapStrategy,
+    DriveCommand, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
+    SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
+    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
+    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
@@ -55,6 +55,104 @@ pub fn run<S: AccountStore>(
             &mut std::io::stderr(),
             None,
         )),
+        SheetsCommand::Comments {
+            spreadsheet_id,
+            open,
+        } => super::drive::run(
+            DriveCommand::Comments {
+                file_id: spreadsheet_id,
+                open,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SheetsCommand::CommentCreate {
+            spreadsheet_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentCreate {
+                file_id: spreadsheet_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SheetsCommand::CommentEdit {
+            spreadsheet_id,
+            comment_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentEdit {
+                file_id: spreadsheet_id,
+                comment_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SheetsCommand::CommentReply {
+            spreadsheet_id,
+            comment_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentReply {
+                file_id: spreadsheet_id,
+                comment_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SheetsCommand::CommentResolve {
+            spreadsheet_id,
+            comment_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentResolve {
+                file_id: spreadsheet_id,
+                comment_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        SheetsCommand::CommentDelete {
+            spreadsheet_id,
+            comment_id,
+        } => super::drive::run(
+            DriveCommand::CommentDelete {
+                file_id: spreadsheet_id,
+                comment_id,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
         SheetsCommand::Get {
             spreadsheet_id,
             fields,

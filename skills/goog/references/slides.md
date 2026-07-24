@@ -9,6 +9,7 @@
 - Completion gate
 - Command guide
   - Create and inspect
+  - Manage comments
   - Add content
   - Style and adjust objects
   - Replace and maintain content
@@ -125,6 +126,24 @@ target/debug/goog slides slide create PRESENTATION_ID --object-id slide-01 --lay
 Capture the presentation ID and URL from create output.
 Use `slides get --json` to confirm slide page IDs and object IDs.
 Always provide a narrow `--fields` selector because an unrestricted presentation response includes masters, layouts, notes, and theme data.
+
+### Manage comments
+
+```bash
+target/debug/goog slides comments PRESENTATION_ID
+target/debug/goog slides comments PRESENTATION_ID --open
+target/debug/goog slides comment-create PRESENTATION_ID --text "Please review."
+target/debug/goog slides comment-edit PRESENTATION_ID --comment-id COMMENT_ID --text "Updated comment."
+target/debug/goog slides comment-reply PRESENTATION_ID --comment-id COMMENT_ID --text "Updated as requested."
+target/debug/goog slides comment-resolve PRESENTATION_ID --comment-id COMMENT_ID --text "Addressed."
+target/debug/goog slides comment-delete PRESENTATION_ID --comment-id COMMENT_ID
+```
+
+Presentation comments use the Google Drive comment model and are unanchored at the file level when created by the CLI.
+Every comment command accepts a presentation ID or Google Slides URL.
+List comments after every mutation and use `comments --open` to confirm that a resolved comment is absent.
+Use the exact comment ID returned by the list or create command.
+Repeat `--mention EMAIL` on create, edit, reply, or resolve when the comment should notify specific collaborators.
 
 ### Add content
 
