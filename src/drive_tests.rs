@@ -1559,6 +1559,108 @@ async fn delete_file_removes_the_staged_drive_resource() {
 }
 
 #[tokio::test]
+async fn move_file_replaces_existing_parents_and_returns_resulting_metadata() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(query_param("fields", "parents"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "parents": ["old-parent-1", "old-parent-2"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(query_param("addParents", "target folder + &"))
+        .and(query_param("removeParents", "old-parent-1,old-parent-2"))
+        .and(query_param("fields", "id,name,parents"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(body_json(serde_json::json!({})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "document-123",
+            "name": "Meeting notes",
+            "parents": ["target folder + &"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = MoveFileOptions::new("document-123", "target folder + &")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let moved = move_file(&client, &options).await.unwrap();
+
+    assert_eq!(
+        moved,
+        MovedFile {
+            id: "document-123".into(),
+            name: "Meeting notes".into(),
+            parent_ids: vec!["target folder + &".into()],
+        }
+    );
+}
+
+#[tokio::test]
+async fn move_file_returns_permission_denied_when_parent_update_is_forbidden() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(query_param("fields", "parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "parents": ["old-parent-123"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(query_param("addParents", "destination-folder-123"))
+        .and(query_param("removeParents", "old-parent-123"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = MoveFileOptions::new("document-123", "destination-folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let error = move_file(&client, &options).await.unwrap_err();
+
+    assert!(matches!(error, DriveError::PermissionDenied));
+}
+
+#[tokio::test]
+async fn move_file_returns_not_found_when_source_file_lookup_fails() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/missing-file-123"))
+        .and(query_param("fields", "parents"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("not found"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = MoveFileOptions::new("missing-file-123", "destination-folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let error = move_file(&client, &options).await.unwrap_err();
+
+    assert!(matches!(error, DriveError::NotFound));
+}
+
+#[tokio::test]
 async fn trash_file_marks_the_drive_resource_as_trashed() {
     let server = MockServer::start().await;
     Mock::given(method("PATCH"))

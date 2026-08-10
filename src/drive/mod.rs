@@ -49,6 +49,7 @@ pub(crate) const GOOGLE_SLIDES_MIME_TYPE: &str = "application/vnd.google-apps.pr
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
 const CREATE_FOLDER_RESPONSE_FIELDS: &str = "id,webViewLink";
 const CONVERT_FILE_RESPONSE_FIELDS: &str = "id,webViewLink";
+const MOVE_FILE_RESPONSE_FIELDS: &str = "id,name,parents";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
 const DEFAULT_UPLOAD_MIME_TYPE: &str = "application/octet-stream";
@@ -83,6 +84,14 @@ pub struct DriveFile {
     pub mime_type: String,
     #[serde(rename = "modifiedTime")]
     pub modified_time: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct MovedFile {
+    pub id: String,
+    pub name: String,
+    #[serde(default, rename = "parents")]
+    pub parent_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -451,6 +460,61 @@ impl DriveFileOperationOptions {
 }
 
 #[derive(Debug, Clone)]
+pub struct MoveFileOptions {
+    pub file_id: String,
+    pub destination_folder_id: String,
+    files_url: String,
+}
+
+impl MoveFileOptions {
+    pub fn new(file_id: impl Into<String>, destination_folder_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            destination_folder_id: destination_folder_id.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn current_parents_url(&self) -> Result<Url, DriveError> {
+        let mut url = self.file_url()?;
+        url.query_pairs_mut().append_pair("fields", "parents");
+        Ok(url)
+    }
+
+    fn update_url(&self, current_parent_ids: &[String]) -> Result<Url, DriveError> {
+        let mut url = self.file_url()?;
+        {
+            let mut query = url.query_pairs_mut();
+            query
+                .append_pair("addParents", &self.destination_folder_id)
+                .append_pair("fields", MOVE_FILE_RESPONSE_FIELDS);
+            if !current_parent_ids.is_empty() {
+                query.append_pair("removeParents", &current_parent_ids.join(","));
+            }
+        }
+        Ok(url)
+    }
+
+    fn file_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id);
+        url.query_pairs_mut()
+            .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct DownloadFileOptions {
     pub file_id: String,
     pub output: Option<PathBuf>,
@@ -577,6 +641,12 @@ struct CreateFolderMetadata<'a> {
 struct ConvertFileMetadata {
     #[serde(rename = "mimeType")]
     mime_type: &'static str,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurrentFileParents {
+    #[serde(default)]
+    parents: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1505,6 +1575,37 @@ pub async fn create_anyone_reader_permission<S: AccountStore>(
         .map_err(DriveError::Auth)?;
     ensure_success_response(response).await?;
     Ok(())
+}
+
+pub async fn move_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &MoveFileOptions,
+) -> Result<MovedFile, DriveError> {
+    let response = client
+        .send_with_scopes(client.get(options.current_parents_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+    let current_parents = ensure_success_response(response)
+        .await?
+        .json::<CurrentFileParents>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))?;
+
+    let response = client
+        .send_with_scopes(
+            client
+                .request(Method::PATCH, options.update_url(&current_parents.parents)?)
+                .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
+                .json(&serde_json::json!({})),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response)
+        .await?
+        .json::<MovedFile>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
 
 pub async fn delete_file<S: AccountStore>(
