@@ -14,7 +14,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 
 `goog` currently includes:
 
-- Google Drive file and folder listing, upload, download, Office Conversion, and recoverable trash commands.
+- Google Drive file and Folder listing, upload, download, Office Conversion, file moves, and recoverable Trash commands.
 - Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF and plain-text export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
 - Google Slides presentation listing, creation, raw reads, high-level slide/text/image/table/shape edits, and raw batch updates.
@@ -171,6 +171,7 @@ goog drive ls --show-all
 goog drive upload ./report.pdf --folder FOLDER_ID
 goog drive convert OFFICE_FILE_ID --to google-doc
 goog drive convert OFFICE_FILE_ID --to google-sheet
+goog drive move FILE_ID --to FOLDER_ID
 goog drive trash FILE_ID
 goog drive download FILE_ID --output ./report.pdf
 goog drive comments FILE_ID

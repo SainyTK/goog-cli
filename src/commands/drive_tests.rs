@@ -11,8 +11,8 @@ use crate::auth::state::{
 use crate::auth::testing::MemoryStore;
 use crate::drive::{
     CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, DeleteCommentOptions,
-    DriveFile, ListCommentsOptions, OfficeConversionOptions, OfficeConversionTarget,
-    ResolveCommentOptions, UpdateCommentOptions, DRIVE_SCOPE,
+    DriveFile, ListCommentsOptions, MoveFileOptions, OfficeConversionOptions,
+    OfficeConversionTarget, ResolveCommentOptions, UpdateCommentOptions, DRIVE_SCOPE,
 };
 
 use super::drive::*;
@@ -1451,6 +1451,116 @@ async fn run_convert_uses_source_file_account_and_prints_document_id_and_url() {
             .unwrap()
             .account_for_resource(&resource_key("drive", "office-document-123")),
         Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_move_uses_source_file_account_and_prints_resulting_parent() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("fields", "parents"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "parents": ["old-parent-123"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("addParents", "destination-folder-456"))
+        .and(query_param("removeParents", "old-parent-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "document-123",
+            "name": "Meeting notes",
+            "parents": ["destination-folder-456"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let options = MoveFileOptions::new("document-123", "destination-folder-456")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_move_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Moved\tdocument-123\tdestination-folder-456\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "document-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_move_does_not_fall_back_for_an_explicit_account() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "parents": ["old-parent-123"]
+        })))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let options = MoveFileOptions::new("document-123", "destination-folder-456")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    let result = run_move_unified_to(
+        &config,
+        &store,
+        Some("alice@example.com"),
+        options,
+        &mut out,
+        Some(&state_path),
+    )
+    .await;
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("failed to move Google Drive file"));
+    assert!(message.contains("Google Drive permission denied"));
+    assert!(out.is_empty());
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "document-123")),
+        None
     );
 }
 

@@ -278,6 +278,14 @@ pub enum DriveCommand {
         #[arg(long)]
         folder: String,
     },
+    /// Move an existing Drive file into a Folder
+    Move {
+        /// Drive file ID to move
+        file_id: String,
+        /// Destination Drive Folder ID
+        #[arg(long = "to")]
+        destination_folder_id: String,
+    },
     /// Create an unanchored comment on a Google Drive file
     CommentCreate {
         /// Drive file ID
@@ -2176,7 +2184,7 @@ pub enum DocsCommand {
 
 Notes:
   The Document is always created at the root of My Drive; there is no --folder option today.
-  Move it afterward with the Google Drive web UI, or via a future `goog drive` move command.
+  Move it afterward with `goog drive move FILE_ID --to FOLDER_ID`.
   Follow up with `goog docs batch-update` or the other `goog docs` editing commands to add content.")]
     Create {
         /// Title for the new Google Docs Document
@@ -3583,7 +3591,7 @@ pub enum SheetsCommand {
 
 Notes:
   The Spreadsheet is always created at the root of My Drive; there is no --folder option today.
-  Move it afterward with the Google Drive web UI, or via a future `goog drive` move command.
+  Move it afterward with `goog drive move FILE_ID --to FOLDER_ID`.
   Follow up with `goog sheets values append-row` or `goog sheets values append-table` to add rows.")]
     Create {
         /// Title for the new Google Sheets Spreadsheet

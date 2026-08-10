@@ -644,6 +644,54 @@ fn drive_trash_requires_a_file_id() {
 }
 
 #[test]
+fn drive_move_accepts_a_file_and_destination_folder() {
+    let cli = parse(&[
+        "drive",
+        "move",
+        "document-123",
+        "--to",
+        "destination-folder-456",
+    ])
+    .unwrap();
+
+    match cli.command {
+        Command::Drive {
+            command:
+                DriveCommand::Move {
+                    file_id,
+                    destination_folder_id,
+                },
+        } => {
+            assert_eq!(file_id, "document-123");
+            assert_eq!(destination_folder_id, "destination-folder-456");
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn drive_move_requires_a_file_and_destination_folder() {
+    assert!(parse(&["drive", "move", "document-123"]).is_err());
+    assert!(parse(&["drive", "move", "--to", "destination-folder-456"]).is_err());
+}
+
+#[test]
+fn docs_create_help_points_to_drive_move() {
+    let text = help(&["docs", "create", "--help"]);
+
+    assert!(text.contains("goog drive move FILE_ID --to FOLDER_ID"));
+    assert!(!text.contains("future `goog drive` move command"));
+}
+
+#[test]
+fn sheets_create_help_points_to_drive_move() {
+    let text = help(&["sheets", "create", "--help"]);
+
+    assert!(text.contains("goog drive move FILE_ID --to FOLDER_ID"));
+    assert!(!text.contains("future `goog drive` move command"));
+}
+
+#[test]
 fn drive_permanent_delete_is_not_available() {
     assert!(parse(&["drive", "delete", "office-document-123"]).is_err());
 }
