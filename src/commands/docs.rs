@@ -36,7 +36,7 @@ use crate::docs::{
         PageFitOptions, PinTableHeaderRowsCommand, PreparedDocsChange, ReplaceTextCommand,
         SetTableColumnWidthsCommand, StyleTableRowCommand, UpdateNamedStyleCommand,
     },
-    copy_document, create_document, extract_style_template, get_document,
+    copy_document, create_document, extract_document_text, extract_style_template, get_document,
     image_fit::{exact_size_preserves_aspect_ratio, ImageFitConstraints},
     image_metadata::{inspect_local_image, inspect_remote_image_dimensions},
     image_staging::{cleanup_with_command, safe_command_path, stage_with_command},
@@ -55,7 +55,7 @@ use crate::docs::{
     map::RangeSelector,
     style_template::{load_style_template_in, save_style_template_in},
     BatchUpdateDocumentOptions, CopyDocumentOptions, CreateDocumentOptions, DocsError,
-    GetDocumentOptions, StyleTemplate,
+    DocumentTextExport, GetDocumentOptions, StyleTemplate,
 };
 use crate::drive::{
     create_anyone_reader_permission, delete_file, export_google_file, upload, DownloadedFile,
@@ -574,6 +574,23 @@ pub fn run<S: AccountStore>(
                     None,
                 ))
             }
+        }
+        DocsCommand::Text {
+            command: DocsTextCommand::Export { document_id, json },
+        } => {
+            let json = super::drive::should_emit_json(json, output_json_by_default);
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_text_export_unified_to(
+                config,
+                store,
+                account_override,
+                document_id,
+                json,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
         }
         DocsCommand::Text {
             command:
@@ -1509,6 +1526,42 @@ fn run_named_range_command<S: AccountStore>(
             ))
         }
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn run_text_export_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    json: bool,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let export = extract_document_text(&document_map);
+    write_document_text_export(out, &export, json)
+}
+
+fn write_document_text_export(
+    out: &mut impl Write,
+    export: &DocumentTextExport,
+    json: bool,
+) -> Result<()> {
+    if json {
+        return write_json_line(out, export, "failed to serialize Google Docs text export");
+    }
+    out.write_all(export.text.as_bytes())
+        .context("failed to write Google Docs text export")
 }
 
 #[cfg(test)]

@@ -2143,7 +2143,8 @@ impl DocsCommand {
                 | DocsNamedRangeCommand::Delete { document_id, .. } => document_id,
             },
             DocsCommand::Text { command } => match command {
-                DocsTextCommand::Search { document_id, .. }
+                DocsTextCommand::Export { document_id, .. }
+                | DocsTextCommand::Search { document_id, .. }
                 | DocsTextCommand::Insert { document_id, .. }
                 | DocsTextCommand::Replace { document_id, .. } => document_id,
             },
@@ -2311,7 +2312,7 @@ Notes:
         #[arg(long)]
         json: bool,
     },
-    /// Search, insert, or replace document text
+    /// Export, search, insert, or replace document text
     Text {
         #[command(subcommand)]
         command: DocsTextCommand,
@@ -2652,6 +2653,14 @@ pub enum DocsStyleCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum DocsTextCommand {
+    /// Export the full Document as plain text
+    Export {
+        /// Document ID or URL to export
+        document_id: String,
+        /// Emit structured JSON with Document metadata and text
+        #[arg(long)]
+        json: bool,
+    },
     /// Search editable Google Docs content through the Document Map
     Search {
         /// Document ID or URL to search

@@ -1149,6 +1149,32 @@ fn docs_search_text_with_document_id_text_and_json_flag() {
 }
 
 #[test]
+fn docs_text_export_accepts_document_url_and_json_flag() {
+    let mut cli = parse(&[
+        "docs",
+        "text",
+        "export",
+        "https://docs.google.com/document/d/document-123/edit",
+        "--json",
+    ])
+    .unwrap();
+
+    let Command::Docs { command } = &mut cli.command else {
+        panic!("unexpected parse result");
+    };
+    command.normalize_document_id();
+    let DocsCommand::Text {
+        command: DocsTextCommand::Export { document_id, json },
+    } = command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    assert_eq!(document_id, "document-123");
+    assert!(*json);
+}
+
+#[test]
 fn docs_map_accepts_content_location_selectors() {
     let by_index = parse(&["docs", "map", "document-123", "--index", "44"]).unwrap();
     match by_index.command {

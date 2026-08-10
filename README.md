@@ -15,7 +15,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 `goog` currently includes:
 
 - Google Drive file and folder listing, upload, download, Office Conversion, and recoverable trash commands.
-- Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
+- Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF and plain-text export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
 - Google Slides presentation listing, creation, raw reads, high-level slide/text/image/table/shape edits, and raw batch updates.
 - Google Calendar calendar listing, calendar metadata reads, free/busy lookup, and event list/read/create/update/delete commands.
@@ -198,6 +198,8 @@ goog docs list --limit 20
 goog docs create "Q3 Report"
 goog docs copy SOURCE_DOCUMENT_ID "Q3 Report from template"
 goog docs export-pdf DOCUMENT_ID --output ./q3-report.pdf
+goog docs text export DOCUMENT_ID
+goog docs text export DOCUMENT_ID --json
 goog docs map DOCUMENT_ID
 goog docs map DOCUMENT_ID --type images
 goog docs map DOCUMENT_ID --type tables
