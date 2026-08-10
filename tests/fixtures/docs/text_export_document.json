@@ -1,0 +1,117 @@
+{
+  "documentId": "document-fixture",
+  "title": "Text export fixture",
+  "revisionId": "revision-fixture",
+  "lists": {
+    "list-fixture": {
+      "listProperties": {
+        "nestingLevels": [
+          {
+            "glyphType": "DECIMAL",
+            "glyphFormat": "%0.",
+            "startNumber": 1
+          },
+          {
+            "glyphType": "ALPHA",
+            "glyphFormat": "%1)",
+            "startNumber": 1
+          }
+        ]
+      }
+    }
+  },
+  "body": {
+    "content": [
+      {
+        "paragraph": {
+          "elements": [
+            { "textRun": { "content": "Over" } },
+            { "textRun": { "content": "view\n" } }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "bullet": { "listId": "list-fixture", "nestingLevel": 0 },
+          "elements": [
+            { "textRun": { "content": "First item\n" } }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "bullet": { "listId": "list-fixture", "nestingLevel": 1 },
+          "elements": [
+            { "textRun": { "content": "Nested item\n" } }
+          ]
+        }
+      },
+      {
+        "table": {
+          "tableRows": [
+            {
+              "tableCells": [
+                {
+                  "content": [
+                    {
+                      "paragraph": {
+                        "elements": [
+                          { "textRun": { "content": "Name\n" } }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "content": [
+                    {
+                      "paragraph": {
+                        "elements": [
+                          { "textRun": { "content": "Value\n" } }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "tableCells": [
+                {
+                  "content": [
+                    {
+                      "paragraph": {
+                        "elements": [
+                          { "textRun": { "content": "Alpha\n" } }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "content": [
+                    {
+                      "paragraph": {
+                        "elements": [
+                          { "textRun": { "content": "One\n" } }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "paragraph": {
+          "elements": [
+            { "textRun": { "content": "Ending \ue907paragraph\n" } },
+            { "inlineObjectElement": { "inlineObjectId": "image-fixture" } }
+          ]
+        }
+      }
+    ]
+  }
+}

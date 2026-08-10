@@ -330,11 +330,8 @@ pub fn build_document_map(document: &Value) -> DocumentMap {
 }
 
 fn document_named_styles(document: &Value) -> Vec<DocumentTabNamedStyles> {
-    let tab_named_styles = document
-        .get("tabs")
-        .and_then(Value::as_array)
+    let tab_named_styles = document_tabs(document)
         .into_iter()
-        .flatten()
         .filter_map(|tab| {
             let named_styles = tab.get("documentTab")?.get("namedStyles")?.clone();
             let tab_id = tab
@@ -365,11 +362,8 @@ fn document_named_styles(document: &Value) -> Vec<DocumentTabNamedStyles> {
 }
 
 fn document_styles(document: &Value) -> Vec<DocumentTabStyle> {
-    let tab_styles = document
-        .get("tabs")
-        .and_then(Value::as_array)
+    let tab_styles = document_tabs(document)
         .into_iter()
-        .flatten()
         .filter_map(|tab| {
             let document_style = tab.get("documentTab")?.get("documentStyle")?.clone();
             let tab_id = tab
@@ -499,11 +493,8 @@ fn document_list_maps(document: &Value) -> Vec<&Value> {
         .get("lists")
         .into_iter()
         .chain(
-            document
-                .get("tabs")
-                .and_then(Value::as_array)
+            document_tabs(document)
                 .into_iter()
-                .flatten()
                 .filter_map(|tab| tab.get("documentTab"))
                 .filter_map(|document_tab| document_tab.get("lists")),
         )
@@ -609,11 +600,8 @@ fn document_segment_maps<'a>(document: &'a Value, field: &str) -> Vec<&'a Value>
         .get(field)
         .into_iter()
         .chain(
-            document
-                .get("tabs")
-                .and_then(Value::as_array)
+            document_tabs(document)
                 .into_iter()
-                .flatten()
                 .filter_map(|tab| tab.get("documentTab"))
                 .filter_map(|document_tab| document_tab.get(field)),
         )
@@ -1678,14 +1666,32 @@ pub(crate) fn document_content(document: &Value) -> impl Iterator<Item = &Value>
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .chain(
-            document
-                .get("tabs")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .flat_map(tab_content),
-        )
+        .chain(document_tabs(document).into_iter().flat_map(tab_content))
+}
+
+fn document_tabs(document: &Value) -> Vec<&Value> {
+    let mut tabs = Vec::new();
+    for tab in document
+        .get("tabs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        collect_tab_tree(tab, &mut tabs);
+    }
+    tabs
+}
+
+fn collect_tab_tree<'a>(tab: &'a Value, tabs: &mut Vec<&'a Value>) {
+    tabs.push(tab);
+    for child in tab
+        .get("childTabs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        collect_tab_tree(child, tabs);
+    }
 }
 
 pub(crate) fn tab_content(tab: &Value) -> impl Iterator<Item = &Value> {
@@ -1697,7 +1703,7 @@ pub(crate) fn tab_content(tab: &Value) -> impl Iterator<Item = &Value> {
         .flatten()
 }
 
-fn paragraph_text(paragraph: &Value) -> String {
+pub(crate) fn paragraph_text(paragraph: &Value) -> String {
     paragraph
         .get("elements")
         .and_then(Value::as_array)
@@ -1917,11 +1923,8 @@ fn document_object_maps<'a>(document: &'a Value, field: &str) -> Vec<&'a Value> 
         })
         .into_iter()
         .chain(
-            document
-                .get("tabs")
-                .and_then(Value::as_array)
+            document_tabs(document)
                 .into_iter()
-                .flatten()
                 .filter_map(|tab| tab.get("documentTab"))
                 .filter_map(|document_tab| document_tab.get(field)),
         )

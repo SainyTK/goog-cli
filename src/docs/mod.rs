@@ -14,6 +14,7 @@ pub(crate) mod page_layout;
 #[cfg(test)]
 mod page_layout_tests;
 pub mod style_template;
+pub mod text;
 
 #[cfg(test)]
 mod change_tests;
@@ -21,10 +22,14 @@ mod change_tests;
 #[cfg(test)]
 mod style_template_tests;
 
+#[cfg(test)]
+mod text_tests;
+
 pub use error::DocsError;
 pub use style_template::{
     extract_style_template, load_style_template, save_style_template, StyleTemplate,
 };
+pub use text::{extract_document_text, DocumentTextExport};
 
 use std::future::Future;
 
