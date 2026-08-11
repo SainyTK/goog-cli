@@ -1,11 +1,7 @@
 ## Project workflow
 
-GnHF is the default workflow for substantial autonomous implementation.
-Give it a durable objective or a repository plan, let it work in its own branch and worktree, and return to a pushed branch that is ready for human review.
-See `docs/agents/gnhf-workflow.md`.
-
-GitHub Issues and Sandcastle are not part of this project's workflow.
-Use pull requests for reviewing and merging completed work.
+Develop and verify changes locally in the current checkout first.
+Use normal Git branches and commits, then push and open a pull request when work is ready for human review.
 Do not invoke the `no-mistakes` workflow unless the user explicitly asks for it.
 
 ## Domain docs

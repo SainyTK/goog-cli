@@ -6,7 +6,7 @@ description: Review changes since a fixed point along Standards and Spec axes us
 Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 - **Standards** - does the code conform to this repo's documented coding standards?
-- **Spec** - does the code faithfully implement the GnHF objective, repository plan, or other specification?
+- **Spec** - does the code faithfully implement the user objective, repository plan, or other specification?
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
@@ -28,10 +28,10 @@ A bad ref or empty diff should fail here before starting the parallel sub-agents
 
 Look for the originating spec in this order:
 
-1. The objective or plan path supplied by the user or GnHF run.
+1. The objective or plan path supplied by the user.
 2. A repository plan or specification under `docs/` that matches the branch name or changed feature.
 3. The pull request body when reviewing a published branch.
-4. The commit messages and GnHF run notes for the branch.
+4. The commit messages and local planning notes for the branch.
 5. If nothing is found, ask the user where the spec is.
    If there is no spec, skip the Spec sub-agent and report "no spec available".
 

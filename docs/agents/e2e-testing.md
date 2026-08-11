@@ -10,7 +10,7 @@ Every account shown by `goog auth list` is real and may contain sensitive data.
 Use the account named by the objective when one is specified.
 Otherwise, choose the account and resource that minimize risk.
 
-GnHF runs on the host or in its own git worktree, so it uses the normal local `goog` authentication state.
+Use the normal local `goog` authentication state in the current checkout.
 Do not copy tokens or OAuth configuration into the repository.
 Never commit credentials, command output containing credentials, or local authentication files.
 
@@ -32,7 +32,6 @@ Include the command surface tested, the expected behavior, the observed structur
 Redact account addresses, message content, document titles, file names, IDs, URLs, and other private values.
 
 Do not add a tracked evidence directory.
-Local GnHF logs under `.gnhf/runs/` are disposable and ignored by git.
 
 ## Regression tests
 

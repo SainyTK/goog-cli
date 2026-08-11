@@ -571,9 +571,6 @@ cargo check
 cargo test
 ```
 
-Substantial autonomous work uses the [GnHF workflow](docs/agents/gnhf-workflow.md).
-Run GnHF from a clean base branch with its own worktree and pushed branch, then review and test the resulting pull request before merging.
-
 Pull requests should include:
 
 - A concise summary of user-facing behavior.

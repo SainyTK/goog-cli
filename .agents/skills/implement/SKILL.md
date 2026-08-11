@@ -6,8 +6,8 @@ disable-model-invocation: true
 
 Implement the work described by the user's objective or the referenced repository plan.
 
-For a large GnHF objective, choose one coherent, verifiable slice per iteration.
-Read the existing plan and prior run notes before choosing the slice.
+For a large objective, choose one coherent, verifiable slice at a time.
+Read the existing plan and prior local notes before choosing the slice.
 Update durable project documentation when the implementation changes an architectural decision or public workflow.
 
 Use /tdd where possible, at pre-agreed seams.
