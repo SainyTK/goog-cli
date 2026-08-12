@@ -10,7 +10,7 @@ use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 use crate::docs::map::{
-    build_document_map, resolve_content_entry, resolve_insert_text_location,
+    build_document_map, extract_document_text, resolve_content_entry, resolve_insert_text_location,
     resolve_range_selector, ContentSelector, InsertTextSelector, RangeSelector,
 };
 use crate::docs::*;
@@ -594,6 +594,75 @@ fn extract_document_id_trims_surrounding_whitespace() {
     assert_eq!(
         extract_document_id("  placeholder-document-id  "),
         "placeholder-document-id"
+    );
+}
+
+#[test]
+fn extract_document_text_preserves_paragraphs_lists_tables_and_tabs() {
+    let document = serde_json::json!({
+        "body": {
+            "content": [
+                {
+                    "paragraph": {
+                        "elements": [{ "textRun": { "content": "Introduction\n" } }]
+                    }
+                },
+                {
+                    "paragraph": {
+                        "bullet": { "listId": "list-1" },
+                        "elements": [{ "textRun": { "content": "First item\n" } }]
+                    }
+                },
+                {
+                    "table": {
+                        "tableRows": [
+                            {
+                                "tableCells": [
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [{ "textRun": { "content": "Left\n" } }]
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "content": [
+                                            {
+                                                "paragraph": {
+                                                    "elements": [{ "textRun": { "content": "Right\n" } }]
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        "tabs": [
+            {
+                "documentTab": {
+                    "body": {
+                        "content": [
+                            {
+                                "paragraph": {
+                                    "elements": [{ "textRun": { "content": "Second tab\n" } }]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        ]
+    });
+
+    assert_eq!(
+        extract_document_text(&document),
+        "Introduction\n- First item\nLeft\tRight\nSecond tab\n"
     );
 }
 

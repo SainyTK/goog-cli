@@ -110,6 +110,44 @@ fn multi_account_store() -> MemoryStore {
 }
 
 #[tokio::test]
+async fn run_export_text_prints_plain_text_from_document_content() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(header("authorization", "Bearer docs-write-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "body": {
+                "content": [
+                    {
+                        "paragraph": {
+                            "elements": [{ "textRun": { "content": "Plain text\n" } }]
+                        }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_export_text_to(
+        &client,
+        "document-123".into(),
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "Plain text\n");
+}
+
+#[tokio::test]
 async fn run_get_prints_document_json_to_stdout() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))

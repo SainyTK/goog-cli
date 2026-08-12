@@ -1,0 +1,32 @@
+Issue 127 E2E evidence, redacted
+Result: PASS
+
+Test setup:
+- Accounts used: active account
+- Fixture used: goog-e2e-issue-127-128-20260811 document created by this test run, ID 1doEbAe0W-V_oL0sV8bIdNXdy0XWsCqxEeTNoM175Fig
+- Skipped fixture: no live table fixture was added because the test command has no direct table-content input path
+
+Local checks:
+$ cargo test docs_tests::extract_document_text --lib
+Result: PASS.
+$ cargo test commands::docs_tests::run_export_text --lib
+Result: PASS.
+
+Live checks:
+$ target/debug/goog docs create 'goog-e2e-issue-127-128-20260811'
+Expected: Creates a fresh document used only by this test run.
+Observed: Returned document ID and edit URL.
+Result: PASS.
+
+$ target/debug/goog docs batch-update <created-document-id> --requests -
+Expected: Inserts two distinct body paragraphs.
+Observed: Google Docs batch update returned an empty reply object and a new revision ID.
+Result: PASS.
+
+$ target/debug/goog docs export-text <created-document-id>
+Expected: Emits body text without JSON or command metadata, retaining paragraph breaks.
+Observed: Printed "Opening paragraph" and "Second paragraph" on separate lines.
+Result: PASS.
+
+Reviewer notes:
+- Unit coverage verifies table cell order, list markers, and tab content with a representative Docs API response.

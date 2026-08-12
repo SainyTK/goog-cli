@@ -7,7 +7,7 @@ use futures_util::{stream, StreamExt};
 use reqwest::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, LOCATION};
 use std::path::{Path, PathBuf};
 
-use reqwest::{Body, Response, StatusCode};
+use reqwest::{Body, Method, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio_util::io::ReaderStream;
@@ -71,6 +71,13 @@ pub struct FilesPage {
 pub struct DownloadedFile {
     pub path: PathBuf,
     pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct MovedFile {
+    pub id: String,
+    #[serde(default, rename = "parents")]
+    pub parent_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -170,6 +177,65 @@ impl DownloadFileOptions {
 #[derive(Debug, Deserialize)]
 struct FileMetadata {
     name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct FileParents {
+    #[serde(default)]
+    parents: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MoveFileOptions {
+    pub file_id: String,
+    pub destination_folder_id: String,
+    files_url: String,
+}
+
+impl MoveFileOptions {
+    pub fn new(file_id: impl Into<String>, destination_folder_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            destination_folder_id: destination_folder_id.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn file_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id);
+        url.query_pairs_mut()
+            .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+
+    fn parents_url(&self) -> Result<Url, DriveError> {
+        let mut url = self.file_url()?;
+        url.query_pairs_mut().append_pair("fields", "parents");
+        Ok(url)
+    }
+
+    fn move_url(&self, parent_ids: &[String]) -> Result<Url, DriveError> {
+        let mut url = self.file_url()?;
+        let mut query = url.query_pairs_mut();
+        query
+            .append_pair("addParents", &self.destination_folder_id)
+            .append_pair("fields", "id,parents");
+        if !parent_ids.is_empty() {
+            query.append_pair("removeParents", &parent_ids.join(","));
+        }
+        drop(query);
+        Ok(url)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -311,6 +377,50 @@ pub async fn list_files<S: AccountStore>(
         .map_err(DriveError::Auth)?;
 
     parse_files_response(response).await
+}
+
+pub async fn move_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &MoveFileOptions,
+) -> Result<MovedFile, DriveError> {
+    let response = client
+        .send_with_scopes(client.get(options.parents_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+    let parents = ensure_success_response(response)
+        .await?
+        .json::<FileParents>()
+        .await
+        .map_err(|e| DriveError::InvalidResponse(e.to_string()))?;
+
+    let parents_to_remove = parents
+        .parents
+        .iter()
+        .filter(|parent_id| *parent_id != &options.destination_folder_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    if parents_to_remove.is_empty() && parents.parents.contains(&options.destination_folder_id) {
+        return Ok(MovedFile {
+            id: options.file_id.clone(),
+            parent_ids: parents.parents,
+        });
+    }
+
+    let response = client
+        .send_with_scopes(
+            client
+                .request(Method::PATCH, options.move_url(&parents_to_remove)?)
+                .json(&serde_json::json!({})),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+
+    ensure_success_response(response)
+        .await?
+        .json::<MovedFile>()
+        .await
+        .map_err(|e| DriveError::InvalidResponse(e.to_string()))
 }
 
 pub async fn download<S, F>(

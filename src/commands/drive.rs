@@ -14,8 +14,9 @@ use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{DriveCommand, DriveFolderCommand};
 use crate::drive::{
-    download, list_files, upload, DownloadFileOptions, DownloadedFile, DriveError, DriveFile,
-    ListFilesOptions, UploadFileOptions, UploadedFile, DRIVE_FOLDER_MIME_TYPE,
+    download, list_files, move_file, upload, DownloadFileOptions, DownloadedFile, DriveError,
+    DriveFile, ListFilesOptions, MoveFileOptions, MovedFile, UploadFileOptions, UploadedFile,
+    DRIVE_FOLDER_MIME_TYPE,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -163,6 +164,20 @@ pub fn run<S: AccountStore>(
                     None,
                 ))
             }
+        }
+        DriveCommand::Move { file_id, to } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_move_unified_to(
+                config,
+                store,
+                account_override,
+                file_id,
+                to,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
         }
     }
 }
@@ -363,6 +378,63 @@ pub(super) fn upload_options(
         options = options.with_upload_url(upload_url);
     }
     options
+}
+
+#[cfg(test)]
+pub(super) async fn run_move_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    file_id: String,
+    destination_folder_id: String,
+    out: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    let options = move_options(file_id, destination_folder_id, files_url);
+    let moved = move_file(client, &options)
+        .await
+        .context("failed to move Google Drive file")?;
+    write_moved_file(out, &moved)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn run_move_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    file_id: String,
+    destination_folder_id: String,
+    out: &mut impl Write,
+    files_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let options = move_options(file_id.clone(), destination_folder_id, files_url);
+    let resource_key = resource_key("drive", &file_id);
+    let moved = move_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to move Google Drive file")?;
+    write_moved_file(out, &moved)
+}
+
+pub(super) fn move_options(
+    file_id: String,
+    destination_folder_id: String,
+    files_url: Option<&str>,
+) -> MoveFileOptions {
+    let mut options = MoveFileOptions::new(file_id, destination_folder_id);
+    if let Some(files_url) = files_url {
+        options = options.with_files_url(files_url);
+    }
+    options
+}
+
+fn write_moved_file(out: &mut impl Write, moved: &MovedFile) -> Result<()> {
+    writeln!(out, "{}\t{}", moved.id, moved.parent_ids.join(",")).context("failed to write output")
 }
 
 pub(super) async fn run_download_unified_to<S: AccountStore>(
@@ -654,6 +726,37 @@ async fn upload_as_account<S: AccountStore>(
     })
     .await?;
     Ok(uploaded)
+}
+
+async fn move_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &MoveFileOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<MovedFile> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, MovedFile, DriveError> {
+            Box::pin(move_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn move_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &MoveFileOptions,
+    account: String,
+) -> DriveResult<MovedFile> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    move_file(&client, options).await
 }
 
 async fn download_with_drive_unified_access<S: AccountStore>(

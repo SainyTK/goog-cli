@@ -204,6 +204,7 @@ goog --account bob@example.com drive ls
 goog drive ls --limit 20
 goog drive folder list --parent FOLDER_ID --json
 goog drive upload ./report.pdf --folder FOLDER_ID
+goog drive move FILE_ID --to FOLDER_ID
 goog drive download FILE_ID --output ./report.pdf
 ```
 
@@ -211,6 +212,7 @@ goog drive download FILE_ID --output ./report.pdf
 
 ```sh
 goog docs create "Q3 Report"
+goog docs export-text DOCUMENT_ID
 goog docs map DOCUMENT_ID
 goog docs search-text DOCUMENT_ID "quarterly plan"
 goog docs get-content DOCUMENT_ID --heading "Summary"

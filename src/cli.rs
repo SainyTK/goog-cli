@@ -170,6 +170,14 @@ pub enum DriveCommand {
         #[arg(long)]
         folder: Option<String>,
     },
+    /// Move a Drive file or folder into a folder
+    Move {
+        /// Drive file or folder ID to move
+        file_id: String,
+        /// Destination Drive folder ID
+        #[arg(long)]
+        to: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -197,7 +205,8 @@ impl DocsCommand {
     pub fn normalize_document_id(&mut self) {
         let document_id = match self {
             DocsCommand::Create { .. } => return,
-            DocsCommand::Map { document_id, .. }
+            DocsCommand::ExportText { document_id }
+            | DocsCommand::Map { document_id, .. }
             | DocsCommand::SearchText { document_id, .. }
             | DocsCommand::GetContent { document_id, .. }
             | DocsCommand::InsertText { document_id, .. }
@@ -232,11 +241,16 @@ pub enum DocsCommand {
 
 Notes:
   The Document is always created at the root of My Drive; there is no --folder option today.
-  Move it afterward with the Google Drive web UI, or via a future `goog drive` move command.
+  Move it afterward with `goog drive move DOCUMENT_ID --to FOLDER_ID`.
   Follow up with `goog docs batch-update` or the other `goog docs` editing commands to add content.")]
     Create {
         /// Title for the new Google Docs Document
         title: String,
+    },
+    /// Print a document's body content as plain text
+    ExportText {
+        /// Google Docs Document ID or URL to export
+        document_id: String,
     },
     /// Print a high-level map of editable Google Docs content
     Map {

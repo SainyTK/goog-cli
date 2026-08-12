@@ -409,6 +409,29 @@ fn drive_upload_with_folder() {
 }
 
 #[test]
+fn drive_move_requires_file_id_and_destination_folder() {
+    let cli = parse(&["drive", "move", "file-123", "--to", "folder-456"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::Drive {
+            command: DriveCommand::Move { file_id, to }
+        } if file_id == "file-123" && to == "folder-456"
+    ));
+    assert!(parse(&["drive", "move", "file-123"]).is_err());
+}
+
+#[test]
+fn docs_export_text_accepts_document_id() {
+    let cli = parse(&["docs", "export-text", "document-123"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::Docs {
+            command: DocsCommand::ExportText { document_id }
+        } if document_id == "document-123"
+    ));
+}
+
+#[test]
 fn docs_get_with_document_id() {
     let cli = parse(&["docs", "get", "document-123"]).unwrap();
     match cli.command {

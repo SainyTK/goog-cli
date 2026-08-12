@@ -25,6 +25,7 @@ use crate::docs::{
     },
     create_document, extract_style_template, get_document,
     map::build_document_map,
+    map::extract_document_text,
     map::resolve_content_entry,
     map::search_document_text,
     map::ContentSelector,
@@ -53,6 +54,19 @@ pub fn run<S: AccountStore>(
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             runtime.block_on(run_create_to(&client, title, &mut std::io::stdout(), None))
+        }
+        DocsCommand::ExportText { document_id } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_export_text_unified_to(
+                config,
+                store,
+                account_override,
+                document_id,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
         }
         DocsCommand::Map { document_id, json } => {
             let runtime =
@@ -702,6 +716,49 @@ pub fn run<S: AccountStore>(
             run_show_style_template(&document_id, json, &mut std::io::stdout(), None)
         }
     }
+}
+
+#[cfg(test)]
+pub(super) async fn run_export_text_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    document_id: String,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let options = get_document_options(document_id, None, true, documents_url);
+    let document = get_document(client, &options)
+        .await
+        .context("failed to fetch Google Docs Document")?;
+    write_exported_text(out, &document)
+}
+
+pub(super) async fn run_export_text_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    document_id: String,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let options = get_document_options(document_id.clone(), None, true, documents_url);
+    let resource_key = resource_key("docs", &document_id);
+    let document = run_with_docs_unified_access(
+        config,
+        store,
+        account_override,
+        &resource_key,
+        DocsAccessAttempt::Get(&options),
+        state_path,
+    )
+    .await
+    .context("failed to fetch Google Docs Document")?;
+    write_exported_text(out, &document)
+}
+
+fn write_exported_text(out: &mut impl Write, document: &serde_json::Value) -> Result<()> {
+    out.write_all(extract_document_text(document).as_bytes())
+        .context("failed to write Docs plain text")
 }
 
 #[cfg(test)]

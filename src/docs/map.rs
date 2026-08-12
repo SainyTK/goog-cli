@@ -860,6 +860,12 @@ fn parse_table_of_contents_hint(text: &str) -> Option<TableOfContentsPageHint> {
     Some(TableOfContentsPageHint { heading, page })
 }
 
+pub fn extract_document_text(document: &Value) -> String {
+    let mut text = String::new();
+    append_structural_text(&mut text, document_content(document));
+    text
+}
+
 pub(crate) fn document_content(document: &Value) -> impl Iterator<Item = &Value> {
     document
         .get("body")
@@ -875,6 +881,56 @@ pub(crate) fn document_content(document: &Value) -> impl Iterator<Item = &Value>
                 .flatten()
                 .flat_map(tab_content),
         )
+}
+
+fn append_structural_text<'a>(text: &mut String, elements: impl Iterator<Item = &'a Value>) {
+    for element in elements {
+        if let Some(paragraph) = element.get("paragraph") {
+            let paragraph_text = paragraph_text(paragraph);
+            if paragraph_text.trim().is_empty() {
+                continue;
+            }
+            if paragraph.get("bullet").is_some() {
+                text.push_str("- ");
+            }
+            text.push_str(&paragraph_text);
+            if !paragraph_text.ends_with('\n') {
+                text.push('\n');
+            }
+        } else if let Some(table) = element.get("table") {
+            append_table_text(text, table);
+        }
+    }
+}
+
+fn append_table_text(text: &mut String, table: &Value) {
+    let Some(rows) = table.get("tableRows").and_then(Value::as_array) else {
+        return;
+    };
+
+    for row in rows {
+        let cells = row
+            .get("tableCells")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .map(table_cell_plain_text)
+            .collect::<Vec<_>>();
+        text.push_str(&cells.join("\t"));
+        text.push('\n');
+    }
+}
+
+fn table_cell_plain_text(cell: &Value) -> String {
+    let mut text = String::new();
+    append_structural_text(
+        &mut text,
+        cell.get("content")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten(),
+    );
+    text.trim_end().replace('\n', " ")
 }
 
 pub(crate) fn tab_content(tab: &Value) -> impl Iterator<Item = &Value> {

@@ -966,6 +966,146 @@ async fn run_list_returns_clear_error_for_permission_denied_response() {
 }
 
 #[tokio::test]
+async fn run_move_replaces_existing_parents_and_prints_updated_parents() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "parents"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "parents": ["old-folder-1", "old-folder-2"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("addParents", "folder-456"))
+        .and(query_param("removeParents", "old-folder-1,old-folder-2"))
+        .and(query_param("fields", "id,parents"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "file-123",
+            "parents": ["folder-456"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_move_to(
+        &client,
+        "file-123".into(),
+        "folder-456".into(),
+        &mut out,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "file-123\tfolder-456\n");
+}
+
+#[tokio::test]
+async fn run_move_is_a_no_op_when_file_is_already_in_destination_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "parents"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "parents": ["folder-456"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_move_to(
+        &client,
+        "file-123".into(),
+        "folder-456".into(),
+        &mut out,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "file-123\tfolder-456\n");
+}
+
+#[tokio::test]
+async fn run_move_unified_falls_back_and_maps_source_file_account() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "parents": ["old-folder"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("addParents", "folder-456"))
+        .and(query_param("removeParents", "old-folder"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "file-123",
+            "parents": ["folder-456"]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+    let mut out = Vec::new();
+
+    run_move_unified_to(
+        &config,
+        &store,
+        None,
+        "file-123".into(),
+        "folder-456".into(),
+        &mut out,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(String::from_utf8(out).unwrap(), "file-123\tfolder-456\n");
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "file-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
 async fn run_upload_prints_uploaded_file_id_and_url() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
