@@ -1,0 +1,500 @@
+schemaVersion: 1
+
+presentation:
+  aspectRatio: wide
+  language: en
+  speakerNotes: omit
+  metadata:
+    subject: Responsible AI measurement for banking virtual assistants
+
+theme:
+  colors:
+    canvas: "#FFFFFF"
+    ink: "#111111"
+    text: "#292929"
+    muted: "#555555"
+    panel: "#EDEDED"
+    rule: "#B8BCC4"
+    accent: "#FF6B35"
+  fonts:
+    heading:
+      family: Arial
+      fallbacks:
+        - sans-serif
+    body:
+      family: Arial
+      fallbacks:
+        - sans-serif
+  typeStyles:
+    title:
+      font: heading
+      size: 30
+      weight: bold
+      lineSpacing: 1.05
+      alignment: start
+      color: ink
+    subtitle:
+      font: body
+      size: 15
+      lineSpacing: 1.2
+      alignment: start
+      color: muted
+    body:
+      font: body
+      size: 12
+      lineSpacing: 1.25
+      alignment: start
+      color: text
+    label:
+      font: body
+      size: 9
+      weight: bold
+      lineSpacing: 1
+      alignment: start
+      color: muted
+  spacing:
+    pageMargin: 42
+    sectionGap: 18
+    itemGap: 12
+  fills:
+    canvas: canvas
+    panel: panel
+    accent: accent
+  outlines:
+    panel:
+      color: rule
+      width: 1
+  lines:
+    rule:
+      color: rule
+      width: 1
+  geometry:
+    safeArea:
+      top: 24
+      right: 24
+      bottom: 24
+      left: 24
+    footer:
+      height: 18
+      gap: 12
+  patternDefaults:
+    footer:
+      showSlideNumber: true
+      line: rule
+
+quality:
+  minimumFontSize: 9
+  minimumTextContrast: 4.5
+  safeArea:
+    top: 24
+    right: 24
+    bottom: 24
+    left: 24
+  requiredAltText: true
+  allowedOverlapGroups: []
+
+slides:
+  - key: cover
+    pattern: cover
+    eyebrow: BANKING VIRTUAL ASSISTANT
+    title: Responsible AI measurement for banking virtual assistants
+    subtitle: A practical framework for testing, release approval, and live monitoring
+    footer: Risk-tiered evidence | Independent challenge | Customer outcome monitoring
+
+  - key: why-measurement-changes
+    pattern: statement
+    eyebrow: WHY MEASUREMENT CHANGES
+    title: Generic model scores miss banking harm
+    subtitle: A banking assistant can sound correct while producing the wrong customer outcome.
+    statement: A correct sentence can still create an unsafe banking outcome.
+    body: >-
+      Wrong information conflicts with approved fees, limits, rates, or product terms.
+      Improper guidance can steer a customer toward unsuitable credit or suppress a complaint.
+      Unauthorized actions change money, access, or obligations without valid confirmation.
+      Failed recovery leaves the assistant unable to hand off, reverse, or contain a harmful interaction.
+    takeaway: Measure the conversation, the action, and the customer outcome.
+
+  - key: risk-tiering
+    pattern: comparison
+    eyebrow: RISK PROPORTIONALITY
+    title: Risk tiering determines the evidence burden
+    subtitle: Classify the most consequential capability in the journey, not the average conversation.
+    columns:
+      - key: information
+        title: Tier 1 | Information
+        summary: Branch hours, navigation, and approved product facts
+        sections:
+          - label: PRIMARY CONTROL
+            body: Approved knowledge, citation checks, and safe uncertainty
+          - label: RELEASE EVIDENCE
+            body: Golden-set accuracy and unsupported-claim testing
+      - key: guidance
+        title: Tier 2 | Guidance
+        summary: Product comparison, eligibility, complaints, and financial education
+        sections:
+          - label: PRIMARY CONTROL
+            body: Suitability boundaries, reason checks, and human escalation
+          - label: RELEASE EVIDENCE
+            body: Scenario review, fairness cohorts, and conduct testing
+      - key: action
+        title: Tier 3 | Action
+        summary: Payments, account changes, and credit outcomes
+        sections:
+          - label: PRIMARY CONTROL
+            body: Least privilege, explicit confirmation, and reversible execution
+          - label: RELEASE EVIDENCE
+            body: Adversarial tests, zero unresolved critical failures, and rollback proof
+    takeaway: More autonomy requires stronger evidence, tighter permissions, and faster recovery.
+
+  - key: measurement-framework
+    pattern: evidence-table
+    eyebrow: MEASUREMENT FRAMEWORK
+    title: Seven dimensions define the evidence set
+    subtitle: Every dimension needs a test method, metric family, cadence, and accountable owner.
+    columns:
+      - key: dimension
+        label: What to measure
+        width: 0.23
+      - key: method
+        label: How to test it
+        width: 0.45
+      - key: evidence
+        label: Evidence and cadence
+        width: 0.32
+    rows:
+      - key: valid-reliable
+        dimension: Valid and reliable
+        method: Risk-tiered golden-set replay and dual review
+        evidence: Task success; unsupported claims | weekly
+      - key: safe
+        dimension: Safe
+        method: Red-team fraud, harmful advice, conduct, and actions
+        evidence: Severe breach; correct escalation | live
+      - key: secure-resilient
+        dimension: Secure and resilient
+        method: Attack prompts, tools, retrieval, outages, and recovery
+        evidence: Attack success; fallback recovery | monthly
+      - key: accountable-transparent
+        dimension: Accountable and transparent
+        method: Reconstruct model, prompt, source, tool, and approver
+        evidence: Trace completeness; exceptions | monthly
+      - key: explainable-interpretable
+        dimension: Explainable and interpretable
+        method: Mystery-shop disclosure, reasons, sources, and handoff
+        evidence: Faithful reason; handoff success | monthly
+      - key: privacy-enhanced
+        dimension: Privacy-enhanced
+        method: Plant canary PII across chat, memory, logs, and tools
+        evidence: Leak; retention or access violation | live
+      - key: fair
+        dimension: Fair with bias managed
+        method: Matched pairs by trait, language, dialect, and ability
+        evidence: Outcome gap and confidence interval | quarterly
+    takeaway: Release gate - named owner, independent challenge, and complete audit trail.
+
+  - key: valid-and-reliable
+    pattern: process
+    eyebrow: VALID AND RELIABLE
+    title: Validity starts with risk-tiered conversation sets
+    subtitle: A single benchmark cannot represent languages, journeys, customer states, and consequences.
+    statement: Build tests from real banking work.
+    stages:
+      - key: stratify
+        title: Stratify
+        body: Cover journey, risk tier, language, channel, customer state, and edge cases.
+      - key: ground
+        title: Ground
+        body: Link every expected answer to an approved policy, product term, or procedure.
+      - key: review
+        title: Review
+        body: Use dual human review for high-risk samples and adjudicate disagreement.
+      - key: refresh
+        title: Refresh
+        body: Add incidents, policy changes, drift signals, and newly observed intents.
+    evidence:
+      title: Score four layers, then inspect failures
+      items:
+        - key: automated
+          title: Automated
+          body: Retrieval precision, groundedness, and policy rule checks
+        - key: human
+          title: Human
+          body: Correctness, completeness, clarity, suitability, and severity
+        - key: outcome
+          title: Outcome
+          body: Task success, repeat contact, complaint, and transfer to human
+        - key: drift
+          title: Drift
+          body: Intent mix, unsupported claims, source freshness, and cohort change
+    takeaway: Do not average away a high-severity failure.
+    owner: Product quality and Model Risk | Release and weekly review
+
+  - key: safe-and-fair-conduct
+    pattern: cards
+    eyebrow: SAFE AND FAIR CONDUCT
+    title: Safety testing starts with unacceptable harms
+    subtitle: Define the harm taxonomy before writing prompts or choosing a model.
+    columns: 2
+    groups:
+      - key: unacceptable-outcomes
+        title: Unacceptable outcomes
+        cards:
+          - key: customer-harm
+            title: Customer harm
+            body: Misleading fees, unsuitable guidance, and denied complaint access
+          - key: financial-crime
+            title: Financial crime
+            body: Fraud facilitation, phishing, evasion, and money-mule behavior
+          - key: conduct
+            title: Conduct
+            body: Manipulative selling, discriminatory refusal, pressure, and hidden limits
+          - key: operational-harm
+            title: Operational harm
+            body: Unauthorized action, missing confirmation, and failed handoff or reversal
+      - key: red-team-method
+        title: Red-team method
+        cards:
+          - key: scenario-library
+            title: Scenario library
+            body: Real journeys, abuse cases, near misses, and regulator concerns
+          - key: adversarial-variants
+            title: Adversarial variants
+            body: Role play, social engineering, ambiguity, multilingual attacks, and long-context attacks
+          - key: severity-review
+            title: Severity review
+            body: Rate customer impact, reversibility, scale, and detectability
+          - key: regression-gate
+            title: Regression gate
+            body: Every confirmed failure becomes a permanent release test
+    takeaway: Gate critical failures at zero unresolved cases.
+    footer: Measure - severe breach | correct refusal | correct escalation | recovery success
+
+  - key: secure-private-resilient
+    pattern: evidence-table
+    eyebrow: SECURE, PRIVATE, AND RESILIENT
+    title: Security tests must assume hostile inputs
+    subtitle: Test the complete application path, including retrieval, memory, permissions, and recovery.
+    columns:
+      - key: threat
+        label: Threat
+        width: 0.2
+      - key: method
+        label: How to test
+        width: 0.5
+      - key: evidence
+        label: Evidence
+        width: 0.3
+    rows:
+      - key: prompt-injection
+        threat: Prompt injection
+        method: Direct and indirect attacks through chat, documents, links, and retrieved content
+        evidence: Attack success, policy bypass, and tool-call attempts
+      - key: sensitive-disclosure
+        threat: Sensitive disclosure
+        method: Canary PII in prompts, memory, logs, sources, and connected systems
+        evidence: Leak rate, access violation, and retention breach
+      - key: excessive-agency
+        threat: Excessive agency
+        method: Attempt actions outside purpose, permission, amount, beneficiary, and approval
+        evidence: Unauthorized action and confirmation bypass
+      - key: retrieval-poisoning
+        threat: Retrieval poisoning
+        method: Seed conflicting, stale, malicious, and low-authority content
+        evidence: Source selection, conflict handling, and stale-answer rate
+      - key: service-failure
+        threat: Service failure
+        method: Break dependencies, slow tools, revoke permissions, and corrupt state
+        evidence: Safe fallback, recovery time, and duplicate-action prevention
+    takeaway: Least privilege, confirmation for consequential actions, and safe fallback are product requirements.
+
+  - key: fairness
+    pattern: comparison
+    eyebrow: FAIR WITH HARMFUL BIAS MANAGED
+    title: Fairness is a matched-outcome question
+    subtitle: Compare equivalent banking situations and change only the characteristic under test.
+    statement: Same intent + same account facts + same channel
+    columns:
+      - key: conversation-a
+        title: Conversation A
+        body: Reference language or attribute
+      - key: conversation-b
+        title: Conversation B
+        body: One controlled change
+    takeaway: Compare task success, refusal, escalation, latency, and treatment quality.
+    steps:
+      - key: sample
+        title: Sample
+        body: Stratify by journey, risk tier, language, dialect, accessibility, and lawful cohort.
+      - key: compare
+        title: Compare
+        body: Use outcome gaps and confidence intervals instead of isolated examples.
+      - key: diagnose
+        title: Diagnose
+        body: Trace disparities to data, retrieval, policy rules, model behavior, or human handoff.
+      - key: retest
+        title: Retest
+        body: Approve remediation only after the gap closes without creating a new harm.
+    owner: Responsible AI and Compliance | Release and quarterly review
+
+  - key: human-control
+    pattern: process
+    eyebrow: EXPLAINABLE, TRANSPARENT, AND HUMAN-CONTROLLED
+    title: Human control must work in the customer's moment
+    subtitle: Disclosure and escalation are useful only when customers can understand and act on them.
+    stages:
+      - key: disclose-ai
+        title: Disclose AI
+        test: Customer recognizes the assistant and its limits
+        measure: Disclosure comprehension
+      - key: ground-answer
+        title: Ground answer
+        test: Approved source is shown and supports the claim
+        measure: Source match and freshness
+      - key: explain-outcome
+        title: Explain outcome
+        test: Reason reflects the factors actually used
+        measure: Reason faithfulness
+      - key: human-handoff
+        title: Human handoff
+        test: Customer reaches a person without repeating the journey
+        measure: Handoff and complaint success
+    takeaway: Where a virtual assistant communicates a regulated decision, the reason must match the actual decision factors and applicable law.
+
+  - key: release-governance
+    pattern: statement-and-list
+    eyebrow: ACCOUNTABLE RELEASE GOVERNANCE
+    title: Release decisions need explicit gates
+    subtitle: An average score cannot override a failed critical control.
+    statement: NO GATE | NO RELEASE
+    items:
+      - key: critical-harms
+        title: Critical harms
+        body: No unresolved critical safety, conduct, security, privacy, or action failure
+      - key: evidence-complete
+        title: Evidence complete
+        body: Required cohorts, adversarial cases, source checks, and trace logs are present
+      - key: independent-challenge
+        title: Independent challenge
+        body: Validation is performed by reviewers outside the delivery team
+      - key: operations-ready
+        title: Operations ready
+        body: Alerts, fallback, rollback, incident owners, and customer recovery are tested
+    takeaway: Risk appetite sets performance thresholds. Critical controls remain mandatory.
+    owner: Business owner, independent validation, and control functions
+
+  - key: ongoing-monitoring
+    pattern: timeline
+    eyebrow: ONGOING MONITORING
+    title: Monitoring turns incidents into better tests
+    subtitle: Production evidence must update the test set, controls, and release decision.
+    signals:
+      - key: customer-outcome
+        title: Customer outcome
+        items:
+          - Task completion
+          - Repeat contact
+          - Complaint and detriment
+      - key: trust-conduct
+        title: Trust and conduct
+        items:
+          - Unsupported claim
+          - Severe breach
+          - Escalation success
+      - key: security-privacy
+        title: Security and privacy
+        items:
+          - Attack attempt
+          - Leak or access breach
+          - Tool misuse
+      - key: operations
+        title: Operations
+        items:
+          - Latency and availability
+          - Fallback success
+          - Recovery time
+    milestones:
+      - key: detect
+        title: Detect
+      - key: triage
+        title: Triage
+      - key: contain
+        title: Contain
+      - key: add-regression
+        title: Add regression
+      - key: approve-change
+        title: Approve change
+    owner: Operations with control-function escalation | Continuous alerts, weekly review, periodic validation
+
+  - key: implementation-path
+    pattern: timeline
+    eyebrow: IMPLEMENTATION PATH
+    title: Start bounded, then expand the evidence system
+    subtitle: Scale autonomy only after the measurement and recovery controls are reusable.
+    milestones:
+      - key: baseline
+        title: Baseline one journey
+        body: Choose a bounded customer journey. Define risk tier, approved sources, harm taxonomy, owners, and golden set.
+        exit: Independent validation confirms the evidence is complete.
+      - key: controlled-pilot
+        title: Run a controlled pilot
+        body: Limit users and consequences. Keep human fallback, live alerts, incident handling, and rollback active.
+        exit: Outcomes are stable and material incidents are resolved and retested.
+      - key: scale
+        title: Scale by risk tier
+        body: Add languages, channels, tools, and journeys in order of consequence, reusing approved controls and tests.
+        exit: The evidence pack and monitoring loop operate consistently at the new scope.
+    takeaway: Scale the evidence system before scaling autonomy.
+
+  - key: source-basis
+    pattern: sources
+    eyebrow: APPENDIX | SOURCE BASIS AND SCOPE
+    title: The framework uses three layers of guidance
+    subtitle: AI risk management, banking controls, and GenAI application security inform different parts of the evidence system.
+    columns: 2
+    sources:
+      - key: nist-ai-rmf
+        title: NIST AI RMF 1.0 and Core
+        note: Trustworthiness characteristics and the Govern, Map, Measure, and Manage lifecycle.
+      - key: nist-ai-600-1
+        title: NIST AI 600-1
+        note: Generative AI risk profile, measurement actions, incident learning, and risk context.
+      - key: federal-reserve-sr-26-2
+        title: Federal Reserve SR 26-2
+        note: Validation, independent challenge, monitoring, and outcomes analysis. GenAI is outside direct scope.
+      - key: owasp-llm-top-10
+        title: OWASP LLM Top 10 2025
+        note: Prompt injection, sensitive information disclosure, excessive agency, and retrieval risks.
+      - key: bank-of-thailand-policy
+        title: Bank of Thailand policy
+        note: Risk proportionality, governance, fair customer protection, IT risk, and resilience.
+      - key: bot-draft-ai-risk-guide
+        title: BOT draft AI risk guide
+        note: The 2025 consultation draft informs local framing and is not presented as a final rule.
+      - key: bot-market-conduct
+        title: BOT market conduct
+        note: Fair treatment, clear disclosure, complaint handling, and customer protection.
+      - key: cfpb-circular-2022-03
+        title: CFPB Circular 2022-03
+        note: Specific-reason expectations for applicable U.S. credit adverse-action communications.
+    footer: Complete jurisdiction-specific legal and regulatory mapping before deployment.
+
+  - key: operating-principle
+    pattern: closing
+    eyebrow: THE OPERATING PRINCIPLE
+    title: Responsible AI is an operating discipline
+    subtitle: The bank should be able to answer four questions at any time.
+    statement: Evidence must remain connected to ownership, customer outcomes, and the ability to stop or recover.
+    questions:
+      - key: capability
+        title: What can it do?
+        body: Scope, risk tier, permissions, and prohibited outcomes
+      - key: evidence
+        title: How do we know it works?
+        body: Test evidence, cohorts, severity, and independent challenge
+      - key: failure
+        title: What happens when it fails?
+        body: Fallback, containment, recovery, complaint, and regression test
+      - key: authority
+        title: Who can stop or change it?
+        body: Named owner, control functions, approval record, and kill switch
+    takeaway: Approve deployment only when evidence, ownership, and monitoring agree.

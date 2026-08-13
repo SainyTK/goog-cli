@@ -1,6 +1,7 @@
 use base64::Engine;
 use chrono::{Duration, Utc};
 use serde_json::Value;
+use std::io::Cursor;
 use wiremock::matchers::{body_json, body_string_contains, header, method, path, query_param};
 use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate};
 
@@ -13,6 +14,31 @@ use crate::mail::GMAIL_SCOPE;
 use crate::test_support::CurrentDirGuard;
 
 use super::mail::*;
+
+#[test]
+fn resolve_draft_body_supports_literal_file_and_stdin_sources() {
+    let temp = tempfile::tempdir().unwrap();
+    let body_path = temp.path().join("message.txt");
+    std::fs::write(&body_path, "Body from file").unwrap();
+
+    let mut empty_stdin = Cursor::new(Vec::<u8>::new());
+    assert_eq!(
+        resolve_draft_body_from_reader(Some("Literal body".into()), &mut empty_stdin).unwrap(),
+        "Literal body"
+    );
+
+    assert_eq!(
+        resolve_draft_body_from_reader(Some(format!("@{}", body_path.display())), &mut empty_stdin)
+            .unwrap(),
+        "Body from file"
+    );
+
+    let mut stdin = Cursor::new("Body from stdin".as_bytes());
+    assert_eq!(
+        resolve_draft_body_from_reader(Some("-".into()), &mut stdin).unwrap(),
+        "Body from stdin"
+    );
+}
 
 fn test_config() -> Config {
     Config {
@@ -153,7 +179,7 @@ async fn run_list_defaults_to_inbox_limit_10_and_renders_summary_table() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_list_to(&client, None, false, &mut out, Some(&messages_url))
+    run_list_to(&client, None, None, false, &mut out, Some(&messages_url))
         .await
         .unwrap();
 
@@ -183,9 +209,16 @@ async fn run_list_uses_explicit_limit_for_inbox_messages() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_list_to(&client, Some(25), false, &mut out, Some(&messages_url))
-        .await
-        .unwrap();
+    run_list_to(
+        &client,
+        None,
+        Some(25),
+        false,
+        &mut out,
+        Some(&messages_url),
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
@@ -194,7 +227,7 @@ async fn run_list_uses_explicit_limit_for_inbox_messages() {
 }
 
 #[tokio::test]
-async fn run_search_emits_ndjson_summary_rows() {
+async fn run_list_with_query_emits_ndjson_summary_rows() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages"))
@@ -230,9 +263,9 @@ async fn run_search_emits_ndjson_summary_rows() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_search_to(
+    run_list_to(
         &client,
-        "has:attachment".into(),
+        Some("has:attachment".into()),
         Some(25),
         true,
         &mut out,
@@ -248,7 +281,7 @@ async fn run_search_emits_ndjson_summary_rows() {
 }
 
 #[tokio::test]
-async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table() {
+async fn run_list_with_query_defaults_to_limit_10_without_forcing_inbox_and_renders_table() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages"))
@@ -291,9 +324,9 @@ async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_search_to(
+    run_list_to(
         &client,
-        "from:alice@example.com".into(),
+        Some("from:alice@example.com".into()),
         None,
         false,
         &mut out,
@@ -309,7 +342,7 @@ async fn run_search_defaults_to_limit_10_without_forcing_inbox_and_renders_table
 }
 
 #[tokio::test]
-async fn run_search_prints_no_matches_message_for_empty_table_results() {
+async fn run_list_with_query_prints_no_matches_message_for_empty_table_results() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages"))
@@ -328,9 +361,9 @@ async fn run_search_prints_no_matches_message_for_empty_table_results() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_search_to(
+    run_list_to(
         &client,
-        "zzzzxyqqqnotexist12345".into(),
+        Some("zzzzxyqqqnotexist12345".into()),
         None,
         false,
         &mut out,
@@ -346,7 +379,7 @@ async fn run_search_prints_no_matches_message_for_empty_table_results() {
 }
 
 #[tokio::test]
-async fn run_search_prints_empty_json_array_for_empty_json_results() {
+async fn run_list_with_query_prints_empty_json_array_for_empty_json_results() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages"))
@@ -365,9 +398,9 @@ async fn run_search_prints_empty_json_array_for_empty_json_results() {
     let mut out = Vec::new();
     let messages_url = format!("{}/gmail/v1/users/me/messages", server.uri());
 
-    run_search_to(
+    run_list_to(
         &client,
-        "zzzzxyqqqnotexist12345".into(),
+        Some("zzzzxyqqqnotexist12345".into()),
         None,
         true,
         &mut out,
@@ -419,6 +452,7 @@ Draft body.\r\n",
             bcc: vec!["Dave <dave@example.com>".into()],
             subject: "Status update".into(),
             body: "Hello Bob,\n\nDraft body.".into(),
+            html: false,
             attachments: vec![],
         },
         false,
@@ -436,7 +470,60 @@ draft-123\tmessage-123\tthread-123\n"
 }
 
 #[tokio::test]
-async fn run_draft_create_posts_multipart_message_with_attachment() {
+async fn run_draft_create_posts_html_message() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(header("authorization", "Bearer mail-access"))
+        .and(DraftRawMessageMatcher {
+            expected: "To: alice@example.com\r\n\
+Subject: Rich draft\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: text/html; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+<p>Hello <strong>Alice</strong>.</p>\r\n",
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123", "threadId": "thread-123" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_create_to(
+        &client,
+        CreateDraftInput {
+            to: vec!["alice@example.com".into()],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Rich draft".into(),
+            body: "<p>Hello <strong>Alice</strong>.</p>".into(),
+            html: true,
+            attachments: vec![],
+        },
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
+draft-123\tmessage-123\tthread-123\n"
+    );
+}
+
+#[tokio::test]
+async fn run_draft_create_posts_html_multipart_message_with_attachment() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/gmail/v1/users/me/drafts"))
@@ -448,10 +535,10 @@ MIME-Version: 1.0\r\n\
 Content-Type: multipart/mixed; boundary=\"goog-cli-draft-boundary\"\r\n\
 \r\n\
 --goog-cli-draft-boundary\r\n\
-Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Type: text/html; charset=UTF-8\r\n\
 Content-Transfer-Encoding: 8bit\r\n\
 \r\n\
-See attached.\r\n\
+<p>See <mark>attached</mark>.</p>\r\n\
 --goog-cli-draft-boundary\r\n\
 Content-Type: application/pdf; name=\"invoice.pdf\"\r\n\
 Content-Disposition: attachment; filename=\"invoice.pdf\"\r\n\
@@ -480,7 +567,8 @@ aGVsbG8gYXR0YWNobWVudA==\r\n\
             cc: vec![],
             bcc: vec![],
             subject: "Attached draft".into(),
-            body: "See attached.".into(),
+            body: "<p>See <mark>attached</mark>.</p>".into(),
+            html: true,
             attachments: vec![DraftAttachmentInput {
                 filename: "invoice.pdf".into(),
                 content_type: "application/pdf".into(),
@@ -502,7 +590,7 @@ draft-123\tmessage-123\tthread-123\n"
 }
 
 #[tokio::test]
-async fn run_draft_edit_puts_replacement_message_with_attachment() {
+async fn run_draft_edit_puts_html_replacement_message_with_attachment() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/gmail/v1/users/me/drafts/draft-123"))
@@ -515,10 +603,10 @@ MIME-Version: 1.0\r\n\
 Content-Type: multipart/mixed; boundary=\"goog-cli-draft-boundary\"\r\n\
 \r\n\
 --goog-cli-draft-boundary\r\n\
-Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Type: text/html; charset=UTF-8\r\n\
 Content-Transfer-Encoding: 8bit\r\n\
 \r\n\
-Updated body.\r\n\
+<p><strong>Updated</strong> body.</p>\r\n\
 --goog-cli-draft-boundary\r\n\
 Content-Type: text/plain; name=\"notes.txt\"\r\n\
 Content-Disposition: attachment; filename=\"notes.txt\"\r\n\
@@ -548,7 +636,8 @@ dXBkYXRlZCBhdHRhY2htZW50\r\n\
             cc: vec![],
             bcc: vec![],
             subject: "Updated draft".into(),
-            body: "Updated body.".into(),
+            body: "<p><strong>Updated</strong> body.</p>".into(),
+            html: true,
             attachments: vec![DraftAttachmentInput {
                 filename: "notes.txt".into(),
                 content_type: "text/plain".into(),
@@ -615,6 +704,7 @@ async fn run_draft_create_emits_json_response() {
             bcc: vec![],
             subject: "Hello alice".into(),
             body: "Body".into(),
+            html: false,
             attachments: vec![],
         },
         true,
@@ -731,7 +821,7 @@ async fn run_read_prints_message_json_to_stdout() {
         .and(header("authorization", "Bearer mail-access"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "message-123",
-            "snippet": "Hello from GoogleMail"
+            "snippet": "Hello from Gmail"
         })))
         .expect(1)
         .mount(&server)
@@ -754,7 +844,7 @@ async fn run_read_prints_message_json_to_stdout() {
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
-        "{\"id\":\"message-123\",\"snippet\":\"Hello from GoogleMail\"}\n"
+        "{\"id\":\"message-123\",\"snippet\":\"Hello from Gmail\"}\n"
     );
 }
 
@@ -1038,8 +1128,8 @@ async fn run_read_unified_does_not_fallback_for_explicit_account_but_maps_succes
     .await;
 
     let message = format!("{:#}", denied.unwrap_err());
-    assert!(message.contains("failed to fetch GoogleMail Message"));
-    assert!(message.contains("GoogleMail Message was not found"));
+    assert!(message.contains("failed to read Gmail message"));
+    assert!(message.contains("Gmail message was not found"));
     assert!(denied_out.is_empty());
 
     let mut mapped_out = Vec::new();
@@ -1100,7 +1190,7 @@ async fn run_attachment_download_unified_uses_message_target_fallback_and_maps_s
         &store,
         None,
         "message-123".into(),
-        "attachment-1".into(),
+        Some("attachment-1".into()),
         Some(output.clone()),
         true,
         Some(&messages_url),

@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use wiremock::matchers::{header, method, path, query_param};
+use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Match, Request};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -56,6 +56,30 @@ const DRIVE_BROWSE_PAGE_RESPONSE: &str = r#"{
     }
   ]
 }"#;
+const SHEETS_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "sheet-1",
+      "name": "Budget",
+      "parents": ["folder-123"],
+      "mimeType": "application/vnd.google-apps.spreadsheet",
+      "modifiedTime": "2026-06-24T12:15:00.000Z"
+    }
+  ]
+}"#;
+const SLIDES_PAGE_RESPONSE: &str = r#"{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "id": "presentation-1",
+      "name": "Roadshow",
+      "parents": ["folder-123"],
+      "mimeType": "application/vnd.google-apps.presentation",
+      "modifiedTime": "2026-06-24T13:15:00.000Z"
+    }
+  ]
+}"#;
 
 fn test_config() -> Config {
     Config {
@@ -88,6 +112,311 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
+struct AbsentQueryParam(&'static str);
+
+impl Match for AbsentQueryParam {
+    fn matches(&self, request: &Request) -> bool {
+        !request.url.query_pairs().any(|(name, _)| name == self.0)
+    }
+}
+
+#[tokio::test]
+async fn list_comments_returns_comment_and_reply_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "100"))
+        .and(query_param("includeDeleted", "false"))
+        .and(query_param("fields", DRIVE_COMMENTS_FIELDS))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{
+                "id": "comment-123",
+                "content": "Please clarify this section.",
+                "resolved": false,
+                "replies": [{
+                    "id": "reply-123",
+                    "content": "@reviewer@example.com I will update it.",
+                    "mentionedEmailAddresses": ["reviewer@example.com"]
+                }]
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comments = list_comments(&client, &options).await.unwrap();
+
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].id, "comment-123");
+    let replies = comments[0].replies.as_ref().unwrap();
+    assert_eq!(replies[0].id, "reply-123");
+    assert_eq!(
+        replies[0].mentioned_email_addresses.as_ref().unwrap()[0],
+        "reviewer@example.com"
+    );
+}
+
+#[tokio::test]
+async fn list_comments_fetches_every_page() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(AbsentQueryParam("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{"id": "comment-1", "resolved": false}],
+            "nextPageToken": "page-2"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(query_param("pageToken", "page-2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{"id": "comment-2", "resolved": true}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comments = list_comments(&client, &options).await.unwrap();
+
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0].id, "comment-1");
+    assert_eq!(comments[1].id, "comment-2");
+}
+
+#[tokio::test]
+async fn list_comments_open_filter_excludes_resolved_comments() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [
+                {"id": "comment-open", "resolved": false},
+                {"id": "comment-resolved", "resolved": true}
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListCommentsOptions::new("document-123")
+        .with_open_only()
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comments = list_comments(&client, &options).await.unwrap();
+
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].id, "comment-open");
+}
+
+#[tokio::test]
+async fn create_comment_reply_posts_text_and_returns_reply_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", DRIVE_COMMENT_REPLY_FIELDS))
+        .and(body_json(serde_json::json!({
+            "content": "Updated as requested."
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "content": "Updated as requested.",
+            "createdTime": "2026-07-24T10:00:00.000Z"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        CreateCommentReplyOptions::new("document-123", "comment-456", "Updated as requested.")
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let reply = create_comment_reply(&client, &options).await.unwrap();
+
+    assert_eq!(reply.id, "reply-789");
+    assert_eq!(reply.content.as_deref(), Some("Updated as requested."));
+}
+
+#[tokio::test]
+async fn create_comment_posts_content_and_returns_comment_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", DRIVE_COMMENT_MUTATION_FIELDS))
+        .and(body_json(serde_json::json!({
+            "content": "@reviewer@example.com 👀 Please review this."
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "comment-789",
+            "content": "@reviewer@example.com 👀 Please review this.",
+            "htmlContent": "<a href=\"mailto:reviewer@example.com\">reviewer@example.com</a> 👀 Please review this."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = CreateCommentOptions::new(
+        "document-123",
+        "@reviewer@example.com 👀 Please review this.",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comment = create_comment(&client, &options).await.unwrap();
+
+    assert_eq!(comment.id, "comment-789");
+    assert_eq!(
+        comment.content.as_deref(),
+        Some("@reviewer@example.com 👀 Please review this.")
+    );
+}
+
+#[tokio::test]
+async fn update_comment_patches_replacement_content() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/document-123/comments/comment-456"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", DRIVE_COMMENT_MUTATION_FIELDS))
+        .and(body_json(serde_json::json!({
+            "content": "@reviewer@example.com ✏️ Updated comment."
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "comment-456",
+            "content": "@reviewer@example.com ✏️ Updated comment."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = UpdateCommentOptions::new(
+        "document-123",
+        "comment-456",
+        "@reviewer@example.com ✏️ Updated comment.",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let comment = update_comment(&client, &options).await.unwrap();
+
+    assert_eq!(comment.id, "comment-456");
+    assert_eq!(
+        comment.content.as_deref(),
+        Some("@reviewer@example.com ✏️ Updated comment.")
+    );
+}
+
+#[tokio::test]
+async fn delete_comment_removes_the_comment() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/document-123/comments/comment-456"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DeleteCommentOptions::new("document-123", "comment-456")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    delete_comment(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
+async fn resolve_comment_posts_resolve_action_and_optional_content() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", DRIVE_COMMENT_REPLY_FIELDS))
+        .and(body_json(serde_json::json!({
+            "action": "resolve",
+            "content": "@reviewer@example.com ✅ Addressed."
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "action": "resolve",
+            "content": "@reviewer@example.com ✅ Addressed."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ResolveCommentOptions::new("document-123", "comment-456")
+        .with_content("@reviewer@example.com ✅ Addressed.")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let reply = resolve_comment(&client, &options).await.unwrap();
+
+    assert_eq!(reply.action.as_deref(), Some("resolve"));
+    assert_eq!(
+        reply.content.as_deref(),
+        Some("@reviewer@example.com ✅ Addressed.")
+    );
+}
+
+#[tokio::test]
+async fn resolve_comment_omits_content_when_not_provided() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .and(body_json(serde_json::json!({"action": "resolve"})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "action": "resolve"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ResolveCommentOptions::new("document-123", "comment-456")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let reply = resolve_comment(&client, &options).await.unwrap();
+
+    assert_eq!(reply.action.as_deref(), Some("resolve"));
+    assert!(reply.content.is_none());
+}
+
+#[test]
+fn comment_reply_fields_exclude_google_unsupported_assignee_field() {
+    assert!(!DRIVE_COMMENT_REPLY_FIELDS.contains("assigneeEmailAddress"));
+}
+
 #[tokio::test]
 async fn list_files_deserializes_a_single_page_response() {
     let server = MockServer::start().await;
@@ -99,7 +428,7 @@ async fn list_files_deserializes_a_single_page_response() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -127,6 +456,29 @@ async fn list_files_deserializes_a_single_page_response() {
 }
 
 #[tokio::test]
+async fn list_files_can_include_soft_deleted_files() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param(
+            "q",
+            "mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::new(50)
+        .with_show_all()
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    list_files(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
 async fn list_files_can_filter_to_files_inside_a_folder() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -137,7 +489,7 @@ async fn list_files_can_filter_to_files_inside_a_folder() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -175,7 +527,7 @@ async fn list_folders_defaults_to_folders_in_drive_root() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -212,7 +564,7 @@ async fn list_folders_can_filter_to_child_folders_inside_a_parent() {
         .and(query_param("fields", DRIVE_FILES_FIELDS))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -231,6 +583,92 @@ async fn list_folders_can_filter_to_child_folders_inside_a_parent() {
 }
 
 #[tokio::test]
+async fn list_docs_filters_to_native_google_docs() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "mimeType = 'application/vnd.google-apps.document' and trashed = false",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ListFilesOptions::docs(50).with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "file-1");
+}
+
+#[tokio::test]
+async fn list_sheets_can_filter_to_native_google_sheets_inside_a_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SHEETS_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::sheets(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "sheet-1");
+}
+
+#[tokio::test]
+async fn list_slides_can_filter_to_native_google_slides_inside_a_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("pageSize", "50"))
+        .and(query_param("orderBy", "modifiedTime desc"))
+        .and(query_param("fields", DRIVE_FILES_FIELDS))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.presentation' and trashed = false",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SLIDES_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ListFilesOptions::slides(50)
+        .with_folder("folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let page = list_files(&client, &options).await.unwrap();
+
+    assert_eq!(page.files[0].id, "presentation-1");
+}
+
+#[tokio::test]
 async fn browse_files_defaults_to_drive_root_without_mime_filter() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -239,7 +677,7 @@ async fn browse_files_defaults_to_drive_root_without_mime_filter() {
         .and(query_param("pageSize", "50"))
         .and(query_param("orderBy", "name"))
         .and(query_param("fields", DRIVE_FILES_FIELDS))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -261,7 +699,10 @@ async fn browse_files_can_filter_to_children_inside_a_folder() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
-        .and(query_param("q", "'folder-123' in parents"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and trashed = false",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_BROWSE_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -283,7 +724,7 @@ async fn list_files_escapes_folder_id_in_query_literal() {
         .and(path("/drive/v3/files"))
         .and(query_param(
             "q",
-            r#"'folder\\\'123' in parents and mimeType != 'application/vnd.google-apps.folder'"#,
+            r#"'folder\\\'123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false"#,
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -306,7 +747,7 @@ async fn list_folders_escapes_parent_id_in_query_literal() {
         .and(path("/drive/v3/files"))
         .and(query_param(
             "q",
-            r#"'folder\\\'123' in parents and mimeType = 'application/vnd.google-apps.folder'"#,
+            r#"'folder\\\'123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false"#,
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(DRIVE_FOLDER_PAGE_RESPONSE))
         .expect(1)
@@ -332,7 +773,7 @@ async fn list_files_sends_next_page_token_and_returns_next_page_token() {
         .and(query_param("pageToken", "token-1"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(EMPTY_PAGE_WITH_TOKEN_RESPONSE))
         .expect(1)
@@ -397,6 +838,17 @@ async fn download_streams_binary_response_to_explicit_output_path() {
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-1"))
         .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "name,mimeType"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "download.bin",
+            "mimeType": "application/octet-stream"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .and(header("authorization", "Bearer drive-access"))
         .and(query_param("alt", "media"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"hello\x00drive".to_vec()))
         .expect(1)
@@ -425,6 +877,17 @@ async fn download_streams_binary_response_to_explicit_output_path() {
 #[tokio::test]
 async fn download_requests_supports_all_drives_for_shared_drive_files() {
     let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/shared-file-1"))
+        .and(query_param("fields", "name,mimeType"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "shared.bin",
+            "mimeType": "application/octet-stream"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/shared-file-1"))
         .and(query_param("alt", "media"))
@@ -474,9 +937,10 @@ async fn download_uses_drive_file_name_in_current_directory_by_default() {
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-1"))
         .and(header("authorization", "Bearer drive-access"))
-        .and(query_param("fields", "name"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "name": "report.txt"
+            "name": "report.txt",
+            "mimeType": "text/plain"
         })))
         .expect(1)
         .mount(&server)
@@ -511,11 +975,75 @@ async fn download_uses_drive_file_name_in_current_directory_by_default() {
 }
 
 #[tokio::test]
+async fn download_uses_editable_office_extensions_for_documents_spreadsheets_and_presentations() {
+    let server = MockServer::start().await;
+    let cases = [
+        (
+            "document-123",
+            "Quarterly plan",
+            GOOGLE_DOC_MIME_TYPE,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "Quarterly plan.docx",
+        ),
+        (
+            "spreadsheet-123",
+            "Financial model",
+            GOOGLE_SHEET_MIME_TYPE,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Financial model.xlsx",
+        ),
+        (
+            "presentation-123",
+            "Board review",
+            GOOGLE_SLIDES_MIME_TYPE,
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "Board review.pptx",
+        ),
+    ];
+    for (file_id, name, google_mime_type, export_mime_type, _) in cases {
+        Mock::given(method("GET"))
+            .and(path(format!("/drive/v3/files/{file_id}")))
+            .and(query_param("fields", "name,mimeType"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "name": name,
+                "mimeType": google_mime_type
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/drive/v3/files/{file_id}/export")))
+            .and(query_param("mimeType", export_mime_type))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PK\x03\x04office".to_vec()))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    for (file_id, _, _, _, expected_name) in cases {
+        let options = DownloadFileOptions::new(file_id)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+        let downloaded = download(&client, &options, |_| {}).await.unwrap();
+
+        assert_eq!(
+            downloaded.path.canonicalize().unwrap(),
+            temp.path().join(expected_name).canonicalize().unwrap()
+        );
+        assert_eq!(std::fs::read(downloaded.path).unwrap(), b"PK\x03\x04office");
+    }
+}
+
+#[tokio::test]
 async fn download_returns_drive_error_for_not_found_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/missing-file"))
-        .and(query_param("alt", "media"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(404).set_body_string("not found"))
         .expect(1)
         .mount(&server)
@@ -538,7 +1066,7 @@ async fn download_returns_drive_error_for_permission_denied_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/private-file"))
-        .and(query_param("alt", "media"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(403).set_body_string("forbidden"))
         .expect(1)
         .mount(&server)
@@ -554,6 +1082,125 @@ async fn download_returns_drive_error_for_permission_denied_response() {
     let err = download(&client, &options, |_| ()).await.unwrap_err();
 
     assert!(matches!(err, DriveError::PermissionDenied));
+}
+
+#[tokio::test]
+async fn export_google_file_streams_a_valid_powerpoint_to_the_requested_path() {
+    let server = MockServer::start().await;
+    let powerpoint = b"PK\x03\x04powerpoint";
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/presentation-1/export"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param(
+            "mimeType",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(powerpoint.to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("presentation.pptx");
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ExportGoogleFileOptions::new(
+        "presentation-1",
+        GoogleFileExportFormat::PowerPoint,
+        &output,
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let exported = export_google_file(&client, &options, |_| {}).await.unwrap();
+
+    assert_eq!(exported.path, output);
+    assert_eq!(exported.bytes, powerpoint.len() as u64);
+    assert_eq!(std::fs::read(exported.path).unwrap(), powerpoint);
+}
+
+#[tokio::test]
+async fn export_google_file_supports_pdf_with_its_native_mime_type() {
+    let server = MockServer::start().await;
+    let pdf = b"%PDF-1.7\npresentation";
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/presentation-1/export"))
+        .and(query_param("mimeType", "application/pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(pdf.to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("presentation.pdf");
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ExportGoogleFileOptions::new("presentation-1", GoogleFileExportFormat::Pdf, &output)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let exported = export_google_file(&client, &options, |_| {}).await.unwrap();
+
+    assert_eq!(exported.path, output);
+    assert_eq!(std::fs::read(exported.path).unwrap(), pdf);
+}
+
+#[tokio::test]
+async fn export_google_file_rejects_an_invalid_signature_without_replacing_the_output() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/presentation-1/export"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not a PowerPoint file"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("presentation.pptx");
+    std::fs::write(&output, b"previous export").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = ExportGoogleFileOptions::new(
+        "presentation-1",
+        GoogleFileExportFormat::PowerPoint,
+        &output,
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let error = export_google_file(&client, &options, |_| {})
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, DriveError::InvalidResponse(_)));
+    assert_eq!(std::fs::read(&output).unwrap(), b"previous export");
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+}
+
+#[tokio::test]
+async fn export_google_file_rejects_content_over_the_configured_byte_limit() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/presentation-1/export"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"%PDF-1234".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let output = temp.path().join("presentation.pdf");
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        ExportGoogleFileOptions::new("presentation-1", GoogleFileExportFormat::Pdf, &output)
+            .with_max_download_bytes(8)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let error = export_google_file(&client, &options, |_| {})
+        .await
+        .unwrap_err();
+
+    assert!(matches!(error, DriveError::InvalidResponse(_)));
+    assert!(!output.exists());
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 0);
 }
 
 struct BodyContains(&'static [u8]);
@@ -573,6 +1220,104 @@ impl Match for BodyLength {
     fn matches(&self, request: &Request) -> bool {
         request.body.len() == self.0
     }
+}
+
+#[tokio::test]
+async fn create_folder_sends_drive_folder_metadata_and_returns_its_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "id,webViewLink"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(body_json(serde_json::json!({
+            "name": "Candidate CVs",
+            "mimeType": DRIVE_FOLDER_MIME_TYPE,
+            "parents": ["parent-folder-123"]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "folder-456",
+            "webViewLink": "https://drive.google.com/drive/folders/folder-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = CreateFolderOptions::new("Candidate CVs", "parent-folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let folder = create_folder(&client, &options).await.unwrap();
+
+    assert_eq!(folder.id, "folder-456");
+    assert_eq!(
+        folder.web_view_link,
+        "https://drive.google.com/drive/folders/folder-456"
+    );
+}
+
+#[tokio::test]
+async fn office_conversion_copies_source_as_a_document_and_returns_its_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-document-123/copy"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "id,webViewLink"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(body_json(serde_json::json!({
+            "mimeType": GOOGLE_DOC_MIME_TYPE
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "native-document-456",
+            "webViewLink": "https://docs.google.com/document/d/native-document-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        OfficeConversionOptions::new("office-document-123", OfficeConversionTarget::Document)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let converted = convert_office_file(&client, &options).await.unwrap();
+
+    assert_eq!(converted.id, "native-document-456");
+    assert_eq!(
+        converted.web_view_link,
+        "https://docs.google.com/document/d/native-document-456/edit"
+    );
+}
+
+#[tokio::test]
+async fn office_conversion_can_create_a_spreadsheet() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-spreadsheet-123/copy"))
+        .and(BodyContains(
+            br#""mimeType":"application/vnd.google-apps.spreadsheet""#,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "native-spreadsheet-456",
+            "webViewLink": "https://docs.google.com/spreadsheets/d/native-spreadsheet-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = OfficeConversionOptions::new(
+        "office-spreadsheet-123",
+        OfficeConversionTarget::Spreadsheet,
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let converted = convert_office_file(&client, &options).await.unwrap();
+
+    assert_eq!(converted.id, "native-spreadsheet-456");
 }
 
 #[tokio::test]
@@ -724,4 +1469,117 @@ async fn upload_returns_drive_error_for_permission_denied_response() {
     let err = upload(&client, &options, |_| ()).await.unwrap_err();
 
     assert!(matches!(err, DriveError::PermissionDenied));
+}
+
+#[tokio::test]
+async fn upload_uses_explicit_image_mime_type_in_metadata_and_media_part() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/upload/drive/v3/files"))
+        .and(query_param("uploadType", "multipart"))
+        .and(BodyContains(br#""mimeType":"image/png""#))
+        .and(BodyContains(b"Content-Type: image/png"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "image-123",
+            "webViewLink": "https://drive.google.com/file/d/image-123/view"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("image.png");
+    std::fs::write(&path, b"png bytes").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = UploadFileOptions::new(&path)
+        .with_mime_type("image/png")
+        .with_upload_url(format!("{}/upload/drive/v3/files", server.uri()));
+
+    let uploaded = upload(&client, &options, |_| ()).await.unwrap();
+
+    assert_eq!(uploaded.id, "image-123");
+}
+
+#[tokio::test]
+async fn create_anyone_reader_permission_preserves_google_policy_reason() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/image-123/permissions"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(BodyContains(br#""type":"anyone""#))
+        .and(BodyContains(br#""role":"reader""#))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": {
+                "code": 400,
+                "errors": [{"reason": "publishOutNotPermitted"}]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("image-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let error = create_anyone_reader_permission(&client, &options)
+        .await
+        .unwrap_err();
+
+    match error {
+        DriveError::Api { status, body } => {
+            assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
+            assert!(body.contains("publishOutNotPermitted"));
+        }
+        other => panic!("expected Drive API error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn delete_file_removes_the_staged_drive_resource() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/image-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("image-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    delete_file(&client, &options).await.unwrap();
+}
+
+#[tokio::test]
+async fn trash_file_marks_the_drive_resource_as_trashed() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/office-document-123"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(body_json(serde_json::json!({
+            "trashed": true
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "office-document-123",
+            "trashed": true
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("office-document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    trash_file(&client, &options).await.unwrap();
 }

@@ -12,11 +12,16 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::{DriveCommand, DriveFolderCommand};
+use crate::cli::{DriveCommand, DriveListType, DriveOfficeConversionTarget};
 use crate::drive::{
-    download, list_files, move_file, upload, DownloadFileOptions, DownloadedFile, DriveError,
-    DriveFile, ListFilesOptions, MoveFileOptions, MovedFile, UploadFileOptions, UploadedFile,
-    DRIVE_FOLDER_MIME_TYPE,
+    convert_office_file, create_comment, create_comment_reply, create_folder, delete_comment,
+    download, list_comments, list_files, move_file, resolve_comment, trash_file, update_comment,
+    upload, CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, CreatedFolder,
+    DeleteCommentOptions, DownloadFileOptions, DownloadedFile, DriveComment, DriveCommentReply,
+    DriveError, DriveFile, DriveFileOperationOptions, ListCommentsOptions, ListFilesOptions,
+    MoveFileOptions, MovedFile, OfficeConversionOptions, OfficeConversionResult,
+    OfficeConversionTarget, ResolveCommentOptions, UpdateCommentOptions, UploadFileOptions,
+    UploadedFile, DRIVE_FOLDER_MIME_TYPE,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -24,14 +29,33 @@ const ALL_PAGE_SIZE: u32 = 1000;
 const TABLE_HEADER: &str = "NAME\tFILE ID\tPARENT FOLDER IDS\tMIME TYPE\tMODIFIED";
 const FOLDER_TABLE_HEADER: &str = "NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED";
 const BROWSE_TABLE_HEADER: &str = "TYPE\tNAME\tID\tMIME TYPE\tMODIFIED";
+const DOCS_TABLE_HEADER: &str = "NAME\tDOCUMENT ID\tPARENT FOLDER IDS\tMODIFIED";
+const SHEETS_TABLE_HEADER: &str = "NAME\tSPREADSHEET ID\tPARENT FOLDER IDS\tMODIFIED";
+const SLIDES_TABLE_HEADER: &str = "NAME\tPRESENTATION ID\tPARENT FOLDER IDS\tMODIFIED";
 
 type DriveResult<T> = std::result::Result<T, DriveError>;
+
+pub(super) fn compose_comment_content(text: &str, mentions: &[String]) -> String {
+    let mention_parts = mentions.iter().filter_map(|email| {
+        let email = email.trim().trim_start_matches('@');
+        (!email.is_empty()).then(|| format!("@{email}"))
+    });
+    let text = text.trim();
+
+    mention_parts
+        .chain((!text.is_empty()).then_some(text.to_string()))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DriveListKind {
     Files,
     Folders,
     Browse,
+    Docs,
+    Sheets,
+    Slides,
 }
 
 impl DriveListKind {
@@ -40,6 +64,9 @@ impl DriveListKind {
             Self::Files => "files",
             Self::Folders => "folders",
             Self::Browse => "items",
+            Self::Docs => "documents",
+            Self::Sheets => "spreadsheets",
+            Self::Slides => "presentations",
         }
     }
 }
@@ -56,7 +83,9 @@ pub fn run<S: AccountStore>(
         DriveCommand::Ls {
             limit,
             all,
+            type_,
             folder,
+            show_all,
             json,
         } => {
             let json = should_emit_json(json, output_json_by_default);
@@ -66,9 +95,11 @@ pub fn run<S: AccountStore>(
                 config,
                 store,
                 account_override,
+                type_.into(),
                 limit,
                 all,
                 folder,
+                show_all,
                 json,
                 quiet,
                 &mut std::io::stdout(),
@@ -76,54 +107,6 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DriveCommand::List {
-            limit,
-            all,
-            folder,
-            json,
-        } => {
-            let json = should_emit_json(json, output_json_by_default);
-            let runtime =
-                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_list_command_to(
-                config,
-                store,
-                account_override,
-                limit,
-                all,
-                folder,
-                json,
-                quiet,
-                &mut std::io::stdout(),
-                &mut std::io::stderr(),
-                None,
-            ))
-        }
-        DriveCommand::Folder { command } => match command {
-            DriveFolderCommand::List {
-                limit,
-                all,
-                parent,
-                json,
-            } => {
-                let json = should_emit_json(json, output_json_by_default);
-                let runtime =
-                    tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-                runtime.block_on(run_folder_list_command_to(
-                    config,
-                    store,
-                    account_override,
-                    limit,
-                    all,
-                    parent,
-                    json,
-                    quiet,
-                    &mut std::io::stdout(),
-                    &mut std::io::stderr(),
-                    None,
-                ))
-            }
-        },
         DriveCommand::Download { file_id, output } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
@@ -179,13 +162,276 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DriveCommand::Convert { file_id, to } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let options = OfficeConversionOptions::new(file_id, to.into());
+            runtime.block_on(run_convert_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::Mkdir { name, folder } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let options = CreateFolderOptions::new(name, folder);
+            runtime.block_on(run_mkdir_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentCreate {
+            file_id,
+            text,
+            mentions,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let content = compose_comment_content(&text, &mentions);
+            anyhow::ensure!(!content.is_empty(), "comment content cannot be empty");
+            let options = CreateCommentOptions::new(file_id, content);
+            runtime.block_on(run_comment_create_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentEdit {
+            file_id,
+            comment_id,
+            text,
+            mentions,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let content = compose_comment_content(&text, &mentions);
+            anyhow::ensure!(!content.is_empty(), "comment content cannot be empty");
+            let options = UpdateCommentOptions::new(file_id, comment_id, content);
+            runtime.block_on(run_comment_edit_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentDelete {
+            file_id,
+            comment_id,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let options = DeleteCommentOptions::new(file_id, comment_id);
+            runtime.block_on(run_comment_delete_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentResolve {
+            file_id,
+            comment_id,
+            text,
+            mentions,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let content = compose_comment_content(text.as_deref().unwrap_or_default(), &mentions);
+            let mut options = ResolveCommentOptions::new(file_id, comment_id);
+            if !content.is_empty() {
+                options = options.with_content(content);
+            }
+            runtime.block_on(run_comment_resolve_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::Comments { file_id, open } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let mut options = ListCommentsOptions::new(file_id);
+            if open {
+                options = options.with_open_only();
+            }
+            runtime.block_on(run_comments_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::CommentReply {
+            file_id,
+            comment_id,
+            text,
+            mentions,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let content = compose_comment_content(&text, &mentions);
+            anyhow::ensure!(!content.is_empty(), "reply content cannot be empty");
+            let options = CreateCommentReplyOptions::new(file_id, comment_id, content);
+            runtime.block_on(run_comment_reply_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::Trash { file_id } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_trash_unified_to(
+                config,
+                store,
+                account_override,
+                file_id,
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
     }
 }
 
-pub(super) async fn run_list_command_to<S: AccountStore>(
+impl From<DriveOfficeConversionTarget> for OfficeConversionTarget {
+    fn from(value: DriveOfficeConversionTarget) -> Self {
+        match value {
+            DriveOfficeConversionTarget::GoogleDoc => Self::Document,
+            DriveOfficeConversionTarget::GoogleSheet => Self::Spreadsheet,
+        }
+    }
+}
+
+impl From<DriveListType> for DriveListKind {
+    fn from(value: DriveListType) -> Self {
+        match value {
+            DriveListType::Items => Self::Browse,
+            DriveListType::Files => Self::Files,
+            DriveListType::Folders => Self::Folders,
+        }
+    }
+}
+
+pub(super) async fn run_docs_list_command_to<S: AccountStore>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    run_resource_list_command_to(
+        config,
+        store,
+        account_override,
+        DriveListKind::Docs,
+        limit,
+        all,
+        folder,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+pub(super) async fn run_sheets_list_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    run_resource_list_command_to(
+        config,
+        store,
+        account_override,
+        DriveListKind::Sheets,
+        limit,
+        all,
+        folder,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+pub(super) async fn run_slides_list_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    limit: Option<u32>,
+    all: bool,
+    folder: Option<String>,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    err: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    run_resource_list_command_to(
+        config,
+        store,
+        account_override,
+        DriveListKind::Slides,
+        limit,
+        all,
+        folder,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_resource_list_command_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
     folder: Option<String>,
@@ -200,10 +446,11 @@ pub(super) async fn run_list_command_to<S: AccountStore>(
             config,
             store,
             account_override,
-            DriveListKind::Files,
+            kind,
             limit,
             all,
             folder,
+            true,
             json,
             quiet,
             out,
@@ -214,7 +461,10 @@ pub(super) async fn run_list_command_to<S: AccountStore>(
         .await
     } else {
         let client = AuthClient::from_config(config.clone(), store, account_override)?;
-        run_list_to(&client, limit, all, None, json, quiet, out, err, files_url).await
+        run_list_items_to(
+            &client, kind, limit, all, None, true, json, quiet, out, err, files_url,
+        )
+        .await
     }
 }
 
@@ -222,9 +472,11 @@ pub(super) async fn run_ls_command_to<S: AccountStore>(
     config: &Config,
     store: &S,
     account_override: Option<&str>,
+    kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
     folder: Option<String>,
+    show_all: bool,
     json: bool,
     quiet: bool,
     out: &mut impl Write,
@@ -236,10 +488,11 @@ pub(super) async fn run_ls_command_to<S: AccountStore>(
             config,
             store,
             account_override,
-            DriveListKind::Browse,
+            kind,
             limit,
             all,
             folder,
+            show_all,
             json,
             quiet,
             out,
@@ -250,43 +503,20 @@ pub(super) async fn run_ls_command_to<S: AccountStore>(
         .await
     } else {
         let client = AuthClient::from_config(config.clone(), store, account_override)?;
-        run_ls_to(&client, limit, all, None, json, quiet, out, err, files_url).await
-    }
-}
-
-pub(super) async fn run_folder_list_command_to<S: AccountStore>(
-    config: &Config,
-    store: &S,
-    account_override: Option<&str>,
-    limit: Option<u32>,
-    all: bool,
-    parent: Option<String>,
-    json: bool,
-    quiet: bool,
-    out: &mut impl Write,
-    err: &mut impl Write,
-    files_url: Option<&str>,
-) -> Result<()> {
-    if parent.is_some() {
-        run_list_unified_to(
-            config,
-            store,
-            account_override,
-            DriveListKind::Folders,
+        run_list_items_to(
+            &client,
+            kind,
             limit,
             all,
-            parent,
+            Some("root".into()),
+            show_all,
             json,
             quiet,
             out,
             err,
             files_url,
-            None,
         )
         .await
-    } else {
-        let client = AuthClient::from_config(config.clone(), store, account_override)?;
-        run_folder_list_to(&client, limit, all, None, json, quiet, out, err, files_url).await
     }
 }
 
@@ -318,6 +548,300 @@ pub(super) async fn run_upload_to<S: AccountStore>(
 
     writeln!(out, "{}\t{}", uploaded.id, uploaded.web_view_link)
         .context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comments_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: ListCommentsOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let comments = list_comments_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to list Google Drive comments")?;
+
+    serde_json::to_writer(&mut *out, &serde_json::json!({"comments": comments}))
+        .context("failed to serialize Google Drive comments")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_create_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: CreateCommentOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let comment = create_comment_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to create Google Drive comment")?;
+
+    serde_json::to_writer(&mut *out, &comment)
+        .context("failed to serialize Google Drive comment")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_edit_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: UpdateCommentOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let comment = update_comment_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to edit Google Drive comment")?;
+
+    serde_json::to_writer(&mut *out, &comment)
+        .context("failed to serialize Google Drive comment")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_delete_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: DeleteCommentOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    delete_comment_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to delete Google Drive comment")?;
+
+    serde_json::to_writer(
+        &mut *out,
+        &serde_json::json!({"commentId": options.comment_id, "deleted": true}),
+    )
+    .context("failed to serialize Google Drive comment deletion")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_resolve_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: ResolveCommentOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let reply = resolve_comment_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to resolve Google Drive comment")?;
+
+    serde_json::to_writer(&mut *out, &reply)
+        .context("failed to serialize Google Drive resolution reply")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_comment_reply_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: CreateCommentReplyOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let reply = create_comment_reply_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to reply to Google Drive comment")?;
+
+    serde_json::to_writer(&mut *out, &reply)
+        .context("failed to serialize Google Drive comment reply")?;
+    writeln!(out).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_mkdir_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: CreateFolderOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.parent_folder);
+    let folder = create_folder_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to create Google Drive folder")?;
+
+    writeln!(out, "{}\t{}", folder.id, folder.web_view_link).context("failed to write output")?;
+    Ok(())
+}
+
+pub(super) async fn run_convert_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: OfficeConversionOptions,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let converted = convert_office_file_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to convert Google Drive file")?;
+
+    writeln!(out, "{}\t{}", converted.id, converted.web_view_link)
+        .context("failed to write output")?;
+    Ok(())
+}
+
+#[cfg(test)]
+pub(super) async fn run_move_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    file_id: String,
+    destination_folder_id: String,
+    out: &mut impl Write,
+    files_url: Option<&str>,
+) -> Result<()> {
+    let options = move_options(file_id, destination_folder_id, files_url);
+    let moved = move_file(client, &options)
+        .await
+        .context("failed to move Google Drive file")?;
+    write_moved_file(out, &moved)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn run_move_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    file_id: String,
+    destination_folder_id: String,
+    out: &mut impl Write,
+    files_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let options = move_options(file_id.clone(), destination_folder_id, files_url);
+    let target_resource_key = resource_key("drive", &file_id);
+    let moved = move_file_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to move Google Drive file")?;
+    write_moved_file(out, &moved)
+}
+
+fn move_options(
+    file_id: String,
+    destination_folder_id: String,
+    files_url: Option<&str>,
+) -> MoveFileOptions {
+    let mut options = MoveFileOptions::new(file_id, destination_folder_id);
+    if let Some(files_url) = files_url {
+        options = options.with_files_url(files_url);
+    }
+    options
+}
+
+fn write_moved_file(out: &mut impl Write, moved: &MovedFile) -> Result<()> {
+    writeln!(out, "{}\t{}", moved.id, moved.parent_ids.join(",")).context("failed to write output")
+}
+
+pub(super) async fn run_trash_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    file_id: String,
+    out: &mut impl Write,
+    files_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let mut options = DriveFileOperationOptions::new(file_id.clone());
+    if let Some(files_url) = files_url {
+        options = options.with_files_url(files_url);
+    }
+    let target_resource_key = resource_key("drive", &file_id);
+    trash_file_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to move Google Drive file to trash")?;
+
+    writeln!(out, "Trashed\t{file_id}").context("failed to write output")?;
     Ok(())
 }
 
@@ -378,63 +902,6 @@ pub(super) fn upload_options(
         options = options.with_upload_url(upload_url);
     }
     options
-}
-
-#[cfg(test)]
-pub(super) async fn run_move_to<S: AccountStore>(
-    client: &AuthClient<'_, S>,
-    file_id: String,
-    destination_folder_id: String,
-    out: &mut impl Write,
-    files_url: Option<&str>,
-) -> Result<()> {
-    let options = move_options(file_id, destination_folder_id, files_url);
-    let moved = move_file(client, &options)
-        .await
-        .context("failed to move Google Drive file")?;
-    write_moved_file(out, &moved)
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) async fn run_move_unified_to<S: AccountStore>(
-    config: &Config,
-    store: &S,
-    account_override: Option<&str>,
-    file_id: String,
-    destination_folder_id: String,
-    out: &mut impl Write,
-    files_url: Option<&str>,
-    state_path: Option<&Path>,
-) -> Result<()> {
-    let options = move_options(file_id.clone(), destination_folder_id, files_url);
-    let resource_key = resource_key("drive", &file_id);
-    let moved = move_with_drive_unified_access(
-        config,
-        store,
-        account_override,
-        &resource_key,
-        &options,
-        state_path,
-    )
-    .await
-    .context("failed to move Google Drive file")?;
-    write_moved_file(out, &moved)
-}
-
-pub(super) fn move_options(
-    file_id: String,
-    destination_folder_id: String,
-    files_url: Option<&str>,
-) -> MoveFileOptions {
-    let mut options = MoveFileOptions::new(file_id, destination_folder_id);
-    if let Some(files_url) = files_url {
-        options = options.with_files_url(files_url);
-    }
-    options
-}
-
-fn write_moved_file(out: &mut impl Write, moved: &MovedFile) -> Result<()> {
-    writeln!(out, "{}\t{}", moved.id, moved.parent_ids.join(",")).context("failed to write output")
 }
 
 pub(super) async fn run_download_unified_to<S: AccountStore>(
@@ -517,6 +984,7 @@ pub(super) fn should_emit_json(json_flag: bool, output_json_by_default: bool) ->
     json_flag || output_json_by_default
 }
 
+#[cfg(test)]
 pub(super) async fn run_list_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     limit: Option<u32>,
@@ -534,6 +1002,7 @@ pub(super) async fn run_list_to<S: AccountStore>(
         limit,
         all,
         folder,
+        false,
         json,
         quiet,
         out,
@@ -552,6 +1021,7 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
     limit: Option<u32>,
     all: bool,
     parent: Option<String>,
+    show_all: bool,
     json: bool,
     quiet: bool,
     out: &mut impl Write,
@@ -562,7 +1032,7 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
     let Some(parent_id) = parent.clone() else {
         let client = AuthClient::from_config(config.clone(), store, account_override)?;
         return run_list_items_to(
-            &client, kind, limit, all, None, json, quiet, out, err, files_url,
+            &client, kind, limit, all, None, show_all, json, quiet, out, err, files_url,
         )
         .await;
     };
@@ -577,6 +1047,7 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
         limit,
         all,
         Some(parent_id),
+        show_all,
         quiet,
         err,
         files_url,
@@ -590,7 +1061,11 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
     if json {
         match kind {
             DriveListKind::Browse => write_browse_ndjson(&files, out)?,
-            DriveListKind::Files | DriveListKind::Folders => write_ndjson(&files, out)?,
+            DriveListKind::Files
+            | DriveListKind::Folders
+            | DriveListKind::Docs
+            | DriveListKind::Sheets
+            | DriveListKind::Slides => write_ndjson(&files, out)?,
         }
     } else {
         let mut wrote_table_header = false;
@@ -598,12 +1073,16 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
             DriveListKind::Files => write_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Folders => write_folder_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Browse => write_browse_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Docs => write_docs_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Sheets => write_sheets_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Slides => write_slides_table(&files, out, &mut wrote_table_header)?,
         }
     }
 
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) async fn run_folder_list_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     limit: Option<u32>,
@@ -621,6 +1100,7 @@ pub(super) async fn run_folder_list_to<S: AccountStore>(
         limit,
         all,
         parent,
+        false,
         json,
         quiet,
         out,
@@ -630,6 +1110,7 @@ pub(super) async fn run_folder_list_to<S: AccountStore>(
     .await
 }
 
+#[cfg(test)]
 pub(super) async fn run_ls_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     limit: Option<u32>,
@@ -647,6 +1128,7 @@ pub(super) async fn run_ls_to<S: AccountStore>(
         limit,
         all,
         folder,
+        false,
         json,
         quiet,
         out,
@@ -662,6 +1144,7 @@ async fn run_list_items_to<S: AccountStore>(
     limit: Option<u32>,
     all: bool,
     parent: Option<String>,
+    show_all: bool,
     json: bool,
     quiet: bool,
     out: &mut impl Write,
@@ -669,20 +1152,29 @@ async fn run_list_items_to<S: AccountStore>(
     files_url: Option<&str>,
 ) -> Result<()> {
     let mut wrote_table_header = false;
-    let mut files =
-        collect_list_items(client, kind, limit, all, parent, quiet, err, files_url).await?;
+    let mut files = collect_list_items(
+        client, kind, limit, all, parent, show_all, quiet, err, files_url,
+    )
+    .await?;
     prepare_list_items(kind, &mut files);
 
     if json {
         match kind {
             DriveListKind::Browse => write_browse_ndjson(&files, out)?,
-            DriveListKind::Files | DriveListKind::Folders => write_ndjson(&files, out)?,
+            DriveListKind::Files
+            | DriveListKind::Folders
+            | DriveListKind::Docs
+            | DriveListKind::Sheets
+            | DriveListKind::Slides => write_ndjson(&files, out)?,
         }
     } else {
         match kind {
             DriveListKind::Files => write_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Folders => write_folder_table(&files, out, &mut wrote_table_header)?,
             DriveListKind::Browse => write_browse_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Docs => write_docs_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Sheets => write_sheets_table(&files, out, &mut wrote_table_header)?,
+            DriveListKind::Slides => write_slides_table(&files, out, &mut wrote_table_header)?,
         }
     }
 
@@ -711,6 +1203,320 @@ async fn upload_with_drive_unified_access<S: AccountStore>(
     .await
 }
 
+async fn list_comments_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &ListCommentsOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<Vec<DriveComment>> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, Vec<DriveComment>, DriveError> {
+            Box::pin(list_comments_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn create_comment_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &CreateCommentOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<DriveComment> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DriveComment, DriveError> {
+            Box::pin(create_comment_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn create_comment_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &CreateCommentOptions,
+    account: String,
+) -> DriveResult<DriveComment> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    create_comment(&client, options).await
+}
+
+async fn update_comment_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &UpdateCommentOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<DriveComment> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DriveComment, DriveError> {
+            Box::pin(update_comment_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn update_comment_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &UpdateCommentOptions,
+    account: String,
+) -> DriveResult<DriveComment> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    update_comment(&client, options).await
+}
+
+async fn delete_comment_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &DeleteCommentOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<()> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, (), DriveError> {
+            Box::pin(delete_comment_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn delete_comment_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &DeleteCommentOptions,
+    account: String,
+) -> DriveResult<()> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    delete_comment(&client, options).await
+}
+
+async fn resolve_comment_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &ResolveCommentOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<DriveCommentReply> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DriveCommentReply, DriveError> {
+            Box::pin(resolve_comment_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn resolve_comment_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &ResolveCommentOptions,
+    account: String,
+) -> DriveResult<DriveCommentReply> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    resolve_comment(&client, options).await
+}
+
+async fn list_comments_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &ListCommentsOptions,
+    account: String,
+) -> DriveResult<Vec<DriveComment>> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    list_comments(&client, options).await
+}
+
+async fn create_comment_reply_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &CreateCommentReplyOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<DriveCommentReply> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, DriveCommentReply, DriveError> {
+            Box::pin(create_comment_reply_as_account(
+                config, store, options, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn create_comment_reply_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &CreateCommentReplyOptions,
+    account: String,
+) -> DriveResult<DriveCommentReply> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    create_comment_reply(&client, options).await
+}
+
+async fn create_folder_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &CreateFolderOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<CreatedFolder> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, CreatedFolder, DriveError> {
+            Box::pin(create_folder_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn convert_office_file_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &OfficeConversionOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<OfficeConversionResult> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, OfficeConversionResult, DriveError> {
+            Box::pin(convert_office_file_as_account(
+                config, store, options, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn move_file_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &MoveFileOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<MovedFile> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, MovedFile, DriveError> {
+            Box::pin(move_file_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn move_file_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &MoveFileOptions,
+    account: String,
+) -> DriveResult<MovedFile> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    move_file(&client, options).await
+}
+
+async fn trash_file_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &DriveFileOperationOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<()> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, (), DriveError> {
+            Box::pin(trash_file_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn trash_file_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &DriveFileOperationOptions,
+    account: String,
+) -> DriveResult<()> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    trash_file(&client, options).await
+}
+
+async fn convert_office_file_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &OfficeConversionOptions,
+    account: String,
+) -> DriveResult<OfficeConversionResult> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    convert_office_file(&client, options).await
+}
+
+async fn create_folder_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &CreateFolderOptions,
+    account: String,
+) -> DriveResult<CreatedFolder> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    create_folder(&client, options).await
+}
+
 async fn upload_as_account<S: AccountStore>(
     config: &Config,
     store: &S,
@@ -726,37 +1532,6 @@ async fn upload_as_account<S: AccountStore>(
     })
     .await?;
     Ok(uploaded)
-}
-
-async fn move_with_drive_unified_access<S: AccountStore>(
-    config: &Config,
-    store: &S,
-    account_override: Option<&str>,
-    target_resource_key: &str,
-    options: &MoveFileOptions,
-    state_path: Option<&Path>,
-) -> DriveResult<MovedFile> {
-    UnifiedAccess::run(
-        config,
-        account_override,
-        target_resource_key,
-        state_path,
-        |account| -> AccessFuture<'_, MovedFile, DriveError> {
-            Box::pin(move_as_account(config, store, options, account))
-        },
-        is_target_access_failure,
-    )
-    .await
-}
-
-async fn move_as_account<S: AccountStore>(
-    config: &Config,
-    store: &S,
-    options: &MoveFileOptions,
-    account: String,
-) -> DriveResult<MovedFile> {
-    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
-    move_file(&client, options).await
 }
 
 async fn download_with_drive_unified_access<S: AccountStore>(
@@ -810,6 +1585,7 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>
     limit: Option<u32>,
     all: bool,
     parent: Option<String>,
+    show_all: bool,
     quiet: bool,
     err: &mut W,
     files_url: Option<&str>,
@@ -825,7 +1601,8 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>
             let parent = parent.clone();
             let progress = progress.clone();
             Box::pin(collect_list_items_as_account(
-                config, store, kind, limit, all, parent, quiet, progress, files_url, account,
+                config, store, kind, limit, all, parent, show_all, quiet, progress, files_url,
+                account,
             ))
         },
         is_target_access_failure,
@@ -862,7 +1639,7 @@ impl<'a, W: Write> UnifiedDriveListProgress<'a, W> {
 
         writeln!(
             self.err.borrow_mut(),
-            "Fetched {total} {}...",
+            "Listed {total} {}...",
             kind.item_name()
         )?;
         self.highest_reported_total.set(total);
@@ -878,6 +1655,7 @@ async fn collect_list_items_as_account<S: AccountStore, W: Write>(
     limit: Option<u32>,
     all: bool,
     parent: Option<String>,
+    show_all: bool,
     quiet: bool,
     progress: UnifiedDriveListProgress<'_, W>,
     files_url: Option<&str>,
@@ -885,7 +1663,7 @@ async fn collect_list_items_as_account<S: AccountStore, W: Write>(
 ) -> DriveResult<Vec<DriveFile>> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     let files = collect_list_items_drive_error(
-        &client, kind, limit, all, parent, quiet, progress, files_url,
+        &client, kind, limit, all, parent, show_all, quiet, progress, files_url,
     )
     .await?;
     Ok(files)
@@ -903,6 +1681,7 @@ async fn collect_list_items<S: AccountStore>(
     limit: Option<u32>,
     all: bool,
     parent: Option<String>,
+    show_all: bool,
     quiet: bool,
     err: &mut impl Write,
     files_url: Option<&str>,
@@ -922,6 +1701,7 @@ async fn collect_list_items<S: AccountStore>(
             parent.as_deref(),
             files_url,
             kind,
+            show_all,
         );
 
         let page = list_files(client, &options)
@@ -935,7 +1715,7 @@ async fn collect_list_items<S: AccountStore>(
         }
 
         if all && !quiet {
-            writeln!(err, "Fetched {total} {}...", kind.item_name())
+            writeln!(err, "Listed {total} {}...", kind.item_name())
                 .context("failed to write progress")?;
         }
 
@@ -958,6 +1738,7 @@ async fn collect_list_items_drive_error<S: AccountStore, W: Write>(
     limit: Option<u32>,
     all: bool,
     parent: Option<String>,
+    show_all: bool,
     quiet: bool,
     progress: UnifiedDriveListProgress<'_, W>,
     files_url: Option<&str>,
@@ -977,6 +1758,7 @@ async fn collect_list_items_drive_error<S: AccountStore, W: Write>(
             parent.as_deref(),
             files_url,
             kind,
+            show_all,
         );
 
         let page = list_files(client, &options).await?;
@@ -1033,14 +1815,21 @@ pub(super) fn list_options(
     parent: Option<&str>,
     files_url: Option<&str>,
     kind: DriveListKind,
+    show_all: bool,
 ) -> ListFilesOptions {
     let mut options = match kind {
         DriveListKind::Files => ListFilesOptions::new(page_size),
         DriveListKind::Folders => ListFilesOptions::folders(page_size),
         DriveListKind::Browse => ListFilesOptions::browse(page_size),
+        DriveListKind::Docs => ListFilesOptions::docs(page_size),
+        DriveListKind::Sheets => ListFilesOptions::sheets(page_size),
+        DriveListKind::Slides => ListFilesOptions::slides(page_size),
     };
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);
+    }
+    if show_all {
+        options = options.with_show_all();
     }
     if let Some(parent) = parent {
         options = options.with_folder(parent);
@@ -1179,6 +1968,56 @@ pub(super) fn write_folder_table(
 ) -> Result<()> {
     if !*wrote_header {
         writeln!(out, "{FOLDER_TABLE_HEADER}").context("failed to write output")?;
+        *wrote_header = true;
+    }
+
+    for file in files {
+        writeln!(
+            out,
+            "{}\t{}\t{}\t{}",
+            file.name,
+            file.id,
+            file.parent_ids.join(","),
+            file.modified_time
+        )
+        .context("failed to write output")?;
+    }
+
+    Ok(())
+}
+
+pub(super) fn write_docs_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+) -> Result<()> {
+    write_resource_table(files, out, wrote_header, DOCS_TABLE_HEADER)
+}
+
+pub(super) fn write_sheets_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+) -> Result<()> {
+    write_resource_table(files, out, wrote_header, SHEETS_TABLE_HEADER)
+}
+
+pub(super) fn write_slides_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+) -> Result<()> {
+    write_resource_table(files, out, wrote_header, SLIDES_TABLE_HEADER)
+}
+
+fn write_resource_table(
+    files: &[DriveFile],
+    out: &mut impl Write,
+    wrote_header: &mut bool,
+    header: &str,
+) -> Result<()> {
+    if !*wrote_header {
+        writeln!(out, "{header}").context("failed to write output")?;
         *wrote_header = true;
     }
 

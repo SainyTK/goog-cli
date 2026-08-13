@@ -22,8 +22,33 @@ const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
 pub(super) const DRIVE_FILES_FIELDS: &str =
     "nextPageToken,files(id,name,parents,mimeType,modifiedTime)";
+pub(super) const DRIVE_COMMENTS_FIELDS: &str = concat!(
+    "nextPageToken,comments(",
+    "id,kind,createdTime,modifiedTime,resolved,anchor,",
+    "quotedFileContent(mimeType,value),",
+    "author(displayName,kind,me,permissionId,photoLink,emailAddress),",
+    "content,htmlContent,deleted,mentionedEmailAddresses,assigneeEmailAddress,replies(",
+    "id,kind,createdTime,modifiedTime,action,",
+    "author(displayName,kind,me,permissionId,photoLink,emailAddress),",
+    "content,htmlContent,deleted,mentionedEmailAddresses))"
+);
+pub(super) const DRIVE_COMMENT_REPLY_FIELDS: &str = concat!(
+    "id,kind,createdTime,modifiedTime,action,",
+    "author(displayName,kind,me,permissionId,photoLink,emailAddress),",
+    "content,htmlContent,deleted"
+);
+pub(super) const DRIVE_COMMENT_MUTATION_FIELDS: &str = concat!(
+    "id,kind,createdTime,modifiedTime,",
+    "author(displayName,kind,me,permissionId,photoLink,emailAddress),",
+    "content,htmlContent,deleted"
+);
 pub(crate) const DRIVE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
+pub(crate) const GOOGLE_DOC_MIME_TYPE: &str = "application/vnd.google-apps.document";
+pub(crate) const GOOGLE_SHEET_MIME_TYPE: &str = "application/vnd.google-apps.spreadsheet";
+pub(crate) const GOOGLE_SLIDES_MIME_TYPE: &str = "application/vnd.google-apps.presentation";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
+const CREATE_FOLDER_RESPONSE_FIELDS: &str = "id,webViewLink";
+const CONVERT_FILE_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
 const DEFAULT_UPLOAD_MIME_TYPE: &str = "application/octet-stream";
@@ -31,6 +56,7 @@ const JSON_CONTENT_TYPE: &str = "application/json; charset=UTF-8";
 const MULTIPART_UPLOAD_BOUNDARY: &str = "goog-drive-upload-boundary";
 const UPLOAD_CONTENT_TYPE_HEADER: &str = "X-Upload-Content-Type";
 const UPLOAD_CONTENT_LENGTH_HEADER: &str = "X-Upload-Content-Length";
+const DEFAULT_MAX_EXPORT_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 enum UploadType {
@@ -67,17 +93,172 @@ pub struct FilesPage {
     pub next_page_token: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveCommentAuthor {
+    #[serde(rename = "displayName", skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub me: Option<bool>,
+    #[serde(rename = "permissionId", skip_serializing_if = "Option::is_none")]
+    pub permission_id: Option<String>,
+    #[serde(rename = "photoLink", skip_serializing_if = "Option::is_none")]
+    pub photo_link: Option<String>,
+    #[serde(rename = "emailAddress", skip_serializing_if = "Option::is_none")]
+    pub email_address: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveQuotedFileContent {
+    #[serde(rename = "mimeType", skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveCommentReply {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<DriveCommentAuthor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(rename = "createdTime", skip_serializing_if = "Option::is_none")]
+    pub created_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+    #[serde(rename = "htmlContent", skip_serializing_if = "Option::is_none")]
+    pub html_content: Option<String>,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(
+        rename = "mentionedEmailAddresses",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mentioned_email_addresses: Option<Vec<String>>,
+    #[serde(rename = "modifiedTime", skip_serializing_if = "Option::is_none")]
+    pub modified_time: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriveComment {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<String>,
+    #[serde(
+        rename = "assigneeEmailAddress",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub assignee_email_address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author: Option<DriveCommentAuthor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(rename = "createdTime", skip_serializing_if = "Option::is_none")]
+    pub created_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted: Option<bool>,
+    #[serde(rename = "htmlContent", skip_serializing_if = "Option::is_none")]
+    pub html_content: Option<String>,
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(
+        rename = "mentionedEmailAddresses",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub mentioned_email_addresses: Option<Vec<String>>,
+    #[serde(rename = "modifiedTime", skip_serializing_if = "Option::is_none")]
+    pub modified_time: Option<String>,
+    #[serde(rename = "quotedFileContent", skip_serializing_if = "Option::is_none")]
+    pub quoted_file_content: Option<DriveQuotedFileContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replies: Option<Vec<DriveCommentReply>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CommentsPage {
+    #[serde(default)]
+    comments: Vec<DriveComment>,
+    #[serde(rename = "nextPageToken")]
+    next_page_token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CommentContentRequest<'a> {
+    content: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct ResolveCommentRequest<'a> {
+    action: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<&'a str>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadedFile {
     pub path: PathBuf,
     pub bytes: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct MovedFile {
-    pub id: String,
-    #[serde(default, rename = "parents")]
-    pub parent_ids: Vec<String>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GoogleFileExportFormat {
+    Word,
+    Excel,
+    PowerPoint,
+    Pdf,
+}
+
+impl GoogleFileExportFormat {
+    fn mime_type(self) -> &'static str {
+        match self {
+            Self::Word => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            Self::Excel => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Self::PowerPoint => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
+            Self::Pdf => "application/pdf",
+        }
+    }
+
+    fn has_valid_signature(self, signature: &[u8]) -> bool {
+        match self {
+            Self::Word | Self::Excel | Self::PowerPoint => signature.starts_with(b"PK\x03\x04"),
+            Self::Pdf => signature.starts_with(b"%PDF-"),
+        }
+    }
+
+    fn display_name(self) -> &'static str {
+        match self {
+            Self::Word => "Word",
+            Self::Excel => "Excel",
+            Self::PowerPoint => "PowerPoint",
+            Self::Pdf => "PDF",
+        }
+    }
+
+    fn file_extension(self) -> &'static str {
+        match self {
+            Self::Word => "docx",
+            Self::Excel => "xlsx",
+            Self::PowerPoint => "pptx",
+            Self::Pdf => "pdf",
+        }
+    }
+
+    fn for_google_mime_type(mime_type: &str) -> Option<Self> {
+        match mime_type {
+            GOOGLE_DOC_MIME_TYPE => Some(Self::Word),
+            GOOGLE_SHEET_MIME_TYPE => Some(Self::Excel),
+            GOOGLE_SLIDES_MIME_TYPE => Some(Self::PowerPoint),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -87,10 +268,108 @@ pub struct UploadedFile {
     pub web_view_link: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct CreatedFolder {
+    pub id: String,
+    #[serde(rename = "webViewLink")]
+    pub web_view_link: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct OfficeConversionResult {
+    pub id: String,
+    #[serde(rename = "webViewLink")]
+    pub web_view_link: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OfficeConversionTarget {
+    Document,
+    Spreadsheet,
+}
+
+impl OfficeConversionTarget {
+    fn mime_type(self) -> &'static str {
+        match self {
+            Self::Document => GOOGLE_DOC_MIME_TYPE,
+            Self::Spreadsheet => GOOGLE_SHEET_MIME_TYPE,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OfficeConversionOptions {
+    pub file_id: String,
+    pub target: OfficeConversionTarget,
+    files_url: String,
+}
+
+impl OfficeConversionOptions {
+    pub fn new(file_id: impl Into<String>, target: OfficeConversionTarget) -> Self {
+        Self {
+            file_id: file_id.into(),
+            target,
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("copy");
+        url.query_pairs_mut()
+            .append_pair("fields", CONVERT_FILE_RESPONSE_FIELDS)
+            .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateFolderOptions {
+    pub name: String,
+    pub parent_folder: String,
+    files_url: String,
+}
+
+impl CreateFolderOptions {
+    pub fn new(name: impl Into<String>, parent_folder: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            parent_folder: parent_folder.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.query_pairs_mut()
+            .append_pair("fields", CREATE_FOLDER_RESPONSE_FIELDS)
+            .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UploadFileOptions {
     pub path: PathBuf,
     pub folder: Option<String>,
+    mime_type: String,
     upload_url: String,
 }
 
@@ -99,12 +378,18 @@ impl UploadFileOptions {
         Self {
             path: path.into(),
             folder: None,
+            mime_type: DEFAULT_UPLOAD_MIME_TYPE.to_string(),
             upload_url: DRIVE_UPLOAD_URL.to_string(),
         }
     }
 
     pub fn with_folder(mut self, folder: impl Into<String>) -> Self {
         self.folder = Some(folder.into());
+        self
+    }
+
+    pub fn with_mime_type(mut self, mime_type: impl Into<String>) -> Self {
+        self.mime_type = mime_type.into();
         self
     }
 
@@ -124,41 +409,22 @@ impl UploadFileOptions {
 }
 
 #[derive(Debug, Clone)]
-pub struct DownloadFileOptions {
+pub struct DriveFileOperationOptions {
     pub file_id: String,
-    pub output: Option<PathBuf>,
     files_url: String,
 }
 
-impl DownloadFileOptions {
+impl DriveFileOperationOptions {
     pub fn new(file_id: impl Into<String>) -> Self {
         Self {
             file_id: file_id.into(),
-            output: None,
             files_url: DRIVE_FILES_URL.to_string(),
         }
-    }
-
-    pub fn with_output(mut self, output: impl Into<PathBuf>) -> Self {
-        self.output = Some(output.into());
-        self
     }
 
     pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
         self.files_url = files_url.into();
         self
-    }
-
-    fn metadata_url(&self) -> Result<Url, DriveError> {
-        let mut url = self.file_url()?;
-        url.query_pairs_mut().append_pair("fields", "name");
-        Ok(url)
-    }
-
-    fn media_url(&self) -> Result<Url, DriveError> {
-        let mut url = self.file_url()?;
-        url.query_pairs_mut().append_pair("alt", "media");
-        Ok(url)
     }
 
     fn file_url(&self) -> Result<Url, DriveError> {
@@ -172,17 +438,23 @@ impl DownloadFileOptions {
             .append_pair("supportsAllDrives", "true");
         Ok(url)
     }
+
+    fn permissions_url(&self) -> Result<Url, DriveError> {
+        let mut url = self.file_url()?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push("permissions");
+        Ok(url)
+    }
 }
 
-#[derive(Debug, Deserialize)]
-struct FileMetadata {
-    name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct FileParents {
-    #[serde(default)]
-    parents: Vec<String>,
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct MovedFile {
+    pub id: String,
+    #[serde(default, rename = "parents")]
+    pub parent_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -217,32 +489,141 @@ impl MoveFileOptions {
             .append_pair("supportsAllDrives", "true");
         Ok(url)
     }
+}
 
-    fn parents_url(&self) -> Result<Url, DriveError> {
-        let mut url = self.file_url()?;
-        url.query_pairs_mut().append_pair("fields", "parents");
-        Ok(url)
-    }
+#[derive(Debug, Clone)]
+pub struct DownloadFileOptions {
+    pub file_id: String,
+    pub output: Option<PathBuf>,
+    files_url: String,
+}
 
-    fn move_url(&self, parent_ids: &[String]) -> Result<Url, DriveError> {
-        let mut url = self.file_url()?;
-        let mut query = url.query_pairs_mut();
-        query
-            .append_pair("addParents", &self.destination_folder_id)
-            .append_pair("fields", "id,parents");
-        if !parent_ids.is_empty() {
-            query.append_pair("removeParents", &parent_ids.join(","));
+impl DownloadFileOptions {
+    pub fn new(file_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            output: None,
+            files_url: DRIVE_FILES_URL.to_string(),
         }
-        drop(query);
+    }
+
+    pub fn with_output(mut self, output: impl Into<PathBuf>) -> Self {
+        self.output = Some(output.into());
+        self
+    }
+
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn metadata_url(&self) -> Result<Url, DriveError> {
+        let mut url = self.file_url()?;
+        url.query_pairs_mut().append_pair("fields", "name,mimeType");
         Ok(url)
     }
+
+    fn media_url(&self) -> Result<Url, DriveError> {
+        let mut url = self.file_url()?;
+        url.query_pairs_mut().append_pair("alt", "media");
+        Ok(url)
+    }
+
+    fn file_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id);
+        url.query_pairs_mut()
+            .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExportGoogleFileOptions {
+    pub file_id: String,
+    pub format: GoogleFileExportFormat,
+    pub output: PathBuf,
+    max_download_bytes: usize,
+    files_url: String,
+}
+
+impl ExportGoogleFileOptions {
+    pub fn new(
+        file_id: impl Into<String>,
+        format: GoogleFileExportFormat,
+        output: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            file_id: file_id.into(),
+            format,
+            output: output.into(),
+            max_download_bytes: DEFAULT_MAX_EXPORT_BYTES,
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub fn with_max_download_bytes(mut self, max_download_bytes: usize) -> Self {
+        self.max_download_bytes = max_download_bytes;
+        self
+    }
+
+    pub(crate) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn export_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("export");
+        url.query_pairs_mut()
+            .append_pair("mimeType", self.format.mime_type());
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct FileMetadata {
+    name: String,
+    #[serde(rename = "mimeType")]
+    mime_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct FileParents {
+    #[serde(default)]
+    parents: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct UploadMetadata {
     name: String,
+    #[serde(rename = "mimeType")]
+    mime_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     parents: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateFolderMetadata<'a> {
+    name: &'a str,
+    #[serde(rename = "mimeType")]
+    mime_type: &'static str,
+    parents: [&'a str; 1],
+}
+
+#[derive(Debug, Serialize)]
+struct ConvertFileMetadata {
+    #[serde(rename = "mimeType")]
+    mime_type: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -250,8 +631,261 @@ pub struct ListFilesOptions {
     pub page_size: u32,
     pub page_token: Option<String>,
     pub folder: Option<String>,
+    show_all: bool,
     mode: ListFilesMode,
     files_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ListCommentsOptions {
+    pub file_id: String,
+    open_only: bool,
+    files_url: String,
+}
+
+impl ListCommentsOptions {
+    pub fn new(file_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            open_only: false,
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub fn with_open_only(mut self) -> Self {
+        self.open_only = true;
+        self
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self, page_token: Option<&str>) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments");
+        {
+            let mut query = url.query_pairs_mut();
+            query
+                .append_pair("pageSize", "100")
+                .append_pair("includeDeleted", "false")
+                .append_pair("fields", DRIVE_COMMENTS_FIELDS);
+            if let Some(page_token) = page_token {
+                query.append_pair("pageToken", page_token);
+            }
+        }
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateCommentOptions {
+    pub file_id: String,
+    pub content: String,
+    files_url: String,
+}
+
+impl CreateCommentOptions {
+    pub fn new(file_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            content: content.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments");
+        url.query_pairs_mut()
+            .append_pair("fields", DRIVE_COMMENT_MUTATION_FIELDS);
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateCommentReplyOptions {
+    pub file_id: String,
+    pub comment_id: String,
+    pub text: String,
+    files_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateCommentOptions {
+    pub file_id: String,
+    pub comment_id: String,
+    pub content: String,
+    files_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteCommentOptions {
+    pub file_id: String,
+    pub comment_id: String,
+    files_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolveCommentOptions {
+    pub file_id: String,
+    pub comment_id: String,
+    pub content: Option<String>,
+    files_url: String,
+}
+
+impl ResolveCommentOptions {
+    pub fn new(file_id: impl Into<String>, comment_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            comment_id: comment_id.into(),
+            content: None,
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    pub fn with_content(mut self, content: impl Into<String>) -> Self {
+        self.content = Some(content.into());
+        self
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments")
+            .push(&self.comment_id)
+            .push("replies");
+        url.query_pairs_mut()
+            .append_pair("fields", DRIVE_COMMENT_REPLY_FIELDS);
+        Ok(url)
+    }
+}
+
+impl DeleteCommentOptions {
+    pub fn new(file_id: impl Into<String>, comment_id: impl Into<String>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            comment_id: comment_id.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments")
+            .push(&self.comment_id);
+        Ok(url)
+    }
+}
+
+impl UpdateCommentOptions {
+    pub fn new(
+        file_id: impl Into<String>,
+        comment_id: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
+        Self {
+            file_id: file_id.into(),
+            comment_id: comment_id.into(),
+            content: content.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments")
+            .push(&self.comment_id);
+        url.query_pairs_mut()
+            .append_pair("fields", DRIVE_COMMENT_MUTATION_FIELDS);
+        Ok(url)
+    }
+}
+
+impl CreateCommentReplyOptions {
+    pub fn new(
+        file_id: impl Into<String>,
+        comment_id: impl Into<String>,
+        text: impl Into<String>,
+    ) -> Self {
+        Self {
+            file_id: file_id.into(),
+            comment_id: comment_id.into(),
+            text: text.into(),
+            files_url: DRIVE_FILES_URL.to_string(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("comments")
+            .push(&self.comment_id)
+            .push("replies");
+        url.query_pairs_mut()
+            .append_pair("fields", DRIVE_COMMENT_REPLY_FIELDS);
+        Ok(url)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,6 +893,9 @@ enum ListFilesMode {
     Files,
     Folders,
     Browse,
+    Docs,
+    Sheets,
+    Slides,
 }
 
 impl ListFilesOptions {
@@ -267,6 +904,7 @@ impl ListFilesOptions {
             page_size,
             page_token: None,
             folder: None,
+            show_all: false,
             mode: ListFilesMode::Files,
             files_url: DRIVE_FILES_URL.to_string(),
         }
@@ -286,6 +924,27 @@ impl ListFilesOptions {
         }
     }
 
+    pub fn docs(page_size: u32) -> Self {
+        Self {
+            mode: ListFilesMode::Docs,
+            ..Self::new(page_size)
+        }
+    }
+
+    pub fn sheets(page_size: u32) -> Self {
+        Self {
+            mode: ListFilesMode::Sheets,
+            ..Self::new(page_size)
+        }
+    }
+
+    pub fn slides(page_size: u32) -> Self {
+        Self {
+            mode: ListFilesMode::Slides,
+            ..Self::new(page_size)
+        }
+    }
+
     pub fn with_page_token(mut self, page_token: impl Into<String>) -> Self {
         self.page_token = Some(page_token.into());
         self
@@ -293,6 +952,11 @@ impl ListFilesOptions {
 
     pub fn with_folder(mut self, folder: impl Into<String>) -> Self {
         self.folder = Some(folder.into());
+        self
+    }
+
+    pub fn with_show_all(mut self) -> Self {
+        self.show_all = true;
         self
     }
 
@@ -321,14 +985,17 @@ impl ListFilesOptions {
     }
 
     fn query(&self) -> String {
-        match (self.parent_filter(), self.mode.mime_type_filter()) {
-            (Some(parent_filter), Some(mime_type_filter)) => {
-                format!("{parent_filter} and {mime_type_filter}")
-            }
-            (Some(parent_filter), None) => parent_filter,
-            (None, Some(mime_type_filter)) => mime_type_filter,
-            (None, None) => String::new(),
+        let mut filters = Vec::new();
+        if let Some(parent_filter) = self.parent_filter() {
+            filters.push(parent_filter);
         }
+        if let Some(mime_type_filter) = self.mode.mime_type_filter() {
+            filters.push(mime_type_filter);
+        }
+        if !self.show_all {
+            filters.push("trashed = false".into());
+        }
+        filters.join(" and ")
     }
 
     fn parent_filter(&self) -> Option<String> {
@@ -336,7 +1003,13 @@ impl ListFilesOptions {
             (_, Some(folder)) => Some(parent_query_filter(folder)),
             (ListFilesMode::Folders, None) => Some(parent_query_filter("root")),
             (ListFilesMode::Browse, None) => Some(parent_query_filter("root")),
-            (ListFilesMode::Files, None) => None,
+            (
+                ListFilesMode::Files
+                | ListFilesMode::Docs
+                | ListFilesMode::Sheets
+                | ListFilesMode::Slides,
+                None,
+            ) => None,
         }
     }
 }
@@ -347,13 +1020,18 @@ impl ListFilesMode {
             Self::Files => Some(format!("mimeType != '{DRIVE_FOLDER_MIME_TYPE}'")),
             Self::Folders => Some(format!("mimeType = '{DRIVE_FOLDER_MIME_TYPE}'")),
             Self::Browse => None,
+            Self::Docs => Some(format!("mimeType = '{GOOGLE_DOC_MIME_TYPE}'")),
+            Self::Sheets => Some(format!("mimeType = '{GOOGLE_SHEET_MIME_TYPE}'")),
+            Self::Slides => Some(format!("mimeType = '{GOOGLE_SLIDES_MIME_TYPE}'")),
         }
     }
 
     fn order_by(self) -> &'static str {
         match self {
             Self::Browse => "name",
-            Self::Files | Self::Folders => "modifiedTime desc",
+            Self::Files | Self::Folders | Self::Docs | Self::Sheets | Self::Slides => {
+                "modifiedTime desc"
+            }
         }
     }
 }
@@ -379,20 +1057,177 @@ pub async fn list_files<S: AccountStore>(
     parse_files_response(response).await
 }
 
+pub async fn list_comments<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ListCommentsOptions,
+) -> Result<Vec<DriveComment>, DriveError> {
+    let mut comments = Vec::new();
+    let mut page_token = None;
+
+    loop {
+        let response = client
+            .send_with_scopes(
+                client.get(options.request_url(page_token.as_deref())?),
+                DRIVE_SCOPES,
+            )
+            .await
+            .map_err(DriveError::Auth)?;
+        let response = ensure_success_response(response).await?;
+        let mut page = response
+            .json::<CommentsPage>()
+            .await
+            .map_err(|error| DriveError::InvalidResponse(error.to_string()))?;
+        if options.open_only {
+            page.comments
+                .retain(|comment| comment.resolved != Some(true));
+        }
+        comments.append(&mut page.comments);
+        match page.next_page_token {
+            Some(token) => page_token = Some(token),
+            None => return Ok(comments),
+        }
+    }
+}
+
+pub async fn create_comment<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CreateCommentOptions,
+) -> Result<DriveComment, DriveError> {
+    let body = CommentContentRequest {
+        content: &options.content,
+    };
+    let response = client
+        .send_with_scopes(
+            client.post(options.request_url()?).json(&body),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<DriveComment>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
+}
+
+pub async fn create_comment_reply<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CreateCommentReplyOptions,
+) -> Result<DriveCommentReply, DriveError> {
+    let body = CommentContentRequest {
+        content: &options.text,
+    };
+    let response = client
+        .send_with_scopes(
+            client.post(options.request_url()?).json(&body),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<DriveCommentReply>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
+}
+
+pub async fn update_comment<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateCommentOptions,
+) -> Result<DriveComment, DriveError> {
+    let body = CommentContentRequest {
+        content: &options.content,
+    };
+    let response = client
+        .send_with_scopes(
+            client
+                .request(Method::PATCH, options.request_url()?)
+                .json(&body),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<DriveComment>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
+}
+
+pub async fn delete_comment<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DeleteCommentOptions,
+) -> Result<(), DriveError> {
+    let response = client
+        .send_with_scopes(client.delete(options.request_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response).await?;
+    Ok(())
+}
+
+pub async fn resolve_comment<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ResolveCommentOptions,
+) -> Result<DriveCommentReply, DriveError> {
+    let body = ResolveCommentRequest {
+        action: "resolve",
+        content: options.content.as_deref(),
+    };
+    let response = client
+        .send_with_scopes(
+            client.post(options.request_url()?).json(&body),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<DriveCommentReply>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
+}
+
+pub async fn create_folder<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CreateFolderOptions,
+) -> Result<CreatedFolder, DriveError> {
+    let metadata = CreateFolderMetadata {
+        name: &options.name,
+        mime_type: DRIVE_FOLDER_MIME_TYPE,
+        parents: [&options.parent_folder],
+    };
+    let response = client
+        .send_with_scopes(
+            client.post(options.request_url()?).json(&metadata),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<CreatedFolder>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
+}
+
 pub async fn move_file<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &MoveFileOptions,
 ) -> Result<MovedFile, DriveError> {
+    let mut parents_url = options.file_url()?;
+    parents_url
+        .query_pairs_mut()
+        .append_pair("fields", "parents");
     let response = client
-        .send_with_scopes(client.get(options.parents_url()?), DRIVE_SCOPES)
+        .send_with_scopes(client.get(parents_url), DRIVE_SCOPES)
         .await
         .map_err(DriveError::Auth)?;
     let parents = ensure_success_response(response)
         .await?
         .json::<FileParents>()
         .await
-        .map_err(|e| DriveError::InvalidResponse(e.to_string()))?;
-
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))?;
     let parents_to_remove = parents
         .parents
         .iter()
@@ -406,21 +1241,30 @@ pub async fn move_file<S: AccountStore>(
         });
     }
 
+    let mut move_url = options.file_url()?;
+    {
+        let mut query = move_url.query_pairs_mut();
+        query
+            .append_pair("addParents", &options.destination_folder_id)
+            .append_pair("fields", "id,parents");
+        if !parents_to_remove.is_empty() {
+            query.append_pair("removeParents", &parents_to_remove.join(","));
+        }
+    }
     let response = client
         .send_with_scopes(
             client
-                .request(Method::PATCH, options.move_url(&parents_to_remove)?)
+                .request(Method::PATCH, move_url)
                 .json(&serde_json::json!({})),
             DRIVE_SCOPES,
         )
         .await
         .map_err(DriveError::Auth)?;
-
     ensure_success_response(response)
         .await?
         .json::<MovedFile>()
         .await
-        .map_err(|e| DriveError::InvalidResponse(e.to_string()))
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
 
 pub async fn download<S, F>(
@@ -432,15 +1276,20 @@ where
     S: AccountStore,
     F: FnMut(u64),
 {
+    let metadata = fetch_metadata(client, options).await?;
+    let export_format = GoogleFileExportFormat::for_google_mime_type(&metadata.mime_type);
     let path = match &options.output {
         Some(output) => output.clone(),
-        None => {
-            let metadata = fetch_metadata(client, options).await?;
-            std::env::current_dir()
-                .map_err(DriveError::Io)?
-                .join(metadata.name)
-        }
+        None => std::env::current_dir()
+            .map_err(DriveError::Io)?
+            .join(default_download_name(&metadata.name, export_format)),
     };
+
+    if let Some(format) = export_format {
+        let export_options = ExportGoogleFileOptions::new(&options.file_id, format, path)
+            .with_files_url(&options.files_url);
+        return export_google_file(client, &export_options, progress).await;
+    }
 
     let response = client
         .send_with_scopes(client.get(options.media_url()?), DRIVE_SCOPES)
@@ -461,6 +1310,92 @@ where
 
     file.flush().await.map_err(DriveError::Io)?;
     Ok(DownloadedFile { path, bytes })
+}
+
+fn default_download_name(name: &str, export_format: Option<GoogleFileExportFormat>) -> String {
+    let Some(export_format) = export_format else {
+        return name.to_string();
+    };
+    let extension = export_format.file_extension();
+    if Path::new(name)
+        .extension()
+        .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+    {
+        name.to_string()
+    } else {
+        format!("{name}.{extension}")
+    }
+}
+
+pub async fn export_google_file<S, F>(
+    client: &AuthClient<'_, S>,
+    options: &ExportGoogleFileOptions,
+    mut progress: F,
+) -> Result<DownloadedFile, DriveError>
+where
+    S: AccountStore,
+    F: FnMut(u64),
+{
+    let response = client
+        .send_with_scopes(client.get(options.export_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+
+    let mut response = ensure_success_response(response).await?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > options.max_download_bytes as u64)
+    {
+        return Err(export_size_error(options.max_download_bytes));
+    }
+    let output_parent = options
+        .output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let temporary_file = tempfile::NamedTempFile::new_in(output_parent).map_err(DriveError::Io)?;
+    let (temporary_file, temporary_path) = temporary_file.into_parts();
+    let mut file = tokio::fs::File::from_std(temporary_file);
+    let mut bytes = 0_u64;
+    let mut signature = Vec::with_capacity(5);
+
+    while let Some(chunk) = response.chunk().await.map_err(DriveError::Network)? {
+        let next_bytes = bytes
+            .checked_add(chunk.len() as u64)
+            .ok_or_else(|| DriveError::InvalidResponse("export size overflow".into()))?;
+        if next_bytes > options.max_download_bytes as u64 {
+            return Err(export_size_error(options.max_download_bytes));
+        }
+        file.write_all(&chunk).await.map_err(DriveError::Io)?;
+        let remaining_signature_bytes = 5_usize.saturating_sub(signature.len());
+        signature.extend_from_slice(&chunk[..chunk.len().min(remaining_signature_bytes)]);
+        bytes = next_bytes;
+        progress(bytes);
+    }
+
+    file.flush().await.map_err(DriveError::Io)?;
+    if !options.format.has_valid_signature(&signature) {
+        return Err(DriveError::InvalidResponse(format!(
+            "Google Drive returned an invalid {} export",
+            options.format.display_name()
+        )));
+    }
+    file.sync_all().await.map_err(DriveError::Io)?;
+    drop(file);
+    temporary_path
+        .persist(&options.output)
+        .map_err(|error| DriveError::Io(error.error))?;
+
+    Ok(DownloadedFile {
+        path: options.output.clone(),
+        bytes,
+    })
+}
+
+fn export_size_error(max_download_bytes: usize) -> DriveError {
+    DriveError::InvalidResponse(format!(
+        "Google Drive export exceeds the {max_download_bytes}-byte download limit"
+    ))
 }
 
 pub async fn upload<S, F>(
@@ -484,6 +1419,26 @@ where
     }
 }
 
+pub async fn convert_office_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &OfficeConversionOptions,
+) -> Result<OfficeConversionResult, DriveError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .post(options.request_url()?)
+                .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
+                .json(&ConvertFileMetadata {
+                    mime_type: options.target.mime_type(),
+                }),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+
+    parse_office_conversion_response(response).await
+}
+
 async fn upload_multipart<S, F>(
     client: &AuthClient<'_, S>,
     options: &UploadFileOptions,
@@ -502,7 +1457,8 @@ where
          Content-Type: {JSON_CONTENT_TYPE}\r\n\r\n\
          {metadata_json}\r\n\
          --{MULTIPART_UPLOAD_BOUNDARY}\r\n\
-         Content-Type: {DEFAULT_UPLOAD_MIME_TYPE}\r\n\r\n"
+         Content-Type: {}\r\n\r\n",
+        options.mime_type
     ));
     let footer = Bytes::from(format!("\r\n--{MULTIPART_UPLOAD_BOUNDARY}--\r\n"));
     let content_length = header.len() as u64 + file_size + footer.len() as u64;
@@ -602,7 +1558,7 @@ async fn initiate_resumable_upload<S: AccountStore>(
             client
                 .post(options.upload_url(UploadType::Resumable)?)
                 .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
-                .header(UPLOAD_CONTENT_TYPE_HEADER, DEFAULT_UPLOAD_MIME_TYPE)
+                .header(UPLOAD_CONTENT_TYPE_HEADER, &options.mime_type)
                 .header(UPLOAD_CONTENT_LENGTH_HEADER, file_size.to_string())
                 .json(&metadata),
             DRIVE_SCOPES,
@@ -631,8 +1587,57 @@ fn upload_metadata(options: &UploadFileOptions) -> Result<UploadMetadata, DriveE
 
     Ok(UploadMetadata {
         name,
+        mime_type: options.mime_type.clone(),
         parents: options.folder.as_ref().map(|folder| vec![folder.clone()]),
     })
+}
+
+pub async fn create_anyone_reader_permission<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DriveFileOperationOptions,
+) -> Result<(), DriveError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .post(options.permissions_url()?)
+                .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
+                .json(&serde_json::json!({"type": "anyone", "role": "reader"})),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response).await?;
+    Ok(())
+}
+
+pub async fn delete_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DriveFileOperationOptions,
+) -> Result<(), DriveError> {
+    let response = client
+        .send_with_scopes(client.delete(options.file_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response).await?;
+    Ok(())
+}
+
+pub async fn trash_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DriveFileOperationOptions,
+) -> Result<(), DriveError> {
+    let response = client
+        .send_with_scopes(
+            client
+                .request(Method::PATCH, options.file_url()?)
+                .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
+                .json(&serde_json::json!({ "trashed": true })),
+            DRIVE_SCOPES,
+        )
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response).await?;
+    Ok(())
 }
 
 fn multipart_body(header: Bytes, file: tokio::fs::File, footer: Bytes) -> Body {
@@ -670,6 +1675,16 @@ async fn parse_uploaded_file_response(response: Response) -> Result<UploadedFile
     let response = ensure_success_response(response).await?;
     response
         .json::<UploadedFile>()
+        .await
+        .map_err(|e| DriveError::InvalidResponse(e.to_string()))
+}
+
+async fn parse_office_conversion_response(
+    response: Response,
+) -> Result<OfficeConversionResult, DriveError> {
+    let response = ensure_success_response(response).await?;
+    response
+        .json::<OfficeConversionResult>()
         .await
         .map_err(|e| DriveError::InvalidResponse(e.to_string()))
 }

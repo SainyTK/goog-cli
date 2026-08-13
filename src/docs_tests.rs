@@ -1,13 +1,10 @@
-use std::sync::{Arc, Mutex};
-
 use chrono::{Duration, Utc};
-use wiremock::matchers::{body_json, body_string_contains, header, method, path, query_param};
+use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
-use crate::auth::client::{AuthClient, AuthorizationCode, AuthorizationCodeFlow};
+use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
-use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 use crate::docs::map::{
     build_document_map, extract_document_text, resolve_content_entry, resolve_insert_text_location,
@@ -95,27 +92,29 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     AuthClient::from_config(test_config(), store, None).unwrap()
 }
 
-struct StaticAuthorizationCodeFlow {
-    scopes_seen: Arc<Mutex<Vec<String>>>,
-}
+#[test]
+fn document_map_preserves_legacy_document_style() {
+    let document_map = build_document_map(&serde_json::json!({
+        "documentId": "document-123",
+        "documentStyle": {
+            "pageSize": {
+                "width": { "magnitude": 595.28, "unit": "PT" },
+                "height": { "magnitude": 841.89, "unit": "PT" }
+            },
+            "marginLeft": { "magnitude": 72, "unit": "PT" }
+        }
+    }));
 
-impl AuthorizationCodeFlow for StaticAuthorizationCodeFlow {
-    fn authorize(
-        &self,
-        auth_url: &str,
-        client_id: &str,
-        _state: &str,
-        scopes: &[&str],
-    ) -> Result<AuthorizationCode, AuthError> {
-        assert_eq!(auth_url, "https://example.test/auth");
-        assert_eq!(client_id, "client-123");
-        *self.scopes_seen.lock().unwrap() = scopes.iter().map(|scope| scope.to_string()).collect();
-
-        Ok(AuthorizationCode {
-            redirect_uri: "http://127.0.0.1:54321/".into(),
-            code: "docs-code".into(),
-        })
-    }
+    assert_eq!(document_map.document_styles.len(), 1);
+    assert_eq!(document_map.document_styles[0].tab_id, None);
+    assert_eq!(
+        document_map.document_styles[0].document_style["pageSize"]["width"]["magnitude"],
+        595.28
+    );
+    assert_eq!(
+        document_map.document_styles[0].document_style["marginLeft"]["magnitude"],
+        72
+    );
 }
 
 #[tokio::test]
@@ -270,96 +269,31 @@ async fn batch_update_posts_full_google_request_body() {
 #[tokio::test]
 async fn get_document_requests_full_docs_scope_when_missing() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .and(body_string_contains("code=docs-code"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "docs-access",
-            "expires_in": 3600,
-            "scope": DOCS_SCOPE,
-            "token_type": "Bearer"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/docs/v1/documents/document-123"))
-        .and(header("authorization", "Bearer docs-access"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(DOCUMENT_RESPONSE))
-        .expect(1)
-        .mount(&server)
-        .await;
-
     let store = MemoryStore::default();
     store
         .save_token("alice@example.com", &profile_token())
         .unwrap();
-    let scopes_seen = Arc::new(Mutex::new(Vec::new()));
-    let client = AuthClient::from_config(test_config(), &store, None)
-        .unwrap()
-        .with_auth_urls_for_tests(
-            "https://example.test/auth",
-            format!("{}/token", server.uri()),
-        )
-        .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
-            scopes_seen: scopes_seen.clone(),
-        }));
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
     let options = GetDocumentOptions::new("document-123")
         .with_documents_url(format!("{}/docs/v1/documents", server.uri()));
 
-    get_document(&client, &options).await.unwrap();
+    let error = get_document(&client, &options).await.unwrap_err();
 
-    assert_eq!(
-        scopes_seen.lock().unwrap().clone(),
-        vec![DOCS_SCOPE.to_string()]
-    );
-    let saved = store.load_token("alice@example.com").unwrap().unwrap();
-    assert_eq!(
-        saved.scopes,
-        vec!["openid".to_string(), DOCS_SCOPE.to_string()]
-    );
+    assert!(matches!(
+        error,
+        DocsError::Auth(crate::auth::error::AuthError::MissingScopes { scopes, .. })
+            if scopes == DOCS_SCOPE
+    ));
 }
 
 #[tokio::test]
 async fn batch_update_requests_write_docs_scope_when_missing() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .and(body_string_contains("code=docs-code"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "docs-write-access",
-            "expires_in": 3600,
-            "scope": DOCS_SCOPE,
-            "token_type": "Bearer"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/docs/v1/documents/document-123:batchUpdate"))
-        .and(header("authorization", "Bearer docs-write-access"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "documentId": "document-123",
-            "replies": []
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
     let store = MemoryStore::default();
     store
         .save_token("alice@example.com", &profile_token())
         .unwrap();
-    let scopes_seen = Arc::new(Mutex::new(Vec::new()));
-    let client = AuthClient::from_config(test_config(), &store, None)
-        .unwrap()
-        .with_auth_urls_for_tests(
-            "https://example.test/auth",
-            format!("{}/token", server.uri()),
-        )
-        .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
-            scopes_seen: scopes_seen.clone(),
-        }));
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
     let options = BatchUpdateDocumentOptions::new(
         "document-123",
         serde_json::json!({
@@ -368,17 +302,13 @@ async fn batch_update_requests_write_docs_scope_when_missing() {
     )
     .with_documents_url(format!("{}/docs/v1/documents", server.uri()));
 
-    batch_update_document(&client, &options).await.unwrap();
+    let error = batch_update_document(&client, &options).await.unwrap_err();
 
-    assert_eq!(
-        scopes_seen.lock().unwrap().clone(),
-        vec![DOCS_SCOPE.to_string()]
-    );
-    let saved = store.load_token("alice@example.com").unwrap().unwrap();
-    assert_eq!(
-        saved.scopes,
-        vec!["openid".to_string(), DOCS_SCOPE.to_string()]
-    );
+    assert!(matches!(
+        error,
+        DocsError::Auth(crate::auth::error::AuthError::MissingScopes { scopes, .. })
+            if scopes == DOCS_SCOPE
+    ));
 }
 
 #[tokio::test]
@@ -481,7 +411,7 @@ async fn get_document_converts_office_file_then_reads_temporary_document() {
         .and(path("/drive/v3/files/office-file-123/copy"))
         .and(query_param("fields", "id"))
         .and(query_param("supportsAllDrives", "true"))
-        .and(body_json(&serde_json::json!({
+        .and(body_json(serde_json::json!({
             "mimeType": "application/vnd.google-apps.document",
             "name": "goog temporary Docs conversion"
         })))
@@ -615,49 +545,27 @@ fn extract_document_text_preserves_paragraphs_lists_tables_and_tabs() {
                 },
                 {
                     "table": {
-                        "tableRows": [
-                            {
-                                "tableCells": [
-                                    {
-                                        "content": [
-                                            {
-                                                "paragraph": {
-                                                    "elements": [{ "textRun": { "content": "Left\n" } }]
-                                                }
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        "content": [
-                                            {
-                                                "paragraph": {
-                                                    "elements": [{ "textRun": { "content": "Right\n" } }]
-                                                }
-                                            }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
+                        "tableRows": [{
+                            "tableCells": [
+                                { "content": [{ "paragraph": { "elements": [{ "textRun": { "content": "Left\n" } }] } }] },
+                                { "content": [{ "paragraph": { "elements": [{ "textRun": { "content": "Right\n" } }] } }] }
+                            ]
+                        }]
                     }
                 }
             ]
         },
-        "tabs": [
-            {
-                "documentTab": {
-                    "body": {
-                        "content": [
-                            {
-                                "paragraph": {
-                                    "elements": [{ "textRun": { "content": "Second tab\n" } }]
-                                }
-                            }
-                        ]
-                    }
+        "tabs": [{
+            "documentTab": {
+                "body": {
+                    "content": [{
+                        "paragraph": {
+                            "elements": [{ "textRun": { "content": "Second tab\n" } }]
+                        }
+                    }]
                 }
             }
-        ]
+        }]
     });
 
     assert_eq!(

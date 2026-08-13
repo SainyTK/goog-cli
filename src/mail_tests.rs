@@ -1,13 +1,10 @@
-use std::sync::{Arc, Mutex};
-
 use chrono::{Duration, Utc};
 use wiremock::matchers::{body_string_contains, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
-use crate::auth::client::{AuthClient, AuthorizationCode, AuthorizationCodeFlow};
+use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
-use crate::auth::error::AuthError;
 use crate::auth::testing::MemoryStore;
 use crate::mail::*;
 use crate::test_support::CurrentDirGuard;
@@ -73,6 +70,14 @@ fn download_attachment_options(
         .with_messages_url(messages_url(server))
 }
 
+fn single_attachment_download_options(
+    server: &MockServer,
+    message_id: &str,
+) -> DownloadAttachmentOptions {
+    DownloadAttachmentOptions::without_attachment_id(message_id)
+        .with_messages_url(messages_url(server))
+}
+
 #[test]
 fn parse_message_reference_passes_through_bare_message_id() {
     assert_eq!(
@@ -129,29 +134,6 @@ fn parse_message_reference_trims_surrounding_whitespace() {
         parse_message_reference("  placeholder-message-id  "),
         MessageReference::MessageId("placeholder-message-id".into())
     );
-}
-
-struct StaticAuthorizationCodeFlow {
-    scopes_seen: Arc<Mutex<Vec<String>>>,
-}
-
-impl AuthorizationCodeFlow for StaticAuthorizationCodeFlow {
-    fn authorize(
-        &self,
-        auth_url: &str,
-        client_id: &str,
-        _state: &str,
-        scopes: &[&str],
-    ) -> Result<AuthorizationCode, AuthError> {
-        assert_eq!(auth_url, "https://example.test/auth");
-        assert_eq!(client_id, "client-123");
-        *self.scopes_seen.lock().unwrap() = scopes.iter().map(|scope| scope.to_string()).collect();
-
-        Ok(AuthorizationCode {
-            redirect_uri: "http://127.0.0.1:54321/".into(),
-            code: "mail-code".into(),
-        })
-    }
 }
 
 #[tokio::test]
@@ -230,6 +212,7 @@ async fn update_draft_puts_to_gmail_draft_endpoint() {
             bcc: vec![],
             subject: "Updated subject".into(),
             body: "Updated body".into(),
+            body_format: DraftBodyFormat::PlainText,
             attachments: Vec::new(),
         },
     )
@@ -603,6 +586,85 @@ async fn download_attachment_uses_content_disposition_filename_when_part_filenam
 }
 
 #[tokio::test]
+async fn download_attachment_selects_the_only_attachment_when_id_is_omitted() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "report.txt",
+                        "body": { "attachmentId": "only-attachment" }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(attachment_path("message-1", "only-attachment")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": "cmVwb3J0"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = single_attachment_download_options(&server, "message-1");
+
+    let downloaded = download_attachment(&client, &options).await.unwrap();
+
+    assert_eq!(
+        downloaded.path.canonicalize().unwrap(),
+        temp.path().join("report.txt").canonicalize().unwrap()
+    );
+    assert_eq!(std::fs::read(downloaded.path).unwrap(), b"report");
+}
+
+#[tokio::test]
+async fn download_attachment_rejects_missing_id_when_message_has_multiple_attachments() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "payload": {
+                "parts": [
+                    {
+                        "filename": "first.txt",
+                        "body": { "attachmentId": "attachment-1" }
+                    },
+                    {
+                        "filename": "second.txt",
+                        "body": { "attachmentId": "attachment-2" }
+                    }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = single_attachment_download_options(&server, "message-1");
+
+    let err = download_attachment(&client, &options).await.unwrap_err();
+
+    match err {
+        MailError::InvalidInput(message) => {
+            assert!(message.contains("does not have exactly one attachment"));
+        }
+        _ => panic!("unexpected error: {err}"),
+    }
+}
+
+#[tokio::test]
 async fn download_attachment_uses_single_attachment_filename_when_refetched_attachment_id_differs()
 {
     let server = MockServer::start().await;
@@ -729,58 +791,23 @@ async fn download_attachment_requires_output_when_filename_is_missing() {
 #[tokio::test]
 async fn download_attachment_requests_only_gmail_modify_scope_when_missing() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .and(body_string_contains("code=mail-code"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "mail-access",
-            "expires_in": 3600,
-            "scope": GMAIL_SCOPE,
-            "token_type": "Bearer"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path(attachment_path("message-1", "attachment-1")))
-        .and(header("authorization", "Bearer mail-access"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "data": "c2NvcGVk"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
     let temp = tempfile::tempdir().unwrap();
     let output = temp.path().join("scoped.txt");
     let store = MemoryStore::default();
     store
         .save_token("alice@example.com", &profile_token())
         .unwrap();
-    let scopes_seen = Arc::new(Mutex::new(Vec::new()));
-    let client = AuthClient::from_config(test_config(), &store, None)
-        .unwrap()
-        .with_auth_urls_for_tests(
-            "https://example.test/auth",
-            format!("{}/token", server.uri()),
-        )
-        .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
-            scopes_seen: scopes_seen.clone(),
-        }));
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
     let options =
         download_attachment_options(&server, "message-1", "attachment-1").with_output(output);
 
-    download_attachment(&client, &options).await.unwrap();
+    let error = download_attachment(&client, &options).await.unwrap_err();
 
-    assert_eq!(
-        scopes_seen.lock().unwrap().clone(),
-        vec![GMAIL_SCOPE.to_string()]
-    );
-    let saved = store.load_token("alice@example.com").unwrap().unwrap();
-    assert_eq!(
-        saved.scopes,
-        vec!["openid".to_string(), GMAIL_SCOPE.to_string()]
-    );
+    assert!(matches!(
+        error,
+        MailError::Auth(crate::auth::error::AuthError::MissingScopes { scopes, .. })
+            if scopes == GMAIL_SCOPE
+    ));
 }
 
 #[tokio::test]
@@ -853,7 +880,7 @@ async fn download_attachment_returns_api_error_with_response_body() {
 }
 
 #[tokio::test]
-async fn get_message_fetches_raw_googlemail_message() {
+async fn get_message_fetches_raw_gmail_message() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/gmail/v1/users/me/messages/message-123"))
@@ -917,55 +944,20 @@ async fn resolve_message_reference_uses_thread_token_and_prefers_matching_label(
 #[tokio::test]
 async fn get_message_requests_only_gmail_modify_scope_when_missing() {
     let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/token"))
-        .and(body_string_contains("code=mail-code"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "mail-access",
-            "expires_in": 3600,
-            "scope": GMAIL_SCOPE,
-            "token_type": "Bearer"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/gmail/v1/users/me/messages/message-123"))
-        .and(header("authorization", "Bearer mail-access"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "message-123"
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
     let store = MemoryStore::default();
     store
         .save_token("alice@example.com", &profile_token())
         .unwrap();
-    let scopes_seen = Arc::new(Mutex::new(Vec::new()));
-    let client = AuthClient::from_config(test_config(), &store, None)
-        .unwrap()
-        .with_auth_urls_for_tests(
-            "https://example.test/auth",
-            format!("{}/token", server.uri()),
-        )
-        .with_authorization_code_flow_for_tests(Box::new(StaticAuthorizationCodeFlow {
-            scopes_seen: scopes_seen.clone(),
-        }));
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
     let options = GetMessageOptions::new("message-123").with_messages_url(messages_url(&server));
 
-    get_message(&client, &options).await.unwrap();
+    let error = get_message(&client, &options).await.unwrap_err();
 
-    assert_eq!(
-        scopes_seen.lock().unwrap().clone(),
-        vec![GMAIL_SCOPE.to_string()]
-    );
-    let saved = store.load_token("alice@example.com").unwrap().unwrap();
-    assert_eq!(
-        saved.scopes,
-        vec!["openid".to_string(), GMAIL_SCOPE.to_string()]
-    );
+    assert!(matches!(
+        error,
+        MailError::Auth(crate::auth::error::AuthError::MissingScopes { scopes, .. })
+            if scopes == GMAIL_SCOPE
+    ));
 }
 
 #[tokio::test]

@@ -9,7 +9,11 @@ use crate::auth::state::{
     load_runtime_state_from_path, resource_key, save_runtime_state_to_path, RuntimeState,
 };
 use crate::auth::testing::MemoryStore;
-use crate::drive::{DriveFile, DRIVE_SCOPE};
+use crate::drive::{
+    CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, DeleteCommentOptions,
+    DriveFile, ListCommentsOptions, OfficeConversionOptions, OfficeConversionTarget,
+    ResolveCommentOptions, UpdateCommentOptions, DRIVE_SCOPE,
+};
 
 use super::drive::*;
 
@@ -221,6 +225,303 @@ fn write_ndjson_uses_drive_api_field_names() {
 }
 
 #[test]
+fn compose_comment_content_prefixes_mentions() {
+    assert_eq!(
+        compose_comment_content(
+            "👀 Please review this.",
+            &[
+                "reviewer@example.com".to_string(),
+                "owner@example.com".to_string(),
+            ],
+        ),
+        "@reviewer@example.com @owner@example.com 👀 Please review this."
+    );
+}
+
+#[tokio::test]
+async fn run_comment_create_outputs_the_created_comment_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(BodyContains(
+            "\"content\":\"@reviewer@example.com 👀 Please review this.\"".as_bytes(),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "comment-789",
+            "content": "@reviewer@example.com 👀 Please review this."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = CreateCommentOptions::new(
+        "document-123",
+        "@reviewer@example.com 👀 Please review this.",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_create_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"content\":\"@reviewer@example.com 👀 Please review this.\",\"id\":\"comment-789\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comment_edit_outputs_the_updated_comment_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/document-123/comments/comment-456"))
+        .and(BodyContains(
+            "\"content\":\"@reviewer@example.com ✏️ Updated comment.\"".as_bytes(),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "comment-456",
+            "content": "@reviewer@example.com ✏️ Updated comment."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = UpdateCommentOptions::new(
+        "document-123",
+        "comment-456",
+        "@reviewer@example.com ✏️ Updated comment.",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_edit_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"content\":\"@reviewer@example.com ✏️ Updated comment.\",\"id\":\"comment-456\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comment_delete_outputs_machine_readable_confirmation() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/drive/v3/files/document-123/comments/comment-456"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = DeleteCommentOptions::new("document-123", "comment-456")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_delete_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"commentId\":\"comment-456\",\"deleted\":true}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comment_resolve_outputs_the_resolution_reply_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .and(BodyContains(
+            "\"action\":\"resolve\",\"content\":\"✅ Addressed.\"".as_bytes(),
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "action": "resolve",
+            "content": "✅ Addressed."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = ResolveCommentOptions::new("document-123", "comment-456")
+        .with_content("✅ Addressed.")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_resolve_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"action\":\"resolve\",\"content\":\"✅ Addressed.\",\"id\":\"reply-789\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comments_outputs_one_json_document_with_nested_replies() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{
+                "id": "comment-123",
+                "resolved": false,
+                "replies": [{"id": "reply-123", "content": "Done."}]
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comments_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"comments\":[{\"id\":\"comment-123\",\"replies\":[{\"content\":\"Done.\",\"id\":\"reply-123\"}],\"resolved\":false}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comments_preserves_empty_reply_and_mention_arrays() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{
+                "id": "comment-123",
+                "mentionedEmailAddresses": [],
+                "replies": []
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comments_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"comments\":[{\"id\":\"comment-123\",\"mentionedEmailAddresses\":[],\"replies\":[]}]}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_comments_falls_back_and_maps_the_file_account() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/comments"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "comments": [{"id": "comment-123", "resolved": false}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let options = ListCommentsOptions::new("document-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comments_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "document-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_comment_reply_outputs_the_created_reply_json() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/drive/v3/files/document-123/comments/comment-456/replies",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "reply-789",
+            "content": "Updated as requested."
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let options =
+        CreateCommentReplyOptions::new("document-123", "comment-456", "Updated as requested.")
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_comment_reply_unified_to(&test_config(), &store, None, options, &mut out, None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"content\":\"Updated as requested.\",\"id\":\"reply-789\"}\n"
+    );
+}
+
+#[test]
 fn write_table_includes_expected_columns() {
     let mut out = Vec::new();
     let mut wrote_header = false;
@@ -264,6 +565,54 @@ fn write_folder_table_includes_expected_columns() {
     assert!(rendered.contains("NAME\tFOLDER ID\tPARENT FOLDER IDS\tMODIFIED"));
     assert!(rendered.contains("Projects\tfolder-1\troot\t2026-06-24T11:15:00.000Z"));
     assert!(!rendered.contains("MIME TYPE"));
+}
+
+#[test]
+fn write_docs_table_uses_document_id_header() {
+    let mut out = Vec::new();
+    let mut wrote_header = false;
+    write_docs_table(
+        &[DriveFile {
+            name: "Roadmap".into(),
+            id: "doc-1".into(),
+            parent_ids: vec!["folder-123".into()],
+            mime_type: "application/vnd.google-apps.document".into(),
+            modified_time: "2026-06-24T10:15:00.000Z".into(),
+        }],
+        &mut out,
+        &mut wrote_header,
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert_eq!(
+        rendered,
+        "NAME\tDOCUMENT ID\tPARENT FOLDER IDS\tMODIFIED\nRoadmap\tdoc-1\tfolder-123\t2026-06-24T10:15:00.000Z\n"
+    );
+}
+
+#[test]
+fn write_sheets_table_uses_spreadsheet_id_header() {
+    let mut out = Vec::new();
+    let mut wrote_header = false;
+    write_sheets_table(
+        &[DriveFile {
+            name: "Budget".into(),
+            id: "sheet-1".into(),
+            parent_ids: vec!["folder-123".into()],
+            mime_type: "application/vnd.google-apps.spreadsheet".into(),
+            modified_time: "2026-06-24T12:15:00.000Z".into(),
+        }],
+        &mut out,
+        &mut wrote_header,
+    )
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert_eq!(
+        rendered,
+        "NAME\tSPREADSHEET ID\tPARENT FOLDER IDS\tMODIFIED\nBudget\tsheet-1\tfolder-123\t2026-06-24T12:15:00.000Z\n"
+    );
 }
 
 #[test]
@@ -359,7 +708,7 @@ async fn run_ls_defaults_to_drive_root_and_renders_mixed_table() {
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer drive-access"))
         .and(query_param("pageSize", "50"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_MIXED_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -400,7 +749,10 @@ async fn run_ls_filters_to_folder_when_requested() {
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer drive-access"))
         .and(query_param("pageSize", "50"))
-        .and(query_param("q", "'folder-123' in parents"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and trashed = false",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_MIXED_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -437,7 +789,7 @@ async fn run_ls_emits_ndjson_with_drive_native_mime_type_field() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_MIXED_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -475,12 +827,12 @@ async fn run_ls_emits_ndjson_with_drive_native_mime_type_field() {
 }
 
 #[tokio::test]
-async fn run_ls_all_fetches_following_pages_and_reports_progress() {
+async fn run_ls_all_lists_following_pages_and_reports_progress() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -489,7 +841,7 @@ async fn run_ls_all_fetches_following_pages_and_reports_progress() {
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_SECOND_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -520,7 +872,7 @@ async fn run_ls_all_fetches_following_pages_and_reports_progress() {
     assert!(rendered.contains("file\tNotes\tfile-2\ttext/plain"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 items...\nFetched 2 items...\n"
+        "Listed 1 items...\nListed 2 items...\n"
     );
 }
 
@@ -572,7 +924,7 @@ async fn run_list_filters_to_folder_when_requested() {
         .and(query_param("pageSize", "50"))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -613,7 +965,7 @@ async fn run_folder_list_defaults_to_drive_root() {
         .and(query_param("pageSize", "50"))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -655,7 +1007,7 @@ async fn run_folder_list_filters_to_parent_when_requested() {
         .and(query_param("pageSize", "50"))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -696,7 +1048,7 @@ async fn run_folder_list_emits_ndjson_with_parent_ids() {
         .and(query_param("pageSize", "50"))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -731,14 +1083,14 @@ async fn run_folder_list_emits_ndjson_with_parent_ids() {
 }
 
 #[tokio::test]
-async fn run_folder_list_all_fetches_following_pages_and_reports_progress() {
+async fn run_folder_list_all_lists_following_pages_and_reports_progress() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "2"))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_FIRST_PAGE_RESPONSE))
         .expect(1)
@@ -750,7 +1102,7 @@ async fn run_folder_list_all_fetches_following_pages_and_reports_progress() {
         .and(query_param("pageToken", "token-2"))
         .and(query_param(
             "q",
-            "'root' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SECOND_PAGE_RESPONSE))
         .expect(1)
@@ -782,19 +1134,19 @@ async fn run_folder_list_all_fetches_following_pages_and_reports_progress() {
     assert!(rendered.contains("Second\tfolder-2\troot\t"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 folders...\nFetched 2 folders...\n"
+        "Listed 1 folders...\nListed 2 folders...\n"
     );
 }
 
 #[tokio::test]
-async fn run_list_all_fetches_following_pages_and_reports_progress() {
+async fn run_list_all_lists_following_pages_and_reports_progress() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "2"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FIRST_PAGE_RESPONSE))
         .expect(1)
@@ -806,7 +1158,7 @@ async fn run_list_all_fetches_following_pages_and_reports_progress() {
         .and(query_param("pageToken", "token-2"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SECOND_PAGE_RESPONSE))
         .expect(1)
@@ -838,7 +1190,7 @@ async fn run_list_all_fetches_following_pages_and_reports_progress() {
     assert!(rendered.contains("Second\tfile-2\t\ttext/plain"));
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 files...\nFetched 2 files...\n"
+        "Listed 1 files...\nListed 2 files...\n"
     );
 }
 
@@ -850,7 +1202,7 @@ async fn run_list_limit_can_span_multiple_pages_without_all() {
         .and(query_param("pageSize", "2"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FIRST_PAGE_RESPONSE))
         .expect(1)
@@ -862,7 +1214,7 @@ async fn run_list_limit_can_span_multiple_pages_without_all() {
         .and(query_param("pageToken", "token-2"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SECOND_PAGE_RESPONSE))
         .expect(1)
@@ -972,91 +1324,6 @@ async fn run_move_replaces_existing_parents_and_prints_updated_parents() {
         .and(path("/drive/v3/files/file-123"))
         .and(header("authorization", "Bearer drive-access"))
         .and(query_param("fields", "parents"))
-        .and(query_param("supportsAllDrives", "true"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "parents": ["old-folder-1", "old-folder-2"]
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("PATCH"))
-        .and(path("/drive/v3/files/file-123"))
-        .and(header("authorization", "Bearer drive-access"))
-        .and(query_param("addParents", "folder-456"))
-        .and(query_param("removeParents", "old-folder-1,old-folder-2"))
-        .and(query_param("fields", "id,parents"))
-        .and(query_param("supportsAllDrives", "true"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "file-123",
-            "parents": ["folder-456"]
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let store = MemoryStore::default();
-    let client = test_client(&store);
-    let mut out = Vec::new();
-    let files_url = format!("{}/drive/v3/files", server.uri());
-
-    run_move_to(
-        &client,
-        "file-123".into(),
-        "folder-456".into(),
-        &mut out,
-        Some(&files_url),
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(String::from_utf8(out).unwrap(), "file-123\tfolder-456\n");
-}
-
-#[tokio::test]
-async fn run_move_is_a_no_op_when_file_is_already_in_destination_folder() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/drive/v3/files/file-123"))
-        .and(header("authorization", "Bearer drive-access"))
-        .and(query_param("fields", "parents"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "parents": ["folder-456"]
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let store = MemoryStore::default();
-    let client = test_client(&store);
-    let mut out = Vec::new();
-    let files_url = format!("{}/drive/v3/files", server.uri());
-
-    run_move_to(
-        &client,
-        "file-123".into(),
-        "folder-456".into(),
-        &mut out,
-        Some(&files_url),
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(String::from_utf8(out).unwrap(), "file-123\tfolder-456\n");
-}
-
-#[tokio::test]
-async fn run_move_unified_falls_back_and_maps_source_file_account() {
-    let server = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/drive/v3/files/file-123"))
-        .and(header("authorization", "Bearer alice-access"))
-        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/drive/v3/files/file-123"))
-        .and(header("authorization", "Bearer bob-access"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "parents": ["old-folder"]
         })))
@@ -1065,7 +1332,6 @@ async fn run_move_unified_falls_back_and_maps_source_file_account() {
         .await;
     Mock::given(method("PATCH"))
         .and(path("/drive/v3/files/file-123"))
-        .and(header("authorization", "Bearer bob-access"))
         .and(query_param("addParents", "folder-456"))
         .and(query_param("removeParents", "old-folder"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -1076,33 +1342,21 @@ async fn run_move_unified_falls_back_and_maps_source_file_account() {
         .mount(&server)
         .await;
 
-    let config = multi_account_config();
-    let store = multi_account_store();
-    let temp_dir = tempfile::tempdir().unwrap();
-    let state_path = temp_dir.path().join("state.toml");
-    let files_url = format!("{}/drive/v3/files", server.uri());
+    let store = MemoryStore::default();
+    let client = test_client(&store);
     let mut out = Vec::new();
-
-    run_move_unified_to(
-        &config,
-        &store,
-        None,
+    let files_url = format!("{}/drive/v3/files", server.uri());
+    run_move_to(
+        &client,
         "file-123".into(),
         "folder-456".into(),
         &mut out,
         Some(&files_url),
-        Some(&state_path),
     )
     .await
     .unwrap();
 
     assert_eq!(String::from_utf8(out).unwrap(), "file-123\tfolder-456\n");
-    assert_eq!(
-        load_runtime_state_from_path(&state_path)
-            .unwrap()
-            .account_for_resource(&resource_key("drive", "file-123")),
-        Some("bob@example.com")
-    );
 }
 
 #[tokio::test]
@@ -1140,11 +1394,169 @@ async fn run_upload_prints_uploaded_file_id_and_url() {
 }
 
 #[tokio::test]
+async fn run_mkdir_uses_parent_folder_account_and_prints_folder_location() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer alice-access"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(BodyContains(br#""parents":["parent-folder-123"]"#))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(BodyContains(br#""name":"Candidate CVs""#))
+        .and(BodyContains(
+            br#""mimeType":"application/vnd.google-apps.folder""#,
+        ))
+        .and(BodyContains(br#""parents":["parent-folder-123"]"#))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "folder-456",
+            "webViewLink": "https://drive.google.com/drive/folders/folder-456"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let options = CreateFolderOptions::new("Candidate CVs", "parent-folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    run_mkdir_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "folder-456\thttps://drive.google.com/drive/folders/folder-456\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "parent-folder-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_convert_uses_source_file_account_and_prints_document_id_and_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-document-123/copy"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-document-123/copy"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(BodyContains(
+            br#""mimeType":"application/vnd.google-apps.document""#,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "native-document-456",
+            "webViewLink": "https://docs.google.com/document/d/native-document-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let options =
+        OfficeConversionOptions::new("office-document-123", OfficeConversionTarget::Document)
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    run_convert_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "native-document-456\thttps://docs.google.com/document/d/native-document-456/edit\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "office-document-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_trash_uses_source_file_account_and_confirms_its_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/office-document-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/drive/v3/files/office-document-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(BodyContains(br#""trashed":true"#))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "office-document-123",
+            "trashed": true
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+    let mut out = Vec::new();
+
+    run_trash_unified_to(
+        &config,
+        &store,
+        None,
+        "office-document-123".into(),
+        &mut out,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "Trashed\toffice-document-123\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "office-document-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
 async fn run_download_unified_falls_back_on_target_access_failure_and_maps_success() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-123"))
         .and(header("authorization", "Bearer alice-access"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
         .expect(1)
         .mount(&server)
@@ -1152,6 +1564,7 @@ async fn run_download_unified_falls_back_on_target_access_failure_and_maps_succe
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-123"))
         .and(header("authorization", "Bearer bob-access"))
+        .and(query_param("fields", "name,mimeType"))
         .respond_with(ResponseTemplate::new(404).set_body_string("missing for bob"))
         .expect(1)
         .mount(&server)
@@ -1159,6 +1572,18 @@ async fn run_download_unified_falls_back_on_target_access_failure_and_maps_succe
     Mock::given(method("GET"))
         .and(path("/drive/v3/files/file-123"))
         .and(header("authorization", "Bearer carol-access"))
+        .and(query_param("fields", "name,mimeType"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "download.txt",
+            "mimeType": "text/plain"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer carol-access"))
+        .and(query_param("alt", "media"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"hello drive".to_vec()))
         .expect(1)
         .mount(&server)
@@ -1194,14 +1619,118 @@ async fn run_download_unified_falls_back_on_target_access_failure_and_maps_succe
 }
 
 #[tokio::test]
-async fn run_list_command_without_target_stays_on_active_account() {
+async fn run_download_unified_exports_a_native_google_document_as_word() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123"))
+        .and(query_param("fields", "name,mimeType"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "Quarterly plan",
+            "mimeType": "application/vnd.google-apps.document"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/document-123/export"))
+        .and(query_param(
+            "mimeType",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PK\x03\x04word".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = test_config();
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = temp_dir.path().join("quarterly-plan.docx");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_download_unified_to(
+        &config,
+        &store,
+        None,
+        "document-123".into(),
+        Some(output.clone()),
+        true,
+        Some(&files_url),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(output).unwrap(), b"PK\x03\x04word");
+}
+
+#[tokio::test]
+async fn run_download_unified_exports_a_native_google_spreadsheet_as_excel() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/spreadsheet-123"))
+        .and(query_param("fields", "name,mimeType"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "Financial model",
+            "mimeType": "application/vnd.google-apps.spreadsheet"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/spreadsheet-123/export"))
+        .and(query_param(
+            "mimeType",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ))
+        .and(header("authorization", "Bearer drive-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"PK\x03\x04excel".to_vec()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = test_config();
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let output = temp_dir.path().join("financial-model.xlsx");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_download_unified_to(
+        &config,
+        &store,
+        None,
+        "spreadsheet-123".into(),
+        Some(output.clone()),
+        true,
+        Some(&files_url),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(std::fs::read(output).unwrap(), b"PK\x03\x04excel");
+}
+
+#[tokio::test]
+async fn run_ls_files_without_target_stays_on_active_account_and_defaults_to_root() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param(
             "q",
-            "mimeType != 'application/vnd.google-apps.folder'",
+            "'root' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -1214,13 +1743,15 @@ async fn run_list_command_without_target_stays_on_active_account() {
     let mut err = Vec::new();
     let files_url = format!("{}/drive/v3/files", server.uri());
 
-    run_list_command_to(
+    run_ls_command_to(
         &config,
         &store,
         None,
+        DriveListKind::Files,
         None,
         false,
         None,
+        false,
         false,
         true,
         &mut out,
@@ -1238,6 +1769,49 @@ async fn run_list_command_without_target_stays_on_active_account() {
 }
 
 #[tokio::test]
+async fn run_ls_show_all_includes_soft_deleted_items() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(header("authorization", "Bearer alice-access"))
+        .and(query_param(
+            "q",
+            "'root' in parents and mimeType != 'application/vnd.google-apps.folder'",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_ls_command_to(
+        &config,
+        &store,
+        None,
+        DriveListKind::Files,
+        None,
+        false,
+        None,
+        true,
+        false,
+        true,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    assert!(String::from_utf8(out).unwrap().contains("Roadmap\tfile-1"));
+    assert!(err.is_empty());
+}
+
+#[tokio::test]
 async fn run_list_unified_tries_mapped_folder_before_active_account() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
@@ -1245,7 +1819,7 @@ async fn run_list_unified_tries_mapped_folder_before_active_account() {
         .and(header("authorization", "Bearer bob-access"))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType != 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -1272,6 +1846,7 @@ async fn run_list_unified_tries_mapped_folder_before_active_account() {
         false,
         Some("folder-123".into()),
         false,
+        false,
         true,
         &mut out,
         &mut err,
@@ -1292,7 +1867,10 @@ async fn run_ls_unified_browses_target_folder_with_mapped_account() {
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer bob-access"))
-        .and(query_param("q", "'folder-123' in parents"))
+        .and(query_param(
+            "q",
+            "'folder-123' in parents and trashed = false",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_MIXED_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1318,6 +1896,7 @@ async fn run_ls_unified_browses_target_folder_with_mapped_account() {
         false,
         Some("folder-123".into()),
         false,
+        false,
         true,
         &mut out,
         &mut err,
@@ -1341,7 +1920,7 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param(
             "q",
-            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'folder-123' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(403).set_body_string("denied for alice"))
         .expect(1)
@@ -1352,7 +1931,7 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         .and(header("authorization", "Bearer bob-access"))
         .and(query_param(
             "q",
-            "'folder-456' in parents and mimeType = 'application/vnd.google-apps.folder'",
+            "'folder-456' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
         ))
         .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
         .expect(1)
@@ -1375,6 +1954,7 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         None,
         false,
         Some("folder-123".into()),
+        false,
         false,
         true,
         &mut denied_out,
@@ -1399,6 +1979,7 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         None,
         false,
         Some("folder-456".into()),
+        false,
         false,
         true,
         &mut mapped_out,
@@ -1503,7 +2084,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
     Mock::given(method("GET"))
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1512,7 +2093,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
         .and(path("/drive/v3/files"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(
             ResponseTemplate::new(200)
                 .set_body_string(BROWSE_SECOND_PAGE_RESPONSE)
@@ -1544,6 +2125,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
         Some("root".into()),
         false,
         false,
+        false,
         &mut out,
         &mut err,
         Some(&files_url),
@@ -1558,7 +2140,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
 
     assert_eq!(
         err_probe.snapshot(),
-        "Fetched 1 items...\n",
+        "Listed 1 items...\n",
         "progress for the first page must reach the real writer before the second page finishes"
     );
 
@@ -1566,7 +2148,7 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
 
     assert_eq!(
         err_probe.snapshot(),
-        "Fetched 1 items...\nFetched 2 items...\n"
+        "Listed 1 items...\nListed 2 items...\n"
     );
 }
 
@@ -1577,7 +2159,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param("pageSize", "2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1587,7 +2169,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         .and(header("authorization", "Bearer alice-access"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(404).set_body_string("missing for alice"))
         .expect(1)
         .mount(&server)
@@ -1596,7 +2178,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         .and(path("/drive/v3/files"))
         .and(header("authorization", "Bearer bob-access"))
         .and(query_param("pageSize", "2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_FIRST_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1606,7 +2188,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         .and(header("authorization", "Bearer bob-access"))
         .and(query_param("pageSize", "1"))
         .and(query_param("pageToken", "token-2"))
-        .and(query_param("q", "'root' in parents"))
+        .and(query_param("q", "'root' in parents and trashed = false"))
         .respond_with(ResponseTemplate::new(200).set_body_string(BROWSE_SECOND_PAGE_RESPONSE))
         .expect(1)
         .mount(&server)
@@ -1630,6 +2212,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         Some("root".into()),
         false,
         false,
+        false,
         &mut out,
         &mut err,
         Some(&files_url),
@@ -1640,7 +2223,7 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
 
     assert_eq!(
         String::from_utf8(err).unwrap(),
-        "Fetched 1 items...\nFetched 2 items...\n"
+        "Listed 1 items...\nListed 2 items...\n"
     );
     assert_eq!(
         load_runtime_state_from_path(&state_path)

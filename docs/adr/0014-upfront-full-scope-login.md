@@ -2,7 +2,10 @@
 
 Supersedes ADR-0003.
 
-`goog auth login` (and device login) now requests every scope the CLI supports -- Drive, Docs, Sheets, and Gmail (`gmail.modify`) -- in a single consent screen, instead of acquiring scopes incrementally per command. Read/write scope splits (`documents.readonly`, `spreadsheets.readonly`) are removed; each service has one full-access scope.
+`goog auth login` and device login request every scope the CLI supports in a single consent operation.
+Normal service commands never open an incremental consent flow.
+If an older token lacks a required scope, the command exits with an instruction to run `goog auth login` once.
+Read/write scope splits (`documents.readonly`, `spreadsheets.readonly`) are removed; each service has one full-access scope.
 
 ## Considered Options
 
@@ -10,4 +13,7 @@ ADR 0003 rejected this exact approach because Google's consent screen lists ever
 
 ## Consequences
 
-`ensure_scopes` (the per-request scope check) stays in place as a safety net: it still detects and incrementally requests any scope missing from a token (e.g. accounts logged in before this change), but is expected to no-op for new logins since login already grants everything. If this CLI is ever distributed beyond a handful of trusted accounts, the OAuth app will need Google verification for these sensitive scopes -- revisit this decision first.
+`ensure_scopes` stays in place as a safety check, but it returns `MissingScopes` instead of opening a browser.
+Accounts logged in before this decision may need one explicit `goog auth login` to replace their partial token with a full-scope token.
+If this CLI is ever distributed beyond a handful of trusted accounts, the OAuth app will need Google verification for these sensitive scopes.
+Revisit this decision first in that case.

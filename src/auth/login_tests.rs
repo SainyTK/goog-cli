@@ -12,10 +12,12 @@ use super::login::{
     render_device_authorization_prompt, request_device_authorization, DeviceAuthorization,
     DEFAULT_DEVICE_LOGIN_SCOPES, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL,
 };
+use crate::calendar::CALENDAR_SCOPE;
 use crate::docs::DOCS_SCOPE;
 use crate::drive::DRIVE_SCOPE;
 use crate::mail::GMAIL_SCOPE;
 use crate::sheets::SHEETS_SCOPE;
+use crate::slides::SLIDES_SCOPE;
 
 struct DeviceTokenSequence {
     responses: Mutex<VecDeque<ResponseTemplate>>,
@@ -69,7 +71,7 @@ fn authorize_url_includes_required_params() {
 }
 
 #[test]
-fn default_browser_login_scopes_request_identity_drive_docs_sheets_and_gmail() {
+fn default_browser_login_scopes_request_identity_drive_docs_sheets_slides_calendar_and_gmail() {
     assert_eq!(
         DEFAULT_LOGIN_SCOPES,
         &[
@@ -79,13 +81,15 @@ fn default_browser_login_scopes_request_identity_drive_docs_sheets_and_gmail() {
             DRIVE_SCOPE,
             DOCS_SCOPE,
             SHEETS_SCOPE,
+            SLIDES_SCOPE,
+            CALENDAR_SCOPE,
             GMAIL_SCOPE,
         ]
     );
 }
 
 #[test]
-fn default_device_login_scopes_request_identity_drive_docs_sheets_and_gmail() {
+fn default_device_login_scopes_request_identity_drive_docs_sheets_slides_calendar_and_gmail() {
     assert_eq!(
         DEFAULT_DEVICE_LOGIN_SCOPES,
         &[
@@ -95,6 +99,8 @@ fn default_device_login_scopes_request_identity_drive_docs_sheets_and_gmail() {
             DRIVE_SCOPE,
             DOCS_SCOPE,
             SHEETS_SCOPE,
+            SLIDES_SCOPE,
+            CALENDAR_SCOPE,
             GMAIL_SCOPE,
         ]
     );

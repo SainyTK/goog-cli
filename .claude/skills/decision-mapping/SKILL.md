@@ -80,5 +80,3 @@ The user may choose to run tickets in parallel, so expect other agents to make c
 Many times, the initial grilling will result in no fog of war. No unresolved tickets. Nothing to do, except implement.
 
 In those situations, you should offer the user the chance to skip the decision map - since the decision map is only needed if multi-session decisions need to be made.
-
-If they skip it, you should recommend either implementing directly or using `/to-prd` to schedule a multi-session implementation.
