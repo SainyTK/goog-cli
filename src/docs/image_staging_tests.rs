@@ -1,3 +1,7 @@
+// Every case here drives the adapter through a `#!/bin/sh` script, so the whole
+// module is Unix-only. Windows adapter coverage is tracked separately.
+#![cfg(unix)]
+
 use std::fs;
 use std::path::Path;
 

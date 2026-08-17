@@ -1282,7 +1282,10 @@ where
         Some(output) => output.clone(),
         None => std::env::current_dir()
             .map_err(DriveError::Io)?
-            .join(default_download_name(&metadata.name, export_format)),
+            .join(portable_file_name(default_download_name(
+                &metadata.name,
+                export_format,
+            ))),
     };
 
     if let Some(format) = export_format {
@@ -1325,6 +1328,48 @@ fn default_download_name(name: &str, export_format: Option<GoogleFileExportForma
     } else {
         format!("{name}.{extension}")
     }
+}
+
+/// Drive names are not constrained by local filesystem rules, so a name that is
+/// fine to store in Drive can be impossible to create on disk.
+#[cfg(not(windows))]
+pub(super) fn portable_file_name(name: String) -> String {
+    name
+}
+
+#[cfg(windows)]
+const WINDOWS_RESERVED_STEMS: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// Rewrites a Drive name into a name Windows can create.
+///
+/// Does not enforce the 255-character component limit or `MAX_PATH`; a name long
+/// enough to hit either still fails at creation time.
+#[cfg(windows)]
+pub(super) fn portable_file_name(name: String) -> String {
+    let replaced: String = name
+        .chars()
+        .map(|character| match character {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '\u{0}'..='\u{1f}' => '_',
+            character => character,
+        })
+        .collect();
+    // Win32 silently strips trailing dots and spaces, so strip them here and
+    // return the name that actually lands on disk.
+    let trimmed = replaced.trim_end_matches(['.', ' ']);
+    if trimmed.is_empty() {
+        return "download".to_string();
+    }
+    let stem = trimmed.split('.').next().unwrap_or(trimmed);
+    if WINDOWS_RESERVED_STEMS
+        .iter()
+        .any(|reserved| stem.eq_ignore_ascii_case(reserved))
+    {
+        return format!("_{trimmed}");
+    }
+    trimmed.to_string()
 }
 
 pub async fn export_google_file<S, F>(

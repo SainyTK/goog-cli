@@ -36,6 +36,11 @@ fn readme_covers_public_distribution_and_usage_contract() {
         "power users and AI agents",
         "JSON is also supported for programmatic use, but it is not the primary product surface.",
         "Install `goog` on macOS or Linux with:",
+        "Install `goog` on Windows with:",
+        "install.ps1 | iex",
+        "[scriptblock]::Create",
+        "$env:LOCALAPPDATA\\Programs\\goog\\bin",
+        "Remove-Item -Recurse -Force \"$env:LOCALAPPDATA\\Programs\\goog\"",
         "Additional Installation Options",
         "latest Stable LTS Canonical Release by default",
         "--channel preview",
@@ -94,7 +99,8 @@ fn installer_resolves_canonical_releases_and_supported_targets() {
         "aarch64-unknown-linux-gnu",
         ".sha256",
         "checksum verification failed",
-        "Windows binary releases are not supported yet",
+        "Windows uses the PowerShell installer",
+        "install.ps1 | iex",
         "DEFAULT_INSTALL_DIR=\"/usr/local/bin\"",
         "INSTALL_DIR=\"${HOME}/.local/bin\"",
         "install directory is not writable",
@@ -104,6 +110,87 @@ fn installer_resolves_canonical_releases_and_supported_targets() {
         assert!(
             installer.contains(expected),
             "install.sh should contain {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn powershell_installer_resolves_canonical_releases_and_the_windows_target() {
+    let installer = fs::read_to_string("install.ps1").expect("install.ps1 should exist");
+
+    for expected in [
+        "https://api.github.com/repos/$Repo/releases/latest",
+        "https://api.github.com/repos/$Repo/releases?per_page=30",
+        "-preview.",
+        "-Channel",
+        "-Version",
+        "-InstallDir",
+        "-NoPathUpdate",
+        "GOOG_CHANNEL",
+        "GOOG_VERSION",
+        "GOOG_INSTALL_DIR",
+        "GOOG_NO_MODIFY_PATH",
+        "x86_64-pc-windows-msvc",
+        "goog.exe",
+        ".zip",
+        ".sha256",
+        "Tls12",
+        "Get-FileHash",
+        "-Algorithm SHA256",
+        "checksum verification failed",
+        "Expand-Archive",
+        "LOCALAPPDATA",
+        "Programs\\goog\\bin",
+        "--channel must be stable or preview",
+        "--version must look like vX.Y.Z or vX.Y.Z-preview.N",
+        "open a new terminal",
+    ] {
+        assert!(
+            installer.contains(expected),
+            "install.ps1 should contain {expected:?}"
+        );
+    }
+}
+
+#[test]
+fn powershell_installer_stays_pipeable_into_invoke_expression() {
+    let installer = fs::read("install.ps1").expect("install.ps1 should exist");
+
+    // A BOM survives Invoke-RestMethod and breaks `irm ... | iex`, and a
+    // #Requires statement is rejected outright by Invoke-Expression.
+    assert!(
+        !installer.starts_with(&[0xEF, 0xBB, 0xBF]),
+        "install.ps1 should not start with a UTF-8 BOM"
+    );
+    assert!(
+        installer.is_ascii(),
+        "install.ps1 should stay ASCII-only so it survives being piped into iex"
+    );
+    let text = String::from_utf8(installer).expect("install.ps1 should be valid UTF-8");
+    assert!(
+        !text
+            .lines()
+            .any(|line| line.trim_start().to_lowercase().starts_with("#requires")),
+        "install.ps1 should not use a #Requires statement"
+    );
+}
+
+#[test]
+fn continuous_integration_workflow_checks_linux_and_windows() {
+    let workflow =
+        fs::read_to_string(".github/workflows/ci.yml").expect("CI workflow should exist");
+
+    for expected in [
+        "pull_request",
+        "ubuntu-latest",
+        "windows-latest",
+        "cargo fmt --check",
+        "cargo check --locked --all-targets",
+        "cargo test --locked",
+    ] {
+        assert!(
+            workflow.contains(expected),
+            "CI workflow should contain {expected:?}"
         );
     }
 }
@@ -135,6 +222,11 @@ fn release_workflow_builds_assets_from_version_tags_only() {
         "x86_64-apple-darwin",
         "x86_64-unknown-linux-gnu",
         "aarch64-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc",
+        "windows-latest",
+        "binary: goog.exe",
+        "archive: zip",
+        "7z a -tzip",
         "gh release create",
     ] {
         assert!(
@@ -151,6 +243,11 @@ fn release_asset_smoke_test_checks_provenance_and_command_surface() {
 
     for expected in [
         "tar -C \"$staging\" -xzf \"$asset\"",
+        "*.zip)",
+        "7z x",
+        "unzip -q",
+        "binary=\"$staging/goog.exe\"",
+        "python_bin",
         "actual_version=\"$(\"$binary\" --version)\"",
         "\"$binary\" version --json",
         "\"semanticVersion\"",
@@ -188,6 +285,8 @@ fn release_operator_docs_cover_channel_verification_and_recovery() {
         "--channel preview",
         "On macOS",
         "On Linux",
+        "On Windows",
+        "goog-vX.Y.Z-x86_64-pc-windows-msvc.zip",
         "Verify Release Automation Changes",
         "cargo test --test distribution_artifacts_tests",
         "Rust-Native Fallback",

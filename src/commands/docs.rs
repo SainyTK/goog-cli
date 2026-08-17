@@ -5318,13 +5318,21 @@ fn document_comparison_replay_command(
     arguments
 }
 
+/// Renders one replay-command argument for the shell the operator is holding:
+/// `sh` on Unix, PowerShell on Windows. Both take single-quoted literals, but
+/// they escape an embedded single quote differently, and a Windows path has to
+/// keep its backslashes to stay runnable.
 fn shell_quote_argument(argument: &str) -> String {
+    const UNQUOTED_PUNCTUATION: &str = if cfg!(windows) { "-_./:\\" } else { "-_./:" };
+
     if !argument.is_empty()
-        && argument
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || "-_./:".contains(character))
+        && argument.chars().all(|character| {
+            character.is_ascii_alphanumeric() || UNQUOTED_PUNCTUATION.contains(character)
+        })
     {
         argument.to_owned()
+    } else if cfg!(windows) {
+        format!("'{}'", argument.replace('\'', "''"))
     } else {
         format!("'{}'", argument.replace('\'', "'\"'\"'"))
     }

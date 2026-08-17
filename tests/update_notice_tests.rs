@@ -29,9 +29,11 @@ fn successful_commands_show_a_newer_canonical_release_without_corrupting_json_ou
         "Update available: goog 999.0.0 (current: {})",
         env!("CARGO_PKG_VERSION")
     )));
-    assert!(stderr.contains(
-        "curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v999.0.0"
-    ));
+    #[cfg(not(windows))]
+    let expected_command = "curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v999.0.0";
+    #[cfg(windows)]
+    let expected_command = "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1))) -Version v999.0.0";
+    assert!(stderr.contains(expected_command));
 }
 
 #[test]
@@ -139,7 +141,11 @@ fn commands_follow_the_current_release_channel_when_checking_updates() {
 
     assert!(output.status.success());
     assert!(stderr.contains(&format!("Update available: goog {expected_version}")));
-    assert!(stderr.contains(&format!("--version v{expected_version}")));
+    #[cfg(not(windows))]
+    let expected_flag = format!("--version v{expected_version}");
+    #[cfg(windows)]
+    let expected_flag = format!("-Version v{expected_version}");
+    assert!(stderr.contains(&expected_flag));
 }
 
 fn serve_releases(body: impl Into<String>) -> (String, thread::JoinHandle<()>) {

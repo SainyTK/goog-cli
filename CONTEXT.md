@@ -314,5 +314,6 @@ The GitHub Actions workflow that turns a stable version tag on `main` or preview
 _Avoid_: Publish script, deploy script
 
 **Installer Script**:
-The GitHub-hosted shell entrypoint that detects the user's platform, downloads a stable or preview Release Asset, verifies it, and installs the `goog` binary.
+A GitHub-hosted entrypoint that detects the user's platform, downloads a stable or preview Release Asset, verifies it, and installs the `goog` binary.
+`install.sh` serves macOS and Linux; `install.ps1` serves Windows and also manages the user PATH.
 _Avoid_: Bash release, install command

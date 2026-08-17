@@ -1,0 +1,7 @@
+# POSIX entrypoints must keep LF endings so they stay runnable when a
+# contributor commits from a Windows checkout.
+*.sh text eol=lf
+
+# The PowerShell installer is served verbatim from raw.githubusercontent.com
+# and piped into `iex`, so keep it text-normalized in the index.
+*.ps1 text eol=crlf

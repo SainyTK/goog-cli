@@ -86,7 +86,7 @@ case "$(uname -s)" in
   Darwin) os="apple-darwin" ;;
   Linux) os="unknown-linux-gnu" ;;
   MINGW*|MSYS*|CYGWIN*|Windows_NT)
-    fail "Windows binary releases are not supported yet. Install from source with: cargo install --git https://github.com/SainyTK/goog-cli goog"
+    fail "Windows uses the PowerShell installer. In PowerShell run: irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1 | iex"
     ;;
   *)
     fail "unsupported operating system: $(uname -s)"

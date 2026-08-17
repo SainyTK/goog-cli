@@ -7,7 +7,34 @@ use goog::{
     commands,
 };
 
+/// Matches the 8 MB main-thread stack Linux and macOS provide by default, and
+/// the `RUST_MIN_STACK` value in `.cargo/config.toml`.
+const CLI_STACK_SIZE: usize = 8 * 1024 * 1024;
+
 fn main() {
+    // Windows reserves 1 MB for the main thread, which the command tree in
+    // `cli.rs` overflows before clap finishes building it. `RUST_MIN_STACK`
+    // cannot fix that because it only applies to spawned threads, so run the
+    // CLI on one with an explicit stack size.
+    let cli = std::thread::Builder::new()
+        .name("goog".to_string())
+        .stack_size(CLI_STACK_SIZE)
+        .spawn(run_cli)
+        .expect("failed to start the goog CLI thread");
+
+    let exit_code = match cli.join() {
+        Ok(exit_code) => exit_code,
+        // The panic hook already reported the failure; keep the exit status
+        // Rust uses for a panicking process.
+        Err(_) => 101,
+    };
+
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
+}
+
+fn run_cli() -> i32 {
     let update_check = goog::update::start();
     let exit_code = match Cli::try_parse() {
         Ok(cli) => match run(cli) {
@@ -26,9 +53,7 @@ fn main() {
 
     update_check.finish();
 
-    if exit_code != 0 {
-        std::process::exit(exit_code);
-    }
+    exit_code
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
