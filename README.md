@@ -30,6 +30,12 @@ Install `goog` on macOS or Linux with:
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
 ```
 
+Install `goog` on Windows with:
+
+```powershell
+irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1 | iex
+```
+
 `goog` checks published versions for a newer release.
 Stable builds consider Canonical Releases.
 Preview builds consider both Preview Releases and newer Canonical Releases.
@@ -441,7 +447,7 @@ Use `goog help`, `goog <command> --help`, and nested command help for the full c
 The installer script installs the latest Stable LTS Canonical Release by default.
 It installs to `/usr/local/bin` when that directory is writable.
 If `/usr/local/bin` is not writable, it installs to `$HOME/.local/bin` and prints a PATH warning if needed.
-The installer supports macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets.
+The installer supports macOS arm64, macOS x64, Linux x64, Linux arm64, and Windows x64 Release Assets.
 
 Install the latest preview pre-release with:
 
@@ -454,6 +460,28 @@ Install a specific Canonical Release with:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.2.3
 ```
+
+#### Windows
+
+`install.ps1` installs to `$env:LOCALAPPDATA\Programs\goog\bin` and adds that directory to your user PATH.
+Open a new terminal after the first install so the PATH change takes effect.
+Windows Release Assets are `.zip` archives containing `goog.exe`, and the installer verifies the published `.sha256` checksum before installing.
+
+Piping into `iex` cannot forward arguments, so pass options through a script block:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1))) -Channel preview
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1))) -Version v0.2.3
+```
+
+Or set the environment variables the installer reads, then pipe as usual:
+
+```powershell
+$env:GOOG_CHANNEL = 'preview'
+irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1 | iex
+```
+
+`install.ps1` also accepts `-InstallDir` and `-NoPathUpdate`, and reads `GOOG_VERSION`, `GOOG_INSTALL_DIR`, and `GOOG_NO_MODIFY_PATH`.
 
 Check which release source produced the installed binary with:
 
@@ -478,6 +506,12 @@ If you installed with the installer script, remove the binary from the supported
 rm -f /usr/local/bin/goog "$HOME/.local/bin/goog"
 ```
 
+On Windows, remove the install directory and drop it from your user PATH:
+
+```powershell
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\goog"
+```
+
 If you installed with Cargo, uninstall the Cargo package:
 
 ```sh
@@ -485,7 +519,7 @@ cargo uninstall goog
 ```
 
 Those commands remove the executable only.
-To fully reset local `goog` state, delete `$HOME/.goog`.
+To fully reset local `goog` state, delete `$HOME/.goog`, which is `%USERPROFILE%\.goog` on Windows.
 That directory contains OAuth App setup in `config.toml` and auth state in `auth.json`.
 The auth state file grants account access within authorized scopes, so do not commit it or sync it into places you do not trust.
 
@@ -572,6 +606,8 @@ cargo fmt --check
 cargo check
 cargo test
 ```
+
+The `CI` workflow runs those same checks on Linux and Windows for every push and pull request.
 
 Pull requests should include:
 

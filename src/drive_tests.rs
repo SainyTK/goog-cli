@@ -1583,3 +1583,75 @@ async fn trash_file_marks_the_drive_resource_as_trashed() {
 
     trash_file(&client, &options).await.unwrap();
 }
+
+#[cfg(not(windows))]
+#[test]
+fn download_names_keep_drive_characters_verbatim_off_windows() {
+    for name in ["Q3: plan?.txt", r"a/b\c.txt", "notes...", "nul.txt", "CON"] {
+        assert_eq!(portable_file_name(name.to_string()), name);
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn download_names_replace_characters_windows_cannot_create() {
+    for (name, expected) in [
+        ("Q3: plan?.txt", "Q3_ plan_.txt"),
+        (r"a/b\c.txt", "a_b_c.txt"),
+        ("<>:\"|?*.txt", "_______.txt"),
+        ("notes...", "notes"),
+        ("trailing space  ", "trailing space"),
+        ("nul.txt", "_nul.txt"),
+        ("CON", "_CON"),
+        ("com9.log", "_com9.log"),
+        ("....", "download"),
+        ("Roadmap.docx", "Roadmap.docx"),
+        ("console.log", "console.log"),
+    ] {
+        assert_eq!(portable_file_name(name.to_string()), expected, "{name:?}");
+    }
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn download_rewrites_drive_names_windows_cannot_create() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("fields", "name,mimeType"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "name": "Q3: plan?.txt",
+            "mimeType": "text/plain"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-1"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("alt", "media"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("plan contents"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let _current_dir = CurrentDirGuard::enter(temp.path());
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DownloadFileOptions::new("file-1")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let downloaded = download(&client, &options, |_| ()).await.unwrap();
+
+    assert_eq!(
+        downloaded.path.canonicalize().unwrap(),
+        temp.path().join("Q3_ plan_.txt").canonicalize().unwrap()
+    );
+    assert_eq!(
+        std::fs::read_to_string(downloaded.path).unwrap(),
+        "plan contents"
+    );
+}

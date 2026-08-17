@@ -8,7 +8,10 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 
 const RELEASES_URL: &str = "https://api.github.com/repos/SainyTK/goog-cli/releases?per_page=100";
+#[cfg(not(windows))]
 const INSTALLER_URL: &str = "https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh";
+#[cfg(windows)]
+const INSTALLER_URL: &str = "https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1";
 const KNOWN_UPDATE_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const NO_UPDATE_CACHE_TTL: Duration = Duration::from_secs(15 * 60);
 const FAILURE_RETRY_TTL: Duration = Duration::from_secs(60 * 60);
@@ -35,10 +38,25 @@ impl fmt::Display for UpdateNotice {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "Update available: goog {} (current: {})\nUpdate with:\n  curl -fsSL {INSTALLER_URL} | sh -s -- --version v{}",
-            self.latest, self.current, self.latest
+            "Update available: goog {} (current: {})\nUpdate with:\n  {}",
+            self.latest,
+            self.current,
+            update_command(&self.latest)
         )
     }
+}
+
+#[cfg(not(windows))]
+fn update_command(latest: &Version) -> String {
+    format!("curl -fsSL {INSTALLER_URL} | sh -s -- --version v{latest}")
+}
+
+/// `--version` is not valid PowerShell parameter syntax, and piping into `iex`
+/// cannot forward arguments, so the Windows command uses the script-block form
+/// documented in `install.ps1`.
+#[cfg(windows)]
+fn update_command(latest: &Version) -> String {
+    format!("& ([scriptblock]::Create((irm {INSTALLER_URL}))) -Version v{latest}")
 }
 
 #[derive(Deserialize)]

@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  # Branch pushes only for the long-lived branches. Everything else is covered
+  # by pull_request, so a PR from this repository is not built twice.
+  push:
+    branches:
+      - main
+      - develop
+      - preview
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # build.rs derives provenance from git describe/rev-list, so a shallow
+          # clone would build a less representative development version.
+          fetch-depth: 0
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Check crate
+        run: cargo check --locked --all-targets
+      - name: Run tests
+        run: cargo test --locked

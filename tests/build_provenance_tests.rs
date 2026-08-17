@@ -13,7 +13,13 @@ const BUILD_ENVIRONMENT: [&str; 4] = [
 #[test]
 fn build_metadata_distinguishes_release_development_and_archive_states() {
     let temporary = tempfile::tempdir().unwrap();
-    let build_script = temporary.path().join("build-script");
+    // rustc honours -o verbatim, and Windows will not execute an extensionless
+    // image, so ask for the platform's executable name.
+    let build_script = temporary.path().join(if cfg!(windows) {
+        "build-script.exe"
+    } else {
+        "build-script"
+    });
     let compilation = Command::new("rustc")
         .args(["--edition", "2021", "build.rs", "-o"])
         .arg(&build_script)

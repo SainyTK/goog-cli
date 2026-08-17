@@ -52,12 +52,24 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-15
+            binary: goog
+            archive: tar.gz
           - target: x86_64-apple-darwin
             os: macos-15-intel
+            binary: goog
+            archive: tar.gz
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            binary: goog
+            archive: tar.gz
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
+            binary: goog
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            binary: goog.exe
+            archive: zip
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,6 +79,12 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
+      - name: Ensure python3 for the smoke test
+        # The bare Windows runner image is not guaranteed to expose python3.
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
       - name: Build release binary
         env:
           GOOG_BUILD_GIT_COMMIT: ${{ github.sha }}
@@ -78,17 +96,25 @@ jobs:
         shell: bash
         run: |
           version="${GITHUB_REF_NAME}"
-          asset="goog-${version}-${{ matrix.target }}.tar.gz"
+          binary="${{ matrix.binary }}"
+          asset="goog-${version}-${{ matrix.target }}.${{ matrix.archive }}"
           staging="$(mktemp -d)"
-          cp "target/${{ matrix.target }}/release/goog" "$staging/goog"
-          chmod 0755 "$staging/goog"
-          tar -C "$staging" -czf "$asset" goog
+          cp "target/${{ matrix.target }}/release/${binary}" "$staging/${binary}"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            # Build the archive from inside the staging directory so 7z never
+            # sees an MSYS path it would try to convert.
+            (cd "$staging" && 7z a -tzip -bso0 -bsp0 packaged.zip "$binary")
+            mv "$staging/packaged.zip" "$asset"
+          else
+            chmod 0755 "$staging/${binary}"
+            tar -C "$staging" -czf "$asset" "$binary"
+          fi
       - name: Smoke test packaged binary
         shell: bash
         env:
           RELEASE_CHANNEL: ${{ needs.verify-tag.outputs.release_channel }}
         run: |
-          asset="goog-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
+          asset="goog-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.archive }}"
           scripts/verify-release-asset.sh \
             "$asset" \
             "$GITHUB_REF_NAME" \
@@ -98,7 +124,7 @@ jobs:
       - name: Generate packaged asset checksum
         shell: bash
         run: |
-          asset="goog-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
+          asset="goog-${GITHUB_REF_NAME}-${{ matrix.target }}.${{ matrix.archive }}"
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum "$asset" > "$asset.sha256"
           else
@@ -109,8 +135,8 @@ jobs:
         with:
           name: release-${{ matrix.target }}
           path: |
-            goog-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
-            goog-${{ github.ref_name }}-${{ matrix.target }}.tar.gz.sha256
+            goog-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive }}
+            goog-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive }}.sha256
 
   publish:
     name: Publish Canonical Release
@@ -145,4 +171,6 @@ jobs:
             --notes "$release_notes" \
             $release_flag \
             goog-"$GITHUB_REF_NAME"-*.tar.gz \
-            goog-"$GITHUB_REF_NAME"-*.tar.gz.sha256
+            goog-"$GITHUB_REF_NAME"-*.tar.gz.sha256 \
+            goog-"$GITHUB_REF_NAME"-*.zip \
+            goog-"$GITHUB_REF_NAME"-*.zip.sha256

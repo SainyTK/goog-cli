@@ -32,7 +32,7 @@ Installer Script and Rust-native fallback documentation point users toward a tag
    ```
 
 5. Watch the `Canonical Release` workflow.
-   It verifies the tag commit is reachable from `origin/preview`, builds macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets, uploads checksums, and creates a GitHub pre-release.
+   It verifies the tag commit is reachable from `origin/preview`, builds macOS arm64, macOS x64, Linux x64, Linux arm64, and Windows x64 Release Assets, uploads checksums, and creates a GitHub pre-release.
 
 6. Verify the installer can consume the preview channel:
 
@@ -72,7 +72,7 @@ Installer Script and Rust-native fallback documentation point users toward a tag
    ```
 
 4. Watch the `Canonical Release` workflow.
-   It verifies the tag commit is reachable from `origin/main`, builds macOS arm64, macOS x64, Linux x64, and Linux arm64 Release Assets, uploads checksums, and creates the GitHub Release.
+   It verifies the tag commit is reachable from `origin/main`, builds macOS arm64, macOS x64, Linux x64, Linux arm64, and Windows x64 Release Assets, uploads checksums, and creates the GitHub Release.
 
 5. Confirm the GitHub Release contains:
 
@@ -80,6 +80,7 @@ Installer Script and Rust-native fallback documentation point users toward a tag
    - `goog-vX.Y.Z-x86_64-apple-darwin.tar.gz`
    - `goog-vX.Y.Z-x86_64-unknown-linux-gnu.tar.gz`
    - `goog-vX.Y.Z-aarch64-unknown-linux-gnu.tar.gz`
+   - `goog-vX.Y.Z-x86_64-pc-windows-msvc.zip`
    - One `.sha256` file for each archive.
 
 ## Verify Installer Script
@@ -100,6 +101,17 @@ curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | 
 "$tmp/bin/goog" --help
 ```
 
+On Windows:
+
+```powershell
+$tmp = Join-Path $env:TEMP ([Guid]::NewGuid().ToString('N'))
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1))) -Version v0.1.0 -InstallDir "$tmp\bin" -NoPathUpdate
+& "$tmp\bin\goog.exe" --help
+Remove-Item -Recurse -Force $tmp
+```
+
+`-NoPathUpdate` keeps the throwaway directory out of the operator's user PATH.
+
 The installer must download from the GitHub Release, verify the `.sha256` checksum, and install a runnable `goog` binary.
 
 For preview:
@@ -112,12 +124,18 @@ curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | 
 
 ## Verify Release Automation Changes
 
-Before changing `.github/workflows/release.yml` or `install.sh`, run:
+Before changing `.github/workflows/release.yml`, `install.sh`, or `install.ps1`, run:
 
 ```sh
 sh -n install.sh
 cargo test --test distribution_artifacts_tests
 cargo test
+```
+
+Parse-check the PowerShell installer without executing it:
+
+```sh
+pwsh -NoProfile -Command '$null = [ScriptBlock]::Create((Get-Content -Raw ./install.ps1))'
 ```
 
 ## Rust-Native Fallback
