@@ -1,7 +1,13 @@
 name: CI
 
 on:
+  # Branch pushes only for the long-lived branches. Everything else is covered
+  # by pull_request, so a PR from this repository is not built twice.
   push:
+    branches:
+      - main
+      - develop
+      - preview
   pull_request:
 
 concurrency:
