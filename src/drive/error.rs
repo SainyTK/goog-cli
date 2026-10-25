@@ -14,6 +14,12 @@ pub enum DriveError {
         body: String,
     },
 
+    #[error("Google Drive file is a native Google file ({0}); only uploaded files such as Office documents or PDFs can take new content")]
+    NativeGoogleFile(String),
+
+    #[error("Google Drive file changed since the expected version: {0}")]
+    VersionMismatch(String),
+
     #[error("invalid Google Drive API response: {0}")]
     InvalidResponse(String),
 

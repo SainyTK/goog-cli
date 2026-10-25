@@ -1655,3 +1655,331 @@ async fn download_rewrites_drive_names_windows_cannot_create() {
         "plan contents"
     );
 }
+
+fn updated_file_json(
+    mime_type: &str,
+    modified_time: &str,
+    md5_checksum: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "id": "file-123",
+        "name": "deck.pptx",
+        "mimeType": mime_type,
+        "modifiedTime": modified_time,
+        "version": "7",
+        "md5Checksum": md5_checksum,
+        "size": "11",
+        "headRevisionId": "revision-7",
+        "webViewLink": "https://drive.google.com/file/d/file-123/view"
+    })
+}
+
+const PPTX_MIME_TYPE: &str =
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+async fn mount_current_file(server: &MockServer, file: serde_json::Value, times: u64) {
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("supportsAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(file))
+        .up_to_n_times(times)
+        .expect(times)
+        .mount(server)
+        .await;
+}
+
+fn update_options(server: &MockServer, path: &std::path::Path) -> UpdateFileContentOptions {
+    UpdateFileContentOptions::new("file-123", path)
+        .with_files_url(format!("{}/drive/v3/files", server.uri()))
+        .with_upload_url(format!("{}/upload/drive/v3/files", server.uri()))
+}
+
+#[tokio::test]
+async fn update_file_content_patches_media_in_place_and_reads_the_new_version_back() {
+    let server = MockServer::start().await;
+    mount_current_file(
+        &server,
+        updated_file_json(PPTX_MIME_TYPE, "2026-06-24T10:00:00.000Z", "old-md5"),
+        1,
+    )
+    .await;
+    Mock::given(method("PATCH"))
+        .and(path("/upload/drive/v3/files/file-123"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(query_param("uploadType", "multipart"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(BodyContains(
+            br#"{"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"}"#,
+        ))
+        .and(BodyContains(
+            b"Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ))
+        .and(BodyContains(b"new content"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    mount_current_file(
+        &server,
+        updated_file_json(PPTX_MIME_TYPE, "2026-06-24T11:00:00.000Z", "new-md5"),
+        1,
+    )
+    .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("local-name.pptx");
+    std::fs::write(&path, "new content").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut progress = Vec::new();
+
+    let updated = update_file_content(&client, &update_options(&server, &path), |bytes| {
+        progress.push(bytes)
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(updated.id, "file-123");
+    assert_eq!(updated.modified_time, "2026-06-24T11:00:00.000Z");
+    assert_eq!(updated.md5_checksum.as_deref(), Some("new-md5"));
+    assert_eq!(progress, vec![11]);
+}
+
+#[tokio::test]
+async fn update_file_content_sends_requested_name_and_mime_type() {
+    let server = MockServer::start().await;
+    mount_current_file(
+        &server,
+        updated_file_json(PPTX_MIME_TYPE, "2026-06-24T10:00:00.000Z", "old-md5"),
+        2,
+    )
+    .await;
+    Mock::given(method("PATCH"))
+        .and(path("/upload/drive/v3/files/file-123"))
+        .and(BodyContains(
+            br#"{"name":"renamed.pdf","mimeType":"application/pdf"}"#,
+        ))
+        .and(BodyContains(b"Content-Type: application/pdf"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("report.pdf");
+    std::fs::write(&path, "new content").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = update_options(&server, &path)
+        .with_name("renamed.pdf")
+        .with_mime_type("application/pdf");
+
+    update_file_content(&client, &options, |_| ())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn update_file_content_accepts_the_same_modified_time_in_another_offset() {
+    let server = MockServer::start().await;
+    mount_current_file(
+        &server,
+        updated_file_json(PPTX_MIME_TYPE, "2026-06-24T10:00:00.000Z", "ABC123"),
+        2,
+    )
+    .await;
+    Mock::given(method("PATCH"))
+        .and(path("/upload/drive/v3/files/file-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("deck.pptx");
+    std::fs::write(&path, "new content").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = update_options(&server, &path)
+        .with_expected_modified_time("2026-06-24T17:00:00+07:00")
+        .with_expected_md5_checksum("abc123");
+
+    update_file_content(&client, &options, |_| ())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn update_file_content_refuses_when_the_drive_file_changed_after_the_expected_version() {
+    let server = MockServer::start().await;
+    mount_current_file(
+        &server,
+        updated_file_json(PPTX_MIME_TYPE, "2026-06-24T12:00:00.000Z", "newer-md5"),
+        2,
+    )
+    .await;
+    Mock::given(method("PATCH"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("deck.pptx");
+    std::fs::write(&path, "new content").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+
+    let stale_time =
+        update_options(&server, &path).with_expected_modified_time("2026-06-24T10:00:00.000Z");
+    let err = update_file_content(&client, &stale_time, |_| ())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, DriveError::VersionMismatch(_)));
+
+    let stale_checksum = update_options(&server, &path).with_expected_md5_checksum("old-md5");
+    let err = update_file_content(&client, &stale_checksum, |_| ())
+        .await
+        .unwrap_err();
+    assert!(matches!(err, DriveError::VersionMismatch(_)));
+}
+
+#[tokio::test]
+async fn update_file_content_refuses_native_google_files() {
+    let server = MockServer::start().await;
+    mount_current_file(
+        &server,
+        serde_json::json!({
+            "id": "file-123",
+            "name": "Roadmap",
+            "mimeType": "application/vnd.google-apps.document",
+            "modifiedTime": "2026-06-24T10:00:00.000Z",
+            "version": "3",
+            "webViewLink": "https://docs.google.com/document/d/file-123/edit"
+        }),
+        1,
+    )
+    .await;
+    Mock::given(method("PATCH"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("roadmap.docx");
+    std::fs::write(&path, "new content").unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+
+    let err = update_file_content(&client, &update_options(&server, &path), |_| ())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, DriveError::NativeGoogleFile(_)));
+}
+
+#[tokio::test]
+async fn update_file_content_uses_a_resumable_patch_for_large_files() {
+    let server = MockServer::start().await;
+    let session_uri = format!("{}/upload-session", server.uri());
+    mount_current_file(
+        &server,
+        updated_file_json(PPTX_MIME_TYPE, "2026-06-24T10:00:00.000Z", "old-md5"),
+        2,
+    )
+    .await;
+    Mock::given(method("PATCH"))
+        .and(path("/upload/drive/v3/files/file-123"))
+        .and(query_param("uploadType", "resumable"))
+        .and(header("x-upload-content-length", "5242883"))
+        .and(header("x-upload-content-type", PPTX_MIME_TYPE))
+        .respond_with(ResponseTemplate::new(200).insert_header("Location", session_uri.clone()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/upload-session"))
+        .and(header("content-range", "bytes 0-5242879/5242883"))
+        .respond_with(ResponseTemplate::new(308))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/upload-session"))
+        .and(header("content-range", "bytes 5242880-5242882/5242883"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("large.pptx");
+    let mut contents = vec![b'a'; MULTIPART_UPLOAD_LIMIT_BYTES as usize];
+    contents.extend_from_slice(b"end");
+    std::fs::write(&path, contents).unwrap();
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut progress = Vec::new();
+
+    update_file_content(&client, &update_options(&server, &path), |bytes| {
+        progress.push(bytes)
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(progress, vec![5242880, 5242883]);
+}
+
+#[tokio::test]
+async fn list_revisions_returns_every_page_oldest_first() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123/revisions"))
+        .and(header("authorization", "Bearer drive-access"))
+        .and(AbsentQueryParam("pageToken"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "nextPageToken": "token-2",
+            "revisions": [{
+                "id": "revision-1",
+                "modifiedTime": "2026-06-24T10:00:00.000Z",
+                "originalFilename": "deck.pptx",
+                "size": "10",
+                "md5Checksum": "md5-1"
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/file-123/revisions"))
+        .and(query_param("pageToken", "token-2"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "revisions": [{
+                "id": "revision-2",
+                "modifiedTime": "2026-06-24T11:00:00.000Z",
+                "keepForever": true
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options = DriveFileOperationOptions::new("file-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let revisions = list_revisions(&client, &options).await.unwrap();
+
+    assert_eq!(
+        revisions
+            .iter()
+            .map(|revision| revision.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["revision-1", "revision-2"]
+    );
+    assert_eq!(revisions[0].md5_checksum.as_deref(), Some("md5-1"));
+    assert!(revisions[1].keep_forever);
+}
