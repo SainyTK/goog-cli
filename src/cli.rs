@@ -262,6 +262,36 @@ pub enum DriveCommand {
         #[arg(long)]
         folder: Option<String>,
     },
+    /// Replace a Drive file's content with a local file as a new version, keeping its ID and link
+    Update {
+        /// Drive file ID to replace
+        file_id: String,
+        /// Local file with the new content
+        path: String,
+        /// New Drive file name (defaults to the current name)
+        #[arg(long)]
+        name: Option<String>,
+        /// MIME type for the new content (defaults to the current MIME type)
+        #[arg(long)]
+        mime_type: Option<String>,
+        /// Refuse the update unless the Drive file's modified time still equals this RFC 3339 time
+        #[arg(long, value_name = "TIME")]
+        expect_modified_time: Option<String>,
+        /// Refuse the update unless the Drive file's MD5 checksum still equals this value
+        #[arg(long, value_name = "MD5")]
+        expect_md5: Option<String>,
+        /// Emit the updated file as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List the stored versions of an uploaded Drive file, oldest first
+    Revisions {
+        /// Drive file ID
+        file_id: String,
+        /// Emit one JSON object per revision
+        #[arg(long)]
+        json: bool,
+    },
     /// Move a Drive file or folder into a folder
     Move {
         /// Drive file or folder ID to move

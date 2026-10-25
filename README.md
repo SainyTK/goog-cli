@@ -175,6 +175,8 @@ goog drive ls --limit 20
 goog drive ls --type folders --folder FOLDER_ID --json
 goog drive ls --show-all
 goog drive upload ./report.pdf --folder FOLDER_ID
+goog drive update FILE_ID ./report-v2.pdf --expect-modified-time 2026-01-31T09:15:00.000Z
+goog drive revisions FILE_ID
 goog drive move FILE_ID --to FOLDER_ID
 goog drive convert OFFICE_FILE_ID --to google-doc
 goog drive convert OFFICE_FILE_ID --to google-sheet
@@ -189,6 +191,9 @@ goog drive comment-resolve FILE_ID --comment-id COMMENT_ID --text "Addressed."
 goog drive comment-delete FILE_ID --comment-id COMMENT_ID
 ```
 
+`drive update` uploads new content into an existing uploaded file, so its ID and links stay the same and Drive keeps the previous version.
+It keeps the Drive name and MIME type unless `--name` or `--mime-type` is given, and `--expect-modified-time` or `--expect-md5` refuses the update when someone changed the file since you last read it.
+`drive revisions` lists the stored versions of an uploaded file.
 Drive listings exclude soft-deleted items by default.
 Use `--show-all` to include them.
 `drive comments` fetches every comment page and emits one JSON object containing comments and their replies.

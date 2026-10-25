@@ -15,13 +15,14 @@ use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{DriveCommand, DriveListType, DriveOfficeConversionTarget};
 use crate::drive::{
     convert_office_file, create_comment, create_comment_reply, create_folder, delete_comment,
-    download, list_comments, list_files, move_file, resolve_comment, trash_file, update_comment,
-    upload, CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, CreatedFolder,
-    DeleteCommentOptions, DownloadFileOptions, DownloadedFile, DriveComment, DriveCommentReply,
-    DriveError, DriveFile, DriveFileOperationOptions, ListCommentsOptions, ListFilesOptions,
-    MoveFileOptions, MovedFile, OfficeConversionOptions, OfficeConversionResult,
-    OfficeConversionTarget, ResolveCommentOptions, UpdateCommentOptions, UploadFileOptions,
-    UploadedFile, DRIVE_FOLDER_MIME_TYPE,
+    download, list_comments, list_files, list_revisions, move_file, resolve_comment, trash_file,
+    update_comment, update_file_content, upload, CreateCommentOptions, CreateCommentReplyOptions,
+    CreateFolderOptions, CreatedFolder, DeleteCommentOptions, DownloadFileOptions, DownloadedFile,
+    DriveComment, DriveCommentReply, DriveError, DriveFile, DriveFileOperationOptions,
+    DriveRevision, ListCommentsOptions, ListFilesOptions, MoveFileOptions, MovedFile,
+    OfficeConversionOptions, OfficeConversionResult, OfficeConversionTarget, ResolveCommentOptions,
+    UpdateCommentOptions, UpdateFileContentOptions, UpdatedFile, UploadFileOptions, UploadedFile,
+    DRIVE_FOLDER_MIME_TYPE,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 50;
@@ -32,6 +33,7 @@ const BROWSE_TABLE_HEADER: &str = "TYPE\tNAME\tID\tMIME TYPE\tMODIFIED";
 const DOCS_TABLE_HEADER: &str = "NAME\tDOCUMENT ID\tPARENT FOLDER IDS\tMODIFIED";
 const SHEETS_TABLE_HEADER: &str = "NAME\tSPREADSHEET ID\tPARENT FOLDER IDS\tMODIFIED";
 const SLIDES_TABLE_HEADER: &str = "NAME\tPRESENTATION ID\tPARENT FOLDER IDS\tMODIFIED";
+const REVISIONS_TABLE_HEADER: &str = "REVISION ID\tMODIFIED\tSIZE\tMD5\tKEEP FOREVER\tFILE NAME";
 
 type DriveResult<T> = std::result::Result<T, DriveError>;
 
@@ -147,6 +149,55 @@ pub fn run<S: AccountStore>(
                     None,
                 ))
             }
+        }
+        DriveCommand::Update {
+            file_id,
+            path,
+            name,
+            mime_type,
+            expect_modified_time,
+            expect_md5,
+            json,
+        } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let mut options = UpdateFileContentOptions::new(file_id, path);
+            if let Some(name) = name {
+                options = options.with_name(name);
+            }
+            if let Some(mime_type) = mime_type {
+                options = options.with_mime_type(mime_type);
+            }
+            if let Some(modified_time) = expect_modified_time {
+                options = options.with_expected_modified_time(modified_time);
+            }
+            if let Some(md5_checksum) = expect_md5 {
+                options = options.with_expected_md5_checksum(md5_checksum);
+            }
+            runtime.block_on(run_update_unified_to(
+                config,
+                store,
+                account_override,
+                options,
+                should_emit_json(json, output_json_by_default),
+                quiet,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        DriveCommand::Revisions { file_id, json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_revisions_unified_to(
+                config,
+                store,
+                account_override,
+                file_id,
+                should_emit_json(json, output_json_by_default),
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
         }
         DriveCommand::Move { file_id, to } => {
             let runtime =
@@ -889,6 +940,121 @@ pub(super) async fn run_upload_unified_to<S: AccountStore>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn run_update_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    options: UpdateFileContentOptions,
+    json: bool,
+    quiet: bool,
+    out: &mut impl Write,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let file_size = tokio::fs::metadata(&options.path)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to read update file metadata: {}",
+                options.path.display()
+            )
+        })?
+        .len();
+    let target_resource_key = resource_key("drive", &options.file_id);
+    let progress = (!quiet).then(|| new_upload_progress(file_size));
+    let updated = update_file_content_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        &progress,
+        state_path,
+    )
+    .await
+    .context("failed to update Google Drive file content")?;
+
+    if let Some(progress) = progress {
+        progress.finish_and_clear();
+    }
+
+    write_updated_file(out, &updated, json)
+}
+
+fn write_updated_file(out: &mut impl Write, updated: &UpdatedFile, json: bool) -> Result<()> {
+    if json {
+        serde_json::to_writer(&mut *out, updated)
+            .context("failed to serialize updated Google Drive file")?;
+        return writeln!(out).context("failed to write output");
+    }
+    writeln!(
+        out,
+        "{}\t{}\t{}\t{}\t{}",
+        updated.id,
+        updated.web_view_link,
+        updated.modified_time,
+        updated.version,
+        updated.md5_checksum.as_deref().unwrap_or("-")
+    )
+    .context("failed to write output")
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn run_revisions_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    file_id: String,
+    json: bool,
+    out: &mut impl Write,
+    files_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let mut options = DriveFileOperationOptions::new(file_id.clone());
+    if let Some(files_url) = files_url {
+        options = options.with_files_url(files_url);
+    }
+    let target_resource_key = resource_key("drive", &file_id);
+    let revisions = list_revisions_with_drive_unified_access(
+        config,
+        store,
+        account_override,
+        &target_resource_key,
+        &options,
+        state_path,
+    )
+    .await
+    .context("failed to list Google Drive file revisions")?;
+
+    write_revisions(out, &revisions, json)
+}
+
+fn write_revisions(out: &mut impl Write, revisions: &[DriveRevision], json: bool) -> Result<()> {
+    if json {
+        for revision in revisions {
+            serde_json::to_writer(&mut *out, revision)
+                .context("failed to serialize Google Drive revision")?;
+            writeln!(out).context("failed to write output")?;
+        }
+        return Ok(());
+    }
+    writeln!(out, "{REVISIONS_TABLE_HEADER}").context("failed to write output")?;
+    for revision in revisions {
+        writeln!(
+            out,
+            "{}\t{}\t{}\t{}\t{}\t{}",
+            revision.id,
+            revision.modified_time,
+            revision.size.as_deref().unwrap_or("-"),
+            revision.md5_checksum.as_deref().unwrap_or("-"),
+            revision.keep_forever,
+            revision.original_filename.as_deref().unwrap_or("-")
+        )
+        .context("failed to write output")?;
+    }
+    Ok(())
+}
+
 pub(super) fn upload_options(
     path: PathBuf,
     folder: Option<String>,
@@ -1201,6 +1367,77 @@ async fn upload_with_drive_unified_access<S: AccountStore>(
         is_target_access_failure,
     )
     .await
+}
+
+async fn update_file_content_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &UpdateFileContentOptions,
+    progress: &Option<ProgressBar>,
+    state_path: Option<&Path>,
+) -> DriveResult<UpdatedFile> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, UpdatedFile, DriveError> {
+            Box::pin(update_file_content_as_account(
+                config, store, options, progress, account,
+            ))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn update_file_content_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &UpdateFileContentOptions,
+    progress: &Option<ProgressBar>,
+    account: String,
+) -> DriveResult<UpdatedFile> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    update_file_content(&client, options, |bytes| {
+        if let Some(progress) = progress {
+            progress.set_position(bytes);
+        }
+    })
+    .await
+}
+
+async fn list_revisions_with_drive_unified_access<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    target_resource_key: &str,
+    options: &DriveFileOperationOptions,
+    state_path: Option<&Path>,
+) -> DriveResult<Vec<DriveRevision>> {
+    UnifiedAccess::run(
+        config,
+        account_override,
+        target_resource_key,
+        state_path,
+        |account| -> AccessFuture<'_, Vec<DriveRevision>, DriveError> {
+            Box::pin(list_revisions_as_account(config, store, options, account))
+        },
+        is_target_access_failure,
+    )
+    .await
+}
+
+async fn list_revisions_as_account<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    options: &DriveFileOperationOptions,
+    account: String,
+) -> DriveResult<Vec<DriveRevision>> {
+    let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
+    list_revisions(&client, options).await
 }
 
 async fn list_comments_with_drive_unified_access<S: AccountStore>(

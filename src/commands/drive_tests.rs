@@ -12,7 +12,7 @@ use crate::auth::testing::MemoryStore;
 use crate::drive::{
     CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, DeleteCommentOptions,
     DriveFile, ListCommentsOptions, OfficeConversionOptions, OfficeConversionTarget,
-    ResolveCommentOptions, UpdateCommentOptions, DRIVE_SCOPE,
+    ResolveCommentOptions, UpdateCommentOptions, UpdateFileContentOptions, DRIVE_SCOPE,
 };
 
 use super::drive::*;
@@ -2055,6 +2055,130 @@ async fn run_upload_unified_uses_target_folder_for_account_mapping() {
             .unwrap()
             .account_for_resource(&resource_key("drive", "folder-123")),
         Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_update_uses_the_file_account_and_prints_the_new_version() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/office-deck-123"))
+        .and(header("authorization", "Bearer alice-access"))
+        .respond_with(ResponseTemplate::new(404).set_body_string("not found for alice"))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/office-deck-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "office-deck-123",
+            "name": "deck.pptx",
+            "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "modifiedTime": "2026-06-24T11:00:00.000Z",
+            "version": "8",
+            "md5Checksum": "new-md5",
+            "webViewLink": "https://docs.google.com/presentation/d/office-deck-123/edit"
+        })))
+        .expect(2)
+        .mount(&server)
+        .await;
+    Mock::given(method("PATCH"))
+        .and(path("/upload/drive/v3/files/office-deck-123"))
+        .and(header("authorization", "Bearer bob-access"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let path = temp_dir.path().join("deck.pptx");
+    std::fs::write(&path, "new deck").unwrap();
+    let options = UpdateFileContentOptions::new("office-deck-123", path)
+        .with_files_url(format!("{}/drive/v3/files", server.uri()))
+        .with_upload_url(format!("{}/upload/drive/v3/files", server.uri()));
+    let mut out = Vec::new();
+
+    run_update_unified_to(
+        &config,
+        &store,
+        None,
+        options,
+        false,
+        true,
+        &mut out,
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "office-deck-123\thttps://docs.google.com/presentation/d/office-deck-123/edit\t2026-06-24T11:00:00.000Z\t8\tnew-md5\n"
+    );
+    assert_eq!(
+        load_runtime_state_from_path(&state_path)
+            .unwrap()
+            .account_for_resource(&resource_key("drive", "office-deck-123")),
+        Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_revisions_prints_a_table_of_stored_versions() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files/office-deck-123/revisions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "revisions": [
+                {
+                    "id": "revision-1",
+                    "modifiedTime": "2026-06-24T10:00:00.000Z",
+                    "originalFilename": "deck.pptx",
+                    "size": "10",
+                    "md5Checksum": "md5-1"
+                },
+                {
+                    "id": "revision-2",
+                    "modifiedTime": "2026-06-24T11:00:00.000Z",
+                    "keepForever": true
+                }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+    let mut out = Vec::new();
+
+    run_revisions_unified_to(
+        &test_config(),
+        &store,
+        None,
+        "office-deck-123".into(),
+        false,
+        &mut out,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "REVISION ID\tMODIFIED\tSIZE\tMD5\tKEEP FOREVER\tFILE NAME\n\
+         revision-1\t2026-06-24T10:00:00.000Z\t10\tmd5-1\tfalse\tdeck.pptx\n\
+         revision-2\t2026-06-24T11:00:00.000Z\t-\t-\ttrue\t-\n"
     );
 }
 

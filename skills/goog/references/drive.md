@@ -57,6 +57,28 @@ Confirm the local path exists and is the intended file.
 Use `--folder` to place the upload in a specific Drive folder.
 Read the returned resource information and verify the uploaded item with `goog drive ls`.
 
+## Replace a file with a new version
+
+```bash
+goog drive update FILE_ID /absolute/path/to/new-version.pptx
+goog drive update FILE_ID /absolute/path/to/new-version.docx --expect-modified-time 2026-01-31T09:15:00.000Z
+goog drive update FILE_ID /absolute/path/to/new-version.xlsx --expect-md5 MD5_CHECKSUM --json
+goog drive revisions FILE_ID
+```
+
+Use `update` when a shared uploaded file, such as an Office file or PDF, needs new content and existing links to it must keep working.
+The file keeps its ID, link, sharing, and parent folders, and Drive keeps the previous content under Manage versions.
+Never use `upload` for this, because it creates a second file with a new ID.
+The Drive name and MIME type stay unchanged unless `--name` or `--mime-type` is given.
+Native Google Docs, Sheets, and Slides are refused; edit them with the matching service command instead.
+Before replacing a file someone else may have edited, read its current modified time with `goog drive ls --json` or its checksum with `goog drive revisions`, then pass `--expect-modified-time` or `--expect-md5`.
+The command refuses the update when the Drive file no longer matches.
+The guard is checked immediately before the upload, so it cannot catch an edit that lands during the upload itself.
+The command reads the file back and prints its ID, URL, new modified time, version, and MD5 checksum separated by tabs, or one JSON object with `--json`.
+`revisions` lists the stored versions oldest first with their modified time, size, MD5 checksum, and keep-forever flag.
+Drive purges older versions of uploaded files after 30 days or 100 versions unless they are marked keep forever in Manage versions.
+Verify the update by downloading the file and comparing it with the local file, and by checking that `revisions` shows the previous version.
+
 ## Convert an Office file
 
 ```bash
@@ -121,6 +143,7 @@ After moving the file to trash, verify that it no longer appears in the intended
 - The command ran against the intended account.
 - The exact file or folder ID was resolved before mutation.
 - Uploads, conversions, and folders were listed back from the intended parent.
+- Replaced files kept their ID, the re-download matches the local file, and `revisions` shows the previous version.
 - Downloads exist at the intended local destination and are readable.
 - Comment reads include the expected comment and nested replies.
 - Comment mutations were read back from the same file.

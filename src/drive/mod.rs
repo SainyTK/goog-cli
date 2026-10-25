@@ -47,6 +47,12 @@ pub(crate) const GOOGLE_DOC_MIME_TYPE: &str = "application/vnd.google-apps.docum
 pub(crate) const GOOGLE_SHEET_MIME_TYPE: &str = "application/vnd.google-apps.spreadsheet";
 pub(crate) const GOOGLE_SLIDES_MIME_TYPE: &str = "application/vnd.google-apps.presentation";
 const UPLOAD_RESPONSE_FIELDS: &str = "id,webViewLink";
+const UPDATED_FILE_FIELDS: &str =
+    "id,name,mimeType,modifiedTime,version,md5Checksum,size,headRevisionId,webViewLink";
+const REVISIONS_FIELDS: &str =
+    "nextPageToken,revisions(id,modifiedTime,originalFilename,size,md5Checksum,keepForever)";
+const REVISIONS_PAGE_SIZE: &str = "200";
+const GOOGLE_APPS_MIME_TYPE_PREFIX: &str = "application/vnd.google-apps.";
 const CREATE_FOLDER_RESPONSE_FIELDS: &str = "id,webViewLink";
 const CONVERT_FILE_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
@@ -268,6 +274,46 @@ pub struct UploadedFile {
     pub web_view_link: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatedFile {
+    pub id: String,
+    pub name: String,
+    pub mime_type: String,
+    pub modified_time: String,
+    pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub md5_checksum: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub head_revision_id: Option<String>,
+    pub web_view_link: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveRevision {
+    pub id: String,
+    pub modified_time: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_filename: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub md5_checksum: Option<String>,
+    #[serde(default)]
+    pub keep_forever: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RevisionsPage {
+    #[serde(default)]
+    revisions: Vec<DriveRevision>,
+    next_page_token: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct CreatedFolder {
     pub id: String,
@@ -398,14 +444,91 @@ impl UploadFileOptions {
         self
     }
 
-    fn upload_url(&self, upload_type: UploadType) -> Result<Url, DriveError> {
+    fn request_url(&self) -> Result<Url, DriveError> {
         let mut url = Url::parse(&self.upload_url)?;
         url.query_pairs_mut()
-            .append_pair("uploadType", upload_type.as_query_value())
             .append_pair("fields", UPLOAD_RESPONSE_FIELDS)
             .append_pair("supportsAllDrives", "true");
         Ok(url)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateFileContentOptions {
+    pub file_id: String,
+    pub path: PathBuf,
+    pub name: Option<String>,
+    pub mime_type: Option<String>,
+    pub expected_modified_time: Option<String>,
+    pub expected_md5_checksum: Option<String>,
+    files_url: String,
+    upload_url: String,
+}
+
+impl UpdateFileContentOptions {
+    pub fn new(file_id: impl Into<String>, path: impl Into<PathBuf>) -> Self {
+        Self {
+            file_id: file_id.into(),
+            path: path.into(),
+            name: None,
+            mime_type: None,
+            expected_modified_time: None,
+            expected_md5_checksum: None,
+            files_url: DRIVE_FILES_URL.to_string(),
+            upload_url: DRIVE_UPLOAD_URL.to_string(),
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn with_mime_type(mut self, mime_type: impl Into<String>) -> Self {
+        self.mime_type = Some(mime_type.into());
+        self
+    }
+
+    pub fn with_expected_modified_time(mut self, modified_time: impl Into<String>) -> Self {
+        self.expected_modified_time = Some(modified_time.into());
+        self
+    }
+
+    pub fn with_expected_md5_checksum(mut self, md5_checksum: impl Into<String>) -> Self {
+        self.expected_md5_checksum = Some(md5_checksum.into());
+        self
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
+        self.files_url = files_url.into();
+        self
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_upload_url(mut self, upload_url: impl Into<String>) -> Self {
+        self.upload_url = upload_url.into();
+        self
+    }
+
+    fn metadata_url(&self) -> Result<Url, DriveError> {
+        file_resource_url(&self.files_url, &self.file_id)
+    }
+
+    fn request_url(&self) -> Result<Url, DriveError> {
+        file_resource_url(&self.upload_url, &self.file_id)
+    }
+}
+
+fn file_resource_url(base_url: &str, file_id: &str) -> Result<Url, DriveError> {
+    let mut url = Url::parse(base_url)?;
+    url.path_segments_mut()
+        .map_err(|_| DriveError::InvalidResponse("Google Drive API URL cannot be a base".into()))?
+        .push(file_id);
+    url.query_pairs_mut()
+        .append_pair("fields", UPDATED_FILE_FIELDS)
+        .append_pair("supportsAllDrives", "true");
+    Ok(url)
 }
 
 #[derive(Debug, Clone)]
@@ -436,6 +559,26 @@ impl DriveFileOperationOptions {
             .push(&self.file_id);
         url.query_pairs_mut()
             .append_pair("supportsAllDrives", "true");
+        Ok(url)
+    }
+
+    fn revisions_url(&self, page_token: Option<&str>) -> Result<Url, DriveError> {
+        let mut url = Url::parse(&self.files_url)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                DriveError::InvalidResponse("Google Drive API URL cannot be a base".into())
+            })?
+            .push(&self.file_id)
+            .push("revisions");
+        {
+            let mut query = url.query_pairs_mut();
+            query
+                .append_pair("fields", REVISIONS_FIELDS)
+                .append_pair("pageSize", REVISIONS_PAGE_SIZE);
+            if let Some(page_token) = page_token {
+                query.append_pair("pageToken", page_token);
+            }
+        }
         Ok(url)
     }
 
@@ -610,6 +753,14 @@ struct UploadMetadata {
     mime_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     parents: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdateFileContentMetadata<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    #[serde(rename = "mimeType")]
+    mime_type: &'a str,
 }
 
 #[derive(Debug, Serialize)]
@@ -1452,16 +1603,104 @@ where
     S: AccountStore,
     F: FnMut(u64),
 {
-    let metadata = tokio::fs::metadata(&options.path)
-        .await
-        .map_err(DriveError::Io)?;
-    let file_size = metadata.len();
+    let metadata = upload_metadata(options)?;
+    let request = MediaUploadRequest {
+        method: Method::POST,
+        url: options.request_url()?,
+        metadata: &metadata,
+        mime_type: &options.mime_type,
+        path: &options.path,
+    };
+    let response = send_media_upload(client, &request, progress).await?;
+    parse_uploaded_file_response(response).await
+}
 
-    if file_size <= MULTIPART_UPLOAD_LIMIT_BYTES {
-        upload_multipart(client, options, file_size, progress).await
-    } else {
-        upload_resumable(client, options, file_size, progress).await
+/// Uploads a local file as the new content of an existing Drive file.
+///
+/// The file keeps its ID, link, sharing and parents, and Drive keeps the
+/// previous content in the file's version history. The expected modified time
+/// and checksum guards are checked immediately before the upload; Drive has no
+/// conditional update for file content, so a write that lands between the
+/// check and the upload is not detected.
+pub async fn update_file_content<S, F>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateFileContentOptions,
+    progress: F,
+) -> Result<UpdatedFile, DriveError>
+where
+    S: AccountStore,
+    F: FnMut(u64),
+{
+    let current = fetch_updated_file(client, options).await?;
+    if current.mime_type.starts_with(GOOGLE_APPS_MIME_TYPE_PREFIX) {
+        return Err(DriveError::NativeGoogleFile(current.mime_type));
     }
+    ensure_expected_version(options, &current)?;
+
+    let mime_type = options.mime_type.as_deref().unwrap_or(&current.mime_type);
+    let metadata = UpdateFileContentMetadata {
+        name: options.name.as_deref(),
+        mime_type,
+    };
+    let request = MediaUploadRequest {
+        method: Method::PATCH,
+        url: options.request_url()?,
+        metadata: &metadata,
+        mime_type,
+        path: &options.path,
+    };
+    let response = send_media_upload(client, &request, progress).await?;
+    ensure_success_response(response).await?;
+
+    fetch_updated_file(client, options).await
+}
+
+fn ensure_expected_version(
+    options: &UpdateFileContentOptions,
+    current: &UpdatedFile,
+) -> Result<(), DriveError> {
+    if let Some(expected) = &options.expected_modified_time {
+        if !same_timestamp(expected, &current.modified_time) {
+            return Err(DriveError::VersionMismatch(format!(
+                "expected modified time {expected}, found {}",
+                current.modified_time
+            )));
+        }
+    }
+    if let Some(expected) = &options.expected_md5_checksum {
+        let found = current.md5_checksum.as_deref().unwrap_or("none");
+        if !expected.eq_ignore_ascii_case(found) {
+            return Err(DriveError::VersionMismatch(format!(
+                "expected MD5 checksum {expected}, found {found}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn same_timestamp(expected: &str, found: &str) -> bool {
+    match (
+        chrono::DateTime::parse_from_rfc3339(expected),
+        chrono::DateTime::parse_from_rfc3339(found),
+    ) {
+        (Ok(expected), Ok(found)) => expected == found,
+        _ => expected == found,
+    }
+}
+
+async fn fetch_updated_file<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &UpdateFileContentOptions,
+) -> Result<UpdatedFile, DriveError> {
+    let response = client
+        .send_with_scopes(client.get(options.metadata_url()?), DRIVE_SCOPES)
+        .await
+        .map_err(DriveError::Auth)?;
+    ensure_success_response(response)
+        .await?
+        .json::<UpdatedFile>()
+        .await
+        .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
 
 pub async fn convert_office_file<S: AccountStore>(
@@ -1484,30 +1723,72 @@ pub async fn convert_office_file<S: AccountStore>(
     parse_office_conversion_response(response).await
 }
 
-async fn upload_multipart<S, F>(
+struct MediaUploadRequest<'a, M: Serialize> {
+    method: Method,
+    url: Url,
+    metadata: &'a M,
+    mime_type: &'a str,
+    path: &'a Path,
+}
+
+impl<M: Serialize> MediaUploadRequest<'_, M> {
+    fn url(&self, upload_type: UploadType) -> Url {
+        let mut url = self.url.clone();
+        url.query_pairs_mut()
+            .append_pair("uploadType", upload_type.as_query_value());
+        url
+    }
+}
+
+/// Sends file content with its metadata, using a multipart upload for small
+/// files and a chunked resumable upload for large ones, and returns the final
+/// Drive response without checking its status.
+async fn send_media_upload<S, M, F>(
     client: &AuthClient<'_, S>,
-    options: &UploadFileOptions,
-    file_size: u64,
-    mut progress: F,
-) -> Result<UploadedFile, DriveError>
+    request: &MediaUploadRequest<'_, M>,
+    progress: F,
+) -> Result<Response, DriveError>
 where
     S: AccountStore,
+    M: Serialize,
     F: FnMut(u64),
 {
-    let metadata = upload_metadata(options)?;
-    let metadata_json =
-        serde_json::to_string(&metadata).map_err(|e| DriveError::InvalidResponse(e.to_string()))?;
+    let file_size = tokio::fs::metadata(request.path)
+        .await
+        .map_err(DriveError::Io)?
+        .len();
+
+    if file_size <= MULTIPART_UPLOAD_LIMIT_BYTES {
+        send_multipart_upload(client, request, file_size, progress).await
+    } else {
+        send_resumable_upload(client, request, file_size, progress).await
+    }
+}
+
+async fn send_multipart_upload<S, M, F>(
+    client: &AuthClient<'_, S>,
+    request: &MediaUploadRequest<'_, M>,
+    file_size: u64,
+    mut progress: F,
+) -> Result<Response, DriveError>
+where
+    S: AccountStore,
+    M: Serialize,
+    F: FnMut(u64),
+{
+    let metadata_json = serde_json::to_string(request.metadata)
+        .map_err(|e| DriveError::InvalidResponse(e.to_string()))?;
     let header = Bytes::from(format!(
         "--{MULTIPART_UPLOAD_BOUNDARY}\r\n\
          Content-Type: {JSON_CONTENT_TYPE}\r\n\r\n\
          {metadata_json}\r\n\
          --{MULTIPART_UPLOAD_BOUNDARY}\r\n\
          Content-Type: {}\r\n\r\n",
-        options.mime_type
+        request.mime_type
     ));
     let footer = Bytes::from(format!("\r\n--{MULTIPART_UPLOAD_BOUNDARY}--\r\n"));
     let content_length = header.len() as u64 + file_size + footer.len() as u64;
-    let file = tokio::fs::File::open(&options.path)
+    let file = tokio::fs::File::open(request.path)
         .await
         .map_err(DriveError::Io)?;
     let body = multipart_body(header, file, footer);
@@ -1515,7 +1796,7 @@ where
     let response = client
         .send_with_scopes(
             client
-                .post(options.upload_url(UploadType::Multipart)?)
+                .request(request.method.clone(), request.url(UploadType::Multipart))
                 .header(
                     CONTENT_TYPE,
                     format!("multipart/related; boundary={MULTIPART_UPLOAD_BOUNDARY}"),
@@ -1527,29 +1808,29 @@ where
         .await
         .map_err(DriveError::Auth)?;
 
-    let uploaded = parse_uploaded_file_response(response).await?;
     progress(file_size);
-    Ok(uploaded)
+    Ok(response)
 }
 
-async fn upload_resumable<S, F>(
+async fn send_resumable_upload<S, M, F>(
     client: &AuthClient<'_, S>,
-    options: &UploadFileOptions,
+    request: &MediaUploadRequest<'_, M>,
     file_size: u64,
     mut progress: F,
-) -> Result<UploadedFile, DriveError>
+) -> Result<Response, DriveError>
 where
     S: AccountStore,
+    M: Serialize,
     F: FnMut(u64),
 {
-    let session_uri = initiate_resumable_upload(client, options, file_size).await?;
+    let session_uri = initiate_resumable_upload(client, request, file_size).await?;
     let mut uploaded = 0_u64;
 
     while uploaded < file_size {
         let chunk_size = next_resumable_chunk_size(uploaded, file_size);
         let start = uploaded;
         let end = uploaded + chunk_size as u64 - 1;
-        let body = resumable_chunk_body(&options.path, start, chunk_size).await?;
+        let body = resumable_chunk_body(request.path, start, chunk_size).await?;
         let response = client
             .send_with_scopes(
                 client
@@ -1568,7 +1849,7 @@ where
         let upload_complete = uploaded == file_size;
         let server_expects_more_chunks = response.status() == StatusCode::PERMANENT_REDIRECT;
         if upload_complete || !server_expects_more_chunks {
-            return parse_uploaded_file_response(response).await;
+            return Ok(response);
         }
     }
 
@@ -1592,20 +1873,23 @@ async fn resumable_chunk_body(path: &Path, start: u64, length: usize) -> Result<
     Ok(Body::wrap_stream(ReaderStream::new(reader)))
 }
 
-async fn initiate_resumable_upload<S: AccountStore>(
+async fn initiate_resumable_upload<S, M>(
     client: &AuthClient<'_, S>,
-    options: &UploadFileOptions,
+    request: &MediaUploadRequest<'_, M>,
     file_size: u64,
-) -> Result<String, DriveError> {
-    let metadata = upload_metadata(options)?;
+) -> Result<String, DriveError>
+where
+    S: AccountStore,
+    M: Serialize,
+{
     let response = client
         .send_with_scopes(
             client
-                .post(options.upload_url(UploadType::Resumable)?)
+                .request(request.method.clone(), request.url(UploadType::Resumable))
                 .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
-                .header(UPLOAD_CONTENT_TYPE_HEADER, &options.mime_type)
+                .header(UPLOAD_CONTENT_TYPE_HEADER, request.mime_type)
                 .header(UPLOAD_CONTENT_LENGTH_HEADER, file_size.to_string())
-                .json(&metadata),
+                .json(request.metadata),
             DRIVE_SCOPES,
         )
         .await
@@ -1665,6 +1949,35 @@ pub async fn delete_file<S: AccountStore>(
         .map_err(DriveError::Auth)?;
     ensure_success_response(response).await?;
     Ok(())
+}
+
+/// Lists the stored revisions of a Drive file, oldest first, as shown in
+/// Drive's Manage versions view for uploaded files.
+pub async fn list_revisions<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DriveFileOperationOptions,
+) -> Result<Vec<DriveRevision>, DriveError> {
+    let mut revisions = Vec::new();
+    let mut page_token = None;
+    loop {
+        let response = client
+            .send_with_scopes(
+                client.get(options.revisions_url(page_token.as_deref())?),
+                DRIVE_SCOPES,
+            )
+            .await
+            .map_err(DriveError::Auth)?;
+        let page = ensure_success_response(response)
+            .await?
+            .json::<RevisionsPage>()
+            .await
+            .map_err(|error| DriveError::InvalidResponse(error.to_string()))?;
+        revisions.extend(page.revisions);
+        match page.next_page_token {
+            Some(next_page_token) => page_token = Some(next_page_token),
+            None => return Ok(revisions),
+        }
+    }
 }
 
 pub async fn trash_file<S: AccountStore>(
