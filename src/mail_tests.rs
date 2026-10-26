@@ -136,6 +136,67 @@ fn parse_message_reference_trims_surrounding_whitespace() {
     );
 }
 
+#[test]
+fn parse_draft_reference_passes_through_bare_draft_id() {
+    assert_eq!(
+        parse_draft_reference(" r-placeholder-draft "),
+        DraftReference::DraftId("r-placeholder-draft".into())
+    );
+}
+
+#[test]
+fn draft_web_link_encodes_thread_and_draft_and_round_trips() {
+    let link = draft_web_link("alice@example.com", "1a2b", "r-1234567890").unwrap();
+    let token = link.rsplit("compose=").next().unwrap();
+
+    assert!(link
+        .starts_with("https://mail.google.com/mail/?authuser=alice@example.com#drafts?compose="));
+    assert_eq!(
+        token,
+        encode_gmail_restricted_token("f:6699+msg-a:r-1234567890")
+    );
+    assert_eq!(
+        parse_draft_reference(&link),
+        DraftReference::DraftId("r-1234567890".into())
+    );
+}
+
+#[test]
+fn draft_web_link_needs_hex_thread_id() {
+    assert_eq!(draft_web_link("alice@example.com", "not-hex", "r-1"), None);
+}
+
+#[test]
+fn parse_draft_reference_reads_draft_from_thread_and_message_compose_token() {
+    // Gmail encodes each open compose window as <thread>+msg-a:<draft>,
+    // and a blank compose window as "new".
+    let token = encode_gmail_restricted_token("f:111+msg-a:r-222,new");
+    let thread_link = format!("https://mail.google.com/mail/u/0/#inbox?compose={token}");
+
+    assert_eq!(
+        parse_draft_reference(&thread_link),
+        DraftReference::DraftId("r-222".into())
+    );
+}
+
+#[test]
+fn parse_draft_reference_keeps_legacy_hex_compose_id_for_lookup() {
+    assert_eq!(
+        parse_draft_reference("https://mail.google.com/mail/u/0/#drafts?compose=placeholder1"),
+        DraftReference::MessageOrThreadId("placeholder1".into())
+    );
+}
+
+#[test]
+fn parse_draft_reference_decodes_thread_token_from_conversation_url() {
+    assert_eq!(
+        parse_draft_reference(
+            "https://mail.google.com/mail/u/0/#inbox/QgrcJHrtrSpwscndncKKjbRWDtfFSrMtdrq"
+        ),
+        DraftReference::Thread("thread-a:r-3377742391388691132".into())
+    );
+}
+
 #[tokio::test]
 async fn create_draft_posts_to_gmail_drafts_endpoint() {
     let server = MockServer::start().await;
@@ -153,13 +214,12 @@ async fn create_draft_posts_to_gmail_drafts_endpoint() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = CreateDraftOptions::new(
-        vec!["alice@example.com".into()],
-        vec![],
-        vec![],
-        "Hello alice",
-        "Body",
-    )
+    let options = CreateDraftOptions::new(DraftMessage {
+        to: vec!["alice@example.com".into()],
+        subject: "Hello alice".into(),
+        body: DraftBody::new("Body", DraftBodyFormat::PlainText),
+        ..DraftMessage::default()
+    })
     .with_drafts_url(drafts_url(&server));
 
     let draft = create_draft(&client, &options).await.unwrap();
@@ -171,13 +231,12 @@ async fn create_draft_posts_to_gmail_drafts_endpoint() {
 async fn create_draft_rejects_newlines_in_headers() {
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = CreateDraftOptions::new(
-        vec!["alice@example.com".into()],
-        vec![],
-        vec![],
-        "Hello\r\nBcc: mallory@example.com",
-        "Body",
-    );
+    let options = CreateDraftOptions::new(DraftMessage {
+        to: vec!["alice@example.com".into()],
+        subject: "Hello\r\nBcc: mallory@example.com".into(),
+        body: DraftBody::new("Body", DraftBodyFormat::PlainText),
+        ..DraftMessage::default()
+    });
 
     let err = create_draft(&client, &options).await.unwrap_err();
 
@@ -208,12 +267,9 @@ async fn update_draft_puts_to_gmail_draft_endpoint() {
         "draft-123",
         DraftMessage {
             to: vec!["alice@example.com".into()],
-            cc: vec![],
-            bcc: vec![],
             subject: "Updated subject".into(),
-            body: "Updated body".into(),
-            body_format: DraftBodyFormat::PlainText,
-            attachments: Vec::new(),
+            body: DraftBody::new("Updated body", DraftBodyFormat::PlainText),
+            ..DraftMessage::default()
         },
     )
     .with_drafts_url(drafts_url(&server));

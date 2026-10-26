@@ -214,7 +214,8 @@ _Avoid_: Default mailbox, mail list, received mail
 
 **Draft**:
 An unsent GoogleMail Message stored through the Gmail drafts API.
-`goog mail draft create` creates a Draft but does not send it.
+`goog mail draft` creates a Draft, or edits one in place by Draft ID, but never sends it.
+An edit replaces the Draft's Message while keeping the Draft ID, the Thread, and every field the edit does not name.
 _Avoid_: Outbox item, scheduled email, sent message
 
 **Attachment**:

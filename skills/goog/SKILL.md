@@ -93,10 +93,25 @@ Read [Google Docs](references/docs.md) before Docs work.
 - `goog mail list` lists recent Inbox messages or searches with a Gmail query.
 - `goog mail read` reads a message.
 - `goog mail download` downloads an attachment.
-- `goog mail draft` creates or edits a draft message.
+- `goog mail drafts` lists drafts or searches them with a Gmail query.
+- `goog mail read-draft` reads one draft by draft ID or Gmail URL, with its recipients, subject, body, attachment names, thread ID and Gmail link.
+- `goog mail draft` creates a draft, creates a reply draft in a message's thread with `--reply-to`, or edits an existing draft in place.
 
 Run `goog mail draft --help` before creating or changing a draft.
-Inspect the resulting draft through `goog mail` before reporting success.
+goog never sends mail; leave sending to the user.
+
+To edit an existing draft:
+
+1. Find the draft ID with `goog mail drafts`, or use the draft ID or Gmail URL the user gave.
+2. Read the draft with `goog mail read-draft DRAFT` before changing it.
+3. Run `goog mail draft DRAFT` with flags for only what should change.
+   `--body` replaces the body and `--subject` replaces the subject.
+   `--to`, `--cc` and `--bcc` replace that whole recipient field, while `--add-to`, `--add-cc` and `--add-bcc` add recipients.
+   `--attachment` adds a file and `--remove-attachment NAME` removes an attachment by filename.
+   Every field, attachment, inline image and reply header the command does not name stays as it was.
+4. Read the draft again with `goog mail read-draft DRAFT` and confirm the change, the untouched fields, and that the draft ID and thread ID did not change.
+
+Keep the subject of a reply draft unchanged, because Gmail drops a reply from its thread when the subject no longer matches.
 
 ### Sheets
 

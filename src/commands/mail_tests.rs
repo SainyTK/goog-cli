@@ -10,7 +10,10 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::{Config, OAuthAppConfig, OAuthAppType, SettingsConfig};
 use crate::auth::state::{load_runtime_state_from_path, resource_key};
 use crate::auth::testing::MemoryStore;
-use crate::mail::GMAIL_SCOPE;
+use crate::mail::{
+    draft_web_link, DraftAttachment, DraftBody, DraftBodyFormat, DraftEdit, DraftMessage,
+    GMAIL_SCOPE,
+};
 use crate::test_support::CurrentDirGuard;
 
 use super::mail::*;
@@ -23,20 +26,30 @@ fn resolve_draft_body_supports_literal_file_and_stdin_sources() {
 
     let mut empty_stdin = Cursor::new(Vec::<u8>::new());
     assert_eq!(
-        resolve_draft_body_from_reader(Some("Literal body".into()), &mut empty_stdin).unwrap(),
-        "Literal body"
+        resolve_draft_body_from_reader(Some("Literal body".into()), &mut empty_stdin)
+            .unwrap()
+            .as_deref(),
+        Some("Literal body")
     );
 
     assert_eq!(
         resolve_draft_body_from_reader(Some(format!("@{}", body_path.display())), &mut empty_stdin)
-            .unwrap(),
-        "Body from file"
+            .unwrap()
+            .as_deref(),
+        Some("Body from file")
     );
 
     let mut stdin = Cursor::new("Body from stdin".as_bytes());
     assert_eq!(
-        resolve_draft_body_from_reader(Some("-".into()), &mut stdin).unwrap(),
-        "Body from stdin"
+        resolve_draft_body_from_reader(Some("-".into()), &mut stdin)
+            .unwrap()
+            .as_deref(),
+        Some("Body from stdin")
+    );
+
+    assert_eq!(
+        resolve_draft_body_from_reader(None, &mut empty_stdin).unwrap(),
+        None
     );
 }
 
@@ -67,6 +80,13 @@ fn scoped_mail_token(access_token: &str) -> Token {
         scopes: vec![GMAIL_SCOPE.into()],
     }
 }
+
+fn draft_link() -> String {
+    draft_web_link("alice@example.com", THREAD_ID, "draft-123").unwrap()
+}
+
+/// Gmail API Thread IDs are hex, which the Gmail link encodes in decimal.
+const THREAD_ID: &str = "1234abcd";
 
 fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     store
@@ -433,7 +453,7 @@ Draft body.\r\n",
         })
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "draft-123",
-            "message": { "id": "message-123", "threadId": "thread-123" }
+            "message": { "id": "message-123", "threadId": "1234abcd" }
         })))
         .expect(1)
         .mount(&server)
@@ -446,15 +466,16 @@ Draft body.\r\n",
 
     run_draft_create_to(
         &client,
-        CreateDraftInput {
+        DraftMessage {
             to: vec!["Alice <alice@example.com>".into(), "bob@example.com".into()],
             cc: vec!["Carol <carol@example.com>".into()],
             bcc: vec!["Dave <dave@example.com>".into()],
             subject: "Status update".into(),
-            body: "Hello Bob,\n\nDraft body.".into(),
-            html: false,
+            body: DraftBody::new("Hello Bob,\n\nDraft body.", DraftBodyFormat::PlainText),
             attachments: vec![],
+            thread: None,
         },
+        None,
         false,
         &mut out,
         Some(&drafts_url),
@@ -464,8 +485,10 @@ Draft body.\r\n",
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
-        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
-draft-123\tmessage-123\tthread-123\n"
+        format!(
+            "DRAFT ID\tMESSAGE ID\tTHREAD ID\tLINK\ndraft-123\tmessage-123\t1234abcd\t{}\n",
+            draft_link()
+        )
     );
 }
 
@@ -486,7 +509,7 @@ Content-Transfer-Encoding: 8bit\r\n\
         })
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "draft-123",
-            "message": { "id": "message-123", "threadId": "thread-123" }
+            "message": { "id": "message-123", "threadId": "1234abcd" }
         })))
         .expect(1)
         .mount(&server)
@@ -499,15 +522,19 @@ Content-Transfer-Encoding: 8bit\r\n\
 
     run_draft_create_to(
         &client,
-        CreateDraftInput {
+        DraftMessage {
             to: vec!["alice@example.com".into()],
             cc: vec![],
             bcc: vec![],
             subject: "Rich draft".into(),
-            body: "<p>Hello <strong>Alice</strong>.</p>".into(),
-            html: true,
+            body: DraftBody::new(
+                "<p>Hello <strong>Alice</strong>.</p>",
+                DraftBodyFormat::Html,
+            ),
             attachments: vec![],
+            thread: None,
         },
+        None,
         false,
         &mut out,
         Some(&drafts_url),
@@ -517,8 +544,10 @@ Content-Transfer-Encoding: 8bit\r\n\
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
-        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
-draft-123\tmessage-123\tthread-123\n"
+        format!(
+            "DRAFT ID\tMESSAGE ID\tTHREAD ID\tLINK\ndraft-123\tmessage-123\t1234abcd\t{}\n",
+            draft_link()
+        )
     );
 }
 
@@ -549,7 +578,7 @@ aGVsbG8gYXR0YWNobWVudA==\r\n\
         })
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "draft-123",
-            "message": { "id": "message-123", "threadId": "thread-123" }
+            "message": { "id": "message-123", "threadId": "1234abcd" }
         })))
         .expect(1)
         .mount(&server)
@@ -562,19 +591,21 @@ aGVsbG8gYXR0YWNobWVudA==\r\n\
 
     run_draft_create_to(
         &client,
-        CreateDraftInput {
+        DraftMessage {
             to: vec!["alice@example.com".into()],
             cc: vec![],
             bcc: vec![],
             subject: "Attached draft".into(),
-            body: "<p>See <mark>attached</mark>.</p>".into(),
-            html: true,
-            attachments: vec![DraftAttachmentInput {
+            body: DraftBody::new("<p>See <mark>attached</mark>.</p>", DraftBodyFormat::Html),
+            attachments: vec![DraftAttachment {
                 filename: "invoice.pdf".into(),
                 content_type: "application/pdf".into(),
                 data: b"hello attachment".to_vec(),
+                content_id: None,
             }],
+            thread: None,
         },
+        None,
         false,
         &mut out,
         Some(&drafts_url),
@@ -584,77 +615,10 @@ aGVsbG8gYXR0YWNobWVudA==\r\n\
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
-        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
-draft-123\tmessage-123\tthread-123\n"
-    );
-}
-
-#[tokio::test]
-async fn run_draft_edit_puts_html_replacement_message_with_attachment() {
-    let server = MockServer::start().await;
-    Mock::given(method("PUT"))
-        .and(path("/gmail/v1/users/me/drafts/draft-123"))
-        .and(header("authorization", "Bearer mail-access"))
-        .and(body_string_contains("\"id\":\"draft-123\""))
-        .and(DraftRawMessageMatcher {
-            expected: "To: alice@example.com\r\n\
-Subject: Updated draft\r\n\
-MIME-Version: 1.0\r\n\
-Content-Type: multipart/mixed; boundary=\"goog-cli-draft-boundary\"\r\n\
-\r\n\
---goog-cli-draft-boundary\r\n\
-Content-Type: text/html; charset=UTF-8\r\n\
-Content-Transfer-Encoding: 8bit\r\n\
-\r\n\
-<p><strong>Updated</strong> body.</p>\r\n\
---goog-cli-draft-boundary\r\n\
-Content-Type: text/plain; name=\"notes.txt\"\r\n\
-Content-Disposition: attachment; filename=\"notes.txt\"\r\n\
-Content-Transfer-Encoding: base64\r\n\
-\r\n\
-dXBkYXRlZCBhdHRhY2htZW50\r\n\
---goog-cli-draft-boundary--\r\n",
-        })
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "draft-123",
-            "message": { "id": "message-123", "threadId": "thread-123" }
-        })))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let store = MemoryStore::default();
-    let client = test_client(&store);
-    let mut out = Vec::new();
-    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
-
-    run_draft_edit_to(
-        &client,
-        "draft-123".into(),
-        CreateDraftInput {
-            to: vec!["alice@example.com".into()],
-            cc: vec![],
-            bcc: vec![],
-            subject: "Updated draft".into(),
-            body: "<p><strong>Updated</strong> body.</p>".into(),
-            html: true,
-            attachments: vec![DraftAttachmentInput {
-                filename: "notes.txt".into(),
-                content_type: "text/plain".into(),
-                data: b"updated attachment".to_vec(),
-            }],
-        },
-        false,
-        &mut out,
-        Some(&drafts_url),
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(
-        String::from_utf8(out).unwrap(),
-        "DRAFT ID\tMESSAGE ID\tTHREAD ID\n\
-draft-123\tmessage-123\tthread-123\n"
+        format!(
+            "DRAFT ID\tMESSAGE ID\tTHREAD ID\tLINK\ndraft-123\tmessage-123\t1234abcd\t{}\n",
+            draft_link()
+        )
     );
 }
 
@@ -685,7 +649,7 @@ async fn run_draft_create_emits_json_response() {
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "id": "draft-123",
-            "message": { "id": "message-123" }
+            "message": { "id": "message-123", "threadId": "1234abcd" }
         })))
         .expect(1)
         .mount(&server)
@@ -698,15 +662,16 @@ async fn run_draft_create_emits_json_response() {
 
     run_draft_create_to(
         &client,
-        CreateDraftInput {
+        DraftMessage {
             to: vec!["alice@example.com".into()],
             cc: vec![],
             bcc: vec![],
             subject: "Hello alice".into(),
-            body: "Body".into(),
-            html: false,
+            body: DraftBody::new("Body", DraftBodyFormat::PlainText),
             attachments: vec![],
+            thread: None,
         },
+        None,
         true,
         &mut out,
         Some(&drafts_url),
@@ -716,7 +681,10 @@ async fn run_draft_create_emits_json_response() {
 
     assert_eq!(
         String::from_utf8(out).unwrap(),
-        "{\"id\":\"draft-123\",\"message\":{\"id\":\"message-123\"}}\n"
+        format!(
+            "{{\"id\":\"draft-123\",\"link\":\"{}\",\"message\":{{\"id\":\"message-123\",\"threadId\":\"1234abcd\"}}}}\n",
+            draft_link()
+        )
     );
 }
 
@@ -1206,4 +1174,483 @@ async fn run_attachment_download_unified_uses_message_target_fallback_and_maps_s
             .account_for_resource(&resource_key("mail", "message-123")),
         Some("bob@example.com")
     );
+}
+
+fn base64url(value: &str) -> String {
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(value)
+}
+
+/// A Gmail editor reply Draft: To, Cc, Bcc, reply headers, a
+/// multipart/alternative body, an inline image and a file attachment.
+fn existing_reply_draft() -> Value {
+    serde_json::json!({
+        "id": "draft-123",
+        "message": {
+            "id": "message-123",
+            "threadId": "1234abcd",
+            "payload": {
+                "mimeType": "multipart/mixed",
+                "headers": [
+                    { "name": "To", "value": "Alice <alice@example.com>" },
+                    { "name": "Cc", "value": "carol@example.com" },
+                    { "name": "Bcc", "value": "dave@example.com" },
+                    { "name": "Subject", "value": "Re: Plan" },
+                    { "name": "In-Reply-To", "value": "<original@example.com>" },
+                    { "name": "References", "value": "<root@example.com> <original@example.com>" }
+                ],
+                "parts": [
+                    {
+                        "mimeType": "multipart/related",
+                        "parts": [
+                            {
+                                "mimeType": "multipart/alternative",
+                                "parts": [
+                                    { "mimeType": "text/plain", "body": { "data": base64url("Old text") } },
+                                    { "mimeType": "text/html", "body": { "data": base64url("<p>Old html</p>") } }
+                                ]
+                            },
+                            {
+                                "mimeType": "image/png",
+                                "filename": "logo.png",
+                                "headers": [
+                                    { "name": "Content-Disposition", "value": "inline; filename=\"logo.png\"" },
+                                    { "name": "Content-ID", "value": "<logo@example.com>" }
+                                ],
+                                "body": { "data": base64url("png") }
+                            }
+                        ]
+                    },
+                    {
+                        "mimeType": "application/pdf",
+                        "filename": "plan.pdf",
+                        "headers": [
+                            { "name": "Content-Disposition", "value": "attachment; filename=\"plan.pdf\"" },
+                            { "name": "Content-ID", "value": "<plan@example.com>" }
+                        ],
+                        "body": { "attachmentId": "attachment-1" }
+                    }
+                ]
+            }
+        }
+    })
+}
+
+async fn mount_existing_reply_draft(server: &MockServer, attachment_fetches: u64) {
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts/draft-123"))
+        .and(query_param("format", "full"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(existing_reply_draft()))
+        .mount(server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/gmail/v1/users/me/messages/message-123/attachments/attachment-1",
+        ))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({ "data": base64url("pdf") })),
+        )
+        .expect(attachment_fetches)
+        .mount(server)
+        .await;
+}
+
+const EDITED_REPLY_DRAFT: &str = "To: Alice <alice@example.com>, bob@example.com\r\n\
+Cc: carol@example.com\r\n\
+Bcc: dave@example.com\r\n\
+Subject: Re: Plan\r\n\
+In-Reply-To: <original@example.com>\r\n\
+References: <root@example.com> <original@example.com>\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"goog-cli-draft-boundary\"\r\n\
+\r\n\
+--goog-cli-draft-boundary\r\n\
+Content-Type: multipart/related; boundary=\"goog-cli-draft-related\"\r\n\
+\r\n\
+--goog-cli-draft-related\r\n\
+Content-Type: multipart/alternative; boundary=\"goog-cli-draft-alternative\"\r\n\
+\r\n\
+--goog-cli-draft-alternative\r\n\
+Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+Old text\r\n\
+--goog-cli-draft-alternative\r\n\
+Content-Type: text/html; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+<p>Old html</p>\r\n\
+--goog-cli-draft-alternative--\r\n\
+--goog-cli-draft-related\r\n\
+Content-Type: image/png; name=\"logo.png\"\r\n\
+Content-Disposition: inline; filename=\"logo.png\"\r\n\
+Content-ID: <logo@example.com>\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+cG5n\r\n\
+--goog-cli-draft-related--\r\n\
+--goog-cli-draft-boundary\r\n\
+Content-Type: application/pdf; name=\"plan.pdf\"\r\n\
+Content-Disposition: attachment; filename=\"plan.pdf\"\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+cGRm\r\n\
+--goog-cli-draft-boundary--\r\n";
+
+#[tokio::test]
+async fn run_draft_edit_adds_one_recipient_and_keeps_everything_else() {
+    let server = MockServer::start().await;
+    mount_existing_reply_draft(&server, 1).await;
+    Mock::given(method("PUT"))
+        .and(path("/gmail/v1/users/me/drafts/draft-123"))
+        .and(body_string_contains("\"id\":\"draft-123\""))
+        .and(body_string_contains("\"threadId\":\"1234abcd\""))
+        .and(DraftRawMessageMatcher {
+            expected: EDITED_REPLY_DRAFT,
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-456", "threadId": "1234abcd" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_edit_to(
+        &client,
+        "draft-123".into(),
+        DraftEdit {
+            add_to: vec!["bob@example.com".into()],
+            ..DraftEdit::default()
+        },
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        format!(
+            "DRAFT ID\tMESSAGE ID\tTHREAD ID\tLINK\ndraft-123\tmessage-456\t1234abcd\t{}\n",
+            draft_link()
+        )
+    );
+}
+
+#[tokio::test]
+async fn run_draft_edit_replaces_body_and_removes_attachment_only() {
+    let server = MockServer::start().await;
+    mount_existing_reply_draft(&server, 1).await;
+    Mock::given(method("PUT"))
+        .and(path("/gmail/v1/users/me/drafts/draft-123"))
+        .and(DraftRawMessageMatcher {
+            expected: "To: Alice <alice@example.com>\r\n\
+Cc: carol@example.com\r\n\
+Bcc: dave@example.com\r\n\
+Subject: Re: Plan\r\n\
+In-Reply-To: <original@example.com>\r\n\
+References: <root@example.com> <original@example.com>\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/related; boundary=\"goog-cli-draft-related\"\r\n\
+\r\n\
+--goog-cli-draft-related\r\n\
+Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+New text\r\n\
+--goog-cli-draft-related\r\n\
+Content-Type: image/png; name=\"logo.png\"\r\n\
+Content-Disposition: inline; filename=\"logo.png\"\r\n\
+Content-ID: <logo@example.com>\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+cG5n\r\n\
+--goog-cli-draft-related--\r\n",
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-456", "threadId": "1234abcd" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_edit_to(
+        &client,
+        "draft-123".into(),
+        DraftEdit {
+            body: Some(DraftBody::new("New text", DraftBodyFormat::PlainText)),
+            remove_attachments: vec!["plan.pdf".into()],
+            ..DraftEdit::default()
+        },
+        true,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn run_draft_edit_resolves_gmail_compose_url_to_draft_id() {
+    let server = MockServer::start().await;
+    mount_existing_reply_draft(&server, 1).await;
+    Mock::given(method("PUT"))
+        .and(path("/gmail/v1/users/me/drafts/draft-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-456", "threadId": "1234abcd" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_edit_to(
+        &client,
+        draft_link(),
+        DraftEdit {
+            subject: Some("Re: Plan".into()),
+            ..DraftEdit::default()
+        },
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn run_draft_edit_resolves_legacy_message_url_by_listing_drafts() {
+    let server = MockServer::start().await;
+    mount_existing_reply_draft(&server, 1).await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "drafts": [
+                { "id": "draft-other", "message": { "id": "message-other", "threadId": "thread-other" } },
+                { "id": "draft-123", "message": { "id": "message-123", "threadId": "1234abcd" } }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/gmail/v1/users/me/drafts/draft-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-456", "threadId": "1234abcd" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_edit_to(
+        &client,
+        "https://mail.google.com/mail/u/0/#drafts?compose=message-123".into(),
+        DraftEdit {
+            add_cc: vec!["erin@example.com".into()],
+            ..DraftEdit::default()
+        },
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn run_read_draft_renders_recipients_body_attachments_and_link() {
+    let server = MockServer::start().await;
+    mount_existing_reply_draft(&server, 0).await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_read_draft_to(
+        &client,
+        "draft-123".into(),
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    let rendered = String::from_utf8(out).unwrap();
+    assert!(
+        rendered.starts_with("# Re: Plan\n\n**Draft ID:** draft-123\n**Thread ID:** 1234abcd\n")
+    );
+    assert!(rendered.contains(&format!("**Link:** {}\n", draft_link())));
+    assert!(rendered.contains("**To:** Alice <alice@example.com>\n**Cc:** carol@example.com\n**Bcc:** dave@example.com\n**In-Reply-To:** <original@example.com>\n"));
+    assert!(rendered.contains("Old html"));
+    assert!(rendered.contains("- plan.pdf (application/pdf"));
+}
+
+#[tokio::test]
+async fn run_drafts_lists_draft_summaries() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(query_param("maxResults", "5"))
+        .and(query_param("q", "subject:plan"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "drafts": [{ "id": "draft-123", "message": { "id": "message-123", "threadId": "1234abcd" } }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts/draft-123"))
+        .and(query_param("format", "metadata"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": {
+                "id": "message-123",
+                "threadId": "1234abcd",
+                "payload": { "headers": [
+                    { "name": "To", "value": "alice@example.com" },
+                    { "name": "Subject", "value": "Plan" },
+                    { "name": "Date", "value": "Mon, 1 Jan 2026 09:00:00 +0000" }
+                ] }
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_drafts_to(
+        &client,
+        Some("subject:plan".into()),
+        Some(5),
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "DATE\tTO\tSUBJECT\tDRAFT ID\n\
+Mon, 1 Jan 2026 09:00:00 +0000\talice@example.com\tPlan\tdraft-123\n"
+    );
+}
+
+#[tokio::test]
+async fn run_drafts_reports_empty_results() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "resultSizeEstimate": 0
+        })))
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    let mut table = Vec::new();
+    run_drafts_to(&client, None, None, false, &mut table, Some(&drafts_url))
+        .await
+        .unwrap();
+    let mut json = Vec::new();
+    run_drafts_to(&client, None, None, true, &mut json, Some(&drafts_url))
+        .await
+        .unwrap();
+
+    assert_eq!(String::from_utf8(table).unwrap(), "No drafts found.\n");
+    assert_eq!(String::from_utf8(json).unwrap(), "[]\n");
+}
+
+#[tokio::test]
+async fn run_draft_create_with_reply_to_joins_thread_and_defaults_headers() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/gmail/v1/users/me/messages/message-original"))
+        .and(query_param("format", "metadata"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "threadId": "1234abcd",
+            "payload": { "headers": [
+                { "name": "Message-ID", "value": "<original@example.com>" },
+                { "name": "References", "value": "<root@example.com>" },
+                { "name": "Subject", "value": "Plan" },
+                { "name": "From", "value": "Alice <alice@example.com>" }
+            ] }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/gmail/v1/users/me/drafts"))
+        .and(body_string_contains("\"threadId\":\"1234abcd\""))
+        .and(DraftRawMessageMatcher {
+            expected: "To: Alice <alice@example.com>\r\n\
+Subject: Re: Plan\r\n\
+In-Reply-To: <original@example.com>\r\n\
+References: <root@example.com> <original@example.com>\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: text/plain; charset=UTF-8\r\n\
+Content-Transfer-Encoding: 8bit\r\n\
+\r\n\
+Sounds good.\r\n",
+        })
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "draft-123",
+            "message": { "id": "message-123", "threadId": "1234abcd" }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let drafts_url = format!("{}/gmail/v1/users/me/drafts", server.uri());
+
+    run_draft_create_to(
+        &client,
+        DraftMessage {
+            body: DraftBody::new("Sounds good.", DraftBodyFormat::PlainText),
+            ..DraftMessage::default()
+        },
+        Some("message-original".into()),
+        false,
+        &mut out,
+        Some(&drafts_url),
+    )
+    .await
+    .unwrap();
 }

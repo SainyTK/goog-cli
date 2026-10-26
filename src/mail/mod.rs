@@ -1,5 +1,12 @@
+pub mod draft;
+pub mod draft_reference;
 pub mod error;
 
+pub use draft::{
+    DraftAttachment, DraftBody, DraftBodyFormat, DraftEdit, DraftMessage, DraftThread,
+    RepliedMessage,
+};
+pub use draft_reference::{draft_web_link, parse_draft_reference, DraftReference};
 pub use error::MailError;
 
 use base64::Engine;
@@ -13,6 +20,7 @@ use url::Url;
 
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
+use draft::{build_draft_raw_message, draft_message_from_payload, PayloadPart};
 
 pub const GMAIL_SCOPE: &str = "https://www.googleapis.com/auth/gmail.modify";
 pub const GMAIL_SCOPES: &[&str] = &[GMAIL_SCOPE];
@@ -22,10 +30,11 @@ const GMAIL_RESTRICTED_ALPHABET: &str = "BCDFGHJKLMNPQRSTVWXZbcdfghjklmnpqrstvwx
 const BASE64_ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const MESSAGE_LIST_FIELDS: &str = "messages(id),nextPageToken";
 const MESSAGE_METADATA_FIELDS: &str = "id,payload(headers(name,value))";
+const DRAFT_LIST_FIELDS: &str = "drafts(id,message(id,threadId)),nextPageToken";
+const DRAFT_SCAN_PAGE_SIZE: u32 = 500;
 
 pub type Message = Value;
 pub type Draft = Value;
-const DRAFT_BOUNDARY: &str = "goog-cli-draft-boundary";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageReference {
@@ -89,6 +98,17 @@ fn gmail_label_id(label: &str) -> String {
 }
 
 fn decode_gmail_restricted_thread_token(token: &str) -> Option<String> {
+    let decoded = decode_gmail_restricted_token(token)?;
+    if decoded.starts_with("thread-") {
+        Some(decoded)
+    } else {
+        Some(format!("thread-{decoded}"))
+    }
+}
+
+/// Decodes a Gmail browser URL token, such as a Thread or compose token, into
+/// the string Gmail encoded in it.
+fn decode_gmail_restricted_token(token: &str) -> Option<String> {
     if token.is_empty()
         || token
             .chars()
@@ -101,12 +121,15 @@ fn decode_gmail_restricted_thread_token(token: &str) -> Option<String> {
     let decoded = base64::engine::general_purpose::STANDARD_NO_PAD
         .decode(encoded)
         .ok()?;
-    let decoded = String::from_utf8(decoded).ok()?;
-    if decoded.starts_with("thread-") {
-        Some(decoded)
-    } else {
-        Some(format!("thread-{decoded}"))
-    }
+    String::from_utf8(decoded).ok()
+}
+
+/// Encodes a string the way Gmail browser URL tokens do: base64, rewritten
+/// in Gmail's vowel-free alphabet.
+pub(crate) fn encode_gmail_restricted_token(value: &str) -> String {
+    let encoded = base64::engine::general_purpose::STANDARD_NO_PAD.encode(value);
+    transliterate(&encoded, BASE64_ALPHABET, GMAIL_RESTRICTED_ALPHABET)
+        .expect("base64 output only uses the base64 alphabet")
 }
 
 fn transliterate(subject: &str, input_alphabet: &str, output_alphabet: &str) -> Option<String> {
@@ -312,84 +335,16 @@ impl DownloadAttachmentOptions {
 
 #[derive(Debug, Clone)]
 pub struct CreateDraftOptions {
-    pub to: Vec<String>,
-    pub cc: Vec<String>,
-    pub bcc: Vec<String>,
-    pub subject: String,
-    pub body: String,
-    pub body_format: DraftBodyFormat,
-    pub attachments: Vec<DraftAttachment>,
-    drafts_url: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct UpdateDraftOptions {
-    pub draft_id: String,
     pub message: DraftMessage,
     drafts_url: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct DraftMessage {
-    pub to: Vec<String>,
-    pub cc: Vec<String>,
-    pub bcc: Vec<String>,
-    pub subject: String,
-    pub body: String,
-    pub body_format: DraftBodyFormat,
-    pub attachments: Vec<DraftAttachment>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DraftBodyFormat {
-    PlainText,
-    Html,
-}
-
-impl DraftBodyFormat {
-    fn mime_type(self) -> &'static str {
-        match self {
-            Self::PlainText => "text/plain",
-            Self::Html => "text/html",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftAttachment {
-    pub filename: String,
-    pub content_type: String,
-    pub data: Vec<u8>,
-}
-
 impl CreateDraftOptions {
-    pub fn new(
-        to: Vec<String>,
-        cc: Vec<String>,
-        bcc: Vec<String>,
-        subject: impl Into<String>,
-        body: impl Into<String>,
-    ) -> Self {
+    pub fn new(message: DraftMessage) -> Self {
         Self {
-            to,
-            cc,
-            bcc,
-            subject: subject.into(),
-            body: body.into(),
-            body_format: DraftBodyFormat::PlainText,
-            attachments: Vec::new(),
+            message,
             drafts_url: GMAIL_DRAFTS_URL.to_string(),
         }
-    }
-
-    pub fn with_attachments(mut self, attachments: Vec<DraftAttachment>) -> Self {
-        self.attachments = attachments;
-        self
-    }
-
-    pub fn with_body_format(mut self, body_format: DraftBodyFormat) -> Self {
-        self.body_format = body_format;
-        self
     }
 
     pub(super) fn with_drafts_url(mut self, drafts_url: impl Into<String>) -> Self {
@@ -400,23 +355,13 @@ impl CreateDraftOptions {
     fn request_url(&self) -> Result<Url, MailError> {
         Ok(Url::parse(&self.drafts_url)?)
     }
+}
 
-    fn request_body(&self) -> Result<Value, MailError> {
-        let raw = build_draft_raw_message(&DraftMessage {
-            to: self.to.clone(),
-            cc: self.cc.clone(),
-            bcc: self.bcc.clone(),
-            subject: self.subject.clone(),
-            body: self.body.clone(),
-            body_format: self.body_format,
-            attachments: self.attachments.clone(),
-        })?;
-        Ok(serde_json::json!({
-            "message": {
-                "raw": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
-            }
-        }))
-    }
+#[derive(Debug, Clone)]
+pub struct UpdateDraftOptions {
+    pub draft_id: String,
+    pub message: DraftMessage,
+    drafts_url: String,
 }
 
 impl UpdateDraftOptions {
@@ -436,16 +381,153 @@ impl UpdateDraftOptions {
     fn request_url(&self) -> Result<Url, MailError> {
         draft_url(&self.drafts_url, &self.draft_id)
     }
+}
 
-    fn request_body(&self) -> Result<Value, MailError> {
-        let raw = build_draft_raw_message(&self.message)?;
-        Ok(serde_json::json!({
-            "id": self.draft_id,
-            "message": {
-                "raw": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
-            }
-        }))
+fn draft_request_body(draft_id: Option<&str>, message: &DraftMessage) -> Result<Value, MailError> {
+    let raw = build_draft_raw_message(message)?;
+    let mut gmail_message = serde_json::json!({
+        "raw": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
+    });
+    if let Some(thread) = &message.thread {
+        gmail_message["threadId"] = Value::String(thread.thread_id.clone());
     }
+    let mut body = serde_json::json!({ "message": gmail_message });
+    if let Some(draft_id) = draft_id {
+        body["id"] = Value::String(draft_id.to_string());
+    }
+    Ok(body)
+}
+
+/// Changes an existing Draft in place, keeping every field, attachment and
+/// Thread link the edit does not name.
+#[derive(Debug, Clone)]
+pub struct EditDraftOptions {
+    pub draft_id: String,
+    pub edit: DraftEdit,
+    drafts_url: String,
+}
+
+impl EditDraftOptions {
+    pub fn new(draft_id: impl Into<String>, edit: DraftEdit) -> Self {
+        Self {
+            draft_id: draft_id.into(),
+            edit,
+            drafts_url: GMAIL_DRAFTS_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_drafts_url(mut self, drafts_url: impl Into<String>) -> Self {
+        self.drafts_url = drafts_url.into();
+        self
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GetDraftOptions {
+    pub draft_id: String,
+    drafts_url: String,
+}
+
+impl GetDraftOptions {
+    pub fn new(draft_id: impl Into<String>) -> Self {
+        Self {
+            draft_id: draft_id.into(),
+            drafts_url: GMAIL_DRAFTS_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_drafts_url(mut self, drafts_url: impl Into<String>) -> Self {
+        self.drafts_url = drafts_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, MailError> {
+        let mut url = draft_url(&self.drafts_url, &self.draft_id)?;
+        url.query_pairs_mut().append_pair("format", "full");
+        Ok(url)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ListDraftsOptions {
+    pub page_size: u32,
+    pub query: Option<String>,
+    drafts_url: String,
+}
+
+impl ListDraftsOptions {
+    pub fn new(page_size: u32, query: Option<String>) -> Self {
+        Self {
+            page_size,
+            query,
+            drafts_url: GMAIL_DRAFTS_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_drafts_url(mut self, drafts_url: impl Into<String>) -> Self {
+        self.drafts_url = drafts_url.into();
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DraftSummary {
+    #[serde(rename = "draftId")]
+    pub id: String,
+    #[serde(rename = "messageId")]
+    pub message_id: String,
+    #[serde(rename = "threadId")]
+    pub thread_id: String,
+    pub date: String,
+    pub to: String,
+    pub subject: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DraftsPage {
+    #[serde(default, deserialize_with = "deserialize_null_vec_as_empty")]
+    drafts: Vec<ListedDraft>,
+    #[serde(default, rename = "nextPageToken")]
+    next_page_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListedDraft {
+    id: String,
+    #[serde(default)]
+    message: ListedDraftMessage,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ListedDraftMessage {
+    #[serde(default)]
+    id: String,
+    #[serde(default, rename = "threadId")]
+    thread_id: String,
+    #[serde(default)]
+    payload: MessagePayload,
+}
+
+#[derive(Debug, Deserialize)]
+struct FullDraft {
+    message: FullDraftMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct FullDraftMessage {
+    id: String,
+    #[serde(default, rename = "threadId")]
+    thread_id: Option<String>,
+    #[serde(default)]
+    payload: PayloadPart,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepliedMessageMetadata {
+    #[serde(default, rename = "threadId")]
+    thread_id: String,
+    #[serde(default)]
+    payload: MessagePayload,
 }
 
 #[derive(Debug, Clone)]
@@ -637,7 +719,7 @@ pub async fn create_draft<S: AccountStore>(
         .send_with_scopes(
             client
                 .post(options.request_url()?)
-                .json(&options.request_body()?),
+                .json(&draft_request_body(None, &options.message)?),
             GMAIL_SCOPES,
         )
         .await
@@ -652,15 +734,266 @@ pub async fn update_draft<S: AccountStore>(
 ) -> Result<Draft, MailError> {
     let response = client
         .send_with_scopes(
-            client
-                .put(options.request_url()?)
-                .json(&options.request_body()?),
+            client.put(options.request_url()?).json(&draft_request_body(
+                Some(&options.draft_id),
+                &options.message,
+            )?),
             GMAIL_SCOPES,
         )
         .await
         .map_err(MailError::Auth)?;
 
     parse_json_response(response).await
+}
+
+/// Reads the Draft, applies only the named changes, and replaces its Message
+/// under the same Draft ID and Thread.
+pub async fn edit_draft<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &EditDraftOptions,
+) -> Result<Draft, MailError> {
+    let get_options =
+        GetDraftOptions::new(options.draft_id.clone()).with_drafts_url(&options.drafts_url);
+    let existing: FullDraft = serde_json::from_value(get_draft(client, &get_options).await?)
+        .map_err(|e| MailError::InvalidResponse(e.to_string()))?;
+    let FullDraftMessage {
+        id: message_id,
+        thread_id,
+        mut payload,
+    } = existing.message;
+
+    let messages_url = sibling_url(&options.drafts_url, "messages")?;
+    for part in payload.parts_missing_data() {
+        let attachment_id = part
+            .body
+            .attachment_id
+            .clone()
+            .expect("parts missing data carry an attachment ID");
+        let attachment_options = DownloadAttachmentOptions::new(&message_id, attachment_id)
+            .with_messages_url(messages_url.as_str());
+        part.body.data = Some(fetch_attachment_data(client, &attachment_options).await?);
+    }
+
+    let message = options
+        .edit
+        .clone()
+        .apply(draft_message_from_payload(&payload, thread_id)?)?;
+    let update_options = UpdateDraftOptions::new(options.draft_id.clone(), message)
+        .with_drafts_url(&options.drafts_url);
+    update_draft(client, &update_options).await
+}
+
+pub async fn get_draft<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &GetDraftOptions,
+) -> Result<Draft, MailError> {
+    let response = client
+        .send_with_scopes(client.get(options.request_url()?), GMAIL_SCOPES)
+        .await
+        .map_err(MailError::Auth)?;
+    parse_json_response(response).await
+}
+
+pub async fn list_drafts<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &ListDraftsOptions,
+) -> Result<Vec<DraftSummary>, MailError> {
+    let page = fetch_drafts_page(
+        client,
+        &options.drafts_url,
+        options.page_size,
+        options.query.as_deref(),
+        None,
+    )
+    .await?;
+    let mut summaries = Vec::with_capacity(page.drafts.len());
+    for listed in page.drafts {
+        let mut url = draft_url(&options.drafts_url, &listed.id)?;
+        url.query_pairs_mut()
+            .append_pair("format", "metadata")
+            .append_pair(
+                "fields",
+                "id,message(id,threadId,payload(headers(name,value)))",
+            );
+        let response = client
+            .send_with_scopes(client.get(url), GMAIL_SCOPES)
+            .await
+            .map_err(MailError::Auth)?;
+        let draft: ListedDraft = parse_json_response(response).await?;
+        let headers = &draft.message.payload.headers;
+        summaries.push(DraftSummary {
+            id: draft.id,
+            message_id: draft.message.id,
+            thread_id: draft.message.thread_id,
+            date: header_value(headers, "date").unwrap_or_default(),
+            to: header_value(headers, "to").unwrap_or_default(),
+            subject: header_value(headers, "subject").unwrap_or_default(),
+        });
+    }
+    Ok(summaries)
+}
+
+/// Turns a Draft ID or Gmail browser URL into the Draft ID the API accepts.
+pub async fn resolve_draft_reference<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    reference: &DraftReference,
+    drafts_url: Option<&str>,
+) -> Result<String, MailError> {
+    let drafts_url = drafts_url.unwrap_or(GMAIL_DRAFTS_URL);
+    let message_ids = match reference {
+        DraftReference::DraftId(draft_id) => return Ok(draft_id.clone()),
+        DraftReference::MessageOrThreadId(id) => vec![id.clone()],
+        DraftReference::Thread(thread_id) => {
+            let messages_url = sibling_url(drafts_url, "messages")?;
+            let response = client
+                .send_with_scopes(
+                    client.get(thread_url(messages_url.as_str(), thread_id)?),
+                    GMAIL_SCOPES,
+                )
+                .await
+                .map_err(MailError::Auth)?;
+            let thread: ThreadMessagePage = parse_json_response(response).await?;
+            thread
+                .messages
+                .into_iter()
+                .filter(|message| message.label_ids.iter().any(|label| label == "DRAFT"))
+                .map(|message| message.id)
+                .collect()
+        }
+    };
+
+    let mut matches = Vec::new();
+    let mut page_token = None;
+    loop {
+        let page = fetch_drafts_page(
+            client,
+            drafts_url,
+            DRAFT_SCAN_PAGE_SIZE,
+            None,
+            page_token.as_deref(),
+        )
+        .await?;
+        matches.extend(
+            page.drafts
+                .into_iter()
+                .filter(|draft| {
+                    message_ids.contains(&draft.message.id)
+                        || message_ids.contains(&draft.message.thread_id)
+                })
+                .map(|draft| draft.id),
+        );
+        page_token = page.next_page_token;
+        if page_token.is_none() {
+            break;
+        }
+    }
+
+    match matches.as_slice() {
+        [] => Err(MailError::NotFound),
+        [draft_id] => Ok(draft_id.clone()),
+        _ => Err(MailError::InvalidInput(
+            "the Gmail URL matches more than one draft; pass a draft ID from `goog mail drafts`"
+                .into(),
+        )),
+    }
+}
+
+/// Reads the headers a reply Draft needs from the Message it answers.
+pub async fn get_replied_message<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    message_id: &str,
+    messages_url: Option<&str>,
+) -> Result<RepliedMessage, MailError> {
+    let mut url = message_url(messages_url.unwrap_or(GMAIL_MESSAGES_URL), message_id)?;
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("format", "metadata");
+        for header in ["Message-ID", "References", "Subject", "From", "Reply-To"] {
+            query.append_pair("metadataHeaders", header);
+        }
+        query.append_pair("fields", "threadId,payload(headers(name,value))");
+    }
+    let response = client
+        .send_with_scopes(client.get(url), GMAIL_SCOPES)
+        .await
+        .map_err(MailError::Auth)?;
+    let metadata: RepliedMessageMetadata = parse_json_response(response).await?;
+    let headers = &metadata.payload.headers;
+    Ok(RepliedMessage {
+        thread_id: metadata.thread_id,
+        message_id_header: header_value(headers, "message-id"),
+        references: header_value(headers, "references"),
+        subject: header_value(headers, "subject").unwrap_or_default(),
+        from: header_value(headers, "from"),
+        reply_to: header_value(headers, "reply-to"),
+    })
+}
+
+async fn fetch_drafts_page<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    drafts_url: &str,
+    page_size: u32,
+    query: Option<&str>,
+    page_token: Option<&str>,
+) -> Result<DraftsPage, MailError> {
+    let mut url = Url::parse(drafts_url)?;
+    {
+        let mut pairs = url.query_pairs_mut();
+        pairs
+            .append_pair("maxResults", &page_size.to_string())
+            .append_pair("fields", DRAFT_LIST_FIELDS);
+        if let Some(query) = query {
+            pairs.append_pair("q", query);
+        }
+        if let Some(page_token) = page_token {
+            pairs.append_pair("pageToken", page_token);
+        }
+    }
+    let response = client
+        .send_with_scopes(client.get(url), GMAIL_SCOPES)
+        .await
+        .map_err(MailError::Auth)?;
+    let response = ensure_success_response(response).await?;
+    let body = response
+        .text()
+        .await
+        .map_err(|e| MailError::InvalidResponse(e.to_string()))?;
+    if body.trim().is_empty() {
+        return Ok(DraftsPage::default());
+    }
+    serde_json::from_str(&body).map_err(|e| MailError::InvalidResponse(e.to_string()))
+}
+
+async fn fetch_attachment_data<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &DownloadAttachmentOptions,
+) -> Result<String, MailError> {
+    let attachment_id = options
+        .attachment_id
+        .as_deref()
+        .ok_or_else(|| MailError::InvalidInput("attachment ID is required".into()))?;
+    let response = client
+        .send_with_scopes(
+            client.get(options.attachment_url(attachment_id)?),
+            GMAIL_SCOPES,
+        )
+        .await
+        .map_err(MailError::Auth)?;
+    let payload: AttachmentPayload = parse_json_response(response).await?;
+    Ok(payload.data)
+}
+
+/// Builds a sibling Gmail API collection URL, such as `messages` next to `drafts`.
+fn sibling_url(collection_url: &str, sibling: &str) -> Result<Url, MailError> {
+    let mut url = Url::parse(collection_url)?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| MailError::InvalidResponse("Gmail API URL cannot be a base".into()))?;
+        segments.pop();
+        segments.push(sibling);
+    }
+    Ok(url)
 }
 
 pub async fn download_attachment<S: AccountStore>(
@@ -694,132 +1027,6 @@ pub async fn download_attachment<S: AccountStore>(
         path,
         bytes: bytes.len() as u64,
     })
-}
-
-fn build_draft_raw_message(message: &DraftMessage) -> Result<String, MailError> {
-    if message.to.is_empty() {
-        return Err(MailError::InvalidInput(
-            "at least one To recipient is required".into(),
-        ));
-    }
-
-    let mut raw = draft_headers(message)?;
-    raw.push_str("MIME-Version: 1.0\r\n");
-
-    if message.attachments.is_empty() {
-        raw.push_str(&format!(
-            "Content-Type: {}; charset=UTF-8\r\n",
-            message.body_format.mime_type()
-        ));
-        raw.push_str("Content-Transfer-Encoding: 8bit\r\n");
-        raw.push_str("\r\n");
-        raw.push_str(&normalize_body_newlines(&message.body));
-        return Ok(raw);
-    }
-
-    raw.push_str(&format!(
-        "Content-Type: multipart/mixed; boundary=\"{DRAFT_BOUNDARY}\"\r\n"
-    ));
-    raw.push_str("\r\n");
-    raw.push_str(&format!("--{DRAFT_BOUNDARY}\r\n"));
-    raw.push_str(&format!(
-        "Content-Type: {}; charset=UTF-8\r\n",
-        message.body_format.mime_type()
-    ));
-    raw.push_str("Content-Transfer-Encoding: 8bit\r\n");
-    raw.push_str("\r\n");
-    raw.push_str(&normalize_body_newlines(&message.body));
-    for attachment in &message.attachments {
-        raw.push_str(&draft_attachment_part(attachment)?);
-    }
-    raw.push_str(&format!("--{DRAFT_BOUNDARY}--\r\n"));
-    Ok(raw)
-}
-
-fn draft_headers(options: &DraftMessage) -> Result<String, MailError> {
-    let mut message = String::new();
-    push_address_header(&mut message, "To", &options.to)?;
-    push_address_header(&mut message, "Cc", &options.cc)?;
-    push_address_header(&mut message, "Bcc", &options.bcc)?;
-    push_single_header(&mut message, "Subject", &options.subject)?;
-    Ok(message)
-}
-
-fn draft_attachment_part(attachment: &DraftAttachment) -> Result<String, MailError> {
-    reject_header_newlines("Attachment filename", &attachment.filename)?;
-    reject_header_newlines("Attachment content type", &attachment.content_type)?;
-    let filename = quote_header_parameter(&attachment.filename);
-    let mut part = String::new();
-    part.push_str(&format!("--{DRAFT_BOUNDARY}\r\n"));
-    part.push_str(&format!(
-        "Content-Type: {}; name=\"{}\"\r\n",
-        attachment.content_type, filename
-    ));
-    part.push_str(&format!(
-        "Content-Disposition: attachment; filename=\"{}\"\r\n",
-        filename
-    ));
-    part.push_str("Content-Transfer-Encoding: base64\r\n");
-    part.push_str("\r\n");
-    part.push_str(&wrap_base64(
-        &base64::engine::general_purpose::STANDARD.encode(&attachment.data),
-    ));
-    Ok(part)
-}
-
-fn quote_header_parameter(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-fn wrap_base64(data: &str) -> String {
-    if data.is_empty() {
-        return "\r\n".to_string();
-    }
-
-    let mut wrapped = String::new();
-    for chunk in data.as_bytes().chunks(76) {
-        wrapped.push_str(std::str::from_utf8(chunk).expect("base64 is utf-8"));
-        wrapped.push_str("\r\n");
-    }
-    wrapped
-}
-
-fn push_address_header(
-    message: &mut String,
-    name: &str,
-    values: &[String],
-) -> Result<(), MailError> {
-    if values.is_empty() {
-        return Ok(());
-    }
-    push_single_header(message, name, &values.join(", "))
-}
-
-fn push_single_header(message: &mut String, name: &str, value: &str) -> Result<(), MailError> {
-    reject_header_newlines(name, value)?;
-    message.push_str(name);
-    message.push_str(": ");
-    message.push_str(value);
-    message.push_str("\r\n");
-    Ok(())
-}
-
-fn reject_header_newlines(name: &str, value: &str) -> Result<(), MailError> {
-    if value.contains('\n') || value.contains('\r') {
-        return Err(MailError::InvalidInput(format!(
-            "{name} header cannot contain newlines"
-        )));
-    }
-    Ok(())
-}
-
-fn normalize_body_newlines(body: &str) -> String {
-    let mut normalized = body.replace("\r\n", "\n").replace('\r', "\n");
-    normalized = normalized.replace('\n', "\r\n");
-    if !normalized.ends_with("\r\n") {
-        normalized.push_str("\r\n");
-    }
-    normalized
 }
 
 async fn ensure_destination_available(path: &Path) -> Result<(), MailError> {
