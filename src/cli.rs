@@ -1,4 +1,4 @@
-use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
+use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 
 use crate::auth::config::OAuthAppType;
 
@@ -32,6 +32,17 @@ Selector rules:
 Notes:
   Named ranges do not track edits after creation; a later insert/delete before the range can leave it pointing at the wrong text.
   Re-create the named range after content in or before it changes.";
+
+const MAIL_DRAFT_HELP: &str = "Editing:
+  Pass a DRAFT_ID to change an existing draft in place. Only the fields you pass change.
+  Recipients, subject, body, attachments, inline images and the reply thread you do not name stay as they are.
+  The draft ID and its Gmail link stay the same.
+  Find draft IDs with `goog mail drafts` and check a draft with `goog mail read-draft` before and after an edit.
+
+Replies:
+  --reply-to creates a draft in the replied message's thread.
+  To defaults to the message's Reply-To or From address, and Subject defaults to \"Re: <subject>\".
+  Keep the subject of a reply draft unchanged so Gmail keeps it in the thread.";
 
 fn parse_mail_draft_id(value: &str) -> Result<String, String> {
     match value {
@@ -3370,36 +3381,75 @@ pub enum MailCommand {
         #[arg(long, short)]
         output: Option<String>,
     },
-    /// Create or edit a Gmail draft message
-    Draft {
-        /// Gmail draft ID or URL to update. Omit to create a new draft.
-        #[arg(value_parser = parse_mail_draft_id)]
-        draft_id: Option<String>,
-        /// Recipient email address. Repeat for multiple To recipients.
-        #[arg(long, required = true)]
-        to: Vec<String>,
-        /// Cc recipient email address. Repeat for multiple Cc recipients.
+    /// List Gmail drafts, or search drafts when a query is provided
+    Drafts {
+        /// Gmail search query to filter drafts. Omit to list the most recent drafts.
+        query: Option<String>,
+        /// Maximum number of drafts to return (default: 10)
         #[arg(long)]
-        cc: Vec<String>,
-        /// Bcc recipient email address. Repeat for multiple Bcc recipients.
-        #[arg(long)]
-        bcc: Vec<String>,
-        /// Draft subject
-        #[arg(long)]
-        subject: String,
-        /// Draft body, @path for a body file, or - for stdin. Plain text unless --html is set.
-        #[arg(long)]
-        body: Option<String>,
-        /// Treat the draft body as HTML instead of plain text
-        #[arg(long)]
-        html: bool,
-        /// Local file to attach to the draft. Repeat for multiple attachments.
-        #[arg(long)]
-        attachment: Vec<String>,
+        limit: Option<u32>,
         /// Emit JSON instead of human-readable output
         #[arg(long)]
         json: bool,
     },
+    /// Read a Gmail draft with its recipients, body and attachment names
+    ReadDraft {
+        /// Gmail draft ID or URL to read
+        draft_id: String,
+        /// Emit JSON instead of human-readable output
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create or edit a Gmail draft message
+    #[command(after_help = MAIL_DRAFT_HELP)]
+    Draft(Box<MailDraftArgs>),
+}
+
+/// Flags for creating a Gmail draft or editing one in place.
+#[derive(Debug, Args)]
+pub struct MailDraftArgs {
+    /// Gmail draft ID or URL to update. Omit to create a new draft.
+    #[arg(value_parser = parse_mail_draft_id)]
+    pub draft_id: Option<String>,
+    /// Gmail message ID or URL to reply to. The new draft joins that message's thread.
+    #[arg(long, conflicts_with = "draft_id")]
+    pub reply_to: Option<String>,
+    /// Recipient email address. Repeat for multiple To recipients. On an edit, replaces every To recipient.
+    #[arg(long, required_unless_present_any = ["draft_id", "reply_to"])]
+    pub to: Vec<String>,
+    /// Cc recipient email address. Repeat for multiple Cc recipients. On an edit, replaces every Cc recipient.
+    #[arg(long)]
+    pub cc: Vec<String>,
+    /// Bcc recipient email address. Repeat for multiple Bcc recipients. On an edit, replaces every Bcc recipient.
+    #[arg(long)]
+    pub bcc: Vec<String>,
+    /// To recipient to add to an existing draft. Repeat for multiple recipients.
+    #[arg(long, requires = "draft_id")]
+    pub add_to: Vec<String>,
+    /// Cc recipient to add to an existing draft. Repeat for multiple recipients.
+    #[arg(long, requires = "draft_id")]
+    pub add_cc: Vec<String>,
+    /// Bcc recipient to add to an existing draft. Repeat for multiple recipients.
+    #[arg(long, requires = "draft_id")]
+    pub add_bcc: Vec<String>,
+    /// Draft subject
+    #[arg(long, required_unless_present_any = ["draft_id", "reply_to"])]
+    pub subject: Option<String>,
+    /// Draft body, @path for a body file, or - for stdin. Plain text unless --html is set.
+    #[arg(long)]
+    pub body: Option<String>,
+    /// Treat the draft body as HTML instead of plain text
+    #[arg(long)]
+    pub html: bool,
+    /// Local file to attach to the draft. Repeat for multiple attachments.
+    #[arg(long)]
+    pub attachment: Vec<String>,
+    /// Attachment filename to remove from an existing draft. Repeat for multiple attachments.
+    #[arg(long, requires = "draft_id")]
+    pub remove_attachment: Vec<String>,
+    /// Emit JSON instead of human-readable output
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

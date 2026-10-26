@@ -9,14 +9,14 @@ use crate::cli::{
     DocsFootnoteCommand, DocsHeaderCommand, DocsImageCommand, DocsListCommand, DocsListType,
     DocsMapType, DocsNamedRangeCommand, DocsParagraphAlignment, DocsStyleCommand, DocsTableCommand,
     DocsTextCommand, DriveCommand, DriveListType, DriveOfficeConversionTarget, MailCommand,
-    SheetsBorderEdge, SheetsBorderStyle, SheetsCommand, SheetsConditionalFormatCondition,
-    SheetsDimension, SheetsHorizontalAlignment, SheetsInsertDataOption, SheetsMergeType,
-    SheetsNumberFormatType, SheetsPasteOrientation, SheetsPasteType, SheetsSheetCommand,
-    SheetsSortOrder, SheetsTableInputFormat, SheetsTableOutputFormat, SheetsTextDirection,
-    SheetsValueInputOption, SheetsValueRenderOption, SheetsValuesCommand, SheetsVerticalAlignment,
-    SheetsWrapStrategy, SlidesCommand, SlidesDeckCommand, SlidesImageReplaceMethod,
-    SlidesLineCategory, SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType,
-    SlidesSlideCommand, SlidesZOrderOperation,
+    MailDraftArgs, SheetsBorderEdge, SheetsBorderStyle, SheetsCommand,
+    SheetsConditionalFormatCondition, SheetsDimension, SheetsHorizontalAlignment,
+    SheetsInsertDataOption, SheetsMergeType, SheetsNumberFormatType, SheetsPasteOrientation,
+    SheetsPasteType, SheetsSheetCommand, SheetsSortOrder, SheetsTableInputFormat,
+    SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
+    SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy, SlidesCommand,
+    SlidesDeckCommand, SlidesImageReplaceMethod, SlidesLineCategory, SlidesObjectCommand,
+    SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand, SlidesZOrderOperation,
 };
 
 fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
@@ -3333,24 +3333,25 @@ fn mail_draft_create_with_body_flags() {
     .unwrap();
     match cli.command {
         Command::Mail {
-            command:
-                MailCommand::Draft {
-                    draft_id,
-                    to,
-                    cc,
-                    bcc,
-                    subject,
-                    body,
-                    html,
-                    attachment,
-                    json,
-                },
+            command: MailCommand::Draft(draft),
         } => {
+            let MailDraftArgs {
+                draft_id,
+                to,
+                cc,
+                bcc,
+                subject,
+                body,
+                html,
+                attachment,
+                json,
+                ..
+            } = *draft;
             assert!(draft_id.is_none());
             assert_eq!(to, ["alice@example.com", "bob@example.com"]);
             assert_eq!(cc, ["carol@example.com"]);
             assert_eq!(bcc, ["dave@example.com"]);
-            assert_eq!(subject, "Draft subject");
+            assert_eq!(subject.as_deref(), Some("Draft subject"));
             assert_eq!(
                 body.as_deref(),
                 Some("<p>Hello from <strong>goog</strong></p>")
@@ -3382,14 +3383,14 @@ fn mail_draft_create_with_attachment_paths() {
     .unwrap();
     match cli.command {
         Command::Mail {
-            command:
-                MailCommand::Draft {
-                    draft_id,
-                    attachment,
-                    json,
-                    ..
-                },
+            command: MailCommand::Draft(draft),
         } => {
+            let MailDraftArgs {
+                draft_id,
+                attachment,
+                json,
+                ..
+            } = *draft;
             assert!(draft_id.is_none());
             assert_eq!(attachment, ["./invoice.pdf", "./terms.txt"]);
             assert!(!json);
@@ -3432,24 +3433,25 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
     .unwrap();
     match cli.command {
         Command::Mail {
-            command:
-                MailCommand::Draft {
-                    draft_id,
-                    to,
-                    cc,
-                    bcc,
-                    subject,
-                    body,
-                    html,
-                    attachment,
-                    json,
-                },
+            command: MailCommand::Draft(draft),
         } => {
+            let MailDraftArgs {
+                draft_id,
+                to,
+                cc,
+                bcc,
+                subject,
+                body,
+                html,
+                attachment,
+                json,
+                ..
+            } = *draft;
             assert_eq!(draft_id.as_deref(), Some("draft-123"));
             assert_eq!(to, ["alice@example.com"]);
             assert!(cc.is_empty());
             assert!(bcc.is_empty());
-            assert_eq!(subject, "Updated draft");
+            assert_eq!(subject.as_deref(), Some("Updated draft"));
             assert_eq!(body.as_deref(), Some("Updated body"));
             assert!(!html);
             assert_eq!(attachment, ["./updated.pdf"]);
@@ -3460,19 +3462,128 @@ fn mail_draft_edit_with_body_and_attachment_paths() {
 }
 
 #[test]
-fn mail_draft_edit_requires_to_recipient() {
-    let err = parse(&[
+fn mail_draft_edit_accepts_only_the_changed_fields() {
+    let cli = parse(&[
         "mail",
         "draft",
         "draft-123",
-        "--subject",
-        "Updated draft",
-        "--body",
-        "Updated body",
+        "--add-to",
+        "bob@example.com",
+        "--add-cc",
+        "carol@example.com",
+        "--remove-attachment",
+        "old.pdf",
     ])
-    .unwrap_err();
+    .unwrap();
+    match cli.command {
+        Command::Mail {
+            command: MailCommand::Draft(draft),
+        } => {
+            let MailDraftArgs {
+                draft_id,
+                to,
+                add_to,
+                add_cc,
+                subject,
+                body,
+                remove_attachment,
+                ..
+            } = *draft;
+            assert_eq!(draft_id.as_deref(), Some("draft-123"));
+            assert!(to.is_empty());
+            assert_eq!(add_to, ["bob@example.com"]);
+            assert_eq!(add_cc, ["carol@example.com"]);
+            assert!(subject.is_none());
+            assert!(body.is_none());
+            assert_eq!(remove_attachment, ["old.pdf"]);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
 
-    assert!(err.to_string().contains("--to <TO>"));
+#[test]
+fn mail_draft_edit_only_flags_require_draft_id() {
+    for flag in ["--add-to", "--add-cc", "--add-bcc", "--remove-attachment"] {
+        let err = parse(&[
+            "mail",
+            "draft",
+            "--to",
+            "alice@example.com",
+            "--subject",
+            "Draft subject",
+            flag,
+            "value",
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("<DRAFT_ID>"), "{flag}: {err}");
+    }
+}
+
+#[test]
+fn mail_draft_create_requires_subject() {
+    let err = parse(&["mail", "draft", "--to", "alice@example.com"]).unwrap_err();
+
+    assert!(err.to_string().contains("--subject <SUBJECT>"));
+}
+
+#[test]
+fn mail_draft_reply_defaults_recipient_and_subject() {
+    let cli = parse(&[
+        "mail",
+        "draft",
+        "--reply-to",
+        "message-123",
+        "--body",
+        "Thanks",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Mail {
+            command: MailCommand::Draft(draft),
+        } => {
+            let MailDraftArgs {
+                reply_to,
+                to,
+                subject,
+                ..
+            } = *draft;
+            assert_eq!(reply_to.as_deref(), Some("message-123"));
+            assert!(to.is_empty());
+            assert!(subject.is_none());
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn mail_draft_reply_to_conflicts_with_draft_id() {
+    assert!(parse(&["mail", "draft", "draft-123", "--reply-to", "message-123"]).is_err());
+}
+
+#[test]
+fn mail_drafts_and_read_draft_parse() {
+    let cli = parse(&["mail", "drafts", "subject:plan", "--limit", "5", "--json"]).unwrap();
+    match cli.command {
+        Command::Mail {
+            command: MailCommand::Drafts { query, limit, json },
+        } => {
+            assert_eq!(query.as_deref(), Some("subject:plan"));
+            assert_eq!(limit, Some(5));
+            assert!(json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
+
+    let cli = parse(&["mail", "read-draft", "draft-123"]).unwrap();
+    match cli.command {
+        Command::Mail {
+            command: MailCommand::ReadDraft { draft_id, json },
+        } => {
+            assert_eq!(draft_id, "draft-123");
+            assert!(!json);
+        }
+        _ => panic!("unexpected parse result"),
+    }
 }
 
 #[test]

@@ -8,18 +8,24 @@ use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
 use crate::auth::state::resource_key;
 use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
-use crate::cli::MailCommand;
+use crate::cli::{MailCommand, MailDraftArgs};
 use crate::mail::{
-    create_draft, decode_base64url, download_attachment, get_message, list_messages,
-    parse_message_reference, resolve_message_reference, update_draft, CreateDraftOptions,
-    DownloadAttachmentOptions, DraftAttachment, DraftBodyFormat, DraftMessage, GetMessageOptions,
-    ListMessagesOptions, MailError, MessageReference, MessageSummary, UpdateDraftOptions,
+    create_draft, decode_base64url, download_attachment, draft_web_link, edit_draft, get_draft,
+    get_message, get_replied_message, list_drafts, list_messages, parse_draft_reference,
+    parse_message_reference, resolve_draft_reference, resolve_message_reference,
+    CreateDraftOptions, DownloadAttachmentOptions, DraftAttachment, DraftBody, DraftBodyFormat,
+    DraftEdit, DraftMessage, DraftSummary, EditDraftOptions, GetDraftOptions, GetMessageOptions,
+    ListDraftsOptions, ListMessagesOptions, MailError, MessageReference, MessageSummary,
 };
 
 const DEFAULT_LIST_LIMIT: u32 = 10;
 const SUMMARY_TABLE_HEADER: &str = "DATE\tFROM\tSUBJECT\tMESSAGE ID";
 const SEARCH_EMPTY_TABLE_MESSAGE: &str = "No matching messages found.";
-const DRAFT_TABLE_HEADER: &str = "DRAFT ID\tMESSAGE ID\tTHREAD ID";
+const DRAFT_TABLE_HEADER: &str = "DRAFT ID\tMESSAGE ID\tTHREAD ID\tLINK";
+const DRAFT_SUMMARY_TABLE_HEADER: &str = "DATE\tTO\tSUBJECT\tDRAFT ID";
+const DRAFTS_EMPTY_TABLE_MESSAGE: &str = "No drafts found.";
+const MESSAGE_HEADER_FIELDS: &[&str] = &["From", "To", "Cc", "Date"];
+const DRAFT_HEADER_FIELDS: &[&str] = &["To", "Cc", "Bcc", "In-Reply-To", "Date"];
 
 pub fn run<S: AccountStore>(
     cmd: MailCommand,
@@ -75,68 +81,99 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        MailCommand::Draft {
-            draft_id,
-            to,
-            cc,
-            bcc,
-            subject,
-            body,
-            html,
-            attachment,
-            json,
-        } => {
+        MailCommand::Drafts { query, limit, json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            runtime.block_on(run_drafts_to(
+                &client,
+                query,
+                limit,
+                json,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        MailCommand::ReadDraft { draft_id, json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            runtime.block_on(run_read_draft_to(
+                &client,
+                draft_id,
+                json,
+                &mut std::io::stdout(),
+                None,
+            ))
+        }
+        MailCommand::Draft(draft) => {
+            let MailDraftArgs {
+                draft_id,
+                reply_to,
+                to,
+                cc,
+                bcc,
+                add_to,
+                add_cc,
+                add_bcc,
+                subject,
+                body,
+                html,
+                attachment,
+                remove_attachment,
+                json,
+            } = *draft;
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
             let client = AuthClient::from_config(config.clone(), store, account_override)?;
             let body = resolve_draft_body(body)?;
             let attachments = resolve_draft_attachments(attachment)?;
-            let input = CreateDraftInput {
-                to,
-                cc,
-                bcc,
-                subject,
-                body,
-                html,
-                attachments,
-            };
+            let format = draft_body_format(html);
             match draft_id {
-                Some(draft_id) => runtime.block_on(run_draft_edit_to(
-                    &client,
-                    draft_id,
-                    input,
-                    json,
-                    &mut std::io::stdout(),
-                    None,
-                )),
-                None => runtime.block_on(run_draft_create_to(
-                    &client,
-                    input,
-                    json,
-                    &mut std::io::stdout(),
-                    None,
-                )),
+                Some(draft_id) => {
+                    let edit = DraftEdit {
+                        to,
+                        cc,
+                        bcc,
+                        add_to,
+                        add_cc,
+                        add_bcc,
+                        subject,
+                        body: body.map(|body| DraftBody::new(body, format)),
+                        attachments,
+                        remove_attachments: remove_attachment,
+                    };
+                    runtime.block_on(run_draft_edit_to(
+                        &client,
+                        draft_id,
+                        edit,
+                        json,
+                        &mut std::io::stdout(),
+                        None,
+                    ))
+                }
+                None => {
+                    let message = DraftMessage {
+                        to,
+                        cc,
+                        bcc,
+                        subject: subject.unwrap_or_default(),
+                        body: DraftBody::new(body.unwrap_or_default(), format),
+                        attachments,
+                        thread: None,
+                    };
+                    runtime.block_on(run_draft_create_to(
+                        &client,
+                        message,
+                        reply_to,
+                        json,
+                        &mut std::io::stdout(),
+                        None,
+                    ))
+                }
             }
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct CreateDraftInput {
-    pub to: Vec<String>,
-    pub cc: Vec<String>,
-    pub bcc: Vec<String>,
-    pub subject: String,
-    pub body: String,
-    pub html: bool,
-    pub attachments: Vec<DraftAttachmentInput>,
-}
-
-#[derive(Debug, Clone)]
-pub(super) struct DraftAttachmentInput {
-    pub filename: String,
-    pub content_type: String,
-    pub data: Vec<u8>,
 }
 
 pub(super) async fn run_list_to<S: AccountStore>(
@@ -164,33 +201,125 @@ pub(super) async fn run_list_to<S: AccountStore>(
     .await
 }
 
-pub(super) async fn run_draft_create_to<S: AccountStore>(
+pub(super) async fn run_drafts_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
-    input: CreateDraftInput,
+    query: Option<String>,
+    limit: Option<u32>,
     json: bool,
     out: &mut impl Write,
     drafts_url: Option<&str>,
 ) -> Result<()> {
-    let options = create_draft_options(input, drafts_url);
+    let mut options = ListDraftsOptions::new(limit.unwrap_or(DEFAULT_LIST_LIMIT), query);
+    if let Some(drafts_url) = drafts_url {
+        options = options.with_drafts_url(drafts_url);
+    }
+    let summaries = list_drafts(client, &options)
+        .await
+        .context("failed to list Gmail drafts")?;
+    write_draft_summaries(&summaries, json, out)
+}
+
+pub(super) async fn run_read_draft_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    draft_reference: String,
+    json: bool,
+    out: &mut impl Write,
+    drafts_url: Option<&str>,
+) -> Result<()> {
+    let draft_id =
+        resolve_draft_reference(client, &parse_draft_reference(&draft_reference), drafts_url)
+            .await
+            .context("failed to find Gmail draft")?;
+    let mut options = GetDraftOptions::new(draft_id);
+    if let Some(drafts_url) = drafts_url {
+        options = options.with_drafts_url(drafts_url);
+    }
+    let draft = get_draft(client, &options)
+        .await
+        .context("failed to read Gmail draft")?;
+    let draft = with_draft_link(draft, client.account_email());
+    if json {
+        return write_json_line(out, &draft, "failed to serialize Gmail draft");
+    }
+
+    let message = draft.get("message").cloned().unwrap_or_default();
+    let details = [
+        ("Draft ID", json_str(&draft, &["id"])),
+        ("Thread ID", json_str(&draft, &["message", "threadId"])),
+        ("Link", json_str(&draft, &["link"])),
+    ];
+    write_message_markdown(&message, DRAFT_HEADER_FIELDS, &details, out)
+}
+
+pub(super) async fn run_draft_create_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    mut message: DraftMessage,
+    reply_to: Option<String>,
+    json: bool,
+    out: &mut impl Write,
+    drafts_url: Option<&str>,
+) -> Result<()> {
+    if let Some(reply_to) = reply_to {
+        let messages_url = drafts_url.map(|url| url.replace("/drafts", "/messages"));
+        let reference = parse_message_reference(&reply_to);
+        let message_id = resolve_message_reference(client, &reference, messages_url.as_deref())
+            .await
+            .context("failed to resolve Gmail message reference")?;
+        let replied = get_replied_message(client, &message_id, messages_url.as_deref())
+            .await
+            .context("failed to read the Gmail message to reply to")?;
+        message = replied.address_reply(message);
+    }
+    let mut options = CreateDraftOptions::new(message);
+    if let Some(drafts_url) = drafts_url {
+        options = options.with_drafts_url(drafts_url);
+    }
     let draft = create_draft(client, &options)
         .await
         .context("failed to create Gmail draft")?;
-    write_draft(&draft, json, out)
+    write_draft(&with_draft_link(draft, client.account_email()), json, out)
 }
 
 pub(super) async fn run_draft_edit_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
-    draft_id: String,
-    input: CreateDraftInput,
+    draft_reference: String,
+    edit: DraftEdit,
     json: bool,
     out: &mut impl Write,
     drafts_url: Option<&str>,
 ) -> Result<()> {
-    let options = update_draft_options(draft_id, input, drafts_url);
-    let draft = update_draft(client, &options)
+    let draft_id =
+        resolve_draft_reference(client, &parse_draft_reference(&draft_reference), drafts_url)
+            .await
+            .context("failed to find Gmail draft")?;
+    let mut options = EditDraftOptions::new(draft_id, edit);
+    if let Some(drafts_url) = drafts_url {
+        options = options.with_drafts_url(drafts_url);
+    }
+    let draft = edit_draft(client, &options)
         .await
         .context("failed to edit Gmail draft")?;
-    write_draft(&draft, json, out)
+    write_draft(&with_draft_link(draft, client.account_email()), json, out)
+}
+
+fn with_draft_link(mut draft: serde_json::Value, account_email: &str) -> serde_json::Value {
+    let link = draft_web_link(
+        account_email,
+        &json_str(&draft, &["message", "threadId"]),
+        &json_str(&draft, &["id"]),
+    );
+    if let Some(link) = link {
+        draft["link"] = serde_json::Value::String(link);
+    }
+    draft
+}
+
+fn json_str(value: &serde_json::Value, path: &[&str]) -> String {
+    path.iter()
+        .try_fold(value, |value, key| value.get(*key))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
 async fn run_summary_to<S: AccountStore>(
@@ -477,58 +606,6 @@ fn attachment_download_options(
     options
 }
 
-fn create_draft_options(input: CreateDraftInput, drafts_url: Option<&str>) -> CreateDraftOptions {
-    let mut options =
-        CreateDraftOptions::new(input.to, input.cc, input.bcc, input.subject, input.body)
-            .with_body_format(draft_body_format(input.html))
-            .with_attachments(
-                input
-                    .attachments
-                    .into_iter()
-                    .map(|attachment| DraftAttachment {
-                        filename: attachment.filename,
-                        content_type: attachment.content_type,
-                        data: attachment.data,
-                    })
-                    .collect(),
-            );
-    if let Some(drafts_url) = drafts_url {
-        options = options.with_drafts_url(drafts_url);
-    }
-    options
-}
-
-fn update_draft_options(
-    draft_id: String,
-    input: CreateDraftInput,
-    drafts_url: Option<&str>,
-) -> UpdateDraftOptions {
-    let mut options = UpdateDraftOptions::new(
-        draft_id,
-        DraftMessage {
-            to: input.to,
-            cc: input.cc,
-            bcc: input.bcc,
-            subject: input.subject,
-            body: input.body,
-            body_format: draft_body_format(input.html),
-            attachments: input
-                .attachments
-                .into_iter()
-                .map(|attachment| DraftAttachment {
-                    filename: attachment.filename,
-                    content_type: attachment.content_type,
-                    data: attachment.data,
-                })
-                .collect(),
-        },
-    );
-    if let Some(drafts_url) = drafts_url {
-        options = options.with_drafts_url(drafts_url);
-    }
-    options
-}
-
 fn draft_body_format(html: bool) -> DraftBodyFormat {
     if html {
         DraftBodyFormat::Html
@@ -545,16 +622,16 @@ fn get_message_options(message_id: String, messages_url: Option<&str>) -> GetMes
     options
 }
 
-fn resolve_draft_body(body: Option<String>) -> Result<String> {
+fn resolve_draft_body(body: Option<String>) -> Result<Option<String>> {
     resolve_draft_body_from_reader(body, &mut std::io::stdin())
 }
 
 pub(super) fn resolve_draft_body_from_reader(
     body: Option<String>,
     stdin: &mut impl Read,
-) -> Result<String> {
+) -> Result<Option<String>> {
     let Some(body) = body else {
-        return Ok(String::new());
+        return Ok(None);
     };
 
     if body == "-" {
@@ -562,18 +639,19 @@ pub(super) fn resolve_draft_body_from_reader(
         stdin
             .read_to_string(&mut stdin_body)
             .context("failed to read Gmail draft body from stdin")?;
-        return Ok(stdin_body);
+        return Ok(Some(stdin_body));
     }
 
     if let Some(path) = body.strip_prefix('@') {
         return std::fs::read_to_string(path)
+            .map(Some)
             .with_context(|| format!("failed to read Gmail draft body file: {path}"));
     }
 
-    Ok(body)
+    Ok(Some(body))
 }
 
-pub(super) fn resolve_draft_attachments(paths: Vec<String>) -> Result<Vec<DraftAttachmentInput>> {
+pub(super) fn resolve_draft_attachments(paths: Vec<String>) -> Result<Vec<DraftAttachment>> {
     paths
         .into_iter()
         .map(|path| {
@@ -586,10 +664,11 @@ pub(super) fn resolve_draft_attachments(paths: Vec<String>) -> Result<Vec<DraftA
                 .filter(|filename| !filename.is_empty())
                 .context("Gmail draft attachment path has no filename")?
                 .to_string();
-            Ok(DraftAttachmentInput {
+            Ok(DraftAttachment {
                 content_type: content_type_for_path(&path),
                 filename,
                 data,
+                content_id: None,
             })
         })
         .collect()
@@ -646,23 +725,45 @@ fn write_draft(draft: &serde_json::Value, json: bool, out: &mut impl Write) -> R
     writeln!(out, "{DRAFT_TABLE_HEADER}").context("failed to write output")?;
     writeln!(
         out,
-        "{}\t{}\t{}",
-        draft
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or(""),
-        draft
-            .get("message")
-            .and_then(|message| message.get("id"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or(""),
-        draft
-            .get("message")
-            .and_then(|message| message.get("threadId"))
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
+        "{}\t{}\t{}\t{}",
+        json_str(draft, &["id"]),
+        json_str(draft, &["message", "id"]),
+        json_str(draft, &["message", "threadId"]),
+        json_str(draft, &["link"]),
     )
     .context("failed to write output")
+}
+
+fn write_draft_summaries(
+    summaries: &[DraftSummary],
+    json: bool,
+    out: &mut impl Write,
+) -> Result<()> {
+    if json {
+        if summaries.is_empty() {
+            return writeln!(out, "[]").context("failed to write output");
+        }
+        for summary in summaries {
+            serde_json::to_writer(&mut *out, summary)
+                .context("failed to serialize Gmail draft summary")?;
+            writeln!(out).context("failed to write output")?;
+        }
+        return Ok(());
+    }
+
+    if summaries.is_empty() {
+        return writeln!(out, "{DRAFTS_EMPTY_TABLE_MESSAGE}").context("failed to write output");
+    }
+    writeln!(out, "{DRAFT_SUMMARY_TABLE_HEADER}").context("failed to write output")?;
+    for summary in summaries {
+        writeln!(
+            out,
+            "{}\t{}\t{}\t{}",
+            summary.date, summary.to, summary.subject, summary.id
+        )
+        .context("failed to write output")?;
+    }
+    Ok(())
 }
 
 fn write_summary_ndjson(summaries: &[MessageSummary], out: &mut impl Write) -> Result<()> {
@@ -697,11 +798,16 @@ fn write_message(message: &serde_json::Value, json: bool, out: &mut impl Write) 
     if json {
         write_json_line(out, message, "failed to serialize Gmail message")
     } else {
-        write_message_markdown(message, out)
+        write_message_markdown(message, MESSAGE_HEADER_FIELDS, &[], out)
     }
 }
 
-fn write_message_markdown(message: &serde_json::Value, out: &mut impl Write) -> Result<()> {
+fn write_message_markdown(
+    message: &serde_json::Value,
+    header_fields: &[&str],
+    details: &[(&str, String)],
+    out: &mut impl Write,
+) -> Result<()> {
     let payload = message.get("payload");
     let headers: Vec<(&str, &str)> = payload
         .and_then(|payload| payload.get("headers"))
@@ -731,14 +837,14 @@ fn write_message_markdown(message: &serde_json::Value, out: &mut impl Write) -> 
     )
     .context("failed to write output")?;
     writeln!(out).context("failed to write output")?;
-    for (label, name) in [
-        ("From", "From"),
-        ("To", "To"),
-        ("Cc", "Cc"),
-        ("Date", "Date"),
-    ] {
-        if let Some(value) = header_value(name) {
+    for (label, value) in details {
+        if !value.is_empty() {
             writeln!(out, "**{label}:** {value}").context("failed to write output")?;
+        }
+    }
+    for name in header_fields {
+        if let Some(value) = header_value(name) {
+            writeln!(out, "**{name}:** {value}").context("failed to write output")?;
         }
     }
     writeln!(out).context("failed to write output")?;

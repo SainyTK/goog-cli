@@ -19,7 +19,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
 - Google Slides presentation listing, creation, raw reads, high-level slide/text/image/table/shape edits, and raw batch updates.
 - Google Calendar calendar listing, calendar metadata reads, free/busy lookup, and event list/read/create/update/delete commands.
-- Gmail message listing, search, raw message reads, draft creation, and attachment downloads.
+- Gmail message listing, search, raw message reads, attachment downloads, draft listing and reads, reply drafts, and in-place draft edits that keep untouched fields, attachments and the reply thread.
 - Multi-account OAuth setup, login, account listing, and active account switching.
 
 ## Installation
@@ -442,6 +442,11 @@ goog mail list 'from:alerts@example.com newer_than:7d'
 goog mail read MESSAGE_ID
 goog mail draft --to teammate@example.com --subject 'Status update' --body @./message.txt --attachment ./report.pdf
 goog mail draft --to teammate@example.com --subject 'Rich update' --body '<p><strong>Important</strong>: <mark>review today</mark></p>' --html
+goog mail draft --reply-to MESSAGE_ID --body 'Thanks, I will review it today.'
+goog mail drafts 'subject:status'
+goog mail read-draft DRAFT_ID
+goog mail draft DRAFT_ID --body @./revised.txt
+goog mail draft DRAFT_ID --add-cc lead@example.com --remove-attachment old-report.pdf
 goog mail download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
 ```
 
