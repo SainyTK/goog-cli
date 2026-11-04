@@ -118,7 +118,7 @@ Keep the subject of a reply draft unchanged, because Gmail drops a reply from it
 - `goog sheets list`, `create`, and `get` discover and inspect spreadsheets.
 - `goog sheets comments` and the `comment-*` commands manage Spreadsheet comments and replies.
 - `goog sheets values` reads, updates, appends, and clears cells, rows, columns, tables, and ranges.
-- `goog sheets sheet` adds, deletes, renames, cleans, formats, validates, and protects sheets and ranges.
+- `goog sheets sheet` adds, deletes, renames, copies, cleans, formats, validates, and protects sheets and ranges.
 - `goog sheets batch-update` is the raw structural fallback when no high-level command fits.
 
 Read [Google Sheets](references/sheets.md) before Sheets work.

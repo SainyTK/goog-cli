@@ -32,6 +32,7 @@ pub type AppendValuesResponse = Value;
 pub type ClearValuesResponse = Value;
 pub type BatchClearValuesResponse = Value;
 pub type BatchUpdateSpreadsheetResponse = Value;
+pub type SheetProperties = Value;
 
 pub enum SheetsOperation<'a> {
     GetSpreadsheet(&'a GetSpreadsheetOptions),
@@ -43,6 +44,7 @@ pub enum SheetsOperation<'a> {
     ClearValues(&'a ClearValuesOptions),
     BatchClearValues(&'a BatchClearValuesOptions),
     BatchUpdateSpreadsheet(&'a BatchUpdateSpreadsheetOptions),
+    CopySheetTo(&'a CopySheetToOptions),
 }
 
 #[derive(Debug, Clone)]
@@ -81,6 +83,7 @@ impl SheetsOperation<'_> {
             Self::ClearValues(options) => &options.spreadsheet_id,
             Self::BatchClearValues(options) => &options.spreadsheet_id,
             Self::BatchUpdateSpreadsheet(options) => &options.spreadsheet_id,
+            Self::CopySheetTo(options) => &options.spreadsheet_id,
         }
     }
 
@@ -172,6 +175,18 @@ impl SheetsOperation<'_> {
                     client
                         .post(options.request_url()?)
                         .json(&options.request_body),
+                    SHEETS_SCOPES,
+                )
+                .await
+            }
+            Self::CopySheetTo(options) => {
+                send_json_request(
+                    client,
+                    client
+                        .post(options.request_url()?)
+                        .json(&serde_json::json!({
+                            "destinationSpreadsheetId": &options.destination_spreadsheet_id
+                        })),
                     SHEETS_SCOPES,
                 )
                 .await
@@ -632,6 +647,45 @@ impl BatchUpdateSpreadsheetOptions {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CopySheetToOptions {
+    pub spreadsheet_id: String,
+    pub sheet_id: i64,
+    pub destination_spreadsheet_id: String,
+    spreadsheets_url: String,
+}
+
+impl CopySheetToOptions {
+    pub fn new(
+        spreadsheet_id: impl Into<String>,
+        sheet_id: i64,
+        destination_spreadsheet_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            spreadsheet_id: spreadsheet_id.into(),
+            sheet_id,
+            destination_spreadsheet_id: destination_spreadsheet_id.into(),
+            spreadsheets_url: SHEETS_SPREADSHEETS_URL.to_string(),
+        }
+    }
+
+    pub(super) fn with_spreadsheets_url(mut self, spreadsheets_url: impl Into<String>) -> Self {
+        self.spreadsheets_url = spreadsheets_url.into();
+        self
+    }
+
+    fn request_url(&self) -> Result<Url, SheetsError> {
+        let mut url = spreadsheet_url(&self.spreadsheets_url, &self.spreadsheet_id)?;
+        url.path_segments_mut()
+            .map_err(|_| {
+                SheetsError::InvalidResponse("Google Sheets API URL cannot be a base".into())
+            })?
+            .push("sheets")
+            .push(&format!("{}:copyTo", self.sheet_id));
+        Ok(url)
+    }
+}
+
 fn spreadsheet_url(spreadsheets_url: &str, spreadsheet_id: &str) -> Result<Url, SheetsError> {
     let mut url = Url::parse(spreadsheets_url)?;
     url.path_segments_mut()
@@ -749,6 +803,13 @@ pub async fn batch_update_spreadsheet<S: AccountStore>(
     SheetsOperation::BatchUpdateSpreadsheet(options)
         .execute(client)
         .await
+}
+
+pub async fn copy_sheet_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    options: &CopySheetToOptions,
+) -> Result<SheetProperties, SheetsError> {
+    SheetsOperation::CopySheetTo(options).execute(client).await
 }
 
 async fn send_json_request<S: AccountStore>(

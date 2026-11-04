@@ -20,8 +20,9 @@ use crate::cli::{
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
     BatchUpdateSpreadsheetOptions, BatchUpdateValuesOptions, ClearValuesOptions,
-    CreateSpreadsheetOptions, GetSpreadsheetOptions, GetValuesOptions, InsertDataOption,
-    SheetsError, SheetsOperation, UpdateValuesOptions, ValueInputOption, ValueRenderOption,
+    CopySheetToOptions, CreateSpreadsheetOptions, GetSpreadsheetOptions, GetValuesOptions,
+    InsertDataOption, SheetsError, SheetsOperation, UpdateValuesOptions, ValueInputOption,
+    ValueRenderOption,
 };
 
 pub fn run<S: AccountStore>(
@@ -316,6 +317,46 @@ pub(super) async fn run_sheet_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Duplicate sheet response",
+            )
+        }
+        SheetsSheetCommand::CopyTo {
+            spreadsheet_id,
+            sheet_id,
+            destination_spreadsheet_id,
+            title,
+            index,
+        } => {
+            let options = copy_sheet_to_options(
+                spreadsheet_id,
+                sheet_id,
+                destination_spreadsheet_id.clone(),
+                spreadsheets_url,
+            );
+            let properties = SheetsOperation::CopySheetTo(&options)
+                .execute(client)
+                .await
+                .context("failed to copy Google Sheets sheet")?;
+            let copied_sheet_id = copied_sheet_id(&properties)?;
+            let properties =
+                match copied_sheet_properties_request_body(copied_sheet_id, title, index) {
+                    None => properties,
+                    Some(request_body) => {
+                        let options = batch_update_spreadsheet_options(
+                            destination_spreadsheet_id,
+                            request_body,
+                            spreadsheets_url,
+                        );
+                        let response = SheetsOperation::BatchUpdateSpreadsheet(&options)
+                            .execute(client)
+                            .await
+                            .with_context(|| copied_sheet_update_failure(copied_sheet_id))?;
+                        updated_sheet_properties(&response, copied_sheet_id)?
+                    }
+                };
+            write_json_line(
+                out,
+                &properties,
+                "failed to serialize Sheets Copy sheet response",
             )
         }
         SheetsSheetCommand::Freeze {
@@ -1960,6 +2001,56 @@ pub(super) async fn run_sheet_unified_to<S: AccountStore>(
                 out,
                 &response,
                 "failed to serialize Sheets Duplicate sheet response",
+            )
+        }
+        SheetsSheetCommand::CopyTo {
+            spreadsheet_id,
+            sheet_id,
+            destination_spreadsheet_id,
+            title,
+            index,
+        } => {
+            let options = copy_sheet_to_options(
+                spreadsheet_id,
+                sheet_id,
+                destination_spreadsheet_id.clone(),
+                spreadsheets_url,
+            );
+            let properties = run_spreadsheet_attempt(
+                config,
+                store,
+                account_override,
+                &SheetsOperation::CopySheetTo(&options),
+                state_path,
+            )
+            .await
+            .context("failed to copy Google Sheets sheet")?;
+            let copied_sheet_id = copied_sheet_id(&properties)?;
+            let properties =
+                match copied_sheet_properties_request_body(copied_sheet_id, title, index) {
+                    None => properties,
+                    Some(request_body) => {
+                        let options = batch_update_spreadsheet_options(
+                            destination_spreadsheet_id,
+                            request_body,
+                            spreadsheets_url,
+                        );
+                        let response = run_spreadsheet_attempt(
+                            config,
+                            store,
+                            account_override,
+                            &SheetsOperation::BatchUpdateSpreadsheet(&options),
+                            state_path,
+                        )
+                        .await
+                        .with_context(|| copied_sheet_update_failure(copied_sheet_id))?;
+                        updated_sheet_properties(&response, copied_sheet_id)?
+                    }
+                };
+            write_json_line(
+                out,
+                &properties,
+                "failed to serialize Sheets Copy sheet response",
             )
         }
         SheetsSheetCommand::Freeze {
@@ -5250,6 +5341,70 @@ fn duplicate_sheet_request_body(
     })
 }
 
+fn copied_sheet_properties_request_body(
+    sheet_id: i64,
+    title: Option<String>,
+    index: Option<i64>,
+) -> Option<serde_json::Value> {
+    let mut properties = serde_json::Map::new();
+    let mut fields = Vec::new();
+    properties.insert("sheetId".to_string(), serde_json::json!(sheet_id));
+    if let Some(title) = title {
+        properties.insert("title".to_string(), serde_json::Value::String(title));
+        fields.push("title");
+    }
+    if let Some(index) = index {
+        properties.insert("index".to_string(), serde_json::json!(index));
+        fields.push("index");
+    }
+    if fields.is_empty() {
+        return None;
+    }
+
+    Some(serde_json::json!({
+        "requests": [
+            {
+                "updateSheetProperties": {
+                    "properties": properties,
+                    "fields": fields.join(",")
+                }
+            }
+        ],
+        "includeSpreadsheetInResponse": true
+    }))
+}
+
+fn copied_sheet_id(properties: &serde_json::Value) -> Result<i64> {
+    properties
+        .get("sheetId")
+        .and_then(serde_json::Value::as_i64)
+        .context("Google Sheets copyTo response did not include the copied sheetId")
+}
+
+fn copied_sheet_update_failure(sheet_id: i64) -> String {
+    format!(
+        "copied the Google Sheets sheet as sheetId {sheet_id}, but failed to set its title or index"
+    )
+}
+
+fn updated_sheet_properties(
+    response: &serde_json::Value,
+    sheet_id: i64,
+) -> Result<serde_json::Value> {
+    response
+        .pointer("/updatedSpreadsheet/sheets")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|sheets| {
+            sheets.iter().find_map(|sheet| {
+                let properties = sheet.get("properties")?;
+                (properties.get("sheetId")?.as_i64()? == sheet_id).then(|| properties.clone())
+            })
+        })
+        .with_context(|| {
+            format!("Google Sheets batchUpdate response did not include copied sheetId {sheet_id}")
+        })
+}
+
 fn freeze_sheet_request_body(
     sheet_id: i64,
     rows: Option<i64>,
@@ -7245,6 +7400,19 @@ fn batch_clear_values_options(
     spreadsheets_url: Option<&str>,
 ) -> BatchClearValuesOptions {
     let mut options = BatchClearValuesOptions::new(spreadsheet_id, ranges);
+    if let Some(spreadsheets_url) = spreadsheets_url {
+        options = options.with_spreadsheets_url(spreadsheets_url);
+    }
+    options
+}
+
+fn copy_sheet_to_options(
+    spreadsheet_id: String,
+    sheet_id: i64,
+    destination_spreadsheet_id: String,
+    spreadsheets_url: Option<&str>,
+) -> CopySheetToOptions {
+    let mut options = CopySheetToOptions::new(spreadsheet_id, sheet_id, destination_spreadsheet_id);
     if let Some(spreadsheets_url) = spreadsheets_url {
         options = options.with_spreadsheets_url(spreadsheets_url);
     }

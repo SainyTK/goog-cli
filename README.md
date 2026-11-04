@@ -260,6 +260,7 @@ goog sheets sheet add SPREADSHEET_ID "Raw Data"
 goog sheets sheet rename SPREADSHEET_ID 123456789 "Archive"
 goog sheets sheet move SPREADSHEET_ID 123456789 0
 goog sheets sheet duplicate SPREADSHEET_ID 123456789 "Archive Copy"
+goog sheets sheet copy-to SPREADSHEET_ID 123456789 DESTINATION_SPREADSHEET_ID --title "Archive" --index 0
 goog sheets sheet freeze SPREADSHEET_ID 123456789 --rows 1 --columns 2
 goog sheets sheet resize SPREADSHEET_ID 123456789 --rows 200 --columns 12
 goog sheets sheet auto-resize SPREADSHEET_ID 123456789 --dimension columns --start-index 0 --end-index 5

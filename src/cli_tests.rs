@@ -7751,6 +7751,52 @@ fn sheets_sheet_duplicate_accepts_source_sheet_id_title_and_optional_properties(
 }
 
 #[test]
+fn sheets_sheet_copy_to_accepts_destination_and_optional_properties() {
+    let cli = parse(&[
+        "sheets",
+        "sheet",
+        "copy-to",
+        "spreadsheet-123",
+        "42",
+        "destination-456",
+        "--title",
+        "Planning",
+        "--index",
+        "0",
+    ])
+    .unwrap();
+    match cli.command {
+        Command::Sheets {
+            command:
+                SheetsCommand::Sheet {
+                    command:
+                        SheetsSheetCommand::CopyTo {
+                            spreadsheet_id,
+                            sheet_id,
+                            destination_spreadsheet_id,
+                            title,
+                            index,
+                        },
+                },
+        } => {
+            assert_eq!(spreadsheet_id, "spreadsheet-123");
+            assert_eq!(sheet_id, 42);
+            assert_eq!(destination_spreadsheet_id, "destination-456");
+            assert_eq!(title.as_deref(), Some("Planning"));
+            assert_eq!(index, Some(0));
+        }
+        _ => panic!("unexpected parse result"),
+    }
+}
+
+#[test]
+fn sheets_sheet_copy_to_requires_destination_spreadsheet_id() {
+    let err = parse(&["sheets", "sheet", "copy-to", "spreadsheet-123", "42"]).unwrap_err();
+
+    assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+}
+
+#[test]
 fn sheets_sheet_freeze_accepts_rows_and_columns() {
     let cli = parse(&[
         "sheets",
@@ -11867,6 +11913,7 @@ fn sheets_parent_help_surfaces_nested_commands() {
         "goog sheets values update-table",
         "goog sheets values append-row",
         "goog sheets values append-table",
+        "goog sheets sheet copy-to",
         "goog sheets sheet sort-range",
         "goog sheets sheet delete-duplicates",
         "goog sheets sheet protect-range",
