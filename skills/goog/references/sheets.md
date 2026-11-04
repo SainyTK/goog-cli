@@ -10,6 +10,7 @@
   - Create and inspect
   - Manage comments
   - Write values and formulas
+  - Copy tabs between spreadsheets
   - Structure and format
   - Controlled inputs
   - Learn unfamiliar commands
@@ -145,6 +146,22 @@ target/debug/goog sheets values append-row SPREADSHEET_ID 'Inputs!A:D' --value '
 
 Use CSV for comma-containing data and TSV when the content contains many commas.
 Quote A1 ranges containing spaces or shell-sensitive characters.
+
+### Copy tabs between spreadsheets
+
+```bash
+target/debug/goog sheets sheet copy-to SPREADSHEET_ID SHEET_ID DESTINATION_SPREADSHEET_ID
+target/debug/goog sheets sheet copy-to SPREADSHEET_ID SHEET_ID DESTINATION_SPREADSHEET_ID --title 'Plan' --index 0
+```
+
+Use `copy-to` to move or copy a tab into another spreadsheet.
+It keeps values, formulas, formatting, images, and charts.
+Never rebuild a tab in another spreadsheet from `get --include-grid-data` and `batch-update`, because the API cannot read images placed over cells and they are lost.
+`goog sheets sheet duplicate` only copies a tab inside the same spreadsheet.
+Google Sheets names the copy `Copy of <title>` and places it last unless `--title` or `--index` is given.
+The command prints the copied tab's properties as JSON, including its new `sheetId` in the destination.
+If `--title` or `--index` fails, for example because the title is already taken, the copy still exists and the error names its `sheetId`.
+To move a tab, copy it, verify the copy in the destination, and only then delete the source tab with `goog sheets sheet delete`.
 
 ### Structure and format
 

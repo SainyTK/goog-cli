@@ -2640,6 +2640,209 @@ async fn run_sheet_duplicate_builds_duplicate_sheet_batch_update() {
     );
 }
 
+async fn mount_copy_sheet_to(server: &MockServer) {
+    Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/sheets/42:copyTo",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(serde_json::json!({
+            "destinationSpreadsheetId": "destination-456"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sheetId": 77,
+            "title": "Copy of Plan",
+            "index": 3,
+            "sheetType": "GRID"
+        })))
+        .expect(1)
+        .mount(server)
+        .await;
+}
+
+fn copy_to_command(title: Option<&str>, index: Option<i64>) -> SheetsSheetCommand {
+    SheetsSheetCommand::CopyTo {
+        spreadsheet_id: "spreadsheet-123".into(),
+        sheet_id: 42,
+        destination_spreadsheet_id: "destination-456".into(),
+        title: title.map(Into::into),
+        index,
+    }
+}
+
+#[tokio::test]
+async fn run_sheet_copy_to_prints_copied_sheet_properties() {
+    let server = MockServer::start().await;
+    mount_copy_sheet_to(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/destination-456:batchUpdate"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        copy_to_command(None, None),
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"index\":3,\"sheetId\":77,\"sheetType\":\"GRID\",\"title\":\"Copy of Plan\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_copy_to_sets_title_and_index_in_destination() {
+    let server = MockServer::start().await;
+    mount_copy_sheet_to(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/destination-456:batchUpdate"))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": 77,
+                            "title": "Plan",
+                            "index": 0
+                        },
+                        "fields": "title,index"
+                    }
+                }
+            ],
+            "includeSpreadsheetInResponse": true
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "spreadsheetId": "destination-456",
+            "replies": [{}],
+            "updatedSpreadsheet": {
+                "sheets": [
+                    { "properties": { "sheetId": 77, "title": "Plan", "index": 0 } },
+                    { "properties": { "sheetId": 0, "title": "Sheet1", "index": 1 } }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        copy_to_command(Some("Plan"), Some(0)),
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"index\":0,\"sheetId\":77,\"title\":\"Plan\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_copy_to_updates_only_the_requested_property() {
+    let server = MockServer::start().await;
+    mount_copy_sheet_to(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/destination-456:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                {
+                    "updateSheetProperties": {
+                        "properties": { "sheetId": 77, "index": 1 },
+                        "fields": "index"
+                    }
+                }
+            ],
+            "includeSpreadsheetInResponse": true
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "updatedSpreadsheet": {
+                "sheets": [
+                    { "properties": { "sheetId": 77, "title": "Copy of Plan", "index": 1 } }
+                ]
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    run_sheet_to(
+        &client,
+        copy_to_command(None, Some(1)),
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"index\":1,\"sheetId\":77,\"title\":\"Copy of Plan\"}\n"
+    );
+}
+
+#[tokio::test]
+async fn run_sheet_copy_to_names_the_copy_when_setting_properties_fails() {
+    let server = MockServer::start().await;
+    mount_copy_sheet_to(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/sheets/v4/spreadsheets/destination-456:batchUpdate"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": {
+                "code": 400,
+                "message": "A sheet with the name \"Plan\" already exists.",
+                "status": "INVALID_ARGUMENT"
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let mut out = Vec::new();
+    let spreadsheets_url = spreadsheets_url(&server);
+
+    let err = run_sheet_to(
+        &client,
+        copy_to_command(Some("Plan"), None),
+        &mut out,
+        Some(&spreadsheets_url),
+    )
+    .await
+    .unwrap_err();
+
+    assert_eq!(
+        err.to_string(),
+        "copied the Google Sheets sheet as sheetId 77, but failed to set its title or index"
+    );
+    assert!(out.is_empty());
+}
+
 #[tokio::test]
 async fn run_sheet_freeze_builds_update_sheet_properties_batch_update() {
     let server = MockServer::start().await;

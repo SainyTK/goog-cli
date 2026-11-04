@@ -223,6 +223,7 @@ fn sheets_operation_owns_target_spreadsheet_id_for_each_variant() {
         "structural-sheet",
         serde_json::json!({ "requests": [] }),
     );
+    let copy_sheet_to_options = CopySheetToOptions::new("copy-source-sheet", 42, "destination");
 
     let operations = [
         (
@@ -254,6 +255,10 @@ fn sheets_operation_owns_target_spreadsheet_id_for_each_variant() {
         (
             SheetsOperation::BatchUpdateSpreadsheet(&batch_update_spreadsheet),
             "structural-sheet",
+        ),
+        (
+            SheetsOperation::CopySheetTo(&copy_sheet_to_options),
+            "copy-source-sheet",
         ),
     ];
 
@@ -933,6 +938,39 @@ async fn batch_update_spreadsheet_passes_structural_body_through() {
         .await
         .path()
         .ends_with("/spreadsheets/spreadsheet-123:batchUpdate"));
+}
+
+#[tokio::test]
+async fn copy_sheet_to_posts_destination_to_sheet_copy_endpoint() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(
+            "/sheets/v4/spreadsheets/spreadsheet-123/sheets/42:copyTo",
+        ))
+        .and(header("authorization", "Bearer sheets-write-access"))
+        .and(body_json(serde_json::json!({
+            "destinationSpreadsheetId": "destination-456"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "sheetId": 77,
+            "title": "Copy of Plan",
+            "index": 1
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = write_test_client(&store);
+    let options = CopySheetToOptions::new("spreadsheet-123", 42, "destination-456")
+        .with_spreadsheets_url(spreadsheets_url(&server));
+
+    let properties = copy_sheet_to(&client, &options).await.unwrap();
+
+    assert_eq!(
+        properties,
+        serde_json::json!({ "sheetId": 77, "title": "Copy of Plan", "index": 1 })
+    );
 }
 
 #[tokio::test]

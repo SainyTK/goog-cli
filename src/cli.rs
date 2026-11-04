@@ -143,6 +143,7 @@ pub enum Command {
   goog sheets sheet add SPREADSHEET_ID TITLE
   goog sheets sheet delete SPREADSHEET_ID SHEET_ID
   goog sheets sheet rename SPREADSHEET_ID SHEET_ID TITLE
+  goog sheets sheet copy-to SPREADSHEET_ID SHEET_ID DESTINATION_SPREADSHEET_ID
   goog sheets sheet sort-range SPREADSHEET_ID SHEET_ID --range A1:D20 --sort-column 0
   goog sheets sheet delete-duplicates SPREADSHEET_ID SHEET_ID --range A1:D20
   goog sheets sheet trim-whitespace SPREADSHEET_ID SHEET_ID --range A1:D20
@@ -3871,6 +3872,30 @@ pub enum SheetsSheetCommand {
         sheet_id: Option<i64>,
         /// Zero-based index where Google Sheets should place the duplicated tab
         #[arg(long)]
+        index: Option<i64>,
+    },
+    /// Copy a sheet tab into another Spreadsheet, keeping its images and charts
+    #[command(
+        after_long_help = "Google Sheets names the copied tab \"Copy of <title>\" and places it last.
+Pass --title or --index to rename or move it in the destination after the copy.
+The account needs edit access to the destination Spreadsheet.
+Prints the copied tab's sheet properties as JSON.
+
+Example:
+  goog sheets sheet copy-to SPREADSHEET_ID 123456789 DESTINATION_SPREADSHEET_ID --title \"Archive\" --index 0"
+    )]
+    CopyTo {
+        /// Google Sheets Spreadsheet ID that contains the tab to copy
+        spreadsheet_id: String,
+        /// Google Sheets numeric sheetId for the tab to copy
+        sheet_id: i64,
+        /// Google Sheets Spreadsheet ID that receives the copied tab
+        destination_spreadsheet_id: String,
+        /// Title for the copied tab in the destination Spreadsheet
+        #[arg(long)]
+        title: Option<String>,
+        /// Zero-based index where Google Sheets should place the copied tab in the destination
+        #[arg(long, value_parser = clap::value_parser!(i64).range(0..))]
         index: Option<i64>,
     },
     /// Freeze rows or columns without writing a Batch Update JSON body
