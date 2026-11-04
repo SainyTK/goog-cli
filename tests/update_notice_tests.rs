@@ -168,6 +168,11 @@ fn serve_releases(body: impl Into<String>) -> (String, thread::JoinHandle<()>) {
                 Err(error) => panic!("failed to accept update request: {error}"),
             }
         };
+        // Windows sockets accepted from a non-blocking listener are non-blocking too.
+        stream.set_nonblocking(false).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
         let mut request = [0; 2048];
         let _ = stream.read(&mut request).unwrap();
         write!(
