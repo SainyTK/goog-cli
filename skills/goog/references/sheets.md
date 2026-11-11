@@ -104,6 +104,8 @@ target/debug/goog sheets values get-table SPREADSHEET_ID 'Plan!A1:H30'
 ```
 
 The create command prints the spreadsheet ID and edit URL separated by a tab.
+Without `--folder FOLDER_ID`, the spreadsheet is created at the root of My Drive.
+Pass `--folder` to create it directly in the destination folder.
 Use the numeric `sheetId` from spreadsheet metadata for `goog sheets sheet` commands.
 Do not confuse a tab title with its numeric `sheetId`.
 

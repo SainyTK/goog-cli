@@ -10,9 +10,10 @@ use crate::auth::state::{
 };
 use crate::auth::testing::MemoryStore;
 use crate::drive::{
-    CreateCommentOptions, CreateCommentReplyOptions, CreateFolderOptions, DeleteCommentOptions,
-    DriveFile, ListCommentsOptions, OfficeConversionOptions, OfficeConversionTarget,
-    ResolveCommentOptions, UpdateCommentOptions, UpdateFileContentOptions, DRIVE_SCOPE,
+    CreateCommentOptions, CreateCommentReplyOptions, CreateFileOptions, CreatedFileKind,
+    DeleteCommentOptions, DriveFile, ListCommentsOptions, OfficeConversionOptions,
+    OfficeConversionTarget, ResolveCommentOptions, UpdateCommentOptions, UpdateFileContentOptions,
+    DRIVE_SCOPE,
 };
 
 use super::drive::*;
@@ -1427,10 +1428,14 @@ async fn run_mkdir_uses_parent_folder_account_and_prints_folder_location() {
     let temp_dir = tempfile::tempdir().unwrap();
     let state_path = temp_dir.path().join("state.toml");
     let mut out = Vec::new();
-    let options = CreateFolderOptions::new("Candidate CVs", "parent-folder-123")
-        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let options = CreateFileOptions::new(
+        CreatedFileKind::Folder,
+        "Candidate CVs",
+        "parent-folder-123",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
 
-    run_mkdir_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
+    run_create_file_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
         .await
         .unwrap();
 
@@ -1443,6 +1448,41 @@ async fn run_mkdir_uses_parent_folder_account_and_prints_folder_location() {
             .unwrap()
             .account_for_resource(&resource_key("drive", "parent-folder-123")),
         Some("bob@example.com")
+    );
+}
+
+#[tokio::test]
+async fn run_create_file_prints_the_native_edit_url_for_a_document() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files"))
+        .and(BodyContains(
+            br#""mimeType":"application/vnd.google-apps.document""#,
+        ))
+        .and(BodyContains(br#""parents":["parent-folder-123"]"#))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "document-456",
+            "webViewLink": "https://docs.google.com/document/d/document-456/edit?usp=drivesdk"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let mut out = Vec::new();
+    let options = CreateFileOptions::new(CreatedFileKind::Document, "Plan", "parent-folder-123")
+        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    run_create_file_unified_to(&config, &store, None, options, &mut out, Some(&state_path))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "document-456\thttps://docs.google.com/document/d/document-456/edit\n"
     );
 }
 

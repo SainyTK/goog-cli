@@ -84,10 +84,11 @@ Verify the update by downloading the file and comparing it with the local file, 
 ```bash
 goog drive convert DOCX_FILE_ID --to google-doc
 goog drive convert XLSX_FILE_ID --to google-sheet
+goog drive convert DOCX_FILE_ID --to google-doc --folder FOLDER_ID
 ```
 
 The source must already be stored in Drive.
-Office Conversion creates a new Document or Spreadsheet in the source file's parent Folder and leaves the Office source unchanged.
+Office Conversion creates a new Document or Spreadsheet in the source file's parent Folder, or in the folder given with `--folder`, and leaves the Office source unchanged.
 The command prints the new Document or Spreadsheet ID and URL separated by a tab.
 Verify the result with `goog drive ls --folder PARENT_FOLDER_ID`, then read it with `goog docs get` or `goog sheets get`.
 

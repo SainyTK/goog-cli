@@ -153,7 +153,11 @@ Create a blank document when the design can be built from supported text, paragr
 
 ```bash
 target/debug/goog docs create "Quarterly operating review"
+target/debug/goog docs create "Quarterly operating review" --folder FOLDER_ID
 ```
+
+Without `--folder`, the document is created at the root of My Drive.
+Pass `--folder` with the destination folder ID to create it directly in that folder; `docs copy` accepts the same option.
 
 Copy a template when the source contains editor-only components such as a native table of contents, page-number auto text, positioned images, or first-page header content:
 

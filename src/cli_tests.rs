@@ -591,10 +591,16 @@ fn drive_convert_requires_a_file_id_and_document_or_spreadsheet_target() {
     .unwrap();
     match doc.command {
         Command::Drive {
-            command: DriveCommand::Convert { file_id, to },
+            command:
+                DriveCommand::Convert {
+                    file_id,
+                    to,
+                    folder,
+                },
         } => {
             assert_eq!(file_id, "office-document-123");
             assert_eq!(to, DriveOfficeConversionTarget::GoogleDoc);
+            assert_eq!(folder, None);
         }
         _ => panic!("unexpected parse result"),
     }
@@ -1488,6 +1494,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
     let DocsCommand::Copy {
         source_document_id,
         title,
+        folder,
         required_executable_sha256,
         required_source_revision_id,
         verify_fidelity,
@@ -1498,6 +1505,7 @@ fn docs_copy_parses_and_normalizes_source_url() {
     };
     assert_eq!(source_document_id, "source-document-123");
     assert_eq!(title, "Customer proposal copy");
+    assert_eq!(folder, None);
     assert_eq!(required_executable_sha256.as_deref(), Some("abc123"));
     assert_eq!(required_source_revision_id.as_deref(), Some("rev-approved"));
     assert!(verify_fidelity);
@@ -3841,12 +3849,73 @@ fn sheets_create_with_title() {
     let cli = parse(&["sheets", "create", "Quarterly Plan"]).unwrap();
     match cli.command {
         Command::Sheets {
-            command: SheetsCommand::Create { title },
+            command: SheetsCommand::Create { title, folder },
         } => {
             assert_eq!(title, "Quarterly Plan");
+            assert_eq!(folder, None);
         }
         _ => panic!("unexpected parse result"),
     }
+}
+
+#[test]
+fn create_commands_accept_a_destination_folder() {
+    let docs = parse(&["docs", "create", "Plan", "--folder", "folder-123"]).unwrap();
+    assert!(matches!(
+        docs.command,
+        Command::Docs {
+            command: DocsCommand::Create { folder: Some(ref folder), .. }
+        } if folder == "folder-123"
+    ));
+
+    let sheets = parse(&["sheets", "create", "Plan", "--folder", "folder-123"]).unwrap();
+    assert!(matches!(
+        sheets.command,
+        Command::Sheets {
+            command: SheetsCommand::Create { folder: Some(ref folder), .. }
+        } if folder == "folder-123"
+    ));
+
+    let slides = parse(&["slides", "create", "Deck", "--folder", "folder-123"]).unwrap();
+    assert!(matches!(
+        slides.command,
+        Command::Slides {
+            command: SlidesCommand::Create { folder: Some(ref folder), .. }
+        } if folder == "folder-123"
+    ));
+
+    let copy = parse(&[
+        "docs",
+        "copy",
+        "source-document-123",
+        "Copy",
+        "--folder",
+        "folder-123",
+    ])
+    .unwrap();
+    assert!(matches!(
+        copy.command,
+        Command::Docs {
+            command: DocsCommand::Copy { folder: Some(ref folder), .. }
+        } if folder == "folder-123"
+    ));
+
+    let convert = parse(&[
+        "drive",
+        "convert",
+        "office-document-123",
+        "--to",
+        "google-doc",
+        "--folder",
+        "folder-123",
+    ])
+    .unwrap();
+    assert!(matches!(
+        convert.command,
+        Command::Drive {
+            command: DriveCommand::Convert { folder: Some(ref folder), .. }
+        } if folder == "folder-123"
+    ));
 }
 
 #[test]
@@ -3854,9 +3923,10 @@ fn slides_create_with_title() {
     let cli = parse(&["slides", "create", "Quarterly Deck"]).unwrap();
     match cli.command {
         Command::Slides {
-            command: SlidesCommand::Create { title },
+            command: SlidesCommand::Create { title, folder },
         } => {
             assert_eq!(title, "Quarterly Deck");
+            assert_eq!(folder, None);
         }
         _ => panic!("unexpected parse result"),
     }

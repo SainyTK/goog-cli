@@ -59,9 +59,9 @@ use crate::docs::{
     GetDocumentOptions, StyleTemplate,
 };
 use crate::drive::{
-    create_anyone_reader_permission, delete_file, export_google_file, upload, DownloadedFile,
-    DriveError, DriveFileOperationOptions, ExportGoogleFileOptions, GoogleFileExportFormat,
-    UploadFileOptions,
+    create_anyone_reader_permission, delete_file, export_google_file, upload, CreateFileOptions,
+    CreatedFileKind, DownloadedFile, DriveError, DriveFileOperationOptions,
+    ExportGoogleFileOptions, GoogleFileExportFormat, UploadFileOptions,
 };
 use anyhow::{bail, Context, Result};
 use serde::Serialize;
@@ -444,11 +444,23 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        DocsCommand::Create { title } => {
-            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+        DocsCommand::Create { title, folder } => {
             let runtime =
                 tokio::runtime::Runtime::new().context("failed to start async runtime")?;
-            runtime.block_on(run_create_to(&client, title, &mut std::io::stdout(), None))
+            match folder {
+                Some(folder) => runtime.block_on(super::drive::run_create_file_unified_to(
+                    config,
+                    store,
+                    account_override,
+                    CreateFileOptions::new(CreatedFileKind::Document, title, folder),
+                    &mut std::io::stdout(),
+                    None,
+                )),
+                None => {
+                    let client = AuthClient::from_config(config.clone(), store, account_override)?;
+                    runtime.block_on(run_create_to(&client, title, &mut std::io::stdout(), None))
+                }
+            }
         }
         DocsCommand::ExportText { document_id } => {
             let runtime =
@@ -466,6 +478,7 @@ pub fn run<S: AccountStore>(
         DocsCommand::Copy {
             source_document_id,
             title,
+            folder,
             required_executable_sha256,
             required_source_revision_id,
             verify_fidelity,
@@ -480,6 +493,7 @@ pub fn run<S: AccountStore>(
                 CopyDocumentCommand {
                     source_document_id,
                     title,
+                    folder,
                     required_executable_sha256,
                     required_source_revision_id,
                     verify_fidelity,
@@ -3530,6 +3544,9 @@ pub(super) async fn run_copy_to<S: AccountStore>(
     let source_document_id = command.source_document_id;
     let title = command.title;
     let mut options = CopyDocumentOptions::new(source_document_id.clone(), title.clone());
+    if let Some(folder) = command.folder {
+        options = options.with_folder(folder);
+    }
     if let Some(drive_files_url) = drive_files_url {
         options = options.with_drive_files_url(drive_files_url);
     }
@@ -3668,6 +3685,7 @@ struct CopyDocumentAcceptance<'a> {
 pub(super) struct CopyDocumentCommand {
     pub(super) source_document_id: String,
     pub(super) title: String,
+    pub(super) folder: Option<String>,
     pub(super) required_executable_sha256: Option<String>,
     pub(super) required_source_revision_id: Option<String>,
     pub(super) verify_fidelity: bool,
