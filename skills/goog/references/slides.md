@@ -124,6 +124,8 @@ target/debug/goog slides slide create PRESENTATION_ID --object-id slide-01 --lay
 ```
 
 Capture the presentation ID and URL from create output.
+Without `--folder FOLDER_ID`, the presentation is created at the root of My Drive.
+Pass `--folder` to create it directly in the destination folder.
 Use `slides get --json` to confirm slide page IDs and object IDs.
 Always provide a narrow `--fields` selector because an unrestricted presentation response includes masters, layouts, notes, and theme data.
 

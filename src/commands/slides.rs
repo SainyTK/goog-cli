@@ -14,6 +14,7 @@ use crate::cli::{
     SlidesObjectCommand, SlidesPredefinedLayout, SlidesShapeType, SlidesSlideCommand,
     SlidesZOrderOperation,
 };
+use crate::drive::{CreateFileOptions, CreatedFileKind};
 use crate::slides::authoring::inspect::{
     inspect_deck, InspectDeckError, InspectDeckReport, InspectDeckRequest,
 };
@@ -54,10 +55,20 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
-        SlidesCommand::Create { title } => {
-            let client = AuthClient::from_config(config.clone(), store, account_override)?;
-            run_with_runtime(run_create_to(&client, title, &mut std::io::stdout(), None))
-        }
+        SlidesCommand::Create { title, folder } => match folder {
+            Some(folder) => run_with_runtime(super::drive::run_create_file_unified_to(
+                config,
+                store,
+                account_override,
+                CreateFileOptions::new(CreatedFileKind::Presentation, title, folder),
+                &mut std::io::stdout(),
+                None,
+            )),
+            None => {
+                let client = AuthClient::from_config(config.clone(), store, account_override)?;
+                run_with_runtime(run_create_to(&client, title, &mut std::io::stdout(), None))
+            }
+        },
         SlidesCommand::Comments {
             presentation_id,
             open,

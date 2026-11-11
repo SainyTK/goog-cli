@@ -90,6 +90,7 @@ pub struct GetDocumentOptions {
 pub struct CopyDocumentOptions {
     pub source_document_id: String,
     pub title: String,
+    pub folder: Option<String>,
     drive_files_url: String,
 }
 
@@ -98,8 +99,22 @@ impl CopyDocumentOptions {
         Self {
             source_document_id: source_document_id.into(),
             title: title.into(),
+            folder: None,
             drive_files_url: DRIVE_FILES_URL.to_string(),
         }
+    }
+
+    pub fn with_folder(mut self, folder: impl Into<String>) -> Self {
+        self.folder = Some(folder.into());
+        self
+    }
+
+    fn request_body(&self) -> Value {
+        let mut body = serde_json::json!({ "name": self.title });
+        if let Some(folder) = &self.folder {
+            body["parents"] = serde_json::json!([folder]);
+        }
+        body
     }
 
     pub(super) fn with_drive_files_url(mut self, drive_files_url: impl Into<String>) -> Self {
@@ -246,9 +261,8 @@ pub async fn get_document<S: AccountStore>(
 }
 
 /// Creates a new, blank Google Docs Document via the Docs API and returns
-/// the created Document. The Document is always created at the root of the
-/// active account's My Drive; move it into a folder afterward with Drive if
-/// needed.
+/// the created Document at the root of the active account's My Drive.
+/// `drive::create_file` creates one directly inside a folder.
 pub async fn create_document<S: AccountStore>(
     client: &AuthClient<'_, S>,
     options: &CreateDocumentOptions,
@@ -273,7 +287,7 @@ pub async fn copy_document<S: AccountStore>(
         client,
         client
             .post(options.request_url()?)
-            .json(&serde_json::json!({ "name": options.title })),
+            .json(&options.request_body()),
         DRIVE_SCOPES,
     )
     .await

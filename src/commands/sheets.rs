@@ -17,6 +17,7 @@ use crate::cli::{
     SheetsTableOutputFormat, SheetsTextDirection, SheetsValueInputOption, SheetsValueRenderOption,
     SheetsValuesCommand, SheetsVerticalAlignment, SheetsWrapStrategy,
 };
+use crate::drive::{CreateFileOptions, CreatedFileKind};
 use crate::sheets::{
     create_spreadsheet, AppendValuesOptions, BatchClearValuesOptions, BatchGetValuesOptions,
     BatchUpdateSpreadsheetOptions, BatchUpdateValuesOptions, ClearValuesOptions,
@@ -34,10 +35,20 @@ pub fn run<S: AccountStore>(
     quiet: bool,
 ) -> Result<()> {
     match cmd {
-        SheetsCommand::Create { title } => {
-            let client = AuthClient::from_config(config.clone(), store, account_override)?;
-            run_with_runtime(run_create_to(&client, title, &mut std::io::stdout(), None))
-        }
+        SheetsCommand::Create { title, folder } => match folder {
+            Some(folder) => run_with_runtime(super::drive::run_create_file_unified_to(
+                config,
+                store,
+                account_override,
+                CreateFileOptions::new(CreatedFileKind::Spreadsheet, title, folder),
+                &mut std::io::stdout(),
+                None,
+            )),
+            None => {
+                let client = AuthClient::from_config(config.clone(), store, account_override)?;
+                run_with_runtime(run_create_to(&client, title, &mut std::io::stdout(), None))
+            }
+        },
         SheetsCommand::List {
             limit,
             all,

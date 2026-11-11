@@ -319,6 +319,9 @@ pub enum DriveCommand {
         /// Document or Spreadsheet type to create
         #[arg(long, value_enum)]
         to: DriveOfficeConversionTarget,
+        /// Drive folder ID to place the converted file in
+        #[arg(long)]
+        folder: Option<String>,
     },
     /// Create a folder in Google Drive
     Mkdir {
@@ -579,9 +582,18 @@ pub enum SlidesCommand {
         json: bool,
     },
     /// Create a new, blank Google Slides presentation
+    #[command(after_long_help = "Output shape:
+  Prints the created presentation ID and its Google Slides edit URL, tab-separated.
+
+Notes:
+  Without --folder, the presentation is created at the root of My Drive.
+  With --folder, it is created directly inside that Drive folder, and the account is resolved from the folder.")]
     Create {
         /// Title for the new Google Slides presentation
         title: String,
+        /// Drive folder ID to create the presentation in (defaults to the root of My Drive)
+        #[arg(long)]
+        folder: Option<String>,
     },
     /// List comments and replies for a presentation as JSON
     Comments {
@@ -2225,12 +2237,15 @@ pub enum DocsCommand {
   Prints the created Document ID and its Google Docs edit URL, tab-separated.
 
 Notes:
-  The Document is always created at the root of My Drive; there is no --folder option today.
-  Move it afterward with `goog drive move DOCUMENT_ID --to FOLDER_ID`.
+  Without --folder, the Document is created at the root of My Drive.
+  With --folder, it is created directly inside that Drive folder, and the account is resolved from the folder.
   Follow up with `goog docs batch-update` or the other `goog docs` editing commands to add content.")]
     Create {
         /// Title for the new Google Docs Document
         title: String,
+        /// Drive folder ID to create the Document in (defaults to the root of My Drive)
+        #[arg(long)]
+        folder: Option<String>,
     },
     /// Print a document's body content as plain text
     ExportText {
@@ -2251,12 +2266,16 @@ Notes:
   Use --required-source-revision-id to reject the copy if the source changed after it was inspected.
   Use --verify-fidelity to capture and validate the source before copying, then compare the completed copy with that exact snapshot across every semantic scope.
   Workspace or source-file download, print, and copy restrictions can remain effective on the copied document.
+  Use --folder to place the copy in a specific Drive folder; otherwise Google Drive decides where the copy goes.
   SOURCE_DOCUMENT_ID accepts either a bare Document ID or a full Google Docs or Drive URL.")]
     Copy {
         /// Existing Google Doc to copy, as a Document ID or URL
         source_document_id: String,
         /// Title for the copied Google Doc
         title: String,
+        /// Drive folder ID to place the copy in
+        #[arg(long)]
+        folder: Option<String>,
         /// Reject the copy unless the running goog executable has this SHA-256
         #[arg(long)]
         required_executable_sha256: Option<String>,
@@ -3668,12 +3687,15 @@ pub enum SheetsCommand {
   Prints the created Spreadsheet ID and its Google Sheets edit URL, tab-separated.
 
 Notes:
-  The Spreadsheet is always created at the root of My Drive; there is no --folder option today.
-  Move it afterward with the Google Drive web UI, or via a future `goog drive` move command.
+  Without --folder, the Spreadsheet is created at the root of My Drive.
+  With --folder, it is created directly inside that Drive folder, and the account is resolved from the folder.
   Follow up with `goog sheets values append-row` or `goog sheets values append-table` to add rows.")]
     Create {
         /// Title for the new Google Sheets Spreadsheet
         title: String,
+        /// Drive folder ID to create the Spreadsheet in (defaults to the root of My Drive)
+        #[arg(long)]
+        folder: Option<String>,
     },
     /// List native Google Sheets Spreadsheets from Google Drive
     List {

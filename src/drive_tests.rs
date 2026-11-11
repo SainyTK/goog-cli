@@ -1245,10 +1245,14 @@ async fn create_folder_sends_drive_folder_metadata_and_returns_its_location() {
 
     let store = MemoryStore::default();
     let client = test_client(&store);
-    let options = CreateFolderOptions::new("Candidate CVs", "parent-folder-123")
-        .with_files_url(format!("{}/drive/v3/files", server.uri()));
+    let options = CreateFileOptions::new(
+        CreatedFileKind::Folder,
+        "Candidate CVs",
+        "parent-folder-123",
+    )
+    .with_files_url(format!("{}/drive/v3/files", server.uri()));
 
-    let folder = create_folder(&client, &options).await.unwrap();
+    let folder = create_file(&client, &options).await.unwrap();
 
     assert_eq!(folder.id, "folder-456");
     assert_eq!(
@@ -1289,6 +1293,68 @@ async fn office_conversion_copies_source_as_a_document_and_returns_its_location(
         converted.web_view_link,
         "https://docs.google.com/document/d/native-document-456/edit"
     );
+}
+
+#[tokio::test]
+async fn create_file_creates_a_native_spreadsheet_inside_the_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files"))
+        .and(query_param("supportsAllDrives", "true"))
+        .and(body_json(serde_json::json!({
+            "name": "Quarterly plan",
+            "mimeType": GOOGLE_SHEET_MIME_TYPE,
+            "parents": ["folder-123"]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "spreadsheet-456",
+            "webViewLink": "https://docs.google.com/spreadsheets/d/spreadsheet-456/edit?usp=drivesdk"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        CreateFileOptions::new(CreatedFileKind::Spreadsheet, "Quarterly plan", "folder-123")
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let file = create_file(&client, &options).await.unwrap();
+
+    assert_eq!(
+        CreatedFileKind::Spreadsheet.link(&file),
+        "https://docs.google.com/spreadsheets/d/spreadsheet-456/edit"
+    );
+}
+
+#[tokio::test]
+async fn office_conversion_places_the_converted_file_in_the_requested_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/office-document-123/copy"))
+        .and(body_json(serde_json::json!({
+            "mimeType": GOOGLE_DOC_MIME_TYPE,
+            "parents": ["folder-123"]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "native-document-456",
+            "webViewLink": "https://docs.google.com/document/d/native-document-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let options =
+        OfficeConversionOptions::new("office-document-123", OfficeConversionTarget::Document)
+            .with_folder("folder-123")
+            .with_files_url(format!("{}/drive/v3/files", server.uri()));
+
+    let converted = convert_office_file(&client, &options).await.unwrap();
+
+    assert_eq!(converted.id, "native-document-456");
 }
 
 #[tokio::test]

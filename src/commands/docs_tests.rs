@@ -5015,6 +5015,64 @@ async fn run_create_prints_document_id_and_edit_url() {
 }
 
 #[tokio::test]
+async fn run_copy_places_the_copy_in_the_requested_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/drive/v3/files/source-document-123/copy"))
+        .and(body_json(serde_json::json!({
+            "name": "Customer proposal copy",
+            "parents": ["folder-123"]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "copied-document-456",
+            "name": "Customer proposal copy",
+            "mimeType": "application/vnd.google-apps.document",
+            "webViewLink": "https://docs.google.com/document/d/copied-document-456/edit"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token(
+            "alice@example.com",
+            &Token {
+                access_token: "drive-write-access".into(),
+                refresh_token: "refresh-123".into(),
+                expiry: Utc::now() + Duration::hours(1),
+                scopes: vec![DRIVE_SCOPE.into()],
+            },
+        )
+        .unwrap();
+    let client = AuthClient::from_config(test_config(), &store, None).unwrap();
+    let mut out = Vec::new();
+    let drive_files_url = format!("{}/drive/v3/files", server.uri());
+
+    run_copy_to(
+        &client,
+        CopyDocumentCommand {
+            source_document_id: "source-document-123".into(),
+            title: "Customer proposal copy".into(),
+            folder: Some("folder-123".into()),
+            required_executable_sha256: None,
+            required_source_revision_id: None,
+            verify_fidelity: false,
+            json: false,
+        },
+        &mut out,
+        Some(&drive_files_url),
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert!(String::from_utf8(out)
+        .unwrap()
+        .starts_with("copied-document-456\t"));
+}
+
+#[tokio::test]
 async fn run_copy_can_emit_a_typed_json_acceptance_record() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -5059,6 +5117,7 @@ async fn run_copy_can_emit_a_typed_json_acceptance_record() {
         CopyDocumentCommand {
             source_document_id: "source-document-123".into(),
             title: "Customer proposal copy".into(),
+            folder: None,
             required_executable_sha256: None,
             required_source_revision_id: None,
             verify_fidelity: false,
@@ -5167,6 +5226,7 @@ async fn run_copy_verifies_required_source_revision_before_drive_copy() {
         CopyDocumentCommand {
             source_document_id: "source-document-123".into(),
             title: "Customer proposal copy".into(),
+            folder: None,
             required_executable_sha256: None,
             required_source_revision_id: Some("rev-approved".into()),
             verify_fidelity: false,
@@ -5243,6 +5303,7 @@ async fn run_copy_can_gate_completed_copy_across_all_fidelity_scopes() {
         CopyDocumentCommand {
             source_document_id: "source-document-123".into(),
             title: "Customer proposal copy".into(),
+            folder: None,
             required_executable_sha256: None,
             required_source_revision_id: Some("rev-search".into()),
             verify_fidelity: true,
@@ -5386,6 +5447,7 @@ async fn run_copy_does_not_report_a_rejected_copy_as_successful() {
         CopyDocumentCommand {
             source_document_id: "source-document-123".into(),
             title: "Customer proposal copy".into(),
+            folder: None,
             required_executable_sha256: None,
             required_source_revision_id: None,
             verify_fidelity: true,
@@ -5435,6 +5497,7 @@ async fn run_copy_rejects_executable_drift_before_document_access() {
         CopyDocumentCommand {
             source_document_id: "source-document-123".into(),
             title: "Customer proposal copy".into(),
+            folder: None,
             required_executable_sha256: Some(
                 "0000000000000000000000000000000000000000000000000000000000000000".into(),
             ),
@@ -5480,6 +5543,7 @@ async fn run_copy_rejects_stale_source_revision_before_drive_copy() {
         CopyDocumentCommand {
             source_document_id: "source-document-123".into(),
             title: "Customer proposal copy".into(),
+            folder: None,
             required_executable_sha256: None,
             required_source_revision_id: Some("rev-approved".into()),
             verify_fidelity: false,
@@ -5530,6 +5594,7 @@ async fn run_verified_copy_rejects_stale_source_snapshot_before_drive_copy() {
         CopyDocumentCommand {
             source_document_id: "source-document-123".into(),
             title: "Customer proposal copy".into(),
+            folder: None,
             required_executable_sha256: None,
             required_source_revision_id: Some("rev-approved".into()),
             verify_fidelity: true,

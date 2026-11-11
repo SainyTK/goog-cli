@@ -53,7 +53,7 @@ const REVISIONS_FIELDS: &str =
     "nextPageToken,revisions(id,modifiedTime,originalFilename,size,md5Checksum,keepForever)";
 const REVISIONS_PAGE_SIZE: &str = "200";
 const GOOGLE_APPS_MIME_TYPE_PREFIX: &str = "application/vnd.google-apps.";
-const CREATE_FOLDER_RESPONSE_FIELDS: &str = "id,webViewLink";
+const CREATE_FILE_RESPONSE_FIELDS: &str = "id,webViewLink";
 const CONVERT_FILE_RESPONSE_FIELDS: &str = "id,webViewLink";
 pub(super) const MULTIPART_UPLOAD_LIMIT_BYTES: u64 = 5 * 1024 * 1024;
 pub(super) const RESUMABLE_CHUNK_SIZE_BYTES: usize = 5 * 1024 * 1024;
@@ -315,10 +315,53 @@ struct RevisionsPage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct CreatedFolder {
+pub struct CreatedFile {
     pub id: String,
     #[serde(rename = "webViewLink")]
     pub web_view_link: String,
+}
+
+/// The kind of empty file `create_file` makes inside a Drive folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CreatedFileKind {
+    Folder,
+    Document,
+    Spreadsheet,
+    Presentation,
+}
+
+impl CreatedFileKind {
+    fn mime_type(self) -> &'static str {
+        match self {
+            Self::Folder => DRIVE_FOLDER_MIME_TYPE,
+            Self::Document => GOOGLE_DOC_MIME_TYPE,
+            Self::Spreadsheet => GOOGLE_SHEET_MIME_TYPE,
+            Self::Presentation => GOOGLE_SLIDES_MIME_TYPE,
+        }
+    }
+
+    /// The noun used for this kind in messages.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Folder => "Google Drive folder",
+            Self::Document => "Google Docs Document",
+            Self::Spreadsheet => "Google Sheets Spreadsheet",
+            Self::Presentation => "Google Slides presentation",
+        }
+    }
+
+    /// The link to print for a created file. Native files use their editor's
+    /// edit URL, the same link the create commands print without a folder.
+    pub fn link(self, file: &CreatedFile) -> String {
+        match self {
+            Self::Folder => file.web_view_link.clone(),
+            Self::Document => format!("https://docs.google.com/document/d/{}/edit", file.id),
+            Self::Spreadsheet => format!("https://docs.google.com/spreadsheets/d/{}/edit", file.id),
+            Self::Presentation => {
+                format!("https://docs.google.com/presentation/d/{}/edit", file.id)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -347,6 +390,7 @@ impl OfficeConversionTarget {
 pub struct OfficeConversionOptions {
     pub file_id: String,
     pub target: OfficeConversionTarget,
+    pub folder: Option<String>,
     files_url: String,
 }
 
@@ -355,8 +399,14 @@ impl OfficeConversionOptions {
         Self {
             file_id: file_id.into(),
             target,
+            folder: None,
             files_url: DRIVE_FILES_URL.to_string(),
         }
+    }
+
+    pub fn with_folder(mut self, folder: impl Into<String>) -> Self {
+        self.folder = Some(folder.into());
+        self
     }
 
     #[cfg(test)]
@@ -381,15 +431,21 @@ impl OfficeConversionOptions {
 }
 
 #[derive(Debug, Clone)]
-pub struct CreateFolderOptions {
+pub struct CreateFileOptions {
+    pub kind: CreatedFileKind,
     pub name: String,
     pub parent_folder: String,
     files_url: String,
 }
 
-impl CreateFolderOptions {
-    pub fn new(name: impl Into<String>, parent_folder: impl Into<String>) -> Self {
+impl CreateFileOptions {
+    pub fn new(
+        kind: CreatedFileKind,
+        name: impl Into<String>,
+        parent_folder: impl Into<String>,
+    ) -> Self {
         Self {
+            kind,
             name: name.into(),
             parent_folder: parent_folder.into(),
             files_url: DRIVE_FILES_URL.to_string(),
@@ -405,7 +461,7 @@ impl CreateFolderOptions {
     fn request_url(&self) -> Result<Url, DriveError> {
         let mut url = Url::parse(&self.files_url)?;
         url.query_pairs_mut()
-            .append_pair("fields", CREATE_FOLDER_RESPONSE_FIELDS)
+            .append_pair("fields", CREATE_FILE_RESPONSE_FIELDS)
             .append_pair("supportsAllDrives", "true");
         Ok(url)
     }
@@ -764,7 +820,7 @@ struct UpdateFileContentMetadata<'a> {
 }
 
 #[derive(Debug, Serialize)]
-struct CreateFolderMetadata<'a> {
+struct CreateFileMetadata<'a> {
     name: &'a str,
     #[serde(rename = "mimeType")]
     mime_type: &'static str,
@@ -772,9 +828,11 @@ struct CreateFolderMetadata<'a> {
 }
 
 #[derive(Debug, Serialize)]
-struct ConvertFileMetadata {
+struct ConvertFileMetadata<'a> {
     #[serde(rename = "mimeType")]
     mime_type: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parents: Option<[&'a str; 1]>,
 }
 
 #[derive(Debug, Clone)]
@@ -1339,13 +1397,15 @@ pub async fn resolve_comment<S: AccountStore>(
         .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
 
-pub async fn create_folder<S: AccountStore>(
+/// Creates an empty folder, Document, Spreadsheet or presentation directly
+/// inside a Drive folder.
+pub async fn create_file<S: AccountStore>(
     client: &AuthClient<'_, S>,
-    options: &CreateFolderOptions,
-) -> Result<CreatedFolder, DriveError> {
-    let metadata = CreateFolderMetadata {
+    options: &CreateFileOptions,
+) -> Result<CreatedFile, DriveError> {
+    let metadata = CreateFileMetadata {
         name: &options.name,
-        mime_type: DRIVE_FOLDER_MIME_TYPE,
+        mime_type: options.kind.mime_type(),
         parents: [&options.parent_folder],
     };
     let response = client
@@ -1357,7 +1417,7 @@ pub async fn create_folder<S: AccountStore>(
         .map_err(DriveError::Auth)?;
     let response = ensure_success_response(response).await?;
     response
-        .json::<CreatedFolder>()
+        .json::<CreatedFile>()
         .await
         .map_err(|error| DriveError::InvalidResponse(error.to_string()))
 }
@@ -1714,6 +1774,7 @@ pub async fn convert_office_file<S: AccountStore>(
                 .header(CONTENT_TYPE, JSON_CONTENT_TYPE)
                 .json(&ConvertFileMetadata {
                     mime_type: options.target.mime_type(),
+                    parents: options.folder.as_deref().map(|folder| [folder]),
                 }),
             DRIVE_SCOPES,
         )

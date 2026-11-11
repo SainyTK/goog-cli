@@ -180,6 +180,7 @@ goog drive revisions FILE_ID
 goog drive move FILE_ID --to FOLDER_ID
 goog drive convert OFFICE_FILE_ID --to google-doc
 goog drive convert OFFICE_FILE_ID --to google-sheet
+goog drive convert OFFICE_FILE_ID --to google-doc --folder FOLDER_ID
 goog drive trash FILE_ID
 goog drive download FILE_ID --output ./report.pdf
 goog drive comments FILE_ID
@@ -208,8 +209,10 @@ Include ordinary emoji directly in `--text` when desired.
 ```sh
 goog docs list --limit 20
 goog docs create "Q3 Report"
+goog docs create "Q3 Report" --folder FOLDER_ID
 goog docs export-text DOCUMENT_ID
 goog docs copy SOURCE_DOCUMENT_ID "Q3 Report from template"
+goog docs copy SOURCE_DOCUMENT_ID "Q3 Report from template" --folder FOLDER_ID
 goog docs export-pdf DOCUMENT_ID --output ./q3-report.pdf
 goog docs map DOCUMENT_ID
 goog docs map DOCUMENT_ID --type images
@@ -247,6 +250,7 @@ See [Local Docs image staging](docs/local-docs-image-staging.md) for both backen
 
 ```sh
 goog sheets create "Quarterly Plan"
+goog sheets create "Quarterly Plan" --folder FOLDER_ID
 goog sheets list --limit 20
 goog sheets get SPREADSHEET_ID --fields 'properties.title,sheets.properties'
 goog sheets comments SPREADSHEET_ID
@@ -348,6 +352,7 @@ cat rows.tsv | goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --dat
 ```sh
 goog slides list --limit 20
 goog slides create "Quarterly Review"
+goog slides create "Quarterly Review" --folder FOLDER_ID
 goog slides get PRESENTATION_ID
 goog slides get PRESENTATION_ID --fields 'presentationId,title,slides(objectId)' --json
 goog slides comments PRESENTATION_ID
