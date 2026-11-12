@@ -461,6 +461,8 @@ fn drive_ls_with_flags() {
         "files",
         "--folder",
         "folder123",
+        "--name",
+        "Meeting Notes",
         "--json",
     ])
     .unwrap();
@@ -472,6 +474,7 @@ fn drive_ls_with_flags() {
                     all,
                     type_,
                     folder,
+                    name,
                     show_all,
                     json,
                 },
@@ -480,6 +483,7 @@ fn drive_ls_with_flags() {
             assert!(all);
             assert_eq!(type_, DriveListType::Files);
             assert_eq!(folder.as_deref(), Some("folder123"));
+            assert_eq!(name.as_deref(), Some("Meeting Notes"));
             assert!(!show_all);
             assert!(json);
         }
@@ -498,9 +502,32 @@ fn drive_ls_defaults_to_items() {
                 all: false,
                 type_: DriveListType::Items,
                 folder: None,
+                name: None,
                 show_all: false,
                 json: false
             }
+        }
+    ));
+}
+
+#[test]
+fn drive_info_parses_file_id_and_json() {
+    let cli = parse(&["drive", "info", "folder-123", "--json"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::Drive {
+            command: DriveCommand::Info { file_id, json: true }
+        } if file_id == "folder-123"
+    ));
+}
+
+#[test]
+fn drive_drives_parses_json_flag() {
+    let cli = parse(&["drive", "drives", "--json"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Command::Drive {
+            command: DriveCommand::Drives { json: true }
         }
     ));
 }

@@ -25,6 +25,9 @@ goog drive ls --type files --limit 25
 goog drive ls --type folders --all
 goog drive ls --folder FOLDER_ID
 goog drive ls --json
+goog drive ls --name "Meeting Notes" --type folders
+goog drive drives
+goog drive info FILE_ID
 ```
 
 Without `--all`, listing defaults to 50 items unless `--limit` is supplied.
@@ -32,6 +35,13 @@ Use `--folder FOLDER_ID` to browse one folder.
 Use `--type items`, `files`, or `folders` to constrain the result.
 Use `--show-all` only when soft-deleted items are intentionally relevant.
 Use `--json` when structured output is needed for follow-up commands.
+
+To find a folder whose ID you do not have, search by name first with `goog drive ls --name TEXT`.
+Without `--folder` the search covers My Drive, shared drives and items shared with the account.
+With `--folder` it only looks at that folder's direct children.
+`goog drive drives` lists shared drives, and a shared drive ID works as a `--folder` ID to browse the drive's root.
+`goog drive info FILE_ID` shows an item's parent folder IDs, shared drive ID and link.
+Run it on each parent in turn to walk up from a known folder to its shared drive root.
 
 ## Download
 

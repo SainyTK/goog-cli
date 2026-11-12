@@ -174,6 +174,9 @@ goog --account bob@example.com drive ls
 goog drive ls --limit 20
 goog drive ls --type folders --folder FOLDER_ID --json
 goog drive ls --show-all
+goog drive ls --name "Meeting Notes" --type folders
+goog drive drives
+goog drive info FILE_ID
 goog drive upload ./report.pdf --folder FOLDER_ID
 goog drive update FILE_ID ./report-v2.pdf --expect-modified-time 2026-01-31T09:15:00.000Z
 goog drive revisions FILE_ID
@@ -195,6 +198,10 @@ goog drive comment-delete FILE_ID --comment-id COMMENT_ID
 `drive update` uploads new content into an existing uploaded file, so its ID and links stay the same and Drive keeps the previous version.
 It keeps the Drive name and MIME type unless `--name` or `--mime-type` is given, and `--expect-modified-time` or `--expect-md5` refuses the update when someone changed the file since you last read it.
 `drive revisions` lists the stored versions of an uploaded file.
+`drive ls --name` keeps items whose name contains the text.
+Without `--folder` it searches My Drive, shared drives and items shared with you.
+`drive drives` lists the shared drives you belong to, and a shared drive ID works as a `--folder` ID to browse that drive's root.
+`drive info` shows one item's name, MIME type, parent folder IDs, shared drive ID and link, so you can walk up from a known folder to its shared drive.
 Drive listings exclude soft-deleted items by default.
 Use `--show-all` to include them.
 `drive comments` fetches every comment page and emits one JSON object containing comments and their replies.
