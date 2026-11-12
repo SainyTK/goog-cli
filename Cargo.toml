@@ -1,6 +1,6 @@
 [package]
 name = "goog"
-version = "0.2.13"
+version = "0.2.14-preview.1"
 edition = "2021"
 
 [[bin]]
