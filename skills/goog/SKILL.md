@@ -61,7 +61,9 @@ Delete it when the headless or automated run no longer needs it.
 
 ### Drive
 
-- `goog drive ls` lists or browses files and folders.
+- `goog drive ls` lists or browses files and folders, and `--name` searches item names across every drive.
+- `goog drive info` shows one item's parent folder IDs, shared drive ID and link.
+- `goog drive drives` lists the shared drives the account belongs to.
 - `goog drive download` downloads a Drive file.
 - `goog drive upload` uploads a local file.
 - `goog drive update` replaces an uploaded file's content with a new version and keeps its ID and link.

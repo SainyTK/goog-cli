@@ -37,6 +37,15 @@ const REVISIONS_TABLE_HEADER: &str = "REVISION ID\tMODIFIED\tSIZE\tMD5\tKEEP FOR
 
 type DriveResult<T> = std::result::Result<T, DriveError>;
 
+/// Which Drive items a list command asks for: the folder to look in, an
+/// optional name search, and whether trashed items are included.
+#[derive(Debug, Clone, Default)]
+pub(super) struct ListQuery {
+    pub(super) parent: Option<String>,
+    pub(super) name: Option<String>,
+    pub(super) show_all: bool,
+}
+
 pub(super) fn compose_comment_content(text: &str, mentions: &[String]) -> String {
     let mention_parts = mentions.iter().filter_map(|email| {
         let email = email.trim().trim_start_matches('@');
@@ -87,6 +96,7 @@ pub fn run<S: AccountStore>(
             all,
             type_,
             folder,
+            name,
             show_all,
             json,
         } => {
@@ -100,12 +110,40 @@ pub fn run<S: AccountStore>(
                 type_.into(),
                 limit,
                 all,
-                folder,
-                show_all,
+                ListQuery {
+                    parent: folder,
+                    name,
+                    show_all,
+                },
                 json,
                 quiet,
                 &mut std::io::stdout(),
                 &mut std::io::stderr(),
+                None,
+            ))
+        }
+        DriveCommand::Info { file_id, json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(super::drive_location::run_info_unified_to(
+                config,
+                store,
+                account_override,
+                file_id,
+                should_emit_json(json, output_json_by_default),
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DriveCommand::Drives { json } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            let client = AuthClient::from_config(config.clone(), store, account_override)?;
+            runtime.block_on(super::drive_location::run_drives_to(
+                &client,
+                should_emit_json(json, output_json_by_default),
+                &mut std::io::stdout(),
                 None,
             ))
         }
@@ -499,31 +537,27 @@ async fn run_resource_list_command_to<S: AccountStore>(
     err: &mut impl Write,
     files_url: Option<&str>,
 ) -> Result<()> {
-    if folder.is_some() {
-        run_list_unified_to(
-            config,
-            store,
-            account_override,
-            kind,
-            limit,
-            all,
-            folder,
-            true,
-            json,
-            quiet,
-            out,
-            err,
-            files_url,
-            None,
-        )
-        .await
-    } else {
-        let client = AuthClient::from_config(config.clone(), store, account_override)?;
-        run_list_items_to(
-            &client, kind, limit, all, None, true, json, quiet, out, err, files_url,
-        )
-        .await
-    }
+    let query = ListQuery {
+        parent: folder,
+        name: None,
+        show_all: true,
+    };
+    run_list_unified_to(
+        config,
+        store,
+        account_override,
+        kind,
+        limit,
+        all,
+        query,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+        None,
+    )
+    .await
 }
 
 pub(super) async fn run_ls_command_to<S: AccountStore>(
@@ -533,49 +567,37 @@ pub(super) async fn run_ls_command_to<S: AccountStore>(
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
-    folder: Option<String>,
-    show_all: bool,
+    mut query: ListQuery,
     json: bool,
     quiet: bool,
     out: &mut impl Write,
     err: &mut impl Write,
     files_url: Option<&str>,
 ) -> Result<()> {
-    if folder.is_some() {
-        run_list_unified_to(
-            config,
-            store,
-            account_override,
-            kind,
-            limit,
-            all,
-            folder,
-            show_all,
-            json,
-            quiet,
-            out,
-            err,
-            files_url,
-            None,
-        )
-        .await
-    } else {
+    if query.parent.is_none() && query.name.is_none() {
+        query.parent = Some("root".into());
         let client = AuthClient::from_config(config.clone(), store, account_override)?;
-        run_list_items_to(
-            &client,
-            kind,
-            limit,
-            all,
-            Some("root".into()),
-            show_all,
-            json,
-            quiet,
-            out,
-            err,
-            files_url,
+        return run_list_items_to(
+            &client, kind, limit, all, &query, json, quiet, out, err, files_url,
         )
-        .await
+        .await;
     }
+    run_list_unified_to(
+        config,
+        store,
+        account_override,
+        kind,
+        limit,
+        all,
+        query,
+        json,
+        quiet,
+        out,
+        err,
+        files_url,
+        None,
+    )
+    .await
 }
 
 pub(super) async fn run_upload_to<S: AccountStore>(
@@ -1177,8 +1199,10 @@ pub(super) async fn run_list_to<S: AccountStore>(
         DriveListKind::Files,
         limit,
         all,
-        folder,
-        false,
+        &ListQuery {
+            parent: folder,
+            ..ListQuery::default()
+        },
         json,
         quiet,
         out,
@@ -1196,8 +1220,7 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
-    parent: Option<String>,
-    show_all: bool,
+    query: ListQuery,
     json: bool,
     quiet: bool,
     out: &mut impl Write,
@@ -1205,15 +1228,15 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
     files_url: Option<&str>,
     state_path: Option<&Path>,
 ) -> Result<()> {
-    let Some(parent_id) = parent.clone() else {
+    let Some(parent_id) = query.parent.as_deref() else {
         let client = AuthClient::from_config(config.clone(), store, account_override)?;
         return run_list_items_to(
-            &client, kind, limit, all, None, show_all, json, quiet, out, err, files_url,
+            &client, kind, limit, all, &query, json, quiet, out, err, files_url,
         )
         .await;
     };
 
-    let resource_key = resource_key("drive", &parent_id);
+    let resource_key = resource_key("drive", parent_id);
     let mut files = collect_list_items_with_drive_unified_access(
         config,
         store,
@@ -1222,8 +1245,7 @@ pub(super) async fn run_list_unified_to<S: AccountStore>(
         kind,
         limit,
         all,
-        Some(parent_id),
-        show_all,
+        &query,
         quiet,
         err,
         files_url,
@@ -1275,8 +1297,10 @@ pub(super) async fn run_folder_list_to<S: AccountStore>(
         DriveListKind::Folders,
         limit,
         all,
-        parent,
-        false,
+        &ListQuery {
+            parent,
+            ..ListQuery::default()
+        },
         json,
         quiet,
         out,
@@ -1303,8 +1327,10 @@ pub(super) async fn run_ls_to<S: AccountStore>(
         DriveListKind::Browse,
         limit,
         all,
-        folder,
-        false,
+        &ListQuery {
+            parent: folder,
+            ..ListQuery::default()
+        },
         json,
         quiet,
         out,
@@ -1319,8 +1345,7 @@ async fn run_list_items_to<S: AccountStore>(
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
-    parent: Option<String>,
-    show_all: bool,
+    query: &ListQuery,
     json: bool,
     quiet: bool,
     out: &mut impl Write,
@@ -1328,10 +1353,8 @@ async fn run_list_items_to<S: AccountStore>(
     files_url: Option<&str>,
 ) -> Result<()> {
     let mut wrote_table_header = false;
-    let mut files = collect_list_items(
-        client, kind, limit, all, parent, show_all, quiet, err, files_url,
-    )
-    .await?;
+    let mut files =
+        collect_list_items(client, kind, limit, all, query, quiet, err, files_url).await?;
     prepare_list_items(kind, &mut files);
 
     if json {
@@ -1831,8 +1854,7 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
-    parent: Option<String>,
-    show_all: bool,
+    query: &ListQuery,
     quiet: bool,
     err: &mut W,
     files_url: Option<&str>,
@@ -1845,11 +1867,9 @@ async fn collect_list_items_with_drive_unified_access<S: AccountStore, W: Write>
         target_resource_key,
         state_path,
         |account| -> AccessFuture<'_, Vec<DriveFile>, DriveError> {
-            let parent = parent.clone();
             let progress = progress.clone();
             Box::pin(collect_list_items_as_account(
-                config, store, kind, limit, all, parent, show_all, quiet, progress, files_url,
-                account,
+                config, store, kind, limit, all, query, quiet, progress, files_url, account,
             ))
         },
         is_target_access_failure,
@@ -1901,8 +1921,7 @@ async fn collect_list_items_as_account<S: AccountStore, W: Write>(
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
-    parent: Option<String>,
-    show_all: bool,
+    query: &ListQuery,
     quiet: bool,
     progress: UnifiedDriveListProgress<'_, W>,
     files_url: Option<&str>,
@@ -1910,7 +1929,7 @@ async fn collect_list_items_as_account<S: AccountStore, W: Write>(
 ) -> DriveResult<Vec<DriveFile>> {
     let client = AuthClient::from_config(config.clone(), store, Some(&account))?;
     let files = collect_list_items_drive_error(
-        &client, kind, limit, all, parent, show_all, quiet, progress, files_url,
+        &client, kind, limit, all, query, quiet, progress, files_url,
     )
     .await?;
     Ok(files)
@@ -1927,8 +1946,7 @@ async fn collect_list_items<S: AccountStore>(
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
-    parent: Option<String>,
-    show_all: bool,
+    query: &ListQuery,
     quiet: bool,
     err: &mut impl Write,
     files_url: Option<&str>,
@@ -1942,14 +1960,7 @@ async fn collect_list_items<S: AccountStore>(
         let Some(page_size) = next_page_size(remaining) else {
             break;
         };
-        let options = list_options(
-            page_size,
-            page_token.take(),
-            parent.as_deref(),
-            files_url,
-            kind,
-            show_all,
-        );
+        let options = list_options(page_size, page_token.take(), query, files_url, kind);
 
         let page = list_files(client, &options)
             .await
@@ -1984,8 +1995,7 @@ async fn collect_list_items_drive_error<S: AccountStore, W: Write>(
     kind: DriveListKind,
     limit: Option<u32>,
     all: bool,
-    parent: Option<String>,
-    show_all: bool,
+    query: &ListQuery,
     quiet: bool,
     progress: UnifiedDriveListProgress<'_, W>,
     files_url: Option<&str>,
@@ -1999,14 +2009,7 @@ async fn collect_list_items_drive_error<S: AccountStore, W: Write>(
         let Some(page_size) = next_page_size(remaining) else {
             break;
         };
-        let options = list_options(
-            page_size,
-            page_token.take(),
-            parent.as_deref(),
-            files_url,
-            kind,
-            show_all,
-        );
+        let options = list_options(page_size, page_token.take(), query, files_url, kind);
 
         let page = list_files(client, &options).await?;
 
@@ -2035,7 +2038,7 @@ async fn collect_list_items_drive_error<S: AccountStore, W: Write>(
     Ok(files)
 }
 
-fn is_target_access_failure(err: &DriveError) -> bool {
+pub(super) fn is_target_access_failure(err: &DriveError) -> bool {
     matches!(err, DriveError::NotFound | DriveError::PermissionDenied)
 }
 
@@ -2059,10 +2062,9 @@ pub(super) fn should_fetch_next_page(remaining: Option<u32>, all: bool) -> bool 
 pub(super) fn list_options(
     page_size: u32,
     page_token: Option<String>,
-    parent: Option<&str>,
+    query: &ListQuery,
     files_url: Option<&str>,
     kind: DriveListKind,
-    show_all: bool,
 ) -> ListFilesOptions {
     let mut options = match kind {
         DriveListKind::Files => ListFilesOptions::new(page_size),
@@ -2075,11 +2077,14 @@ pub(super) fn list_options(
     if let Some(page_token) = page_token {
         options = options.with_page_token(page_token);
     }
-    if show_all {
+    if query.show_all {
         options = options.with_show_all();
     }
-    if let Some(parent) = parent {
+    if let Some(parent) = &query.parent {
         options = options.with_folder(parent);
+    }
+    if let Some(name) = &query.name {
+        options = options.with_name_contains(name);
     }
     if let Some(files_url) = files_url {
         options = options.with_files_url(files_url);

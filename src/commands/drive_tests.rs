@@ -119,7 +119,7 @@ const BROWSE_SECOND_PAGE_RESPONSE: &str = r#"{
   ]
 }"#;
 
-fn test_config() -> Config {
+pub(super) fn test_config() -> Config {
     Config {
         oauth_app: Some(OAuthAppConfig {
             client_id: "client-123".into(),
@@ -134,7 +134,7 @@ fn test_config() -> Config {
     }
 }
 
-fn drive_token() -> Token {
+pub(super) fn drive_token() -> Token {
     Token {
         access_token: "drive-access".into(),
         refresh_token: "refresh-123".into(),
@@ -143,7 +143,7 @@ fn drive_token() -> Token {
     }
 }
 
-fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
+pub(super) fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
     store
         .save_token("alice@example.com", &drive_token())
         .unwrap();
@@ -1790,8 +1790,11 @@ async fn run_ls_files_without_target_stays_on_active_account_and_defaults_to_roo
         DriveListKind::Files,
         None,
         false,
-        None,
-        false,
+        ListQuery {
+            parent: None,
+            name: None,
+            show_all: false,
+        },
         false,
         true,
         &mut out,
@@ -1836,8 +1839,11 @@ async fn run_ls_show_all_includes_soft_deleted_items() {
         DriveListKind::Files,
         None,
         false,
-        None,
-        true,
+        ListQuery {
+            parent: None,
+            name: None,
+            show_all: true,
+        },
         false,
         true,
         &mut out,
@@ -1884,8 +1890,11 @@ async fn run_list_unified_tries_mapped_folder_before_active_account() {
         DriveListKind::Files,
         None,
         false,
-        Some("folder-123".into()),
-        false,
+        ListQuery {
+            parent: Some("folder-123".into()),
+            name: None,
+            show_all: false,
+        },
         false,
         true,
         &mut out,
@@ -1934,8 +1943,11 @@ async fn run_ls_unified_browses_target_folder_with_mapped_account() {
         DriveListKind::Browse,
         None,
         false,
-        Some("folder-123".into()),
-        false,
+        ListQuery {
+            parent: Some("folder-123".into()),
+            name: None,
+            show_all: false,
+        },
         false,
         true,
         &mut out,
@@ -1993,8 +2005,11 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         DriveListKind::Folders,
         None,
         false,
-        Some("folder-123".into()),
-        false,
+        ListQuery {
+            parent: Some("folder-123".into()),
+            name: None,
+            show_all: false,
+        },
         false,
         true,
         &mut denied_out,
@@ -2018,8 +2033,11 @@ async fn run_folder_list_unified_does_not_fallback_for_explicit_account_but_maps
         DriveListKind::Folders,
         None,
         false,
-        Some("folder-456".into()),
-        false,
+        ListQuery {
+            parent: Some("folder-456".into()),
+            name: None,
+            show_all: false,
+        },
         false,
         true,
         &mut mapped_out,
@@ -2286,8 +2304,11 @@ async fn run_list_unified_all_streams_progress_live_instead_of_buffering_until_d
         DriveListKind::Browse,
         Some(2),
         true,
-        Some("root".into()),
-        false,
+        ListQuery {
+            parent: Some("root".into()),
+            name: None,
+            show_all: false,
+        },
         false,
         false,
         &mut out,
@@ -2373,8 +2394,11 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
         DriveListKind::Browse,
         Some(2),
         true,
-        Some("root".into()),
-        false,
+        ListQuery {
+            parent: Some("root".into()),
+            name: None,
+            show_all: false,
+        },
         false,
         false,
         &mut out,
@@ -2395,4 +2419,103 @@ async fn run_list_unified_all_keeps_progress_monotonic_after_mid_pagination_fall
             .account_for_resource(&resource_key("drive", "root")),
         Some("bob@example.com")
     );
+}
+
+#[tokio::test]
+async fn run_ls_name_search_without_folder_searches_every_drive() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param(
+            "q",
+            "name contains 'Client\\'s notes' and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+        ))
+        .and(query_param("corpora", "allDrives"))
+        .and(query_param("includeItemsFromAllDrives", "true"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let files_url = format!("{}/drive/v3/files", server.uri());
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+
+    run_ls_command_to(
+        &test_config(),
+        &store,
+        None,
+        DriveListKind::Folders,
+        None,
+        false,
+        ListQuery {
+            parent: None,
+            name: Some("Client's notes".into()),
+            show_all: false,
+        },
+        false,
+        true,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+    )
+    .await
+    .unwrap();
+
+    assert!(String::from_utf8(out)
+        .unwrap()
+        .contains("Projects\tfolder-1\troot\t"));
+}
+
+#[tokio::test]
+async fn run_ls_name_search_with_folder_stays_in_that_folder() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/drive/v3/files"))
+        .and(query_param(
+            "q",
+            "'shared-drive-123' in parents and name contains 'Projects' and trashed = false",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_string(FOLDER_SINGLE_PAGE_RESPONSE))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    store
+        .save_token("alice@example.com", &drive_token())
+        .unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let files_url = format!("{}/drive/v3/files", server.uri());
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+
+    run_list_unified_to(
+        &test_config(),
+        &store,
+        None,
+        DriveListKind::Browse,
+        None,
+        false,
+        ListQuery {
+            parent: Some("shared-drive-123".into()),
+            name: Some("Projects".into()),
+            show_all: false,
+        },
+        false,
+        true,
+        &mut out,
+        &mut err,
+        Some(&files_url),
+        Some(&state_path),
+    )
+    .await
+    .unwrap();
+
+    assert!(String::from_utf8(out).unwrap().contains("folder-1"));
 }

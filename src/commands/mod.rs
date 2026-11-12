@@ -2,6 +2,7 @@ pub mod auth;
 pub mod calendar;
 pub mod docs;
 pub mod drive;
+mod drive_location;
 pub mod mail;
 pub mod sheets;
 pub mod slides;
@@ -12,6 +13,8 @@ mod auth_tests;
 mod calendar_tests;
 #[cfg(test)]
 mod docs_tests;
+#[cfg(test)]
+mod drive_location_tests;
 #[cfg(test)]
 mod drive_tests;
 #[cfg(test)]

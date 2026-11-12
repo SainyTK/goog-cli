@@ -1,6 +1,10 @@
 pub mod error;
+mod metadata;
+mod shared_drives;
 
 pub use error::DriveError;
+pub use metadata::{get_file_metadata, DriveFileMetadata, FileMetadataOptions};
+pub use shared_drives::{list_shared_drives, ListSharedDrivesOptions, SharedDrive};
 
 use bytes::Bytes;
 use futures_util::{stream, StreamExt};
@@ -840,6 +844,7 @@ pub struct ListFilesOptions {
     pub page_size: u32,
     pub page_token: Option<String>,
     pub folder: Option<String>,
+    name_contains: Option<String>,
     show_all: bool,
     mode: ListFilesMode,
     files_url: String,
@@ -1113,6 +1118,7 @@ impl ListFilesOptions {
             page_size,
             page_token: None,
             folder: None,
+            name_contains: None,
             show_all: false,
             mode: ListFilesMode::Files,
             files_url: DRIVE_FILES_URL.to_string(),
@@ -1169,6 +1175,13 @@ impl ListFilesOptions {
         self
     }
 
+    /// Keeps only items whose name contains this text. Without a folder, the
+    /// search covers My Drive, shared drives and items shared with the account.
+    pub fn with_name_contains(mut self, name: impl Into<String>) -> Self {
+        self.name_contains = Some(name.into());
+        self
+    }
+
     pub(super) fn with_files_url(mut self, files_url: impl Into<String>) -> Self {
         self.files_url = files_url.into();
         self
@@ -1198,6 +1211,9 @@ impl ListFilesOptions {
         if let Some(parent_filter) = self.parent_filter() {
             filters.push(parent_filter);
         }
+        if let Some(name) = &self.name_contains {
+            filters.push(format!("name contains '{}'", escape_query_literal(name)));
+        }
         if let Some(mime_type_filter) = self.mode.mime_type_filter() {
             filters.push(mime_type_filter);
         }
@@ -1210,6 +1226,7 @@ impl ListFilesOptions {
     fn parent_filter(&self) -> Option<String> {
         match (self.mode, self.folder.as_deref()) {
             (_, Some(folder)) => Some(parent_query_filter(folder)),
+            (_, None) if self.name_contains.is_some() => None,
             (ListFilesMode::Folders, None) => Some(parent_query_filter("root")),
             (ListFilesMode::Browse, None) => Some(parent_query_filter("root")),
             (

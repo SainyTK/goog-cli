@@ -248,13 +248,30 @@ pub enum DriveCommand {
         /// Type of Drive items to list
         #[arg(long = "type", value_enum, default_value_t = DriveListType::Items)]
         type_: DriveListType,
-        /// Drive folder ID to browse
+        /// Drive folder or shared drive ID to browse
         #[arg(long)]
         folder: Option<String>,
+        /// Keep only items whose name contains this text. Without --folder, searches My Drive, shared drives and items shared with you
+        #[arg(long)]
+        name: Option<String>,
         /// Include soft-deleted items
         #[arg(long)]
         show_all: bool,
         /// Emit one JSON object per row. Items use browse row fields; files and folders use full Drive file JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show a Drive file or folder's name, type, parent folder IDs, shared drive ID and link
+    Info {
+        /// Drive file or folder ID
+        file_id: String,
+        /// Emit the metadata as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// List the shared drives you are a member of. A shared drive ID works as a --folder ID
+    Drives {
+        /// Emit one JSON object per shared drive
         #[arg(long)]
         json: bool,
     },
