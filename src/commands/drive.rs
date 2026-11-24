@@ -1956,10 +1956,7 @@ async fn collect_list_items<S: AccountStore>(
     let mut total = 0_u32;
     let mut files = Vec::new();
 
-    loop {
-        let Some(page_size) = next_page_size(remaining) else {
-            break;
-        };
+    while let Some(page_size) = next_page_size(remaining) {
         let options = list_options(page_size, page_token.take(), query, files_url, kind);
 
         let page = list_files(client, &options)
@@ -2005,10 +2002,7 @@ async fn collect_list_items_drive_error<S: AccountStore, W: Write>(
     let mut total = 0_u32;
     let mut files = Vec::new();
 
-    loop {
-        let Some(page_size) = next_page_size(remaining) else {
-            break;
-        };
+    while let Some(page_size) = next_page_size(remaining) {
         let options = list_options(page_size, page_token.take(), query, files_url, kind);
 
         let page = list_files(client, &options).await?;
