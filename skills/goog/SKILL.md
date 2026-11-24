@@ -71,7 +71,7 @@ Delete it when the headless or automated run no longer needs it.
 - `goog drive convert` performs Office Conversion from an uploaded DOCX or XLSX file to a Document or Spreadsheet.
 - `goog drive mkdir` creates a folder.
 - `goog drive comments` lists a file's comments and replies.
-- `goog drive comment-create` creates an unanchored file comment.
+- `goog drive comment-create` creates an unanchored file comment; use `goog docs comment-create` to anchor a comment to Document text.
 - `goog drive comment-edit` replaces comment content.
 - `goog drive comment-reply` replies to a file comment.
 - `goog drive comment-resolve` resolves a comment with an optional reply.
@@ -84,6 +84,7 @@ Read [Google Drive](references/drive.md) before Drive work.
 
 - `goog docs list`, `create`, `copy`, `get`, and `map` discover and inspect documents.
 - `goog docs text`, `style`, `table`, `image`, `break`, `footnote`, `header`, `footer`, `list-format`, and `named-range` perform high-level edits.
+- `goog docs comment-create` adds a comment anchored to Document text, and `goog docs comments` and the other `comment-*` commands manage comments and replies.
 - `goog docs compare` checks semantic fidelity between documents.
 - `goog docs export-pdf` supports page-level visual inspection.
 - `goog docs batch-update` is the raw fallback when no high-level command fits.

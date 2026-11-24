@@ -276,6 +276,16 @@ pub(crate) struct CreateNamedRangeCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreateCommentCommand {
+    pub document_id: String,
+    pub content: String,
+    pub selector: RangeSelector,
+    pub dry_run: bool,
+    pub json: bool,
+    pub required_revision_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DeleteNamedRangeCommand {
     pub document_id: String,
     pub named_range_id: Option<String>,
@@ -429,6 +439,8 @@ struct DocsChangePreview {
     after: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     image_sizing: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -472,6 +484,7 @@ impl DocsChangePreview {
             before: None,
             after: None,
             image_sizing: None,
+            comment: None,
         }
     }
 
@@ -482,7 +495,13 @@ impl DocsChangePreview {
             before: Some(before),
             after: Some(after),
             image_sizing: None,
+            comment: None,
         }
+    }
+
+    fn with_comment(mut self, comment: &str) -> Self {
+        self.comment = Some(comment.into());
+        self
     }
 
     fn with_image_sizing(mut self, image_sizing: Option<serde_json::Value>) -> Self {
@@ -1741,6 +1760,47 @@ pub(crate) fn prepare_create_named_range_change(
     }))
 }
 
+const COMMENT_CONTENT_MAX_BYTES: usize = 2048;
+
+pub(crate) fn prepare_create_comment_change(
+    document_map: &DocumentMap,
+    command: &CreateCommentCommand,
+) -> Result<PreparedDocsChange> {
+    if command.content.trim().is_empty() {
+        bail!("comment content cannot be empty");
+    }
+    if command.content.len() > COMMENT_CONTENT_MAX_BYTES {
+        bail!(
+            "comment content is {} UTF-8 bytes; Google Docs accepts at most {COMMENT_CONTENT_MAX_BYTES}",
+            command.content.len()
+        );
+    }
+    let range = resolve_range_selector(document_map, &command.selector)?;
+    let request_body = request_body_with_revision(
+        vec![serde_json::json!({
+            "insertComment": {
+                "range": docs_range(&range),
+                "content": command.content
+            }
+        })],
+        command.required_revision_id.as_deref(),
+    );
+    Ok(PreparedDocsChange::HighLevel(DocsHighLevelChange {
+        revision_id: document_map.revision_id.clone(),
+        location: None,
+        range: Some(range.clone()),
+        request_body,
+        preview: DocsChangePreview::new(
+            "comment-create",
+            format!(
+                "Add a comment anchored to {}..{} in: {}",
+                range.start_index, range.end_index, range.preview
+            ),
+        )
+        .with_comment(&command.content),
+    }))
+}
+
 pub(crate) fn prepare_delete_named_range_change(
     document_map: &DocumentMap,
     command: &DeleteNamedRangeCommand,
@@ -2300,6 +2360,9 @@ fn write_high_level_change_preview(
     if let (Some(before), Some(after)) = (&change.preview.before, &change.preview.after) {
         writeln!(out, "Before: {before}").context("failed to write Docs dry-run before preview")?;
         writeln!(out, "After: {after}").context("failed to write Docs dry-run after preview")?;
+    }
+    if let Some(comment) = &change.preview.comment {
+        writeln!(out, "Comment: {comment}").context("failed to write Docs dry-run comment")?;
     }
     Ok(())
 }

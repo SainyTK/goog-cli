@@ -1567,6 +1567,160 @@ fn docs_export_pdf_parses_and_normalizes_document_url() {
 }
 
 #[test]
+fn docs_comment_create_parses_quote_anchor_and_normalizes_document_url() {
+    let Command::Docs { mut command } = parse(&[
+        "docs",
+        "comment-create",
+        "https://docs.google.com/document/d/document-123/edit?tab=t.0",
+        "--text",
+        "Rewrote this paragraph.",
+        "--quote",
+        "Project Plan",
+        "--match",
+        "2",
+        "--mention",
+        "reviewer@example.com",
+        "--dry-run",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+
+    command.normalize_document_id();
+    let DocsCommand::CommentCreate {
+        document_id,
+        text,
+        deleted,
+        mentions,
+        quote,
+        match_number,
+        from_index,
+        to_index,
+        dry_run,
+        ..
+    } = command
+    else {
+        panic!("unexpected Docs command");
+    };
+    assert_eq!(document_id, "document-123");
+    assert_eq!(text.as_deref(), Some("Rewrote this paragraph."));
+    assert_eq!(deleted, None);
+    assert_eq!(mentions, vec!["reviewer@example.com"]);
+    assert_eq!(quote.as_deref(), Some("Project Plan"));
+    assert_eq!(match_number, Some(2));
+    assert_eq!((from_index, to_index), (None, None));
+    assert!(dry_run);
+}
+
+#[test]
+fn docs_comment_create_accepts_deleted_without_text() {
+    let Command::Docs {
+        command:
+            DocsCommand::CommentCreate {
+                text,
+                deleted,
+                from_index,
+                to_index,
+                ..
+            },
+    } = parse(&[
+        "docs",
+        "comment-create",
+        "document-123",
+        "--deleted",
+        "Old sentence.",
+        "--from-index",
+        "14",
+        "--to-index",
+        "20",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(text, None);
+    assert_eq!(deleted.as_deref(), Some("Old sentence."));
+    assert_eq!((from_index, to_index), (Some(14), Some(20)));
+}
+
+#[test]
+fn docs_comment_create_requires_text_or_deleted() {
+    let err = help(&["docs", "comment-create", "document-123", "--quote", "Plan"]);
+    assert!(err.contains("--text"), "{err}");
+}
+
+#[test]
+fn docs_comment_management_commands_parse() {
+    let Command::Docs {
+        command: DocsCommand::Comments { document_id, open },
+    } = parse(&["docs", "comments", "document-123", "--open"])
+        .unwrap()
+        .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(document_id, "document-123");
+    assert!(open);
+
+    let Command::Docs {
+        command: DocsCommand::CommentResolve {
+            comment_id, text, ..
+        },
+    } = parse(&[
+        "docs",
+        "comment-resolve",
+        "document-123",
+        "--comment-id",
+        "comment-1",
+        "--text",
+        "Done.",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(comment_id, "comment-1");
+    assert_eq!(text.as_deref(), Some("Done."));
+
+    for args in [
+        [
+            "docs",
+            "comment-reply",
+            "document-123",
+            "--comment-id",
+            "comment-1",
+            "--text",
+            "Ok",
+        ]
+        .as_slice(),
+        [
+            "docs",
+            "comment-edit",
+            "document-123",
+            "--comment-id",
+            "comment-1",
+            "--text",
+            "Ok",
+        ]
+        .as_slice(),
+        [
+            "docs",
+            "comment-delete",
+            "document-123",
+            "--comment-id",
+            "comment-1",
+        ]
+        .as_slice(),
+    ] {
+        assert!(parse(args).is_ok(), "{args:?}");
+    }
+}
+
+#[test]
 fn docs_flat_footnote_commands_are_removed() {
     assert!(parse(&["docs", "insert-footnote", "document-123", "--at", "index:1",]).is_err());
 }

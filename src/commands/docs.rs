@@ -12,14 +12,15 @@ use crate::auth::unified_access::{AccessFuture, UnifiedAccess};
 use crate::cli::{
     DocsBreakCommand, DocsCommand, DocsCompareScope, DocsFooterCommand, DocsFootnoteCommand,
     DocsHeaderCommand, DocsImageCommand, DocsImageStaging, DocsMapType, DocsNamedRangeCommand,
-    DocsStyleCommand, DocsTableCommand, DocsTextCommand,
+    DocsStyleCommand, DocsTableCommand, DocsTextCommand, DriveCommand,
 };
 use crate::docs::{
     batch_update_document,
     change::{
         prepare_apply_list_change, prepare_apply_styles_change, prepare_configure_page_change,
         prepare_copy_named_styles_change, prepare_copy_page_style_change,
-        prepare_create_footer_change, prepare_create_footnote_change, prepare_create_header_change,
+        prepare_create_comment_change, prepare_create_footer_change,
+        prepare_create_footnote_change, prepare_create_header_change,
         prepare_create_named_range_change, prepare_delete_named_range_change,
         prepare_edit_table_change, prepare_insert_image_change, prepare_insert_page_break_change,
         prepare_insert_section_break_change, prepare_insert_table_change,
@@ -30,11 +31,12 @@ use crate::docs::{
         set_request_body_required_revision_id, split_docs_request_bodies,
         table_header_style_requests, write_docs_change_preview, ApplyListCommand,
         ApplyStylesCommand, ConfigurePageCommand, CopyNamedStylesCommand, CopyPageStyleCommand,
-        CreateFooterCommand, CreateFootnoteCommand, CreateHeaderCommand, CreateNamedRangeCommand,
-        DeleteNamedRangeCommand, EditTableCommand, InsertImageCommand, InsertImageFit,
-        InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand, InsertTextCommand,
-        PageFitOptions, PinTableHeaderRowsCommand, PreparedDocsChange, ReplaceTextCommand,
-        SetTableColumnWidthsCommand, StyleTableRowCommand, UpdateNamedStyleCommand,
+        CreateCommentCommand, CreateFooterCommand, CreateFootnoteCommand, CreateHeaderCommand,
+        CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand, InsertImageCommand,
+        InsertImageFit, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
+        InsertTextCommand, PageFitOptions, PinTableHeaderRowsCommand, PreparedDocsChange,
+        ReplaceTextCommand, SetTableColumnWidthsCommand, StyleTableRowCommand,
+        UpdateNamedStyleCommand,
     },
     copy_document, create_document, extract_style_template, get_document,
     image_fit::{exact_size_preserves_aspect_ratio, ImageFitConstraints},
@@ -1414,6 +1416,131 @@ pub fn run<S: AccountStore>(
                 None,
             ))
         }
+        DocsCommand::Comments { document_id, open } => super::drive::run(
+            DriveCommand::Comments {
+                file_id: document_id,
+                open,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        DocsCommand::CommentCreate {
+            document_id,
+            text,
+            deleted,
+            mentions,
+            quote,
+            match_number,
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            dry_run,
+            json,
+            required_revision_id,
+        } => {
+            let selector = comment_anchor_selector(
+                from_index,
+                to_index,
+                entry,
+                page,
+                line,
+                quote,
+                match_number,
+            )?;
+            let content =
+                compose_docs_comment_content(text.as_deref(), deleted.as_deref(), &mentions);
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_create_comment_unified_to(
+                config,
+                store,
+                account_override,
+                CreateCommentCommand {
+                    document_id,
+                    content,
+                    selector,
+                    dry_run,
+                    json,
+                    required_revision_id,
+                },
+                &mut std::io::stdout(),
+                None,
+                None,
+            ))
+        }
+        DocsCommand::CommentEdit {
+            document_id,
+            comment_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentEdit {
+                file_id: document_id,
+                comment_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        DocsCommand::CommentReply {
+            document_id,
+            comment_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentReply {
+                file_id: document_id,
+                comment_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        DocsCommand::CommentResolve {
+            document_id,
+            comment_id,
+            text,
+            mentions,
+        } => super::drive::run(
+            DriveCommand::CommentResolve {
+                file_id: document_id,
+                comment_id,
+                text,
+                mentions,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
+        DocsCommand::CommentDelete {
+            document_id,
+            comment_id,
+        } => super::drive::run(
+            DriveCommand::CommentDelete {
+                file_id: document_id,
+                comment_id,
+            },
+            config,
+            store,
+            account_override,
+            output_json_by_default,
+            quiet,
+        ),
         DocsCommand::NamedRange { command } => run_named_range_command(
             command,
             config,
@@ -3405,6 +3532,61 @@ pub(super) async fn run_create_named_range_unified_to<S: AccountStore>(
 }
 
 #[cfg(test)]
+pub(super) async fn run_create_comment_to<S: AccountStore>(
+    client: &AuthClient<'_, S>,
+    command: CreateCommentCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+) -> Result<()> {
+    let document_map = get_document_map(client, command.document_id.clone(), documents_url).await?;
+    let change = prepare_create_comment_change(&document_map, &command)?;
+    apply_or_preview_docs_change(
+        client,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+    )
+    .await
+}
+
+pub(super) async fn run_create_comment_unified_to<S: AccountStore>(
+    config: &Config,
+    store: &S,
+    account_override: Option<&str>,
+    command: CreateCommentCommand,
+    out: &mut impl Write,
+    documents_url: Option<&str>,
+    state_path: Option<&Path>,
+) -> Result<()> {
+    let document_map = get_document_map_unified(
+        config,
+        store,
+        account_override,
+        command.document_id.clone(),
+        documents_url,
+        state_path,
+    )
+    .await?;
+    let change = prepare_create_comment_change(&document_map, &command)?;
+    apply_or_preview_docs_change_unified(
+        config,
+        store,
+        account_override,
+        command.document_id,
+        change,
+        command.dry_run,
+        command.json,
+        out,
+        documents_url,
+        state_path,
+    )
+    .await
+}
+
+#[cfg(test)]
 pub(super) async fn run_delete_named_range_to<S: AccountStore>(
     client: &AuthClient<'_, S>,
     command: DeleteNamedRangeCommand,
@@ -4264,6 +4446,16 @@ fn trim_insert_at_value(value: &str) -> &str {
         .unwrap_or(value)
 }
 
+struct RangeSelectorFlags {
+    from_index: Option<i64>,
+    to_index: Option<i64>,
+    entry: Option<usize>,
+    page: Option<usize>,
+    line: Option<usize>,
+    text: Option<String>,
+    match_number: Option<usize>,
+}
+
 fn range_selector(
     from_index: Option<i64>,
     to_index: Option<i64>,
@@ -4273,13 +4465,75 @@ fn range_selector(
     text: Option<String>,
     match_number: Option<usize>,
 ) -> Result<RangeSelector> {
+    range_selector_from_flags(
+        RangeSelectorFlags {
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            text,
+            match_number,
+        },
+        "--text",
+    )
+}
+
+fn comment_anchor_selector(
+    from_index: Option<i64>,
+    to_index: Option<i64>,
+    entry: Option<usize>,
+    page: Option<usize>,
+    line: Option<usize>,
+    quote: Option<String>,
+    match_number: Option<usize>,
+) -> Result<RangeSelector> {
+    range_selector_from_flags(
+        RangeSelectorFlags {
+            from_index,
+            to_index,
+            entry,
+            page,
+            line,
+            text: quote,
+            match_number,
+        },
+        "--quote",
+    )
+}
+
+pub(super) fn compose_docs_comment_content(
+    text: Option<&str>,
+    deleted: Option<&str>,
+    mentions: &[String],
+) -> String {
+    let text = text.map(str::trim).filter(|text| !text.is_empty());
+    let body = match (deleted, text) {
+        (Some(deleted), Some(text)) => format!("Deleted: \"{deleted}\"\n{text}"),
+        (Some(deleted), None) => format!("Deleted: \"{deleted}\""),
+        (None, Some(text)) => text.to_string(),
+        (None, None) => String::new(),
+    };
+    super::drive::compose_comment_content(&body, mentions)
+}
+
+fn range_selector_from_flags(flags: RangeSelectorFlags, text_flag: &str) -> Result<RangeSelector> {
+    let RangeSelectorFlags {
+        from_index,
+        to_index,
+        entry,
+        page,
+        line,
+        text,
+        match_number,
+    } = flags;
     let selector_count = usize::from(from_index.is_some() || to_index.is_some())
         + usize::from(entry.is_some())
         + usize::from(page.is_some() || line.is_some())
         + usize::from(text.is_some() || match_number.is_some());
     if selector_count != 1 {
         bail!(
-            "provide exactly one range selector: --from-index with --to-index, --entry, --page with --line, or --text with optional --match"
+            "provide exactly one range selector: --from-index with --to-index, --entry, --page with --line, or {text_flag} with optional --match"
         );
     }
     if from_index.is_some() || to_index.is_some() {
@@ -4310,7 +4564,7 @@ fn range_selector(
         return Ok(RangeSelector::PageLine { page, line });
     }
     let Some(text) = text else {
-        bail!("--text is required when using --match");
+        bail!("{text_flag} is required when using --match");
     };
     Ok(RangeSelector::Text { text, match_number })
 }

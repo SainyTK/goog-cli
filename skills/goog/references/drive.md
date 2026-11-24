@@ -129,6 +129,7 @@ It follows Drive pagination automatically.
 Use `--open` to include only unresolved comments.
 The command works with Google Docs, Sheets, Slides, and other Drive files that support comments.
 `comment-create` creates an unanchored file comment.
+On a Document, the Docs editor lists it under "Original content deleted" and highlights no text; use `goog docs comment-create` to anchor a comment to Document text.
 Use the exact comment ID returned by `comments` when editing, replying, resolving, or deleting.
 Repeat `--mention EMAIL` to prefix email mentions.
 Include ordinary emoji directly in `--text` when desired.
