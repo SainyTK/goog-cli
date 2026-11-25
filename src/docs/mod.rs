@@ -14,9 +14,13 @@ pub(crate) mod page_layout;
 #[cfg(test)]
 mod page_layout_tests;
 pub mod style_template;
+pub(crate) mod suggestion;
 
 #[cfg(test)]
 mod change_tests;
+
+#[cfg(test)]
+mod suggestion_tests;
 
 #[cfg(test)]
 mod style_template_tests;
@@ -45,6 +49,9 @@ const OFFICE_FILE_PRECONDITION_STATUS: &str = "FAILED_PRECONDITION";
 const OFFICE_FILE_PRECONDITION_MESSAGE: &str = "must not be an Office file";
 const GOOGLE_DOC_MIME_TYPE: &str = "application/vnd.google-apps.document";
 const TEMPORARY_CONVERSION_NAME: &str = "goog temporary Docs conversion";
+const COMMENTS_VIEW_MODE_INCLUDED: &str = "COMMENTS_VIEW_MODE_INCLUDED";
+const SUGGESTIONS_INLINE: &str = "SUGGESTIONS_INLINE";
+const COMMENT_UPDATES_FAILED_STATE: &str = "ALL_FAILED_UNKNOWN_REASON";
 
 pub type Document = Value;
 pub type BatchUpdateResponse = Value;
@@ -82,6 +89,7 @@ pub struct GetDocumentOptions {
     pub document_id: String,
     pub fields: Option<String>,
     pub include_tabs_content: bool,
+    pub include_suggestion_threads: bool,
     documents_url: String,
     drive_files_url: String,
 }
@@ -141,6 +149,7 @@ impl GetDocumentOptions {
             document_id: document_id.into(),
             fields: None,
             include_tabs_content: false,
+            include_suggestion_threads: false,
             documents_url: DOCS_DOCUMENTS_URL.to_string(),
             drive_files_url: DRIVE_FILES_URL.to_string(),
         }
@@ -153,6 +162,12 @@ impl GetDocumentOptions {
 
     pub fn with_include_tabs_content(mut self, include_tabs_content: bool) -> Self {
         self.include_tabs_content = include_tabs_content;
+        self
+    }
+
+    pub fn with_suggestion_threads(mut self) -> Self {
+        self.include_suggestion_threads = true;
+        self.include_tabs_content = true;
         self
     }
 
@@ -175,6 +190,11 @@ impl GetDocumentOptions {
             }
             if self.include_tabs_content {
                 query.append_pair("includeTabsContent", "true");
+            }
+            if self.include_suggestion_threads {
+                query
+                    .append_pair("commentsViewMode", COMMENTS_VIEW_MODE_INCLUDED)
+                    .append_pair("suggestionsViewMode", SUGGESTIONS_INLINE);
             }
         }
         Ok(url)
@@ -307,7 +327,17 @@ pub async fn batch_update_document<S: AccountStore>(
         .await
         .map_err(DocsError::Auth)?;
 
-    parse_json_response(response).await
+    let response = parse_json_response(response).await?;
+    ensure_comment_updates_saved(&response)?;
+    Ok(response)
+}
+
+fn ensure_comment_updates_saved(response: &BatchUpdateResponse) -> Result<(), DocsError> {
+    let state = response.get("commentUpdateState").and_then(Value::as_str);
+    if state == Some(COMMENT_UPDATES_FAILED_STATE) {
+        return Err(DocsError::CommentUpdatesFailed);
+    }
+    Ok(())
 }
 
 async fn get_document_via_temporary_conversion<S: AccountStore>(
@@ -323,6 +353,9 @@ async fn get_document_via_temporary_conversion<S: AccountStore>(
         .with_drive_files_url(options.drive_files_url.clone());
     if let Some(fields) = &options.fields {
         temporary_options = temporary_options.with_fields(fields.clone());
+    }
+    if options.include_suggestion_threads {
+        temporary_options = temporary_options.with_suggestion_threads();
     }
 
     let response = send_json_request(

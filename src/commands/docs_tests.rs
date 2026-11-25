@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use wiremock::matchers::{body_json, header, method, path};
+use wiremock::matchers::{body_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use crate::auth::account::{AccountStore, Token};
@@ -22,6 +22,7 @@ use crate::docs::style_template::{
     load_style_template_in, save_style_template_in, ListStyleTemplate, NamedStyleTemplate,
     StyleTemplate, TextStyleTemplate,
 };
+use crate::docs::suggestion::{SuggestionAction, SuggestionSelection};
 use crate::docs::DOCS_SCOPE;
 use crate::drive::{DriveError, DRIVE_SCOPE};
 
@@ -2349,6 +2350,7 @@ async fn run_insert_text_dry_run_json_emits_request_without_mutating() {
             document_id: "document-123".into(),
             text: "Hello ".into(),
             selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            suggest: false,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -2428,6 +2430,7 @@ async fn run_insert_text_dry_run_json_resolves_exact_heading_and_text_selectors(
                 document_id: "document-123".into(),
                 text: "Hello ".into(),
                 selector,
+                suggest: false,
                 dry_run: true,
                 json: true,
                 required_revision_id: None,
@@ -2477,6 +2480,7 @@ async fn run_replace_text_dry_run_json_emits_request_without_mutating() {
             new_text: "updated copy".into(),
             match_number: None,
             all: false,
+            suggest: false,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-search".into()),
@@ -2548,6 +2552,7 @@ async fn run_replace_text_all_dry_run_orders_requests_from_document_end() {
             new_text: "Strategy".into(),
             match_number: None,
             all: true,
+            suggest: false,
             dry_run: true,
             json: true,
             required_revision_id: None,
@@ -2626,6 +2631,7 @@ async fn run_insert_text_posts_resolved_batch_update_request() {
             document_id: "document-123".into(),
             text: "Hello ".into(),
             selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            suggest: false,
             dry_run: false,
             json: false,
             required_revision_id: Some("rev-search".into()),
@@ -2697,6 +2703,7 @@ async fn run_replace_text_posts_selected_match_batch_update_request() {
             new_text: "Strategy".into(),
             match_number: Some(2),
             all: false,
+            suggest: false,
             dry_run: false,
             json: false,
             required_revision_id: Some("rev-search".into()),
@@ -2734,6 +2741,7 @@ async fn run_insert_text_rejects_ambiguous_text_anchor_with_candidates() {
             document_id: "document-123".into(),
             text: "Hello ".into(),
             selector: InsertTextSelector::BeforeText("Plan".into()),
+            suggest: false,
             dry_run: false,
             json: false,
             required_revision_id: None,
@@ -2777,6 +2785,7 @@ async fn run_replace_text_rejects_ambiguous_match_with_candidates() {
             new_text: "Strategy".into(),
             match_number: None,
             all: false,
+            suggest: false,
             dry_run: false,
             json: false,
             required_revision_id: None,
@@ -7284,4 +7293,309 @@ fn document_with_multiple_inline_images() -> serde_json::Value {
             ]
         }
     })
+}
+
+#[tokio::test]
+async fn run_insert_text_with_suggest_sends_suggest_write_mode() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{
+                "insertText": { "location": { "index": 37 }, "text": "Hello " }
+            }],
+            "writeControl": { "requiredRevisionId": "rev-search", "writeMode": "SUGGEST" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "commentUpdateState": "ALL_SAVED",
+            "suggestionResponses": [{ "createdSuggestionIds": ["suggest.placeholder-1"] }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    run_insert_text_to(
+        &client,
+        InsertTextCommand {
+            document_id: "document-123".into(),
+            text: "Hello ".into(),
+            selector: InsertTextSelector::PageLine { page: 2, line: 1 },
+            suggest: true,
+            dry_run: false,
+            json: false,
+            required_revision_id: Some("rev-search".into()),
+        },
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["suggestionResponses"][0]["createdSuggestionIds"][0],
+        "suggest.placeholder-1"
+    );
+}
+
+#[tokio::test]
+async fn run_batch_update_fails_when_docs_could_not_save_suggestions() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{}],
+            "commentUpdateState": "ALL_FAILED_UNKNOWN_REASON"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let request_body = serde_json::json!({
+        "requests": [{ "insertText": { "location": { "index": 1 }, "text": "Hi" } }],
+        "writeControl": { "writeMode": "SUGGEST" }
+    });
+    let mut input = std::io::Cursor::new(request_body.to_string());
+    let mut out = Vec::new();
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+
+    let err = run_batch_update_to(
+        &client,
+        "document-123".into(),
+        "-".into(),
+        &mut input,
+        &mut out,
+        Some(&documents_url),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        format!("{err:#}").contains("failed to save the comments or suggestions"),
+        "{err:#}"
+    );
+    assert!(out.is_empty());
+}
+
+fn suggestion_threads_document() -> serde_json::Value {
+    serde_json::json!({
+        "suggestions": [
+            { "suggestionId": "suggest.open-1", "status": "OPEN", "summaryText": "Add: \"very\"" },
+            { "suggestionId": "suggest.accepted", "status": "ACCEPTED", "summaryText": "Delete: \"fox\"" },
+            { "suggestionId": "suggest.open-2", "status": "OPEN", "summaryText": "Format: bold" }
+        ]
+    })
+}
+
+async fn mount_suggestion_threads(server: &MockServer, document: serde_json::Value) {
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .and(query_param("includeTabsContent", "true"))
+        .and(query_param(
+            "commentsViewMode",
+            "COMMENTS_VIEW_MODE_INCLUDED",
+        ))
+        .and(query_param("suggestionsViewMode", "SUGGESTIONS_INLINE"))
+        .and(query_param(
+            "fields",
+            crate::docs::suggestion::SUGGESTION_THREAD_FIELDS,
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(document))
+        .expect(1)
+        .mount(server)
+        .await;
+}
+
+fn suggestion_target<'a>(
+    config: &'a Config,
+    store: &'a MemoryStore,
+    documents_url: &'a str,
+    state_path: &'a std::path::Path,
+) -> DocsUnifiedTarget<'a, MemoryStore> {
+    DocsUnifiedTarget {
+        config,
+        store,
+        account_override: None,
+        document_id: "document-123".into(),
+        documents_url: Some(documents_url),
+        state_path: Some(state_path),
+    }
+}
+
+#[tokio::test]
+async fn run_list_suggestions_reads_threads_and_keeps_only_open_ones() {
+    let server = MockServer::start().await;
+    mount_suggestion_threads(&server, suggestion_threads_document()).await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_list_suggestions_unified_to(
+        suggestion_target(&config, &store, &documents_url, &state_path),
+        true,
+        &mut out,
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let ids = output["suggestions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|thread| thread["suggestionId"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, ["suggest.open-1", "suggest.open-2"]);
+}
+
+#[tokio::test]
+async fn run_suggestion_action_rejects_every_open_suggestion_in_one_batch_update() {
+    let server = MockServer::start().await;
+    mount_suggestion_threads(&server, suggestion_threads_document()).await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [
+                { "rejectSuggestion": { "suggestionId": "suggest.open-1" } },
+                { "rejectSuggestion": { "suggestionId": "suggest.open-2" } }
+            ]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "commentUpdateState": "ALL_SAVED",
+            "suggestionResponses": [
+                { "rejectedSuggestionIds": ["suggest.open-1"] },
+                { "rejectedSuggestionIds": ["suggest.open-2"] }
+            ]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_suggestion_action_unified_to(
+        suggestion_target(&config, &store, &documents_url, &state_path),
+        SuggestionAction::Reject,
+        SuggestionSelection::AllOpen,
+        &mut out,
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["suggestionResponses"][1]["rejectedSuggestionIds"][0],
+        "suggest.open-2"
+    );
+}
+
+#[tokio::test]
+async fn run_suggestion_action_accepts_named_suggestions() {
+    let server = MockServer::start().await;
+    mount_suggestion_threads(&server, suggestion_threads_document()).await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{ "acceptSuggestion": { "suggestionId": "suggest.open-2" } }]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "suggestionResponses": [{ "acceptedSuggestionIds": ["suggest.open-2"] }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+
+    run_suggestion_action_unified_to(
+        suggestion_target(&config, &store, &documents_url, &state_path),
+        SuggestionAction::Accept,
+        SuggestionSelection::Ids(vec!["suggest.open-2".into()]),
+        &mut out,
+    )
+    .await
+    .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["suggestionResponses"][0]["acceptedSuggestionIds"][0],
+        "suggest.open-2"
+    );
+}
+
+#[tokio::test]
+async fn run_suggestion_action_does_not_write_for_unknown_ids_or_when_nothing_is_open() {
+    let config = multi_account_config();
+    let store = multi_account_store();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let state_path = temp_dir.path().join("state.toml");
+
+    let server = MockServer::start().await;
+    mount_suggestion_threads(&server, suggestion_threads_document()).await;
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+    let err = run_suggestion_action_unified_to(
+        suggestion_target(&config, &store, &documents_url, &state_path),
+        SuggestionAction::Delete,
+        SuggestionSelection::Ids(vec!["suggest.gone".into()]),
+        &mut out,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("no suggestion with ID suggest.gone"),
+        "{err}"
+    );
+    assert!(out.is_empty());
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+
+    let server = MockServer::start().await;
+    mount_suggestion_threads(&server, serde_json::json!({})).await;
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+    run_suggestion_action_unified_to(
+        suggestion_target(&config, &store, &documents_url, &state_path),
+        SuggestionAction::Accept,
+        SuggestionSelection::AllOpen,
+        &mut out,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        String::from_utf8(out).unwrap(),
+        "{\"documentId\":\"document-123\",\"suggestionResponses\":[]}\n"
+    );
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }

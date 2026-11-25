@@ -24,6 +24,7 @@
   - Tables
   - Lists
   - Comments on changed text
+  - Suggested edits
   - Visual verification
   - Learn unfamiliar commands
 
@@ -56,6 +57,7 @@
 - Use `goog docs table` for inserting and populating tables.
 - Use `goog docs image`, `break`, `footnote`, `header`, `footer`, `list-format`, and `named-range` for their named document features.
 - Use `goog docs comment-create` to mark changed or removed text with a comment anchored to the text.
+- Use `--suggest` on `goog docs text insert` and `text replace` when the owner should accept or reject each change, and `goog docs suggestions` with `suggestion-accept`, `suggestion-reject`, and `suggestion-delete` to review suggestions.
 - Use `goog docs export-pdf` for page-level visual QA.
 
 Use `goog docs batch-update` only when no high-level command supports the required operation.
@@ -435,7 +437,7 @@ target/debug/goog docs text insert DOCUMENT_ID $'Executive summary\n' --at index
 target/debug/goog docs text insert DOCUMENT_ID $'Decision\n' --at before-heading:Appendix
 target/debug/goog docs text insert DOCUMENT_ID 'Approved' --at after-text:'Status: '
 target/debug/goog docs text search DOCUMENT_ID 'revenue'
-target/debug/goog docs text replace DOCUMENT_ID 'Draft' 'Final' --dry-run --json
+target/debug/goog docs text replace DOCUMENT_ID --find 'Draft' --replace 'Final' --dry-run --json
 ```
 
 Quote selectors and text containing spaces.
@@ -665,6 +667,38 @@ The reply carries `replies[0].insertComment.commentThread` with `commentId` and 
 Run `goog docs comments DOCUMENT_ID --open` afterwards and check that every change has one comment and that each `quotedFileContent.value` is the intended text.
 Manage threads with `comment-reply`, `comment-resolve`, `comment-edit`, and `comment-delete`.
 Do not use `goog drive comment-create` for this, because the Docs editor shows those comments under "Original content deleted" without highlighting any text.
+
+### Suggested edits
+
+Use suggestions when the document owner should decide on each change.
+Add `--suggest` to `text insert` or `text replace`:
+
+```bash
+target/debug/goog docs text replace DOCUMENT_ID --find 'Draft' --replace 'Final' --suggest --dry-run
+target/debug/goog docs text replace DOCUMENT_ID --find 'Draft' --replace 'Final' --suggest
+target/debug/goog docs text insert DOCUMENT_ID 'Approved. ' --at after-text:'Status: ' --suggest
+```
+
+The Docs editor shows inserted text in color and replaced text struck through, with a suggestion card per change such as `Replace: "Draft" with "Final"`.
+The reply lists new suggestion IDs under `suggestionResponses[].createdSuggestionIds`.
+A change next to an earlier suggestion by the same account merges into it and appears under `updatedSummarySuggestionIds`.
+An account with comment access can suggest, which makes `--suggest` the way to edit a document shared for comment.
+Suggested insertions and deletions keep their place in the document's indexes until they are accepted or rejected, and `docs map` and `text search` still see that text.
+
+Review suggestions, including ones made in the Docs editor:
+
+```bash
+target/debug/goog docs suggestions DOCUMENT_ID --open
+target/debug/goog docs suggestion-accept DOCUMENT_ID --suggestion-id SUGGESTION_ID
+target/debug/goog docs suggestion-reject DOCUMENT_ID --all
+target/debug/goog docs suggestion-delete DOCUMENT_ID --suggestion-id SUGGESTION_ID
+```
+
+Accepting needs edit access.
+Rejecting needs edit access or authorship of the suggestion.
+`suggestion-delete` withdraws your own suggestions and removes their threads.
+For suggested style, list, table, or image changes, send a `docs batch-update` body with `"writeControl": {"writeMode": "SUGGEST"}`.
+If Docs reports that it could not save the suggestions, the command fails and the change may have been applied directly, so check the document.
 
 ### Visual verification
 

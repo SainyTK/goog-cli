@@ -144,6 +144,12 @@ _Avoid_: Accuracy score, certainty
 A write precondition that requires the Document revision to match a caller-provided revision ID before applying a high-level edit or raw Batch Update.
 _Avoid_: Version check, optimistic lock
 
+**Suggestion**:
+A pending change to a Document, made in the Docs editor's Suggesting mode or by a Batch Update whose write mode is `SUGGEST`, that someone with edit access accepts or rejects.
+Each Suggestion has a suggestion ID and a thread with a status of open, accepted, or rejected.
+Its author can withdraw it, which deletes the Suggestion and its thread.
+_Avoid_: Track change, proposed edit, revision
+
 **Location Selector**:
 A command argument or group of arguments that resolves to one Document Location, such as an index, a page plus content line, or a heading/text anchor. High-level Docs write commands use Location Selectors instead of requiring raw Batch Update request bodies.
 _Avoid_: Query, cursor selector, coordinate selector
