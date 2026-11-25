@@ -281,7 +281,6 @@ The conversion uses 96 source pixels per inch and 72 Google Docs points per inch
 For JPEG images, EXIF orientations 5 through 8 swap the encoded width and height so fitting uses the displayed orientation.
 `goog docs map DOCUMENT_ID --type images --json` reports each image's native point dimensions in `layoutMetadata.size`.
 Local images use cleanup-aware Drive public staging by default, or a JSON stdin and stdout adapter when public Drive sharing is unavailable.
-See [Local Docs image staging](docs/local-docs-image-staging.md) for both backend contracts and cleanup behavior.
 
 ### Sheets
 

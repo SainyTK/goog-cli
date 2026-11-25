@@ -6,7 +6,7 @@ use super::source::{read_deck_source, SlideColumnsDefinition};
 fn reads_the_release_readiness_benchmark_from_yaml() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/examples/slides/release-readiness.yaml"
+        "/tests/fixtures/slides/release-readiness.yaml"
     );
 
     let source = read_deck_source(path, &mut io::empty()).unwrap();

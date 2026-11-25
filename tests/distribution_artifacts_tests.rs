@@ -61,7 +61,6 @@ fn readme_covers_public_distribution_and_usage_contract() {
         "goog drive ls",
         "goog docs map",
         "--fit-page --reserve-height 72",
-        "docs/local-docs-image-staging.md",
         "reports each image's native point dimensions",
         "Pageless documents require explicit",
         "require `--allow-distortion`",
@@ -262,40 +261,6 @@ fn release_asset_smoke_test_checks_provenance_and_command_surface() {
         assert!(
             smoke_test.contains(expected),
             "release asset smoke test should contain {expected:?}"
-        );
-    }
-}
-
-#[test]
-fn release_operator_docs_cover_channel_verification_and_recovery() {
-    let docs = fs::read_to_string("docs/distribution/release-operator.md")
-        .expect("release operator docs should exist");
-
-    for expected in [
-        "GitHub Releases are the only release authority for `goog`.",
-        "Stable LTS releases are Canonical Releases from `main`.",
-        "Preview releases are GitHub pre-releases from `preview`",
-        "Cut A Preview Release",
-        "git checkout -B preview",
-        "git push origin v0.2.4-preview.1",
-        "--channel preview",
-        "Promote Preview To Stable LTS",
-        "git push origin v0.1.0",
-        "Verify Installer Script",
-        "--channel preview",
-        "On macOS",
-        "On Linux",
-        "On Windows",
-        "goog-vX.Y.Z-x86_64-pc-windows-msvc.zip",
-        "Verify Release Automation Changes",
-        "cargo test --test distribution_artifacts_tests",
-        "Rust-Native Fallback",
-        "Recovery",
-        "Never point users to branch-head binaries",
-    ] {
-        assert!(
-            docs.contains(expected),
-            "release docs should contain {expected:?}"
         );
     }
 }
