@@ -3,10 +3,10 @@ use std::io::{self, Write};
 use super::source::{read_deck_source, SlideColumnsDefinition};
 
 #[test]
-fn reads_the_responsible_ai_benchmark_from_yaml() {
+fn reads_the_release_readiness_benchmark_from_yaml() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/examples/slides/responsible-ai.yaml"
+        "/examples/slides/release-readiness.yaml"
     );
 
     let source = read_deck_source(path, &mut io::empty()).unwrap();
@@ -21,7 +21,7 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
             .metadata
             .get("subject")
             .map(String::as_str),
-        Some("Responsible AI measurement for banking virtual assistants")
+        Some("Release readiness for a mobile app")
     );
     assert_eq!(source.quality.minimum_font_size, Some(9.0));
     assert_eq!(source.quality.minimum_text_contrast, Some(4.5));
@@ -84,11 +84,11 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     assert_eq!(source.slides[0].key, "cover");
     assert_eq!(
         source.slides[0].eyebrow.as_deref(),
-        Some("BANKING VIRTUAL ASSISTANT")
+        Some("MOBILE APP RELEASES")
     );
     assert_eq!(
         source.slides[0].title.as_deref(),
-        Some("Responsible AI measurement for banking virtual assistants")
+        Some("Release readiness for a mobile app")
     );
     assert_eq!(
         source.slides[0].subtitle.as_deref(),
@@ -96,35 +96,35 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     );
     assert_eq!(
         source.slides[0].footer.as_deref(),
-        Some("Risk-tiered evidence | Independent challenge | Customer outcome monitoring")
+        Some("Risk-tiered checks | Independent review | User outcome monitoring")
     );
     assert_eq!(
         source.slides[1].statement.as_deref(),
-        Some("A correct sentence can still create an unsafe banking outcome.")
+        Some("A green build can still ship a broken journey.")
     );
     assert_eq!(
         source.slides[1].body.as_deref(),
         Some(
-            "Wrong information conflicts with approved fees, limits, rates, or product terms. Improper guidance can steer a customer toward unsuitable credit or suppress a complaint. Unauthorized actions change money, access, or obligations without valid confirmation. Failed recovery leaves the assistant unable to hand off, reverse, or contain a harmful interaction."
+            "Wrong content shows outdated prices, plans, or feature descriptions. Confusing flows send a user to the wrong screen or hide the way back. Unsafe changes alter settings, data, or purchases without a clear confirmation. Failed recovery leaves the app unable to retry, undo, or show a useful error."
         )
     );
     assert_eq!(
         source.slides[1].takeaway.as_deref(),
-        Some("Measure the conversation, the action, and the customer outcome.")
+        Some("Check the screen, the action, and the user outcome.")
     );
     assert_eq!(
         source.slides[4].owner.as_deref(),
-        Some("Product quality and Model Risk | Release and weekly review")
+        Some("Product quality and Engineering | Release and weekly review")
     );
     assert_eq!(source.slides[9].items.len(), 4);
     assert_eq!(
         source.slides[9].items[0].key.as_deref(),
-        Some("critical-harms")
+        Some("blocker-bugs")
     );
-    assert_eq!(source.slides[9].items[0].title, "Critical harms");
+    assert_eq!(source.slides[9].items[0].title, "Blocker bugs");
     assert_eq!(
         source.slides[9].items[0].body,
-        "No unresolved critical safety, conduct, security, privacy, or action failure"
+        "No open blocker bug in data, purchases, login, security, or privacy"
     );
     let SlideColumnsDefinition::Definitions(risk_columns) =
         source.slides[2].columns.as_ref().unwrap()
@@ -132,97 +132,87 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         panic!("expected structured comparison columns");
     };
     assert_eq!(risk_columns.len(), 3);
-    assert_eq!(risk_columns[0].key, "information");
-    assert_eq!(
-        risk_columns[0].title.as_deref(),
-        Some("Tier 1 | Information")
-    );
+    assert_eq!(risk_columns[0].key, "content");
+    assert_eq!(risk_columns[0].title.as_deref(), Some("Tier 1 | Content"));
     assert_eq!(
         risk_columns[0].summary.as_deref(),
-        Some("Branch hours, navigation, and approved product facts")
+        Some("Help pages, navigation, and static product copy")
     );
     assert_eq!(risk_columns[0].sections.len(), 2);
-    assert_eq!(risk_columns[0].sections[0].label, "PRIMARY CONTROL");
+    assert_eq!(risk_columns[0].sections[0].label, "PRIMARY CHECK");
     assert_eq!(
         risk_columns[0].sections[0].body,
-        "Approved knowledge, citation checks, and safe uncertainty"
+        "Content review, link checks, and empty states"
     );
     let SlideColumnsDefinition::Definitions(table_columns) =
         source.slides[3].columns.as_ref().unwrap()
     else {
         panic!("expected structured evidence-table columns");
     };
-    assert_eq!(table_columns[0].label.as_deref(), Some("What to measure"));
+    assert_eq!(table_columns[0].label.as_deref(), Some("What to check"));
     assert_eq!(table_columns[0].width, Some(0.23));
     assert_eq!(source.slides[3].rows.len(), 7);
-    assert_eq!(source.slides[3].rows[0].key, "valid-reliable");
-    assert_eq!(
-        source.slides[3].rows[0].cells["dimension"],
-        "Valid and reliable"
-    );
+    assert_eq!(source.slides[3].rows[0].key, "functional");
+    assert_eq!(source.slides[3].rows[0].cells["dimension"], "Functional");
     assert_eq!(
         source.slides[3].rows[0].cells["method"],
-        "Risk-tiered golden-set replay and dual review"
+        "Scripted journey replay on every supported device class"
     );
     assert_eq!(
         source.slides[3].rows[0].cells["evidence"],
-        "Task success; unsupported claims | weekly"
+        "Journey pass rate; open defects | every build"
     );
     assert_eq!(source.slides[6].rows.len(), 5);
     assert_eq!(source.slides[4].stages.len(), 4);
-    assert_eq!(source.slides[4].stages[0].key, "stratify");
-    assert_eq!(source.slides[4].stages[0].title, "Stratify");
+    assert_eq!(source.slides[4].stages[0].key, "map");
+    assert_eq!(source.slides[4].stages[0].title, "Map");
     assert_eq!(
         source.slides[4].stages[0].body.as_deref(),
-        Some("Cover journey, risk tier, language, channel, customer state, and edge cases.")
+        Some("Cover journey, risk tier, device, locale, account state, and edge cases.")
     );
     assert_eq!(source.slides[8].stages.len(), 4);
-    assert_eq!(source.slides[8].stages[0].key, "disclose-ai");
-    assert_eq!(source.slides[8].stages[0].title, "Disclose AI");
+    assert_eq!(source.slides[8].stages[0].key, "show-state");
+    assert_eq!(source.slides[8].stages[0].title, "Show state");
     assert_eq!(
         source.slides[8].stages[0].test.as_deref(),
-        Some("Customer recognizes the assistant and its limits")
+        Some("User sees what the app is doing and why")
     );
     assert_eq!(
         source.slides[8].stages[0].measure.as_deref(),
-        Some("Disclosure comprehension")
+        Some("Status clarity")
     );
     let evidence = source.slides[4].evidence.as_ref().unwrap();
-    assert_eq!(evidence.title, "Score four layers, then inspect failures");
+    assert_eq!(evidence.title, "Check four layers, then inspect failures");
     assert_eq!(evidence.items.len(), 4);
     assert_eq!(evidence.items[0].key.as_deref(), Some("automated"));
     assert_eq!(evidence.items[0].title, "Automated");
     assert_eq!(
         evidence.items[0].body,
-        "Retrieval precision, groundedness, and policy rule checks"
+        "Unit, integration, and end-to-end suites on every build"
     );
     assert_eq!(source.slides[5].groups.len(), 2);
     assert_eq!(source.slides[5].groups[0].key, "unacceptable-outcomes");
     assert_eq!(source.slides[5].groups[0].title, "Unacceptable outcomes");
     assert_eq!(source.slides[5].groups[0].cards.len(), 4);
-    assert_eq!(source.slides[5].groups[0].cards[0].key, "customer-harm");
-    assert_eq!(source.slides[5].groups[0].cards[0].title, "Customer harm");
+    assert_eq!(source.slides[5].groups[0].cards[0].key, "data-loss");
+    assert_eq!(source.slides[5].groups[0].cards[0].title, "Data loss");
     assert_eq!(
         source.slides[5].groups[0].cards[0].body,
-        "Misleading fees, unsuitable guidance, and denied complaint access"
+        "Lost drafts, overwritten settings, and failed sync without warning"
     );
     assert_eq!(source.slides[7].steps.len(), 4);
     assert_eq!(source.slides[7].steps[0].key, "sample");
     assert_eq!(source.slides[7].steps[0].title, "Sample");
     assert_eq!(
         source.slides[7].steps[0].body,
-        "Stratify by journey, risk tier, language, dialect, accessibility, and lawful cohort."
+        "Cover device class, OS version, screen size, locale, text size, and input method."
     );
     assert_eq!(source.slides[10].signals.len(), 4);
-    assert_eq!(source.slides[10].signals[0].key, "customer-outcome");
-    assert_eq!(source.slides[10].signals[0].title, "Customer outcome");
+    assert_eq!(source.slides[10].signals[0].key, "user-outcome");
+    assert_eq!(source.slides[10].signals[0].title, "User outcome");
     assert_eq!(
         source.slides[10].signals[0].items,
-        [
-            "Task completion",
-            "Repeat contact",
-            "Complaint and detriment"
-        ]
+        ["Task completion", "Retry rate", "Support tickets"]
     );
     assert_eq!(source.slides[10].milestones.len(), 5);
     assert_eq!(source.slides[10].milestones[0].key, "detect");
@@ -238,12 +228,12 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
     assert_eq!(
         source.slides[11].milestones[0].body.as_deref(),
         Some(
-            "Choose a bounded customer journey. Define risk tier, approved sources, harm taxonomy, owners, and golden set."
+            "Choose one bounded user journey. Define risk tier, devices, failure list, owners, and test set."
         )
     );
     assert_eq!(
         source.slides[11].milestones[0].exit.as_deref(),
-        Some("Independent validation confirms the evidence is complete.")
+        Some("Independent review confirms the evidence is complete.")
     );
     assert_eq!(
         source.slides[5].columns,
@@ -254,21 +244,21 @@ fn reads_the_responsible_ai_benchmark_from_yaml() {
         Some(SlideColumnsDefinition::Count(2))
     );
     assert_eq!(source.slides[12].sources.len(), 8);
-    assert_eq!(source.slides[12].sources[0].key, "nist-ai-rmf");
+    assert_eq!(source.slides[12].sources[0].key, "apple-hig");
     assert_eq!(
         source.slides[12].sources[0].title,
-        "NIST AI RMF 1.0 and Core"
+        "Apple Human Interface Guidelines"
     );
     assert_eq!(
         source.slides[12].sources[0].note,
-        "Trustworthiness characteristics and the Govern, Map, Measure, and Manage lifecycle."
+        "Platform conventions for navigation, feedback, confirmation, and system integration."
     );
     assert_eq!(source.slides[13].questions.len(), 4);
     assert_eq!(source.slides[13].questions[0].key, "capability");
-    assert_eq!(source.slides[13].questions[0].title, "What can it do?");
+    assert_eq!(source.slides[13].questions[0].title, "What does it change?");
     assert_eq!(
         source.slides[13].questions[0].body,
-        "Scope, risk tier, permissions, and prohibited outcomes"
+        "Scope, risk tier, permissions, and outcomes it must never cause"
     );
     assert_eq!(source.slides[13].key, "operating-principle");
 }
@@ -488,7 +478,7 @@ slides:
     questions:
       - key: capability
         title: What can it do?
-        body: Scope, risk tier, permissions, and prohibited outcomes
+        body: Scope, risk tier, permissions, and outcomes it must never cause
 "#,
         r#"{
             "schemaVersion": 1,
@@ -501,7 +491,7 @@ slides:
                 "questions": [{
                     "key": "capability",
                     "title": "What can it do?",
-                    "body": "Scope, risk tier, permissions, and prohibited outcomes"
+                    "body": "Scope, risk tier, permissions, and outcomes it must never cause"
                 }]
             }]
         }"#,
@@ -515,7 +505,7 @@ slides:
         assert_eq!(question.title, "What can it do?");
         assert_eq!(
             question.body,
-            "Scope, risk tier, permissions, and prohibited outcomes"
+            "Scope, risk tier, permissions, and outcomes it must never cause"
         );
     }
 }
@@ -1022,7 +1012,7 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     emphasis: high
 "#,
@@ -1032,7 +1022,7 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "safe-and-fair-conduct",
+                "key": "failure-modes",
                 "pattern": "cards",
                 "emphasis": "high"
             }]
@@ -1055,7 +1045,7 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     emphasis: 42
 "#,
@@ -1065,7 +1055,7 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "safe-and-fair-conduct",
+                "key": "failure-modes",
                 "pattern": "cards",
                 "emphasis": ["high"]
             }]
@@ -1090,7 +1080,7 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     density: compact
 "#,
@@ -1100,7 +1090,7 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "safe-and-fair-conduct",
+                "key": "failure-modes",
                 "pattern": "cards",
                 "density": "compact"
             }]
@@ -1123,7 +1113,7 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     density: 42
 "#,
@@ -1133,7 +1123,7 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "safe-and-fair-conduct",
+                "key": "failure-modes",
                 "pattern": "cards",
                 "density": ["compact"]
             }]
@@ -1162,8 +1152,8 @@ slides:
     pattern: statement-and-list
     items:
       - key: 42
-        title: Critical harms
-        body: No unresolved critical failures
+        title: Blocker bugs
+        body: No open blocker bugs
 "#,
         r#"{
             "schemaVersion": 1,
@@ -1174,9 +1164,9 @@ slides:
                 "key": "release-governance",
                 "pattern": "statement-and-list",
                 "items": [{
-                    "key": "critical-harms",
-                    "title": "Critical harms",
-                    "body": ["No unresolved critical failures"]
+                    "key": "blocker-bugs",
+                    "title": "Blocker bugs",
+                    "body": ["No open blocker bugs"]
                 }]
             }]
         }"#,
@@ -1189,9 +1179,9 @@ slides:
                 "key": "release-governance",
                 "pattern": "statement-and-list",
                 "items": [{
-                    "key": "critical-harms",
-                    "title": ["Critical harms"],
-                    "body": "No unresolved critical failures"
+                    "key": "blocker-bugs",
+                    "title": ["Blocker bugs"],
+                    "body": "No open blocker bugs"
                 }]
             }]
         }"#,
@@ -1222,8 +1212,8 @@ slides:
   - key: release-governance
     pattern: statement-and-list
     items:
-      - title: Critical harms
-        body: No unresolved critical failures
+      - title: Blocker bugs
+        body: No open blocker bugs
         emphasis: high
 "#;
 
@@ -1242,7 +1232,7 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     columns: true
 "#;
@@ -1416,7 +1406,7 @@ slides:
     rows:
       - key: safe
         dimension: Safe
-        method: Red-team harmful actions
+        method: Stress-test purchase flows
         evidence: Severe breach | live
 "#,
         r#"{
@@ -1430,7 +1420,7 @@ slides:
                 "rows": [{
                     "key": "safe",
                     "dimension": "Safe",
-                    "method": "Red-team harmful actions",
+                    "method": "Stress-test purchase flows",
                     "evidence": "Severe breach | live"
                 }]
             }]
@@ -1443,7 +1433,7 @@ slides:
 
         assert_eq!(row.key, "safe");
         assert_eq!(row.cells["dimension"], "Safe");
-        assert_eq!(row.cells["method"], "Red-team harmful actions");
+        assert_eq!(row.cells["method"], "Stress-test purchase flows");
         assert_eq!(row.cells["evidence"], "Severe breach | live");
     }
 }
@@ -1567,8 +1557,8 @@ slides:
   - key: human-control
     pattern: process
     stages:
-      - key: disclose-ai
-        title: Disclose AI
+      - key: show-state
+        title: Show state
         test: 42
 "#,
             "slides[0].stages[0].test",
@@ -1583,9 +1573,9 @@ slides:
                 "key": "human-control",
                 "pattern": "process",
                 "stages": [{
-                    "key": "disclose-ai",
-                    "title": "Disclose AI",
-                    "measure": {"name": "Disclosure comprehension"}
+                    "key": "show-state",
+                    "title": "Show state",
+                    "measure": {"name": "Status clarity"}
                 }]
             }]
         }"#,
@@ -1614,11 +1604,11 @@ slides:
   - key: human-control
     pattern: process
     stages:
-      - key: disclose-ai
-        title: Disclose AI
-        body: Explain the assistant's limits.
-        test: Customer recognizes the assistant and its limits
-        measure: Disclosure comprehension
+      - key: show-state
+        title: Show state
+        body: Show what the app is doing.
+        test: User sees what the app is doing and why
+        measure: Status clarity
 "#,
         r#"{
             "schemaVersion": 1,
@@ -1629,11 +1619,11 @@ slides:
                 "key": "human-control",
                 "pattern": "process",
                 "stages": [{
-                    "key": "disclose-ai",
-                    "title": "Disclose AI",
-                    "body": "Explain the assistant's limits.",
-                    "test": "Customer recognizes the assistant and its limits",
-                    "measure": "Disclosure comprehension"
+                    "key": "show-state",
+                    "title": "Show state",
+                    "body": "Show what the app is doing.",
+                    "test": "User sees what the app is doing and why",
+                    "measure": "Status clarity"
                 }]
             }]
         }"#,
@@ -1643,17 +1633,14 @@ slides:
         let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
         let stage = &source.slides[0].stages[0];
 
-        assert_eq!(stage.key, "disclose-ai");
-        assert_eq!(stage.title, "Disclose AI");
-        assert_eq!(
-            stage.body.as_deref(),
-            Some("Explain the assistant's limits.")
-        );
+        assert_eq!(stage.key, "show-state");
+        assert_eq!(stage.title, "Show state");
+        assert_eq!(stage.body.as_deref(), Some("Show what the app is doing."));
         assert_eq!(
             stage.test.as_deref(),
-            Some("Customer recognizes the assistant and its limits")
+            Some("User sees what the app is doing and why")
         );
-        assert_eq!(stage.measure.as_deref(), Some("Disclosure comprehension"));
+        assert_eq!(stage.measure.as_deref(), Some("Status clarity"));
     }
 }
 
@@ -1699,7 +1686,7 @@ slides:
       items:
         - key: automated
           title: Automated
-          body: Retrieval precision, groundedness, and policy rule checks
+          body: Unit, integration, and end-to-end suites on every build
 "#,
         r#"{
             "schemaVersion": 1,
@@ -1714,7 +1701,7 @@ slides:
                     "items": [{
                         "key": "automated",
                         "title": "Automated",
-                        "body": "Retrieval precision, groundedness, and policy rule checks"
+                        "body": "Unit, integration, and end-to-end suites on every build"
                     }]
                 }
             }]
@@ -1731,7 +1718,7 @@ slides:
         assert_eq!(evidence.items[0].title, "Automated");
         assert_eq!(
             evidence.items[0].body,
-            "Retrieval precision, groundedness, and policy rule checks"
+            "Unit, integration, and end-to-end suites on every build"
         );
     }
 }
@@ -1768,7 +1755,7 @@ slides:
                     "items": [{
                         "key": "automated",
                         "title": "Automated",
-                        "body": ["Retrieval precision"]
+                        "body": ["Unit suites"]
                     }]
                 }
             }]
@@ -1822,7 +1809,7 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     groups:
       - key: 42
@@ -1838,7 +1825,7 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "safe-and-fair-conduct",
+                "key": "failure-modes",
                 "pattern": "cards",
                 "groups": [{
                     "key": "unacceptable-outcomes",
@@ -1856,14 +1843,14 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     groups:
       - key: unacceptable-outcomes
         title: Unacceptable outcomes
         cards:
           - key: 42
-            title: Customer harm
+            title: Data loss
             body: Misleading fees
 "#,
             "slides[0].groups[0].cards[0].key",
@@ -1875,14 +1862,14 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "safe-and-fair-conduct",
+                "key": "failure-modes",
                 "pattern": "cards",
                 "groups": [{
                     "key": "unacceptable-outcomes",
                     "title": "Unacceptable outcomes",
                     "cards": [{
-                        "key": "customer-harm",
-                        "title": {"text": "Customer harm"},
+                        "key": "data-loss",
+                        "title": {"text": "Data loss"},
                         "body": "Misleading fees"
                     }]
                 }]
@@ -1897,14 +1884,14 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     groups:
       - key: unacceptable-outcomes
         title: Unacceptable outcomes
         cards:
-          - key: customer-harm
-            title: Customer harm
+          - key: data-loss
+            title: Data loss
             body: 42
 "#,
             "slides[0].groups[0].cards[0].body",
@@ -1929,15 +1916,15 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     groups:
       - key: unacceptable-outcomes
         title: Unacceptable outcomes
         cards:
-          - key: customer-harm
-            title: Customer harm
-            body: Misleading fees and unsuitable guidance
+          - key: data-loss
+            title: Data loss
+            body: Lost drafts and failed sync
 "#,
         r#"{
             "schemaVersion": 1,
@@ -1945,15 +1932,15 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "safe-and-fair-conduct",
+                "key": "failure-modes",
                 "pattern": "cards",
                 "groups": [{
                     "key": "unacceptable-outcomes",
                     "title": "Unacceptable outcomes",
                     "cards": [{
-                        "key": "customer-harm",
-                        "title": "Customer harm",
-                        "body": "Misleading fees and unsuitable guidance"
+                        "key": "data-loss",
+                        "title": "Data loss",
+                        "body": "Lost drafts and failed sync"
                     }]
                 }]
             }]
@@ -1967,12 +1954,9 @@ slides:
         assert_eq!(group.key, "unacceptable-outcomes");
         assert_eq!(group.title, "Unacceptable outcomes");
         assert_eq!(group.cards.len(), 1);
-        assert_eq!(group.cards[0].key, "customer-harm");
-        assert_eq!(group.cards[0].title, "Customer harm");
-        assert_eq!(
-            group.cards[0].body,
-            "Misleading fees and unsuitable guidance"
-        );
+        assert_eq!(group.cards[0].key, "data-loss");
+        assert_eq!(group.cards[0].title, "Data loss");
+        assert_eq!(group.cards[0].body, "Lost drafts and failed sync");
     }
 }
 
@@ -1986,12 +1970,12 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: safe-and-fair-conduct
+  - key: failure-modes
     pattern: cards
     groups:
       - key: unacceptable-outcomes
         title: Unacceptable outcomes
-        description: Severe customer harms
+        description: Severe data loss
         cards: []
 "#,
             "slides[0].groups[0].description",
@@ -2003,14 +1987,14 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "safe-and-fair-conduct",
+                "key": "failure-modes",
                 "pattern": "cards",
                 "groups": [{
                     "key": "unacceptable-outcomes",
                     "title": "Unacceptable outcomes",
                     "cards": [{
-                        "key": "customer-harm",
-                        "title": "Customer harm",
+                        "key": "data-loss",
+                        "title": "Data loss",
                         "body": "Misleading fees",
                         "severity": "critical"
                     }]
@@ -2039,12 +2023,12 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: fairness
+  - key: device-coverage
     pattern: comparison
     steps:
       - key: sample
         title: Sample
-        body: Stratify by journey and risk tier.
+        body: Cover device class and OS version.
 "#,
         r#"{
             "schemaVersion": 1,
@@ -2052,12 +2036,12 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "fairness",
+                "key": "device-coverage",
                 "pattern": "comparison",
                 "steps": [{
                     "key": "sample",
                     "title": "Sample",
-                    "body": "Stratify by journey and risk tier."
+                    "body": "Cover device class and OS version."
                 }]
             }]
         }"#,
@@ -2069,7 +2053,7 @@ slides:
 
         assert_eq!(step.key, "sample");
         assert_eq!(step.title, "Sample");
-        assert_eq!(step.body, "Stratify by journey and risk tier.");
+        assert_eq!(step.body, "Cover device class and OS version.");
     }
 }
 
@@ -2083,12 +2067,12 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: fairness
+  - key: device-coverage
     pattern: comparison
     steps:
       - key: 42
         title: Sample
-        body: Stratify by journey and risk tier.
+        body: Cover device class and OS version.
 "#,
             "slides[0].steps[0].key",
         ),
@@ -2099,12 +2083,12 @@ slides:
             "theme": {},
             "quality": {},
             "slides": [{
-                "key": "fairness",
+                "key": "device-coverage",
                 "pattern": "comparison",
                 "steps": [{
                     "key": "sample",
                     "title": ["Sample"],
-                    "body": "Stratify by journey and risk tier."
+                    "body": "Cover device class and OS version."
                 }]
             }]
         }"#,
@@ -2117,7 +2101,7 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: fairness
+  - key: device-coverage
     pattern: comparison
     steps:
       - key: sample
@@ -2145,13 +2129,13 @@ presentation: {}
 theme: {}
 quality: {}
 slides:
-  - key: fairness
+  - key: device-coverage
     pattern: comparison
     steps:
       - key: sample
         title: Sample
-        body: Stratify by journey and risk tier.
-        owner: Responsible AI
+        body: Cover device class and OS version.
+        owner: Quality engineering
 "#;
 
     let error = read_deck_source("-", &mut io::Cursor::new(source)).unwrap_err();
@@ -2173,11 +2157,11 @@ slides:
   - key: ongoing-monitoring
     pattern: timeline
     signals:
-      - key: customer-outcome
-        title: Customer outcome
+      - key: user-outcome
+        title: User outcome
         items:
           - Task completion
-          - Repeat contact
+          - Retry rate
 "#,
         r#"{
             "schemaVersion": 1,
@@ -2188,9 +2172,9 @@ slides:
                 "key": "ongoing-monitoring",
                 "pattern": "timeline",
                 "signals": [{
-                    "key": "customer-outcome",
-                    "title": "Customer outcome",
-                    "items": ["Task completion", "Repeat contact"]
+                    "key": "user-outcome",
+                    "title": "User outcome",
+                    "items": ["Task completion", "Retry rate"]
                 }]
             }]
         }"#,
@@ -2200,9 +2184,9 @@ slides:
         let source = read_deck_source("-", &mut io::Cursor::new(source)).unwrap();
         let signal = &source.slides[0].signals[0];
 
-        assert_eq!(signal.key, "customer-outcome");
-        assert_eq!(signal.title, "Customer outcome");
-        assert_eq!(signal.items, ["Task completion", "Repeat contact"]);
+        assert_eq!(signal.key, "user-outcome");
+        assert_eq!(signal.title, "User outcome");
+        assert_eq!(signal.items, ["Task completion", "Retry rate"]);
     }
 }
 
@@ -2220,7 +2204,7 @@ slides:
     pattern: timeline
     signals:
       - key: 42
-        title: Customer outcome
+        title: User outcome
         items: []
 "#,
             "slides[0].signals[0].key",
@@ -2235,8 +2219,8 @@ slides:
                 "key": "ongoing-monitoring",
                 "pattern": "timeline",
                 "signals": [{
-                    "key": "customer-outcome",
-                    "title": ["Customer outcome"],
+                    "key": "user-outcome",
+                    "title": ["User outcome"],
                     "items": []
                 }]
             }]
@@ -2253,8 +2237,8 @@ slides:
   - key: ongoing-monitoring
     pattern: timeline
     signals:
-      - key: customer-outcome
-        title: Customer outcome
+      - key: user-outcome
+        title: User outcome
         items:
           - 42
 "#,
@@ -2282,8 +2266,8 @@ slides:
   - key: ongoing-monitoring
     pattern: timeline
     signals:
-      - key: customer-outcome
-        title: Customer outcome
+      - key: user-outcome
+        title: User outcome
         items: []
         cadence: weekly
 "#;
@@ -2312,7 +2296,7 @@ slides:
     milestones:
       - key: baseline
         title: Baseline one journey
-        body: Choose a bounded customer journey.
+        body: Choose one bounded user journey.
         exit: Independent validation confirms the evidence is complete.
 "#,
         r#"{
@@ -2326,7 +2310,7 @@ slides:
                 "milestones": [{
                     "key": "baseline",
                     "title": "Baseline one journey",
-                    "body": "Choose a bounded customer journey.",
+                    "body": "Choose one bounded user journey.",
                     "exit": "Independent validation confirms the evidence is complete."
                 }]
             }]
@@ -2341,7 +2325,7 @@ slides:
         assert_eq!(milestone.title, "Baseline one journey");
         assert_eq!(
             milestone.body.as_deref(),
-            Some("Choose a bounded customer journey.")
+            Some("Choose one bounded user journey.")
         );
         assert_eq!(
             milestone.exit.as_deref(),
@@ -2479,7 +2463,7 @@ fn yaml_and_json_sources_have_semantic_parity() {
     let mut yaml = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
     write!(
         yaml,
-        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\n  patternDefaults:\n    footer: {{showSlideNumber: true, line: rule}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    eyebrow: INTRODUCTION\n    title: Hello\n    subtitle: A concise overview\n    footer: Internal\n    statement: Measure the outcome\n    body: Explain the evidence\n    takeaway: Act on the evidence\n    owner: Product quality\n    items:\n      - title: Critical harms\n        body: No unresolved critical failures\n    columns: 2\n"
+        "schemaVersion: 1\npresentation: {{}}\ntheme:\n  fonts:\n    heading:\n      family: Arial\n      fallbacks: [sans-serif]\n  typeStyles:\n    title:\n      font: heading\n      size: 30\n      weight: bold\n      lineSpacing: 1.05\n      alignment: start\n      color: ink\n  spacing:\n    pageMargin: 42\n  fills:\n    panel: panel\n  outlines:\n    panel:\n      color: rule\n      width: 1\n  lines:\n    rule:\n      color: rule\n      width: 1\n  geometry:\n    safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n    footer: {{height: 18, gap: 12}}\n  patternDefaults:\n    footer: {{showSlideNumber: true, line: rule}}\nquality:\n  minimumFontSize: 9\n  minimumTextContrast: 4.5\n  safeArea: {{top: 24, right: 24, bottom: 24, left: 24}}\n  requiredAltText: true\n  allowedOverlapGroups: [intentional]\nslides:\n  - key: cover\n    pattern: cover\n    eyebrow: INTRODUCTION\n    title: Hello\n    subtitle: A concise overview\n    footer: Internal\n    statement: Measure the outcome\n    body: Explain the evidence\n    takeaway: Act on the evidence\n    owner: Product quality\n    items:\n      - title: Blocker bugs\n        body: No open blocker bugs\n    columns: 2\n"
     )
     .unwrap();
     let mut json = tempfile::Builder::new().suffix(".json").tempfile().unwrap();
@@ -2533,8 +2517,8 @@ fn yaml_and_json_sources_have_semantic_parity() {
                 "takeaway": "Act on the evidence",
                 "owner": "Product quality",
                 "items": [{{
-                    "title": "Critical harms",
-                    "body": "No unresolved critical failures"
+                    "title": "Blocker bugs",
+                    "body": "No open blocker bugs"
                 }}],
                 "columns": 2
             }}]
@@ -2591,7 +2575,7 @@ assets:
   hero:
     url: https://example.com/hero.png
     checksum: sha256:0123456789abcdef
-    altText: A customer reviewing account information
+    altText: A user reviewing account settings
     placementPolicy: cover
 quality: {}
 slides: []
@@ -2604,7 +2588,7 @@ slides: []
                 "hero": {
                     "url": "https://example.com/hero.png",
                     "checksum": "sha256:0123456789abcdef",
-                    "altText": "A customer reviewing account information",
+                    "altText": "A user reviewing account settings",
                     "placementPolicy": "cover"
                 }
             },
@@ -2621,7 +2605,7 @@ slides: []
         assert_eq!(hero.checksum, "sha256:0123456789abcdef");
         assert_eq!(
             hero.alt_text.as_deref(),
-            Some("A customer reviewing account information")
+            Some("A user reviewing account settings")
         );
         assert_eq!(hero.placement_policy, "cover");
     }
@@ -2661,7 +2645,7 @@ assets:
   hero:
     url: https://example.com/hero.png
     checksum: sha256:0123456789abcdef
-    altText: A customer reviewing account information
+    altText: A user reviewing account settings
     placementPolicy: cover
     license: internal
 quality: {}
@@ -2688,7 +2672,7 @@ assets:
   hero:
     url: 42
     checksum: sha256:0123456789abcdef
-    altText: A customer reviewing account information
+    altText: A user reviewing account settings
     placementPolicy: cover
 quality: {}
 slides: []
@@ -2704,7 +2688,7 @@ slides: []
                 "hero": {
                     "url": "https://example.com/hero.png",
                     "checksum": ["sha256:0123456789abcdef"],
-                    "altText": "A customer reviewing account information",
+                    "altText": "A user reviewing account settings",
                     "placementPolicy": "cover"
                 }
             },
@@ -2738,7 +2722,7 @@ slides: []
                 "hero": {
                     "url": "https://example.com/hero.png",
                     "checksum": "sha256:0123456789abcdef",
-                    "altText": "A customer reviewing account information",
+                    "altText": "A user reviewing account settings",
                     "placementPolicy": {"fit": "cover"}
                 }
             },

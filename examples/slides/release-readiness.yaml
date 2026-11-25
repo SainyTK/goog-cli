@@ -1,0 +1,500 @@
+schemaVersion: 1
+
+presentation:
+  aspectRatio: wide
+  language: en
+  speakerNotes: omit
+  metadata:
+    subject: Release readiness for a mobile app
+
+theme:
+  colors:
+    canvas: "#FFFFFF"
+    ink: "#111111"
+    text: "#292929"
+    muted: "#555555"
+    panel: "#EDEDED"
+    rule: "#B8BCC4"
+    accent: "#FF6B35"
+  fonts:
+    heading:
+      family: Arial
+      fallbacks:
+        - sans-serif
+    body:
+      family: Arial
+      fallbacks:
+        - sans-serif
+  typeStyles:
+    title:
+      font: heading
+      size: 30
+      weight: bold
+      lineSpacing: 1.05
+      alignment: start
+      color: ink
+    subtitle:
+      font: body
+      size: 15
+      lineSpacing: 1.2
+      alignment: start
+      color: muted
+    body:
+      font: body
+      size: 12
+      lineSpacing: 1.25
+      alignment: start
+      color: text
+    label:
+      font: body
+      size: 9
+      weight: bold
+      lineSpacing: 1
+      alignment: start
+      color: muted
+  spacing:
+    pageMargin: 42
+    sectionGap: 18
+    itemGap: 12
+  fills:
+    canvas: canvas
+    panel: panel
+    accent: accent
+  outlines:
+    panel:
+      color: rule
+      width: 1
+  lines:
+    rule:
+      color: rule
+      width: 1
+  geometry:
+    safeArea:
+      top: 24
+      right: 24
+      bottom: 24
+      left: 24
+    footer:
+      height: 18
+      gap: 12
+  patternDefaults:
+    footer:
+      showSlideNumber: true
+      line: rule
+
+quality:
+  minimumFontSize: 9
+  minimumTextContrast: 4.5
+  safeArea:
+    top: 24
+    right: 24
+    bottom: 24
+    left: 24
+  requiredAltText: true
+  allowedOverlapGroups: []
+
+slides:
+  - key: cover
+    pattern: cover
+    eyebrow: MOBILE APP RELEASES
+    title: Release readiness for a mobile app
+    subtitle: A practical framework for testing, release approval, and live monitoring
+    footer: Risk-tiered checks | Independent review | User outcome monitoring
+
+  - key: why-readiness-changes
+    pattern: statement
+    eyebrow: WHY READINESS CHANGES
+    title: Passing builds miss broken journeys
+    subtitle: An app can pass every automated check while a real user still gets stuck.
+    statement: A green build can still ship a broken journey.
+    body: >-
+      Wrong content shows outdated prices, plans, or feature descriptions.
+      Confusing flows send a user to the wrong screen or hide the way back.
+      Unsafe changes alter settings, data, or purchases without a clear confirmation.
+      Failed recovery leaves the app unable to retry, undo, or show a useful error.
+    takeaway: Check the screen, the action, and the user outcome.
+
+  - key: risk-tiering
+    pattern: comparison
+    eyebrow: RISK PROPORTIONALITY
+    title: Risk tiering sets the testing effort
+    subtitle: Classify the most consequential feature in the release, not the average screen.
+    columns:
+      - key: content
+        title: Tier 1 | Content
+        summary: Help pages, navigation, and static product copy
+        sections:
+          - label: PRIMARY CHECK
+            body: Content review, link checks, and empty states
+          - label: RELEASE EVIDENCE
+            body: Screenshot comparison and copy review
+      - key: flows
+        title: Tier 2 | Flows
+        summary: Onboarding, search, settings, and notifications
+        sections:
+          - label: PRIMARY CHECK
+            body: Journey tests, accessibility checks, and clear error states
+          - label: RELEASE EVIDENCE
+            body: Device matrix runs, usability review, and analytics events
+      - key: transactions
+        title: Tier 3 | Transactions
+        summary: Purchases, account changes, and data sync
+        sections:
+          - label: PRIMARY CHECK
+            body: Explicit confirmation, idempotent requests, and safe retries
+          - label: RELEASE EVIDENCE
+            body: Failure injection, zero open blocker bugs, and rollback proof
+    takeaway: Higher-impact features need stronger tests, tighter review, and faster rollback.
+
+  - key: readiness-framework
+    pattern: evidence-table
+    eyebrow: READINESS FRAMEWORK
+    title: Seven areas define the release checklist
+    subtitle: Every area needs a test method, a measure, a cadence, and an owner.
+    columns:
+      - key: dimension
+        label: What to check
+        width: 0.23
+      - key: method
+        label: How to test it
+        width: 0.45
+      - key: evidence
+        label: Evidence and cadence
+        width: 0.32
+    rows:
+      - key: functional
+        dimension: Functional
+        method: Scripted journey replay on every supported device class
+        evidence: Journey pass rate; open defects | every build
+      - key: performance
+        dimension: Performance
+        method: Cold start, scroll, and network timing on low-end devices
+        evidence: Start time; frame drops | weekly
+      - key: reliability
+        dimension: Reliability
+        method: Offline mode, slow networks, interrupted sync, and restarts
+        evidence: Crash-free sessions; recovery | live
+      - key: security
+        dimension: Security
+        method: Dependency audit, token storage review, and API abuse tests
+        evidence: Open findings; patch age | monthly
+      - key: accessibility
+        dimension: Accessibility
+        method: Screen reader passes, contrast checks, and large text layouts
+        evidence: Blocking issues; coverage | monthly
+      - key: privacy
+        dimension: Privacy
+        method: Inspect logs, analytics payloads, and local storage for personal data
+        evidence: Leaks; retention violations | live
+      - key: localization
+        dimension: Localization
+        method: Pseudo-locale runs, right-to-left layouts, and translation review
+        evidence: Truncation; missing strings | each release
+    takeaway: Release gate - named owner, independent review, and complete test record.
+
+  - key: functional-quality
+    pattern: process
+    eyebrow: FUNCTIONAL QUALITY
+    title: Quality starts with representative journeys
+    subtitle: A single happy path cannot represent devices, locales, account states, and edge cases.
+    statement: Build tests from real user journeys.
+    stages:
+      - key: map
+        title: Map
+        body: Cover journey, risk tier, device, locale, account state, and edge cases.
+      - key: specify
+        title: Specify
+        body: Link every expected result to a design, product rule, or acceptance criterion.
+      - key: review
+        title: Review
+        body: Pair-review high-risk journeys and resolve disagreements before release.
+      - key: refresh
+        title: Refresh
+        body: Add escaped bugs, design changes, new devices, and newly used features.
+    evidence:
+      title: Check four layers, then inspect failures
+      items:
+        - key: automated
+          title: Automated
+          body: Unit, integration, and end-to-end suites on every build
+        - key: manual
+          title: Manual
+          body: Exploratory sessions, visual review, and edge-case walkthroughs
+        - key: outcome
+          title: Outcome
+          body: Task success, retries, support tickets, and abandoned flows
+        - key: drift
+          title: Drift
+          body: Device mix, OS versions, feature usage, and flaky test rate
+    takeaway: Do not let a high pass rate hide a blocker bug.
+    owner: Product quality and Engineering | Release and weekly review
+
+  - key: failure-modes
+    pattern: cards
+    eyebrow: FAILURE MODES
+    title: Testing starts with the failures that matter
+    subtitle: List the outcomes the release must never cause before writing test cases.
+    columns: 2
+    groups:
+      - key: unacceptable-outcomes
+        title: Unacceptable outcomes
+        cards:
+          - key: data-loss
+            title: Data loss
+            body: Lost drafts, overwritten settings, and failed sync without warning
+          - key: broken-purchase
+            title: Broken purchase
+            body: Double charges, missing receipts, and unlocked content not delivered
+          - key: blocked-user
+            title: Blocked user
+            body: Login loops, dead-end screens, and missing back navigation
+          - key: silent-failure
+            title: Silent failure
+            body: Swallowed errors, stale data, and actions that look done but are not
+      - key: test-method
+        title: Test method
+        cards:
+          - key: scenario-library
+            title: Scenario library
+            body: Real journeys, past incidents, support tickets, and store reviews
+          - key: stress-variants
+            title: Stress variants
+            body: Poor networks, low storage, background kills, interrupted flows, and long sessions
+          - key: severity-review
+            title: Severity review
+            body: Rate user impact, reversibility, reach, and detectability
+          - key: regression-gate
+            title: Regression gate
+            body: Every confirmed bug becomes a permanent release test
+    takeaway: Gate blocker bugs at zero open cases.
+    footer: Measure - blocker bugs | crash-free sessions | recovery success
+
+  - key: secure-private-resilient
+    pattern: evidence-table
+    eyebrow: SECURE, PRIVATE, AND RESILIENT
+    title: Tests must assume hostile conditions
+    subtitle: Test the complete path, including storage, network, permissions, and recovery.
+    columns:
+      - key: threat
+        label: Threat
+        width: 0.2
+      - key: method
+        label: How to test
+        width: 0.5
+      - key: evidence
+        label: Evidence
+        width: 0.3
+    rows:
+      - key: insecure-storage
+        threat: Insecure storage
+        method: Inspect keychain, preferences, caches, and backups for tokens and secrets
+        evidence: Exposed secrets and readable tokens
+      - key: api-abuse
+        threat: API abuse
+        method: Replay, tamper, and flood requests from a modified client
+        evidence: Accepted tampered requests and missing rate limits
+      - key: permission-misuse
+        threat: Permission misuse
+        method: Deny, revoke, and restore camera, location, and notification permissions
+        evidence: Crashes, dead ends, and unexpected prompts
+      - key: stale-data
+        threat: Stale data
+        method: Serve outdated, conflicting, and partial responses from the backend
+        evidence: Conflict handling and stale-screen rate
+      - key: service-failure
+        threat: Service failure
+        method: Break dependencies, slow responses, expire sessions, and corrupt state
+        evidence: Safe fallback, recovery time, and duplicate-request prevention
+    takeaway: Least privilege, confirmation for consequential actions, and safe fallback are product requirements.
+
+  - key: device-coverage
+    pattern: comparison
+    eyebrow: DEVICE COVERAGE
+    title: Coverage is a matched-result question
+    subtitle: Run the same journey on equivalent setups and change only the variable under test.
+    statement: Same journey + same account + same network
+    columns:
+      - key: setup-a
+        title: Setup A
+        body: Reference device and OS version
+      - key: setup-b
+        title: Setup B
+        body: One controlled change
+    takeaway: Compare task success, errors, layout, timing, and visual quality.
+    steps:
+      - key: sample
+        title: Sample
+        body: Cover device class, OS version, screen size, locale, text size, and input method.
+      - key: compare
+        title: Compare
+        body: Use pass-rate gaps across runs instead of isolated screenshots.
+      - key: diagnose
+        title: Diagnose
+        body: Trace differences to layout, platform APIs, assets, network handling, or test setup.
+      - key: retest
+        title: Retest
+        body: Close the fix only after the gap is gone and no new regression appears.
+    owner: Quality engineering | Release and quarterly review
+
+  - key: user-control
+    pattern: process
+    eyebrow: CLEAR, RECOVERABLE, AND USER-CONTROLLED
+    title: Users must stay in control at every step
+    subtitle: Confirmations and errors help only when users can understand and act on them.
+    stages:
+      - key: show-state
+        title: Show state
+        test: User sees what the app is doing and why
+        measure: Status clarity
+      - key: confirm-action
+        title: Confirm action
+        test: User confirms before anything costly happens
+        measure: Confirmation coverage
+      - key: explain-error
+        title: Explain error
+        test: Error message says what failed and what to do next
+        measure: Error comprehension
+      - key: undo-change
+        title: Undo change
+        test: User can reverse a change without contacting support
+        measure: Undo and retry success
+    takeaway: Where the app changes data or spends money, the user must see and confirm the exact change.
+
+  - key: release-governance
+    pattern: statement-and-list
+    eyebrow: ACCOUNTABLE RELEASE GOVERNANCE
+    title: Release decisions need explicit gates
+    subtitle: An average score cannot override a failed blocker check.
+    statement: NO GATE | NO RELEASE
+    items:
+      - key: blocker-bugs
+        title: Blocker bugs
+        body: No open blocker bug in data, purchases, login, security, or privacy
+      - key: evidence-complete
+        title: Evidence complete
+        body: Required devices, stress cases, accessibility checks, and test logs are present
+      - key: independent-review
+        title: Independent review
+        body: Sign-off comes from reviewers outside the feature team
+      - key: operations-ready
+        title: Operations ready
+        body: Alerts, feature flags, rollback, on-call owners, and user messaging are tested
+    takeaway: Quality targets set the thresholds. Blocker checks remain mandatory.
+    owner: Product owner, quality engineering, and release management
+
+  - key: ongoing-monitoring
+    pattern: timeline
+    eyebrow: ONGOING MONITORING
+    title: Monitoring turns incidents into better tests
+    subtitle: Production signals must update the test set, checks, and release decision.
+    signals:
+      - key: user-outcome
+        title: User outcome
+        items:
+          - Task completion
+          - Retry rate
+          - Support tickets
+      - key: stability
+        title: Stability
+        items:
+          - Crash rate
+          - Hang rate
+          - Error screens
+      - key: security-privacy
+        title: Security and privacy
+        items:
+          - Abuse attempt
+          - Data exposure
+          - Token misuse
+      - key: operations
+        title: Operations
+        items:
+          - Latency and availability
+          - Fallback success
+          - Recovery time
+    milestones:
+      - key: detect
+        title: Detect
+      - key: triage
+        title: Triage
+      - key: contain
+        title: Contain
+      - key: add-regression
+        title: Add regression
+      - key: approve-change
+        title: Approve change
+    owner: Operations with on-call escalation | Continuous alerts, weekly review, periodic audit
+
+  - key: implementation-path
+    pattern: timeline
+    eyebrow: IMPLEMENTATION PATH
+    title: Start small, then expand the test system
+    subtitle: Widen the rollout only after testing and rollback are repeatable.
+    milestones:
+      - key: baseline
+        title: Baseline one journey
+        body: Choose one bounded user journey. Define risk tier, devices, failure list, owners, and test set.
+        exit: Independent review confirms the evidence is complete.
+      - key: staged-rollout
+        title: Run a staged rollout
+        body: Limit users and exposure. Keep feature flags, live alerts, incident handling, and rollback active.
+        exit: Metrics are stable and open incidents are resolved and retested.
+      - key: scale
+        title: Scale by risk tier
+        body: Add locales, devices, features, and journeys in order of impact, reusing approved checks and tests.
+        exit: The test record and monitoring loop work consistently at the new scope.
+    takeaway: Scale the test system before scaling the rollout.
+
+  - key: source-basis
+    pattern: sources
+    eyebrow: APPENDIX | SOURCE BASIS AND SCOPE
+    title: The framework uses three layers of guidance
+    subtitle: Platform guidelines, accessibility standards, and mobile security guidance inform different checks.
+    columns: 2
+    sources:
+      - key: apple-hig
+        title: Apple Human Interface Guidelines
+        note: Platform conventions for navigation, feedback, confirmation, and system integration.
+      - key: material-design
+        title: Material Design 3
+        note: Android components, states, motion, and adaptive layout guidance.
+      - key: app-store-review
+        title: App Store Review Guidelines
+        note: Store requirements for purchases, privacy, and app completeness.
+      - key: google-play-policy
+        title: Google Play Developer Policy
+        note: Store requirements for permissions, data safety, and user data.
+      - key: wcag-22
+        title: WCAG 2.2
+        note: Contrast, text sizing, focus order, and assistive technology support.
+      - key: owasp-masvs
+        title: OWASP MASVS
+        note: Mobile storage, network, authentication, and resilience requirements.
+      - key: owasp-mastg
+        title: OWASP MASTG
+        note: Test procedures that check each MASVS requirement.
+      - key: android-vitals
+        title: Android vitals
+        note: Crash, ANR, startup, and rendering thresholds used by the store.
+    footer: Confirm the current version of each guideline before release.
+
+  - key: operating-principle
+    pattern: closing
+    eyebrow: THE OPERATING PRINCIPLE
+    title: Release readiness is an ongoing practice
+    subtitle: The team should be able to answer four questions at any time.
+    statement: Evidence must stay connected to ownership, user outcomes, and the ability to stop or roll back.
+    questions:
+      - key: capability
+        title: What does it change?
+        body: Scope, risk tier, permissions, and outcomes it must never cause
+      - key: evidence
+        title: How do we know it works?
+        body: Test evidence, devices, severity, and independent review
+      - key: failure
+        title: What happens when it fails?
+        body: Fallback, containment, rollback, user messaging, and regression test
+      - key: authority
+        title: Who can stop or change it?
+        body: Named owner, release manager, approval record, and kill switch
+    takeaway: Approve the release only when evidence, ownership, and monitoring agree.
