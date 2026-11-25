@@ -224,6 +224,7 @@ fn text_changes_build_native_requests_and_compatible_dry_run_preview() {
             document_id: "document-123".into(),
             text: "Hello ".into(),
             selector: InsertTextSelector::Index(9),
+            suggest: false,
             dry_run: true,
             json: true,
             required_revision_id: Some("rev-required".into()),
@@ -251,6 +252,7 @@ fn text_changes_build_native_requests_and_compatible_dry_run_preview() {
             new_text: "Strategy".into(),
             match_number: None,
             all: false,
+            suggest: false,
             dry_run: true,
             json: true,
             required_revision_id: None,
@@ -1226,4 +1228,73 @@ fn range(start_index: i64, end_index: i64) -> DocumentRange {
         },
         preview: format!("{start_index}..{end_index}"),
     }
+}
+
+#[test]
+fn suggested_text_changes_set_suggest_write_mode_beside_the_revision_guard() {
+    let document_map = searchable_map();
+
+    let insert = prepare_insert_text_change(
+        &document_map,
+        &InsertTextCommand {
+            document_id: "document-123".into(),
+            text: "Hello ".into(),
+            selector: InsertTextSelector::Index(9),
+            suggest: true,
+            dry_run: true,
+            json: true,
+            required_revision_id: Some("rev-required".into()),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        preview_json(&insert)["requestBody"]["writeControl"],
+        json!({ "requiredRevisionId": "rev-required", "writeMode": "SUGGEST" })
+    );
+
+    let replace = prepare_replace_text_change(
+        &document_map,
+        &ReplaceTextCommand {
+            document_id: "document-123".into(),
+            old_text: "Plan".into(),
+            new_text: "Strategy".into(),
+            match_number: None,
+            all: false,
+            suggest: true,
+            dry_run: true,
+            json: false,
+            required_revision_id: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        preview_json(&replace)["requestBody"]["writeControl"],
+        json!({ "writeMode": "SUGGEST" })
+    );
+    let mut human = Vec::new();
+    write_docs_change_preview(&mut human, &replace, false).unwrap();
+    assert!(String::from_utf8(human)
+        .unwrap()
+        .starts_with("Replace text in 1 match(es) as a suggestion\n"));
+}
+
+#[test]
+fn chaining_the_revision_guard_keeps_the_suggest_write_mode() {
+    let mut body = json!({
+        "requests": [],
+        "writeControl": { "requiredRevisionId": "rev-1", "writeMode": "SUGGEST" }
+    });
+
+    set_request_body_required_revision_id(&mut body, Some("rev-2"));
+    assert_eq!(
+        body["writeControl"],
+        json!({ "requiredRevisionId": "rev-2", "writeMode": "SUGGEST" })
+    );
+
+    set_request_body_required_revision_id(&mut body, None);
+    assert_eq!(body["writeControl"], json!({ "writeMode": "SUGGEST" }));
+
+    let mut plain = json!({ "requests": [], "writeControl": { "requiredRevisionId": "rev-1" } });
+    set_request_body_required_revision_id(&mut plain, None);
+    assert!(plain.get("writeControl").is_none());
 }

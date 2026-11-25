@@ -4,6 +4,12 @@ use std::sync::OnceLock;
 
 use chrono::{SecondsFormat, Utc};
 
+mod suggestions;
+
+pub(super) use suggestions::{
+    run_list_suggestions_unified_to, run_suggestion_action_unified_to, DocsUnifiedTarget,
+};
+
 use crate::auth::account::AccountStore;
 use crate::auth::client::AuthClient;
 use crate::auth::config::Config;
@@ -57,6 +63,7 @@ use crate::docs::{
     map::InsertTextSelector,
     map::RangeSelector,
     style_template::{load_style_template_in, save_style_template_in},
+    suggestion::{SuggestionAction, SuggestionSelection},
     BatchUpdateDocumentOptions, CopyDocumentOptions, CreateDocumentOptions, DocsError,
     GetDocumentOptions, StyleTemplate,
 };
@@ -633,6 +640,7 @@ pub fn run<S: AccountStore>(
                     document_id,
                     text,
                     at,
+                    suggest,
                     dry_run,
                     json,
                     required_revision_id,
@@ -649,6 +657,7 @@ pub fn run<S: AccountStore>(
                     document_id,
                     text,
                     selector,
+                    suggest,
                     dry_run,
                     json,
                     required_revision_id,
@@ -666,6 +675,7 @@ pub fn run<S: AccountStore>(
                     new_text,
                     match_number,
                     all,
+                    suggest,
                     dry_run,
                     json,
                     required_revision_id,
@@ -683,6 +693,7 @@ pub fn run<S: AccountStore>(
                     new_text,
                     match_number,
                     all,
+                    suggest,
                     dry_run,
                     json,
                     required_revision_id,
@@ -1541,6 +1552,41 @@ pub fn run<S: AccountStore>(
             output_json_by_default,
             quiet,
         ),
+        DocsCommand::Suggestions { document_id, open } => {
+            let runtime =
+                tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+            runtime.block_on(run_list_suggestions_unified_to(
+                docs_unified_target(config, store, account_override, document_id),
+                open,
+                &mut std::io::stdout(),
+            ))
+        }
+        DocsCommand::SuggestionAccept {
+            document_id,
+            suggestion_ids,
+            all,
+        } => run_suggestion_action_command(
+            docs_unified_target(config, store, account_override, document_id),
+            SuggestionAction::Accept,
+            SuggestionSelection::from_flags(suggestion_ids, all)?,
+        ),
+        DocsCommand::SuggestionReject {
+            document_id,
+            suggestion_ids,
+            all,
+        } => run_suggestion_action_command(
+            docs_unified_target(config, store, account_override, document_id),
+            SuggestionAction::Reject,
+            SuggestionSelection::from_flags(suggestion_ids, all)?,
+        ),
+        DocsCommand::SuggestionDelete {
+            document_id,
+            suggestion_ids,
+        } => run_suggestion_action_command(
+            docs_unified_target(config, store, account_override, document_id),
+            SuggestionAction::Delete,
+            SuggestionSelection::from_flags(suggestion_ids, false)?,
+        ),
         DocsCommand::NamedRange { command } => run_named_range_command(
             command,
             config,
@@ -1591,6 +1637,36 @@ pub fn run<S: AccountStore>(
             command: DocsStyleCommand::Template { document_id, json },
         } => run_show_style_template(&document_id, json, &mut std::io::stdout(), None),
     }
+}
+
+fn docs_unified_target<'a, S: AccountStore>(
+    config: &'a Config,
+    store: &'a S,
+    account_override: Option<&'a str>,
+    document_id: String,
+) -> DocsUnifiedTarget<'a, S> {
+    DocsUnifiedTarget {
+        config,
+        store,
+        account_override,
+        document_id,
+        documents_url: None,
+        state_path: None,
+    }
+}
+
+fn run_suggestion_action_command<S: AccountStore>(
+    target: DocsUnifiedTarget<'_, S>,
+    action: SuggestionAction,
+    selection: SuggestionSelection,
+) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new().context("failed to start async runtime")?;
+    runtime.block_on(run_suggestion_action_unified_to(
+        target,
+        action,
+        selection,
+        &mut std::io::stdout(),
+    ))
 }
 
 fn run_named_range_command<S: AccountStore>(

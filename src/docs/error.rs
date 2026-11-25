@@ -19,6 +19,11 @@ pub enum DocsError {
         body: String,
     },
 
+    #[error(
+        "Google Docs failed to save the comments or suggestions in this Batch Update, but may have applied its changes as direct edits; check the Document"
+    )]
+    CommentUpdatesFailed,
+
     #[error("invalid Google Docs API response: {0}")]
     InvalidResponse(String),
 

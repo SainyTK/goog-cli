@@ -15,7 +15,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 `goog` currently includes:
 
 - Google Drive file and folder listing, upload, download, Office Conversion, and recoverable trash commands.
-- Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, comments anchored to text, raw document reads, and raw batch updates.
+- Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, comments anchored to text, suggested edits that the owner accepts or rejects, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
 - Google Slides presentation listing, creation, raw reads, high-level slide/text/image/table/shape edits, and raw batch updates.
 - Google Calendar calendar listing, calendar metadata reads, free/busy lookup, and event list/read/create/update/delete commands.
@@ -227,6 +227,12 @@ goog docs map DOCUMENT_ID --type images
 goog docs map DOCUMENT_ID --type tables
 goog docs map DOCUMENT_ID --heading "Summary"
 goog docs text search DOCUMENT_ID "quarterly plan"
+goog docs text replace DOCUMENT_ID --find "lazy dog" --replace "sleepy cat" --suggest
+goog docs text insert DOCUMENT_ID "Reviewed draft. " --at "before-text:The quick" --suggest
+goog docs suggestions DOCUMENT_ID --open
+goog docs suggestion-accept DOCUMENT_ID --suggestion-id SUGGESTION_ID
+goog docs suggestion-reject DOCUMENT_ID --all
+goog docs suggestion-delete DOCUMENT_ID --suggestion-id SUGGESTION_ID
 goog docs style copy-named SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
 goog docs style copy-page SOURCE_DOCUMENT_ID TARGET_DOCUMENT_ID --dry-run
 goog docs image insert DOCUMENT_ID "https://example.test/chart.png" --at 'heading:Summary'
@@ -258,6 +264,14 @@ To mark removed text, anchor on the neighbouring text that remains and pass `--d
 Replacing all of the anchored text later detaches the comment, so add comments after the final edit.
 `docs comments`, `comment-edit`, `comment-reply`, `comment-resolve`, and `comment-delete` work like the matching `drive` commands.
 `drive comment-create` on a Document creates an unanchored comment, which the Docs editor lists under "Original content deleted" without highlighting any text.
+
+`--suggest` on `docs text insert` and `docs text replace` writes the edit as a suggestion, the way Suggesting mode does in the Docs editor.
+Inserted text is shown in color, replaced text is struck through, and each change gets a suggestion card in the margin for the owner to accept or reject.
+An account with comment access can suggest edits; editing directly needs edit access.
+`docs suggestions` lists suggestion threads with their status and a summary such as `Replace: "old" with "new"`, including suggestions made in the Docs editor.
+`docs suggestion-accept` and `suggestion-reject` take one or more `--suggestion-id` values or `--all` for every open suggestion.
+`docs suggestion-delete` withdraws suggestions you made.
+For other kinds of suggested edits, such as style or table changes, set `"writeControl": {"writeMode": "SUGGEST"}` in a `docs batch-update` request body.
 
 Maximum image dimensions preserve the source aspect ratio and do not upscale by default.
 `--fit-page` derives the image bounds from the active body section's page size and margins, while `--reserve-height` leaves vertical space for nearby content.

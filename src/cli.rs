@@ -6,13 +6,60 @@ const DOCS_CONTENT_SELECTOR_HELP: &str = "Selector rules:
   Provide exactly one content selector.
   Use --index N, --entry N, --page P --line L, or --heading TEXT.";
 
-const DOCS_INSERT_SELECTOR_HELP: &str = "Selector rules:
+macro_rules! docs_insert_selector_help {
+    () => {
+        "Selector rules:
   Provide exactly one insert location selector with --at.
   Use --at index:N, --at entry:N, --at page:P,line:L, --at heading:TEXT, --at after-heading:TEXT, --at before-heading:TEXT, --at after-text:TEXT, or --at before-text:TEXT.
 
 Write safety:
   Use --dry-run to preview without calling documents.batchUpdate.
-  Use --required-revision-id REVISION_ID to reject writes against a changed document.";
+  Use --required-revision-id REVISION_ID to reject writes against a changed document."
+    };
+}
+
+macro_rules! docs_text_suggest_help {
+    () => {
+        "Suggestions:
+  --suggest writes the edit as a suggestion, the way typing in Suggesting mode does in the Docs editor.
+  Inserted text is shown in color, replaced text is struck through, and each change gets a suggestion card in the margin.
+  Someone with edit access accepts or rejects each suggestion; until then, suggested insertions and deletions both keep their place in the Document's indexes.
+  Accounts with comment access can suggest; editing directly needs edit access.
+  Review suggestions with docs suggestions, suggestion-accept, suggestion-reject, and suggestion-delete."
+    };
+}
+
+const DOCS_INSERT_SELECTOR_HELP: &str = docs_insert_selector_help!();
+
+const DOCS_TEXT_INSERT_HELP: &str = concat!(
+    docs_insert_selector_help!(),
+    "\n\n",
+    docs_text_suggest_help!()
+);
+
+const DOCS_TEXT_REPLACE_HELP: &str = docs_text_suggest_help!();
+
+const DOCS_SUGGESTIONS_HELP: &str = "Output shape:
+  Prints one JSON object with a suggestions array of suggestion threads.
+  Each thread has suggestionId, status (OPEN, ACCEPTED, or REJECTED), summaryText such as 'Add: \"text\"' or 'Replace: \"old\" with \"new\"', headPost with the author and createTime, and replies.
+  Accepted and rejected threads stay listed; use --open to keep only the ones awaiting review.
+
+Notes:
+  Suggestions come from the Docs editor's Suggesting mode or from goog docs text insert/replace --suggest.
+  Adjacent changes by the same author merge into one suggestion, as they do in the Docs editor.";
+
+const DOCS_SUGGESTION_ACTION_HELP: &str = "Output shape:
+  Prints the raw documents.batchUpdate response JSON.
+  suggestionResponses lists the acceptedSuggestionIds, rejectedSuggestionIds, or deletedSuggestionIds for each request.
+
+Selecting suggestions:
+  Repeat --suggestion-id to act on several suggestions in one Batch Update.
+  Find suggestion IDs with goog docs suggestions DOCUMENT_ID --open.
+
+Permissions:
+  Accepting needs edit access.
+  Rejecting needs edit access, or being the suggestion's author.
+  Deleting withdraws your own suggestion: it removes the suggestion and its thread, and only the author can do it.";
 
 const DOCS_RANGE_SELECTOR_HELP: &str = "Selector rules:
   Provide exactly one range selector.
@@ -2201,6 +2248,10 @@ impl DocsCommand {
             | DocsCommand::CommentReply { document_id, .. }
             | DocsCommand::CommentResolve { document_id, .. }
             | DocsCommand::CommentDelete { document_id, .. }
+            | DocsCommand::Suggestions { document_id, .. }
+            | DocsCommand::SuggestionAccept { document_id, .. }
+            | DocsCommand::SuggestionReject { document_id, .. }
+            | DocsCommand::SuggestionDelete { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. } => document_id,
             DocsCommand::ListFormat { command } => match command {
@@ -2587,6 +2638,48 @@ Notes:
         #[arg(long)]
         comment_id: String,
     },
+    /// List a Document's suggested edits as JSON
+    #[command(after_long_help = DOCS_SUGGESTIONS_HELP)]
+    Suggestions {
+        /// Document ID or URL
+        document_id: String,
+        /// Include only suggestions awaiting review
+        #[arg(long)]
+        open: bool,
+    },
+    /// Accept suggested edits, applying them to the Document
+    #[command(after_long_help = DOCS_SUGGESTION_ACTION_HELP)]
+    SuggestionAccept {
+        /// Document ID or URL
+        document_id: String,
+        /// Suggestion ID to accept; repeat for several
+        #[arg(long = "suggestion-id", required_unless_present = "all")]
+        suggestion_ids: Vec<String>,
+        /// Accept every open suggestion
+        #[arg(long, conflicts_with = "suggestion_ids")]
+        all: bool,
+    },
+    /// Reject suggested edits, discarding them
+    #[command(after_long_help = DOCS_SUGGESTION_ACTION_HELP)]
+    SuggestionReject {
+        /// Document ID or URL
+        document_id: String,
+        /// Suggestion ID to reject; repeat for several
+        #[arg(long = "suggestion-id", required_unless_present = "all")]
+        suggestion_ids: Vec<String>,
+        /// Reject every open suggestion
+        #[arg(long, conflicts_with = "suggestion_ids")]
+        all: bool,
+    },
+    /// Withdraw your own suggested edits
+    #[command(after_long_help = DOCS_SUGGESTION_ACTION_HELP)]
+    SuggestionDelete {
+        /// Document ID or URL
+        document_id: String,
+        /// Suggestion ID to withdraw; repeat for several
+        #[arg(long = "suggestion-id", required = true)]
+        suggestion_ids: Vec<String>,
+    },
     /// Read a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.
@@ -2890,7 +2983,7 @@ pub enum DocsTextCommand {
         json: bool,
     },
     /// Insert text through a high-level Document Map location selector
-    #[command(after_long_help = DOCS_INSERT_SELECTOR_HELP)]
+    #[command(after_long_help = DOCS_TEXT_INSERT_HELP)]
     Insert {
         /// Document ID or URL to update
         document_id: String,
@@ -2899,6 +2992,9 @@ pub enum DocsTextCommand {
         /// Insert location selector
         #[arg(long, value_name = "SELECTOR")]
         at: String,
+        /// Write the insertion as a suggestion that editors accept or reject
+        #[arg(long)]
+        suggest: bool,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,
@@ -2910,6 +3006,7 @@ pub enum DocsTextCommand {
         required_revision_id: Option<String>,
     },
     /// Replace text through a high-level Document Map text match
+    #[command(after_long_help = DOCS_TEXT_REPLACE_HELP)]
     Replace {
         /// Document ID or URL to update
         document_id: String,
@@ -2925,6 +3022,9 @@ pub enum DocsTextCommand {
         /// Replace every text match
         #[arg(long)]
         all: bool,
+        /// Write the replacement as a suggestion that editors accept or reject
+        #[arg(long)]
+        suggest: bool,
         /// Preview the edit without calling documents.batchUpdate
         #[arg(long)]
         dry_run: bool,

@@ -85,6 +85,7 @@ Read [Google Drive](references/drive.md) before Drive work.
 - `goog docs list`, `create`, `copy`, `get`, and `map` discover and inspect documents.
 - `goog docs text`, `style`, `table`, `image`, `break`, `footnote`, `header`, `footer`, `list-format`, and `named-range` perform high-level edits.
 - `goog docs comment-create` adds a comment anchored to Document text, and `goog docs comments` and the other `comment-*` commands manage comments and replies.
+- `goog docs text insert` and `text replace` with `--suggest` write edits as suggestions, and `goog docs suggestions`, `suggestion-accept`, `suggestion-reject`, and `suggestion-delete` review them.
 - `goog docs compare` checks semantic fidelity between documents.
 - `goog docs export-pdf` supports page-level visual inspection.
 - `goog docs batch-update` is the raw fallback when no high-level command fits.

@@ -1267,6 +1267,7 @@ fn docs_insert_text_parses_location_and_write_options() {
         "Hello",
         "--at",
         "page:2,line:1",
+        "--suggest",
         "--dry-run",
         "--json",
         "--required-revision-id",
@@ -1283,6 +1284,7 @@ fn docs_insert_text_parses_location_and_write_options() {
                 document_id,
                 text,
                 at,
+                suggest,
                 dry_run,
                 json,
                 required_revision_id,
@@ -1295,6 +1297,7 @@ fn docs_insert_text_parses_location_and_write_options() {
     assert_eq!(document_id, "document-123");
     assert_eq!(text, "Hello");
     assert_eq!(at, "page:2,line:1");
+    assert!(suggest);
     assert!(dry_run);
     assert!(json);
     assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
@@ -1418,6 +1421,7 @@ fn docs_replace_text_parses_match_and_write_options() {
                 new_text,
                 match_number,
                 all,
+                suggest,
                 dry_run,
                 json,
                 required_revision_id,
@@ -1432,6 +1436,7 @@ fn docs_replace_text_parses_match_and_write_options() {
     assert_eq!(new_text, "new");
     assert_eq!(match_number, Some(2));
     assert!(!all);
+    assert!(!suggest);
     assert!(dry_run);
     assert!(json);
     assert_eq!(required_revision_id.as_deref(), Some("rev-123"));
@@ -12194,4 +12199,77 @@ fn global_account_flag_after_subcommand() {
 fn global_quiet_flag() {
     let cli = parse(&["--quiet", "auth", "list"]).unwrap();
     assert!(cli.quiet);
+}
+
+#[test]
+fn docs_suggestion_commands_parse_and_normalize_document_url() {
+    let Command::Docs { mut command } = parse(&[
+        "docs",
+        "suggestion-accept",
+        "https://docs.google.com/document/d/document-123/edit",
+        "--suggestion-id",
+        "suggest.a",
+        "--suggestion-id",
+        "suggest.b",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("unexpected parse result");
+    };
+    command.normalize_document_id();
+    let DocsCommand::SuggestionAccept {
+        document_id,
+        suggestion_ids,
+        all,
+    } = command
+    else {
+        panic!("unexpected Docs command");
+    };
+    assert_eq!(document_id, "document-123");
+    assert_eq!(suggestion_ids, ["suggest.a", "suggest.b"]);
+    assert!(!all);
+
+    let Command::Docs {
+        command:
+            DocsCommand::SuggestionReject {
+                suggestion_ids,
+                all,
+                ..
+            },
+    } = parse(&["docs", "suggestion-reject", "document-123", "--all"])
+        .unwrap()
+        .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert!(suggestion_ids.is_empty());
+    assert!(all);
+
+    let Command::Docs {
+        command: DocsCommand::Suggestions { document_id, open },
+    } = parse(&["docs", "suggestions", "document-123", "--open"])
+        .unwrap()
+        .command
+    else {
+        panic!("unexpected parse result");
+    };
+    assert_eq!(document_id, "document-123");
+    assert!(open);
+}
+
+#[test]
+fn docs_suggestion_actions_require_one_selection() {
+    assert!(parse(&["docs", "suggestion-accept", "document-123"]).is_err());
+    assert!(parse(&[
+        "docs",
+        "suggestion-reject",
+        "document-123",
+        "--all",
+        "--suggestion-id",
+        "suggest.a",
+    ])
+    .is_err());
+    assert!(parse(&["docs", "suggestion-delete", "document-123", "--all"]).is_err());
+    assert!(parse(&["docs", "suggestion-delete", "document-123"]).is_err());
 }

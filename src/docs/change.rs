@@ -16,11 +16,14 @@ use crate::docs::map::{
 use crate::docs::page_layout::resolve_body_page_geometry;
 use crate::docs::style_template::StyleTemplate;
 
+const SUGGEST_WRITE_MODE: &str = "SUGGEST";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct InsertTextCommand {
     pub document_id: String,
     pub text: String,
     pub selector: InsertTextSelector,
+    pub suggest: bool,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -33,6 +36,7 @@ pub(crate) struct ReplaceTextCommand {
     pub new_text: String,
     pub match_number: Option<usize>,
     pub all: bool,
+    pub suggest: bool,
     pub dry_run: bool,
     pub json: bool,
     pub required_revision_id: Option<String>,
@@ -515,11 +519,14 @@ pub(crate) fn prepare_insert_text_change(
     command: &InsertTextCommand,
 ) -> Result<PreparedDocsChange> {
     let resolved = resolve_insert_text_location(document_map, &command.selector)?;
-    let request_body = insert_text_request_body(
+    let mut request_body = insert_text_request_body(
         resolved.location.index,
         &command.text,
         command.required_revision_id.as_deref(),
     );
+    if command.suggest {
+        set_request_body_suggest_write_mode(&mut request_body);
+    }
     let preview = InsertTextPreview {
         before: resolved.preview_before.clone(),
         after: insert_preview_text(
@@ -547,11 +554,14 @@ pub(crate) fn prepare_replace_text_change(
         command.match_number,
         command.all,
     )?;
-    let request_body = replace_text_request_body(
+    let mut request_body = replace_text_request_body(
         &ranges,
         &command.new_text,
         command.required_revision_id.as_deref(),
     );
+    if command.suggest {
+        set_request_body_suggest_write_mode(&mut request_body);
+    }
     let preview = replace_text_preview(document_map, &ranges, &command.old_text, &command.new_text);
 
     Ok(PreparedDocsChange::ReplaceText(ReplaceTextDryRun {
@@ -2409,24 +2419,62 @@ pub(crate) fn set_request_body_required_revision_id(
         return;
     };
 
-    match required_revision_id {
-        Some(required_revision_id) => {
-            object.insert(
-                "writeControl".into(),
-                serde_json::json!({ "requiredRevisionId": required_revision_id }),
-            );
+    let write_control = object
+        .entry("writeControl")
+        .or_insert_with(|| serde_json::json!({}));
+    if let Some(write_control) = write_control.as_object_mut() {
+        match required_revision_id {
+            Some(required_revision_id) => {
+                write_control.insert("requiredRevisionId".into(), required_revision_id.into());
+            }
+            None => {
+                write_control.remove("requiredRevisionId");
+            }
         }
-        None => {
-            object.remove("writeControl");
-        }
+    }
+    if object
+        .get("writeControl")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(serde_json::Map::is_empty)
+    {
+        object.remove("writeControl");
+    }
+}
+
+fn set_request_body_suggest_write_mode(request_body: &mut serde_json::Value) {
+    let Some(object) = request_body.as_object_mut() else {
+        return;
+    };
+    let write_control = object
+        .entry("writeControl")
+        .or_insert_with(|| serde_json::json!({}));
+    if let Some(write_control) = write_control.as_object_mut() {
+        write_control.insert("writeMode".into(), SUGGEST_WRITE_MODE.into());
+    }
+}
+
+fn is_suggestion_request_body(request_body: &serde_json::Value) -> bool {
+    request_body
+        .get("writeControl")
+        .and_then(|write_control| write_control.get("writeMode"))
+        .and_then(serde_json::Value::as_str)
+        == Some(SUGGEST_WRITE_MODE)
+}
+
+fn suggestion_suffix(request_body: &serde_json::Value) -> &'static str {
+    if is_suggestion_request_body(request_body) {
+        " as a suggestion"
+    } else {
+        ""
     }
 }
 
 fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -> Result<()> {
     writeln!(
         out,
-        "Insert text at index {}",
-        display_optional(dry_run.location.index)
+        "Insert text at index {}{}",
+        display_optional(dry_run.location.index),
+        suggestion_suffix(&dry_run.request_body)
     )
     .context("failed to write Docs text insert preview header")?;
     writeln!(out, "Before: {}", dry_run.preview.before)
@@ -2437,8 +2485,13 @@ fn write_insert_text_preview(out: &mut impl Write, dry_run: &InsertTextDryRun) -
 }
 
 fn write_replace_text_preview(out: &mut impl Write, dry_run: &ReplaceTextDryRun) -> Result<()> {
-    writeln!(out, "Replace text in {} match(es)", dry_run.ranges.len())
-        .context("failed to write Docs text replace preview header")?;
+    writeln!(
+        out,
+        "Replace text in {} match(es){}",
+        dry_run.ranges.len(),
+        suggestion_suffix(&dry_run.request_body)
+    )
+    .context("failed to write Docs text replace preview header")?;
     for (index, change) in dry_run.preview.changes.iter().enumerate() {
         writeln!(
             out,
