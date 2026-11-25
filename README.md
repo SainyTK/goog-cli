@@ -646,6 +646,9 @@ rm -rf "$tmp"
 
 ## Contributor Workflow
 
+Read [VISION.md](VISION.md) before proposing a feature or opening a pull request.
+It says which changes `goog` accepts and which it resists.
+
 Install local dependencies:
 
 ```sh

@@ -3,6 +3,7 @@
 Develop and verify changes locally in the current checkout first.
 Use normal Git branches and commits, then push and open a pull request when work is ready for human review.
 Do not invoke the `no-mistakes` workflow unless the user explicitly asks for it.
+Check every proposed feature or change against `VISION.md` before building it.
 
 ## Domain docs
 
