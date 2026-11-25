@@ -15,7 +15,7 @@ The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account
 `goog` currently includes:
 
 - Google Drive file and folder listing, upload, download, Office Conversion, and recoverable trash commands.
-- Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, raw document reads, and raw batch updates.
+- Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, comments anchored to text, raw document reads, and raw batch updates.
 - Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
 - Google Slides presentation listing, creation, raw reads, high-level slide/text/image/table/shape edits, and raw batch updates.
 - Google Calendar calendar listing, calendar metadata reads, free/busy lookup, and event list/read/create/update/delete commands.
@@ -207,6 +207,7 @@ Use `--show-all` to include them.
 `drive comments` fetches every comment page and emits one JSON object containing comments and their replies.
 Use `--open` to keep only unresolved comments.
 Comments are Drive resources, so the commands work with Google Docs, Sheets, Slides, and other supported Drive files.
+`comment-create` creates an unanchored comment; use `docs comment-create` to anchor a comment to Document text.
 Repeat `--mention EMAIL` to prefix email mentions.
 Include ordinary emoji directly in `--text` when desired.
 `comment-resolve` accepts an optional reply, while `comment-delete` permanently removes the comment.
@@ -240,8 +241,23 @@ goog docs footer create DOCUMENT_ID
 goog docs footnote insert DOCUMENT_ID --at 'after-text:quarterly plan'
 goog docs named-range create DOCUMENT_ID "highlights" --text "quarterly plan"
 goog docs named-range delete DOCUMENT_ID --name "highlights"
+goog docs comment-create DOCUMENT_ID --text "Changed: rewrote for new hires." --quote "onboarding paragraph"
+goog docs comment-create DOCUMENT_ID --text "Kept as is." --quote "paragraph" --match 2
+goog docs comment-create DOCUMENT_ID --deleted "Prices were listed here." --text "Moved to the appendix." --quote "Pricing moved to the appendix."
+goog docs comment-create DOCUMENT_ID --text "New heading." --from-index 1 --to-index 14 --mention reviewer@example.com
+goog docs comments DOCUMENT_ID --open
+goog docs comment-reply DOCUMENT_ID --comment-id COMMENT_ID --text "Updated as requested."
+goog docs comment-resolve DOCUMENT_ID --comment-id COMMENT_ID --text "Addressed."
 goog docs batch-update DOCUMENT_ID --requests ./requests.json
 ```
+
+`docs comment-create` adds a comment anchored to Document text, the same way a comment added in the Docs editor is anchored.
+The text is highlighted, the comment card sits next to it in the margin, and the comments panel shows the quoted text.
+Pick the anchor with `--quote TEXT` (plus `--match N` when the text appears more than once), `--from-index` and `--to-index`, `--entry`, or `--page` and `--line`.
+To mark removed text, anchor on the neighbouring text that remains and pass `--deleted TEXT`, which starts the comment with `Deleted: "TEXT"`.
+Replacing all of the anchored text later detaches the comment, so add comments after the final edit.
+`docs comments`, `comment-edit`, `comment-reply`, `comment-resolve`, and `comment-delete` work like the matching `drive` commands.
+`drive comment-create` on a Document creates an unanchored comment, which the Docs editor lists under "Original content deleted" without highlighting any text.
 
 Maximum image dimensions preserve the source aspect ratio and do not upscale by default.
 `--fit-page` derives the image bounds from the active body section's page size and margins, while `--reserve-height` leaves vertical space for nearby content.

@@ -78,8 +78,14 @@ _Avoid_: Directory, collection
 **Comment**:
 Feedback attached to a Drive file, optionally associated with quoted content and containing zero or more Replies.
 Comments can belong to Documents, Spreadsheets, presentations, and other Drive files that support commenting.
-Sheets and Slides expose service-specific comment commands, but Drive remains the owning module for Comment behavior.
+Docs, Sheets, and Slides expose service-specific comment commands, but Drive remains the owning module for listing, editing, replying to, resolving, and deleting Comments.
+Docs owns creating Anchored Comments.
 _Avoid_: Document comment, note
+
+**Anchored Comment**:
+A Comment tied to a Document Range, created through the Docs API, which the Docs editor highlights in the text and shows in the margin.
+A Comment created through the Drive API is never anchored in the Docs editor, even with an anchor or quoted content.
+_Avoid_: Inline comment, text comment, highlighted comment
 
 **Reply**:
 A response attached to one Comment.

@@ -1093,10 +1093,7 @@ async fn collect_calendars<S: AccountStore>(
     let mut page_token = None;
     let mut items = Vec::new();
 
-    loop {
-        let Some(page_size) = next_page_size(remaining) else {
-            break;
-        };
+    while let Some(page_size) = next_page_size(remaining) {
         let options = list_calendars_options(page_size, page_token.take(), base_url);
         let page = list_calendars(client, &options).await?;
         let page_items = page
@@ -1139,10 +1136,7 @@ async fn collect_events_unified<S: AccountStore>(
     let mut page_token = None;
     let mut items = Vec::new();
 
-    loop {
-        let Some(page_size) = next_page_size(remaining) else {
-            break;
-        };
+    while let Some(page_size) = next_page_size(remaining) {
         let options = list_events_options(
             first_options.calendar_id.clone(),
             page_size,
@@ -1216,10 +1210,7 @@ async fn collect_event_instances_unified<S: AccountStore>(
     let mut page_token = None;
     let mut items = Vec::new();
 
-    loop {
-        let Some(page_size) = next_page_size(remaining) else {
-            break;
-        };
+    while let Some(page_size) = next_page_size(remaining) {
         let options = list_event_instances_options(
             first_options.calendar_id.clone(),
             first_options.event_id.clone(),
@@ -2635,7 +2626,7 @@ fn write_freebusy_table(out: &mut impl Write, response: &serde_json::Value) -> R
             writeln!(
                 out,
                 "{}\t{}\t{}",
-                calendar_id.replace('\t', " ").replace('\n', " "),
+                calendar_id.replace(['\t', '\n'], " "),
                 string_field(slot, "start"),
                 string_field(slot, "end"),
             )
@@ -2663,8 +2654,7 @@ fn string_field(value: &serde_json::Value, field: &str) -> String {
         .get(field)
         .and_then(serde_json::Value::as_str)
         .unwrap_or("")
-        .replace('\t', " ")
-        .replace('\n', " ")
+        .replace(['\t', '\n'], " ")
 }
 
 fn bool_field(value: &serde_json::Value, field: &str) -> String {
@@ -2703,8 +2693,7 @@ fn nested_string_field(value: &serde_json::Value, object_field: &str, field: &st
         .and_then(|object| object.get(field))
         .and_then(serde_json::Value::as_str)
         .unwrap_or("")
-        .replace('\t', " ")
-        .replace('\n', " ")
+        .replace(['\t', '\n'], " ")
 }
 
 fn write_ndjson(out: &mut impl Write, values: &[serde_json::Value]) -> Result<()> {

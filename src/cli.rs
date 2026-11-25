@@ -33,6 +33,31 @@ Notes:
   Named ranges do not track edits after creation; a later insert/delete before the range can leave it pointing at the wrong text.
   Re-create the named range after content in or before it changes.";
 
+const DOCS_COMMENT_CREATE_HELP: &str = "Output shape:
+  Prints the raw documents.batchUpdate response JSON.
+  The new thread is under replies[0].insertComment.commentThread, with commentId, anchorId, and plainTextQuote.
+  With --dry-run, prints the resolved anchor range and the request body without adding the comment.
+
+Selector rules:
+  Provide exactly one anchor selector.
+  Use --quote TEXT with optional --match N, --from-index START --to-index END, --entry N, or --page P --line L.
+  --quote matches exact text through the Document Map and rejects ambiguous matches; add --match N to pick one.
+
+What readers see:
+  The comment is anchored like one added in the Docs editor.
+  The anchored text is highlighted, the comment card sits next to it in the margin, and the comments panel shows the quoted text.
+  Replacing or deleting all of the anchored text later detaches the comment: it leaves the margin and the comments panel shows it under 'Original content deleted'.
+  Add comments after the final edit to the text they mark.
+
+Marking deletions:
+  Removed text has nothing left to anchor to, so anchor the comment on the neighbouring text that remains.
+  --deleted TEXT starts the comment with 'Deleted: \"TEXT\"', followed by --text on the next line when given.
+
+Notes:
+  Comment content, including mentions and the --deleted label, is limited to 2048 UTF-8 bytes.
+  docs comments, comment-edit, comment-reply, comment-resolve, and comment-delete work on these comments like the matching drive comment-* commands.
+  drive comment-create creates an unanchored comment, which the Docs editor lists under 'Original content deleted' without highlighting any text.";
+
 const MAIL_DRAFT_HELP: &str = "Editing:
   Pass a DRAFT_ID to change an existing draft in place. Only the fields you pass change.
   Recipients, subject, body, attachments, inline images and the reply thread you do not name stay as they are.
@@ -348,7 +373,7 @@ pub enum DriveCommand {
         #[arg(long)]
         folder: String,
     },
-    /// Create an unanchored comment on a Google Drive file
+    /// Create an unanchored comment on a Google Drive file; use docs comment-create to anchor to Document text
     CommentCreate {
         /// Drive file ID
         file_id: String,
@@ -2170,6 +2195,12 @@ impl DocsCommand {
             }
             DocsCommand::ExportPdf { document_id, .. }
             | DocsCommand::Map { document_id, .. }
+            | DocsCommand::Comments { document_id, .. }
+            | DocsCommand::CommentCreate { document_id, .. }
+            | DocsCommand::CommentEdit { document_id, .. }
+            | DocsCommand::CommentReply { document_id, .. }
+            | DocsCommand::CommentResolve { document_id, .. }
+            | DocsCommand::CommentDelete { document_id, .. }
             | DocsCommand::Get { document_id, .. }
             | DocsCommand::BatchUpdate { document_id, .. } => document_id,
             DocsCommand::ListFormat { command } => match command {
@@ -2453,6 +2484,109 @@ Notes:
         #[command(subcommand)]
         command: DocsNamedRangeCommand,
     },
+    /// List comments and replies for a Document as JSON
+    Comments {
+        /// Document ID or URL
+        document_id: String,
+        /// Include only unresolved comments
+        #[arg(long)]
+        open: bool,
+    },
+    /// Create a comment anchored to text in a Document
+    #[command(after_long_help = DOCS_COMMENT_CREATE_HELP)]
+    CommentCreate {
+        /// Document ID or URL to comment on
+        document_id: String,
+        /// Comment text
+        #[arg(long, required_unless_present = "deleted")]
+        text: Option<String>,
+        /// Text removed from the Document, quoted at the start of the comment
+        #[arg(long)]
+        deleted: Option<String>,
+        /// Email address to mention at the start of the comment
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+        /// Exact Document text to anchor the comment to
+        #[arg(long)]
+        quote: Option<String>,
+        /// Anchor to the Nth --quote match
+        #[arg(long = "match")]
+        match_number: Option<usize>,
+        /// Raw Google Docs UTF-16 anchor start
+        #[arg(long)]
+        from_index: Option<i64>,
+        /// Raw Google Docs UTF-16 anchor end
+        #[arg(long)]
+        to_index: Option<i64>,
+        /// Document Map Entry number to anchor to
+        #[arg(long)]
+        entry: Option<usize>,
+        /// Derived page label
+        #[arg(long)]
+        page: Option<usize>,
+        /// Content line within the derived page
+        #[arg(long)]
+        line: Option<usize>,
+        /// Preview the comment without calling documents.batchUpdate
+        #[arg(long)]
+        dry_run: bool,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+        /// Require the document to still be at this revision before adding the comment
+        #[arg(long)]
+        required_revision_id: Option<String>,
+    },
+    /// Edit an existing Document comment
+    CommentEdit {
+        /// Document ID or URL
+        document_id: String,
+        /// Comment ID to edit
+        #[arg(long)]
+        comment_id: String,
+        /// Replacement comment text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the comment
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Reply to a Document comment
+    CommentReply {
+        /// Document ID or URL
+        document_id: String,
+        /// Comment ID to reply to
+        #[arg(long)]
+        comment_id: String,
+        /// Reply text
+        #[arg(long)]
+        text: String,
+        /// Email address to mention at the start of the reply
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Resolve an existing Document comment
+    CommentResolve {
+        /// Document ID or URL
+        document_id: String,
+        /// Comment ID to resolve
+        #[arg(long)]
+        comment_id: String,
+        /// Optional reply text to include with the resolution
+        #[arg(long)]
+        text: Option<String>,
+        /// Email address to mention at the start of the reply
+        #[arg(long = "mention")]
+        mentions: Vec<String>,
+    },
+    /// Delete an existing Document comment
+    CommentDelete {
+        /// Document ID or URL
+        document_id: String,
+        /// Comment ID to delete
+        #[arg(long)]
+        comment_id: String,
+    },
     /// Read a raw Google Docs Document
     #[command(after_long_help = "Output shape:
   Emits the Google Docs API Document JSON unchanged.
@@ -2492,6 +2626,7 @@ Common request types:
   Tables and images: insertTable, insertTableRow, insertTableColumn, deleteTableRow, deleteTableColumn, insertInlineImage, replaceImage
   Document structure: insertPageBreak, insertSectionBreak, updateDocumentStyle, updateSectionStyle, createHeader, createFooter, createFootnote
   Tabs: addDocumentTab, deleteTab, updateDocumentTabProperties
+  Comments: insertComment, addCommentReply, updateCommentPost, deleteComment, deleteCommentReply
 
 Full request type reference:
   https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/request

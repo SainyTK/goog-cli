@@ -11,11 +11,11 @@ use crate::auth::state::{
 use crate::auth::testing::MemoryStore;
 use crate::cli::{DocsCompareScope, DocsListType, DocsMapType, DocsSectionBreakType};
 use crate::docs::change::{
-    ApplyListCommand, ApplyStylesCommand, CreateFooterCommand, CreateFootnoteCommand,
-    CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand, EditTableCommand,
-    InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand, InsertTableCommand,
-    InsertTextCommand, PinTableHeaderRowsCommand, ReplaceTextCommand, SetTableColumnWidthsCommand,
-    StyleTableRowCommand,
+    ApplyListCommand, ApplyStylesCommand, CreateCommentCommand, CreateFooterCommand,
+    CreateFootnoteCommand, CreateHeaderCommand, CreateNamedRangeCommand, DeleteNamedRangeCommand,
+    EditTableCommand, InsertImageCommand, InsertPageBreakCommand, InsertSectionBreakCommand,
+    InsertTableCommand, InsertTextCommand, PinTableHeaderRowsCommand, ReplaceTextCommand,
+    SetTableColumnWidthsCommand, StyleTableRowCommand,
 };
 use crate::docs::map::{build_document_map, ContentSelector, InsertTextSelector, RangeSelector};
 use crate::docs::style_template::{
@@ -2787,7 +2787,7 @@ async fn run_replace_text_rejects_ambiguous_match_with_candidates() {
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("ambiguous text replace match"));
+    assert!(message.contains("ambiguous text match"));
     assert!(message.contains("match 1 index 9"));
     assert!(message.contains("match 2 index 49"));
     assert!(out.is_empty());
@@ -4112,6 +4112,158 @@ async fn run_create_named_range_dry_run_emits_native_request() {
     );
 }
 
+fn create_comment_command(content: &str, selector: RangeSelector) -> CreateCommentCommand {
+    CreateCommentCommand {
+        document_id: "document-123".into(),
+        content: content.into(),
+        selector,
+        dry_run: false,
+        json: false,
+        required_revision_id: None,
+    }
+}
+
+#[tokio::test]
+async fn run_create_comment_anchors_insert_comment_to_quoted_text() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/docs/v1/documents/document-123:batchUpdate"))
+        .and(body_json(serde_json::json!({
+            "requests": [{
+                "insertComment": {
+                    "range": { "startIndex": 1, "endIndex": 13 },
+                    "content": "Retitled the plan."
+                }
+            }],
+            "writeControl": { "requiredRevisionId": "rev-search" }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "documentId": "document-123",
+            "replies": [{
+                "insertComment": {
+                    "commentThread": {
+                        "commentId": "comment-1",
+                        "anchorId": "kix.anchor-1",
+                        "plainTextQuote": "Project Plan",
+                        "status": "OPEN"
+                    }
+                }
+            }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+    let mut command = create_comment_command(
+        "Retitled the plan.",
+        RangeSelector::Text {
+            text: "Project Plan".into(),
+            match_number: None,
+        },
+    );
+    command.required_revision_id = Some("rev-search".into());
+
+    run_create_comment_to(&client, command, &mut out, Some(&documents_url))
+        .await
+        .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(
+        output["replies"][0]["insertComment"]["commentThread"]["anchorId"],
+        "kix.anchor-1"
+    );
+}
+
+#[tokio::test]
+async fn run_create_comment_dry_run_previews_index_anchor() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+    let mut command = create_comment_command(
+        "Deleted: \"Old sentence.\"",
+        RangeSelector::IndexRange {
+            start_index: 14,
+            end_index: 16,
+        },
+    );
+    command.dry_run = true;
+    command.json = true;
+
+    run_create_comment_to(&client, command, &mut out, Some(&documents_url))
+        .await
+        .unwrap();
+
+    let output: serde_json::Value = serde_json::from_slice(&out).unwrap();
+    let request = &output["requestBody"]["requests"][0]["insertComment"];
+    assert_eq!(request["range"]["startIndex"], 14);
+    assert_eq!(request["range"]["endIndex"], 16);
+    assert_eq!(request["content"], "Deleted: \"Old sentence.\"");
+    assert_eq!(output["range"]["startIndex"], 14);
+}
+
+#[tokio::test]
+async fn run_create_comment_rejects_content_over_docs_limit_before_writing() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/docs/v1/documents/document-123"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(searchable_document()))
+        .mount(&server)
+        .await;
+
+    let store = MemoryStore::default();
+    let client = test_client(&store);
+    let documents_url = format!("{}/docs/v1/documents", server.uri());
+    let mut out = Vec::new();
+    let command = create_comment_command(&"x".repeat(2049), RangeSelector::Entry(1));
+
+    let err = run_create_comment_to(&client, command, &mut out, Some(&documents_url))
+        .await
+        .unwrap_err();
+
+    assert!(err.to_string().contains("2049 UTF-8 bytes"), "{err}");
+    assert!(out.is_empty());
+}
+
+#[test]
+fn compose_docs_comment_content_quotes_deleted_text_before_note_and_mentions_first() {
+    let mentions = vec!["reviewer@example.com".to_string()];
+    assert_eq!(
+        compose_docs_comment_content(
+            Some("Merged into the intro."),
+            Some("Old sentence."),
+            &mentions
+        ),
+        "@reviewer@example.com Deleted: \"Old sentence.\"\nMerged into the intro."
+    );
+    assert_eq!(
+        compose_docs_comment_content(None, Some("Old sentence."), &[]),
+        "Deleted: \"Old sentence.\""
+    );
+    assert_eq!(
+        compose_docs_comment_content(Some("  Rewrote.  "), None, &[]),
+        "Rewrote."
+    );
+}
+
 #[tokio::test]
 async fn run_delete_named_range_dry_run_emits_native_request_by_id() {
     let server = MockServer::start().await;
@@ -4320,7 +4472,7 @@ async fn run_apply_list_targets_whole_blocks_and_rejects_ambiguous_text_ranges()
     .await;
 
     let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("ambiguous text replace match"));
+    assert!(message.contains("ambiguous text match"));
     assert!(message.contains("index 9"));
     assert!(message.contains("index 49"));
 }

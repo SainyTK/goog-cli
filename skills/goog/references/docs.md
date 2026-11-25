@@ -23,6 +23,7 @@
   - Page and section breaks
   - Tables
   - Lists
+  - Comments on changed text
   - Visual verification
   - Learn unfamiliar commands
 
@@ -54,6 +55,7 @@
 - Use `goog docs style copy-named` and `copy-page` for transferring an existing document's visual system to a blank target.
 - Use `goog docs table` for inserting and populating tables.
 - Use `goog docs image`, `break`, `footnote`, `header`, `footer`, `list-format`, and `named-range` for their named document features.
+- Use `goog docs comment-create` to mark changed or removed text with a comment anchored to the text.
 - Use `goog docs export-pdf` for page-level visual QA.
 
 Use `goog docs batch-update` only when no high-level command supports the required operation.
@@ -638,6 +640,31 @@ target/debug/goog docs text insert DOCUMENT_ID $'Prepare delivery\n\tReview cont
 
 Google removes those leading tabs when it creates the native list and uses them to determine nesting levels.
 Map again after formatting and inspect the list's item count, nesting levels, and glyph metadata.
+
+### Comments on changed text
+
+Use comments to show a reviewer what changed.
+Finish all edits to a passage before commenting on it, because replacing or deleting all of the anchored text later detaches the comment.
+Map or search the document after the final edit, then preview and add one comment per change:
+
+```bash
+target/debug/goog docs comment-create DOCUMENT_ID --text 'Changed: rewrote for new hires.' --quote 'onboarding paragraph' --dry-run
+target/debug/goog docs comment-create DOCUMENT_ID --text 'Changed: rewrote for new hires.' --quote 'onboarding paragraph'
+```
+
+`--quote` must match exactly one place; add `--match N` or use `--entry`, `--page` with `--line`, or `--from-index` with `--to-index` when it does not.
+Anchor on the changed words themselves, or on the whole paragraph or table cell for larger rewrites.
+Removed text has nothing left to anchor to.
+Anchor on the neighbouring text that remains and pass the removed text with `--deleted`:
+
+```bash
+target/debug/goog docs comment-create DOCUMENT_ID --deleted 'Prices were listed in a table here.' --text 'Moved to the appendix.' --quote 'Pricing moved to the appendix.'
+```
+
+The reply carries `replies[0].insertComment.commentThread` with `commentId` and `plainTextQuote`.
+Run `goog docs comments DOCUMENT_ID --open` afterwards and check that every change has one comment and that each `quotedFileContent.value` is the intended text.
+Manage threads with `comment-reply`, `comment-resolve`, `comment-edit`, and `comment-delete`.
+Do not use `goog drive comment-create` for this, because the Docs editor shows those comments under "Original content deleted" without highlighting any text.
 
 ### Visual verification
 

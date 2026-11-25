@@ -10,6 +10,7 @@ use goog::{
 /// Matches the 8 MB main-thread stack Linux and macOS provide by default, and
 /// the `RUST_MIN_STACK` value in `.cargo/config.toml`.
 const CLI_STACK_SIZE: usize = 8 * 1024 * 1024;
+const PANIC_EXIT_CODE: i32 = 101;
 
 fn main() {
     // Windows reserves 1 MB for the main thread, which the command tree in
@@ -22,12 +23,7 @@ fn main() {
         .spawn(run_cli)
         .expect("failed to start the goog CLI thread");
 
-    let exit_code = match cli.join() {
-        Ok(exit_code) => exit_code,
-        // The panic hook already reported the failure; keep the exit status
-        // Rust uses for a panicking process.
-        Err(_) => 101,
-    };
+    let exit_code = cli.join().unwrap_or(PANIC_EXIT_CODE);
 
     if exit_code != 0 {
         std::process::exit(exit_code);
