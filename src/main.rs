@@ -1,10 +1,12 @@
-use clap::Parser;
+use clap::error::ErrorKind;
+use clap::{CommandFactory, FromArgMatches};
 
 use goog::{
     auth::account::resolve_account_store,
     auth::config::load_config,
     cli::{Cli, Command},
     commands,
+    telemetry::{command_path, Outcome, Telemetry},
 };
 
 /// Matches the 8 MB main-thread stack Linux and macOS provide by default, and
@@ -32,24 +34,42 @@ fn main() {
 
 fn run_cli() -> i32 {
     let update_check = goog::update::start();
-    let exit_code = match Cli::try_parse() {
+    let root = Cli::command();
+    let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let telemetry = Telemetry::start(command_path(
+        &root,
+        args.iter().map(|arg| arg.to_string_lossy()),
+    ));
+    let (outcome, exit_code) = match root
+        .try_get_matches_from(args)
+        .and_then(|matches| Cli::from_arg_matches(&matches))
+    {
         Ok(cli) => match run(cli) {
-            Ok(()) => 0,
+            Ok(()) => (Outcome::Success, 0),
             Err(err) => {
                 eprintln!("error: {err:#}");
-                1
+                (Outcome::Failure, 1)
             }
         },
         Err(error) => {
-            let exit_code = error.exit_code();
             let _ = error.print();
-            exit_code
+            (parse_outcome(error.kind()), error.exit_code())
         }
     };
 
+    telemetry.finish(outcome, exit_code);
     update_check.finish();
 
     exit_code
+}
+
+fn parse_outcome(kind: ErrorKind) -> Outcome {
+    match kind {
+        ErrorKind::DisplayHelp
+        | ErrorKind::DisplayVersion
+        | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => Outcome::Help,
+        _ => Outcome::UsageError,
+    }
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
