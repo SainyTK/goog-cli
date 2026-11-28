@@ -7,7 +7,10 @@ const OPT_OUT_ENV_VAR: &str = "GOOG_TELEMETRY";
 const DO_NOT_TRACK_ENV_VAR: &str = "DO_NOT_TRACK";
 const CI_ENV_VAR: &str = "CI";
 
-pub const NOTICE: &str = "goog sends anonymous usage counts (command name, result, duration, version and OS) to help decide what to build next.
+pub const NOTICE_VERSION: u32 = 2;
+
+pub const NOTICE: &str = "goog sends usage counts (command name, result, duration, local hour and weekday, version and OS) to help decide what to build next.
+Devices are counted by a random ID and Google accounts by a one-way hash of the account number.
 Arguments, file IDs, file contents and email addresses are never sent.
 Turn it off with GOOG_TELEMETRY=off or `telemetry = false` under [settings] in ~/.goog/config.toml.";
 

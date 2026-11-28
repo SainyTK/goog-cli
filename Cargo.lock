@@ -622,6 +622,7 @@ dependencies = [
  "dialoguer",
  "dirs",
  "futures-util",
+ "getrandom 0.4.3",
  "image",
  "indicatif",
  "kamadak-exif",

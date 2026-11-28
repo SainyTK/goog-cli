@@ -42,7 +42,7 @@ impl Telemetry {
             return;
         };
         let mut identity = identity::load();
-        if identity.show_notice_once() {
+        if identity.show_notice_once(settings::NOTICE_VERSION) {
             eprintln!("\n{}", settings::NOTICE);
             return;
         }

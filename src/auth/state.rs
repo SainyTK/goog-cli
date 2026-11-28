@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::account::Token;
 use super::error::AuthError;
+use super::private_file::write_private_file;
 
 pub const AUTH_STATE_VERSION: u32 = 1;
 pub(crate) const TOKEN_FILE_ENV_VAR: &str = "GOOG_TOKEN_FILE";
@@ -158,23 +159,7 @@ pub(crate) fn save_runtime_state_to_path(
     state: &RuntimeState,
     path: &Path,
 ) -> Result<(), AuthError> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(AuthError::ConfigWriteIo)?;
-    }
     let contents = serde_json::to_string_pretty(state)
         .map_err(|e| AuthError::ConfigMalformed(e.to_string()))?;
-    std::fs::write(path, contents).map_err(AuthError::ConfigWriteIo)?;
-    restrict_permissions(path)
-}
-
-#[cfg(unix)]
-fn restrict_permissions(path: &Path) -> Result<(), AuthError> {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-        .map_err(AuthError::ConfigWriteIo)
-}
-
-#[cfg(not(unix))]
-fn restrict_permissions(_path: &Path) -> Result<(), AuthError> {
-    Ok(())
+    write_private_file(path, contents.as_bytes()).map_err(AuthError::ConfigWriteIo)
 }

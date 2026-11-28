@@ -46,7 +46,7 @@ macOS, Linux and Windows are all supported targets, and releases ship only throu
 Forms, Tasks, Keep, Chat, Meet, Contacts and other Workspace apps are out of scope for now.
 Workspace administration (the Admin SDK, users, groups and domain settings) and service accounts with domain-wide delegation are out of scope.
 `goog` runs no server, and tokens stay on the user's machine.
-Release builds send anonymous usage counts (command name, result, duration, version and OS, with random device and hashed account IDs) to PostHog, show a notice the first time, and stop when the user opts out; arguments, resource IDs, contents and email addresses never leave the machine.
+Release builds send usage counts (command name, result, duration, local hour and weekday, version and OS, with random device and hashed account IDs) to PostHog, show a notice the first time, and stop when the user opts out; arguments, resource IDs, contents and email addresses never leave the machine.
 Other office suites and non-Google services are out of scope.
 
 A change aligns when it lets a person do another real Workspace operation from the terminal in one of the six apps, makes working across several accounts need fewer flags or switches, makes output clearer for people or more reliable for agents, makes a write safer or easier to preview, or turns a raw-request workflow into a high-level command.

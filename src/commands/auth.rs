@@ -12,7 +12,7 @@ use crate::auth::config::{Config, SettingsConfig};
 use crate::auth::error::AuthError;
 use crate::auth::list::{render_ndjson, render_table, rows_from_config};
 use crate::auth::login::{
-    build_authorize_url, exchange_code, fetch_email, poll_device_token, random_state,
+    build_authorize_url, exchange_code, fetch_email, new_pkce, poll_device_token, random_state,
     render_device_authorization_prompt, request_device_authorization, LoopbackServer,
     DEFAULT_DEVICE_LOGIN_SCOPES, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL, GOOGLE_DEVICE_CODE_URL,
     GOOGLE_TOKEN_URL, GOOGLE_USERINFO_URL,
@@ -187,13 +187,15 @@ fn perform_loopback_login(
 ) -> Result<LoginOutcome> {
     let server = LoopbackServer::bind().context("failed to bind loopback server")?;
     let redirect_uri = server.redirect_uri();
-    let state = random_state();
+    let state = random_state()?;
+    let pkce = new_pkce()?;
     let url = build_authorize_url(
         GOOGLE_AUTH_URL,
         &oauth_app.client_id,
         &redirect_uri,
         DEFAULT_LOGIN_SCOPES,
         &state,
+        &pkce.challenge,
     )
     .context("failed to build authorize URL")?;
 
@@ -214,6 +216,7 @@ fn perform_loopback_login(
             &oauth_app.client_secret,
             &redirect_uri,
             &code,
+            &pkce.verifier,
         )
         .await?;
         let email = fetch_email(GOOGLE_USERINFO_URL, &token.access_token).await?;
