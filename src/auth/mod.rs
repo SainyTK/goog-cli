@@ -4,6 +4,7 @@ pub mod config;
 pub mod error;
 pub mod list;
 pub mod login;
+mod private_file;
 pub mod setup;
 pub mod state;
 pub mod unified_access;

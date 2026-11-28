@@ -301,3 +301,20 @@ fn save_config_creates_parent_dirs_and_strips_account_state() {
     assert!(loaded.accounts.is_empty());
     assert!(loaded.active_account().is_none());
 }
+
+#[cfg(unix)]
+#[test]
+fn saved_config_and_new_directory_are_user_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let config_dir = dir.path().join(".goog");
+    let path = config_dir.join("config.toml");
+
+    save_config_to_path(&Config::default(), &path).unwrap();
+
+    let file_mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    let dir_mode = fs::metadata(&config_dir).unwrap().permissions().mode() & 0o777;
+    assert_eq!(file_mode, 0o600);
+    assert_eq!(dir_mode, 0o700);
+}

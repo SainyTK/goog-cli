@@ -19,7 +19,7 @@ const USERINFO_TIMEOUT: Duration = Duration::from_secs(2);
 pub struct Identity {
     pub device_id: String,
     #[serde(default)]
-    notice_shown: bool,
+    notice_version: u32,
     #[serde(default)]
     account_ids: HashMap<String, String>,
 }
@@ -42,11 +42,11 @@ pub fn load() -> Identity {
 }
 
 impl Identity {
-    pub fn show_notice_once(&mut self) -> bool {
-        if self.notice_shown {
+    pub fn show_notice_once(&mut self, version: u32) -> bool {
+        if self.notice_version >= version {
             return false;
         }
-        self.notice_shown = true;
+        self.notice_version = version;
         self.save();
         true
     }

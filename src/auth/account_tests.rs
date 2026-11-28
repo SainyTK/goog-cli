@@ -141,6 +141,48 @@ fn file_store_writes_user_only_permissions() {
     assert_eq!(mode, 0o600);
 }
 
+#[cfg(unix)]
+#[test]
+fn file_store_replaces_a_readable_auth_file_with_a_user_only_file() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = dir.path().join(".goog");
+    let path = state_dir.join("auth.json");
+    std::fs::create_dir(&state_dir).unwrap();
+    std::fs::write(&path, "{}").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let store = FileAccountStore::new(path.clone());
+
+    store
+        .save_token("alice@example.com", &sample_token())
+        .unwrap();
+
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+    assert_eq!(
+        store.load_token("alice@example.com").unwrap(),
+        Some(sample_token())
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn file_store_creates_missing_state_directory_as_user_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let state_dir = dir.path().join(".goog");
+    let store = FileAccountStore::new(state_dir.join("auth.json"));
+
+    store
+        .save_token("alice@example.com", &sample_token())
+        .unwrap();
+
+    let mode = std::fs::metadata(state_dir).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o700);
+}
+
 #[test]
 fn file_store_returns_none_when_file_is_missing() {
     let dir = tempfile::tempdir().unwrap();

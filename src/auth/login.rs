@@ -1,8 +1,11 @@
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
-use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
+use std::time::Duration as StdDuration;
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
 use chrono::{Duration, Utc};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use url::Url;
 
 use super::account::Token;
@@ -52,14 +55,37 @@ const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const INVALID_CLIENT_ERROR: &str = "invalid_client";
 const DEFAULT_DEVICE_POLL_INTERVAL_SECS: u64 = 5;
 const SLOW_DOWN_INTERVAL_SECS: u64 = 5;
+const RANDOM_VALUE_BYTES: usize = 32;
+const PKCE_CHALLENGE_METHOD: &str = "S256";
 
-pub fn random_state() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let pid = std::process::id() as u128;
-    format!("{:032x}", nanos ^ pid.wrapping_mul(0x9e3779b97f4a7c15))
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pkce {
+    pub verifier: String,
+    pub challenge: String,
+}
+
+pub fn random_state() -> Result<String, AuthError> {
+    random_url_safe_value()
+}
+
+pub fn new_pkce() -> Result<Pkce, AuthError> {
+    let verifier = random_url_safe_value()?;
+    let challenge = pkce_challenge(&verifier);
+    Ok(Pkce {
+        verifier,
+        challenge,
+    })
+}
+
+pub fn pkce_challenge(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
+fn random_url_safe_value() -> Result<String, AuthError> {
+    let mut bytes = [0u8; RANDOM_VALUE_BYTES];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| AuthError::OAuthFlow(format!("failed to generate random value: {e}")))?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
 pub fn build_authorize_url(
@@ -68,6 +94,7 @@ pub fn build_authorize_url(
     redirect_uri: &str,
     scopes: &[&str],
     state: &str,
+    code_challenge: &str,
 ) -> Result<String, AuthError> {
     let mut url = Url::parse(auth_url).map_err(|e| AuthError::OAuthFlow(e.to_string()))?;
     url.query_pairs_mut()
@@ -76,6 +103,8 @@ pub fn build_authorize_url(
         .append_pair("response_type", "code")
         .append_pair("scope", &scopes.join(" "))
         .append_pair("state", state)
+        .append_pair("code_challenge", code_challenge)
+        .append_pair("code_challenge_method", PKCE_CHALLENGE_METHOD)
         .append_pair("access_type", "offline")
         .append_pair("include_granted_scopes", "true")
         .append_pair("prompt", "consent");
@@ -88,14 +117,6 @@ struct TokenResponse {
     refresh_token: Option<String>,
     expires_in: i64,
     scope: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScopedToken {
-    pub access_token: String,
-    pub refresh_token: Option<String>,
-    pub expiry: chrono::DateTime<Utc>,
-    pub scopes: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,24 +160,19 @@ pub async fn exchange_code(
     client_secret: &str,
     redirect_uri: &str,
     code: &str,
+    code_verifier: &str,
 ) -> Result<Token, AuthError> {
     token_from_parsed_response(
-        request_authorization_code_token(token_url, client_id, client_secret, redirect_uri, code)
-            .await?,
+        request_authorization_code_token(
+            token_url,
+            client_id,
+            client_secret,
+            redirect_uri,
+            code,
+            code_verifier,
+        )
+        .await?,
     )
-}
-
-pub async fn exchange_code_for_scopes(
-    token_url: &str,
-    client_id: &str,
-    client_secret: &str,
-    redirect_uri: &str,
-    code: &str,
-) -> Result<ScopedToken, AuthError> {
-    Ok(scoped_token_from_parsed_response(
-        request_authorization_code_token(token_url, client_id, client_secret, redirect_uri, code)
-            .await?,
-    ))
 }
 
 async fn request_authorization_code_token(
@@ -165,10 +181,12 @@ async fn request_authorization_code_token(
     client_secret: &str,
     redirect_uri: &str,
     code: &str,
+    code_verifier: &str,
 ) -> Result<TokenResponse, AuthError> {
     let client = reqwest::Client::new();
     let params = [
         ("code", code),
+        ("code_verifier", code_verifier),
         ("client_id", client_id),
         ("client_secret", client_secret),
         ("redirect_uri", redirect_uri),
@@ -212,15 +230,6 @@ fn token_from_parsed_response(parsed: TokenResponse) -> Result<Token, AuthError>
         expiry: Utc::now() + Duration::seconds(parsed.expires_in),
         scopes: parse_scopes(&parsed.scope),
     })
-}
-
-fn scoped_token_from_parsed_response(parsed: TokenResponse) -> ScopedToken {
-    ScopedToken {
-        access_token: parsed.access_token,
-        refresh_token: parsed.refresh_token,
-        expiry: Utc::now() + Duration::seconds(parsed.expires_in),
-        scopes: parse_scopes(&parsed.scope),
-    }
 }
 
 fn parse_scopes(scope: &str) -> Vec<String> {

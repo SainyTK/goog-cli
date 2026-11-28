@@ -8,9 +8,10 @@ use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 use super::error::AuthError;
 use super::login::{
-    build_authorize_url, exchange_code, fetch_email, parse_callback_params, poll_device_token,
-    render_device_authorization_prompt, request_device_authorization, DeviceAuthorization,
-    DEFAULT_DEVICE_LOGIN_SCOPES, DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL,
+    build_authorize_url, exchange_code, fetch_email, new_pkce, parse_callback_params,
+    pkce_challenge, poll_device_token, random_state, render_device_authorization_prompt,
+    request_device_authorization, DeviceAuthorization, DEFAULT_DEVICE_LOGIN_SCOPES,
+    DEFAULT_LOGIN_SCOPES, GOOGLE_AUTH_URL,
 };
 use crate::calendar::CALENDAR_SCOPE;
 use crate::docs::DOCS_SCOPE;
@@ -51,6 +52,7 @@ fn authorize_url_includes_required_params() {
         "http://127.0.0.1:54321/",
         &["openid", "email"],
         "state-xyz",
+        "challenge-abc",
     )
     .unwrap();
 
@@ -67,7 +69,40 @@ fn authorize_url_includes_required_params() {
     assert_eq!(pairs.get("access_type").unwrap(), "offline");
     assert_eq!(pairs.get("include_granted_scopes").unwrap(), "true");
     assert_eq!(pairs.get("prompt").unwrap(), "consent");
+    assert_eq!(pairs.get("code_challenge").unwrap(), "challenge-abc");
+    assert_eq!(pairs.get("code_challenge_method").unwrap(), "S256");
     assert!(url.starts_with(GOOGLE_AUTH_URL));
+}
+
+#[test]
+fn pkce_challenge_matches_the_rfc_7636_example() {
+    assert_eq!(
+        pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+        "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+    );
+}
+
+#[test]
+fn new_pkce_verifier_is_a_fresh_url_safe_value_with_matching_challenge() {
+    let first = new_pkce().unwrap();
+    let second = new_pkce().unwrap();
+
+    assert_ne!(first.verifier, second.verifier);
+    assert!((43..=128).contains(&first.verifier.len()));
+    assert!(first
+        .verifier
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+    assert_eq!(first.challenge, pkce_challenge(&first.verifier));
+}
+
+#[test]
+fn random_state_is_unique_across_calls() {
+    let first = random_state().unwrap();
+    let second = random_state().unwrap();
+
+    assert_ne!(first, second);
+    assert_eq!(first.len(), 43);
 }
 
 #[test]
@@ -332,6 +367,7 @@ async fn exchange_code_parses_a_successful_token_response() {
         .and(body_string_contains("client_id=client-123"))
         .and(body_string_contains("client_secret=shh"))
         .and(body_string_contains("grant_type=authorization_code"))
+        .and(body_string_contains("code_verifier=verifier-456"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "access_token": "ya29.access",
             "refresh_token": "1//refresh",
@@ -348,6 +384,7 @@ async fn exchange_code_parses_a_successful_token_response() {
         "shh",
         "http://127.0.0.1:5000/",
         "auth-code-789",
+        "verifier-456",
     )
     .await
     .unwrap();
@@ -379,6 +416,7 @@ async fn exchange_code_errors_when_response_is_a_non_2xx() {
         "shh",
         "http://127.0.0.1:5000/",
         "bad-code",
+        "verifier",
     )
     .await
     .unwrap_err();
@@ -406,9 +444,16 @@ async fn exchange_code_errors_when_refresh_token_is_missing() {
         .mount(&server)
         .await;
 
-    let err = exchange_code(&format!("{}/token", server.uri()), "c", "s", "r", "code")
-        .await
-        .unwrap_err();
+    let err = exchange_code(
+        &format!("{}/token", server.uri()),
+        "c",
+        "s",
+        "r",
+        "code",
+        "v",
+    )
+    .await
+    .unwrap_err();
 
     match err {
         AuthError::TokenExchange(msg) => assert!(msg.contains("refresh_token")),

@@ -572,13 +572,14 @@ cargo uninstall goog
 
 Those commands remove the executable only.
 To fully reset local `goog` state, delete `$HOME/.goog`, which is `%USERPROFILE%\.goog` on Windows.
-That directory contains OAuth App setup in `config.toml`, auth state in `auth.json`, and anonymous telemetry IDs in `telemetry.json`.
+That directory contains OAuth App setup in `config.toml`, auth state in `auth.json`, and telemetry IDs in `telemetry.json`.
 The auth state file grants account access within authorized scopes, so do not commit it or sync it into places you do not trust.
 
 ### Usage Telemetry
 
-Release builds send one anonymous event per command to PostHog so maintainers can see which commands people use.
+Release builds send one usage event per command to PostHog so maintainers can see which commands people use.
 The first run prints a notice and sends nothing.
+The notice is shown again once whenever its wording changes.
 Each event holds the command name (such as `drive ls`), the result, the exit code, the duration, the local hour and weekday, the `goog` version, and the operating system.
 Devices are identified by a random ID in `~/.goog/telemetry.json`.
 Accounts are identified by a one-way hash of Google's internal account number, so one account counts as one account on every device.

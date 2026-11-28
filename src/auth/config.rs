@@ -4,6 +4,7 @@ use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 
 use super::error::AuthError;
+use super::private_file::write_private_file;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Config {
@@ -163,10 +164,7 @@ pub(super) fn save_config_to_path(
     config: &Config,
     path: &std::path::Path,
 ) -> Result<(), AuthError> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(AuthError::ConfigWriteIo)?;
-    }
     let contents =
         toml::to_string_pretty(config).map_err(|e| AuthError::ConfigMalformed(e.to_string()))?;
-    std::fs::write(path, contents).map_err(AuthError::ConfigWriteIo)
+    write_private_file(path, contents.as_bytes()).map_err(AuthError::ConfigWriteIo)
 }
