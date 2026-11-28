@@ -24,25 +24,31 @@ Website: <https://goog.sainytk.com>
 - You can hand it to an AI agent. Login opens a browser once per account, and ordinary commands never prompt. `goog` only drafts email, so a person always presses send. An agent skill teaches your agent the commands.
 - `goog` runs no server. Tokens stay in a private file on your machine, and you sign in through your own Google Cloud OAuth app.
 
-## goog compared with gws
+## How goog compares
 
-[gws](https://github.com/googleworkspace/cli) is a community Google Workspace CLI published under the `googleworkspace` GitHub organization.
-It builds one command for every Google API method from Google's Discovery Service.
-`goog` covers six apps with fewer commands, each built for one everyday task, and it is designed around multiple accounts.
+Two other command-line tools work with Google Workspace.
+[gwscli](https://developers.google.com/workspace/guides/workspace-cli) is Google's official, supported CLI for AI agents, generally available since November 2026.
+[gws](https://github.com/googleworkspace/cli) is a community CLI under the `googleworkspace` GitHub organization that builds one command for every Google API method.
+Its README says future development is moving to gwscli.
+`goog` covers six apps with commands built for everyday tasks, and it is designed around multiple accounts.
 
-| | goog | gws |
-| --- | --- | --- |
-| Several Google accounts | Log in to each once. Commands find the account that can open the file you pass. | Built-in multi-account support was removed in v0.7.0. One account per config directory. |
-| Command style | `goog docs text replace URL --find draft --replace final` | `gws drive files list --params '{"pageSize": 10}'`, mirroring the raw API |
-| Editing Google Docs | Insert, replace, style, tables, images, page breaks, headers, footnotes, anchored comments and suggestions | A helper that appends text, plus raw API calls |
-| Default output | Readable tables and text, `--json` on request | JSON |
-| Edits in other people's files | Suggestions, comments anchored to text and revision guards, one flag each | Through raw API requests |
-| Sending email | Drafts only, so a person sends | Can send email |
-| Apps covered | Drive, Docs, Sheets, Slides, Calendar, Gmail | Every API in Google's Discovery Service |
+| | goog | gwscli | gws |
+| --- | --- | --- | --- |
+| Made by | Independent open-source project | Google, with support from Google | Community project under the `googleworkspace` organization |
+| Several Google accounts | Log in to each once. Commands find the account that can open the file you pass. | Its guide covers one signed-in account | Built-in multi-account support was removed in v0.7.0 |
+| Command style | `goog docs text replace URL --find draft --replace final` | `gwscli drive list_recent_files --pageSize 10` | `gws drive files list --params '{"pageSize": 10}'` |
+| Editing Google Docs | Insert, replace, style, tables, images, page breaks, headers, footnotes, anchored comments and suggestions | `docs update_doc` applies batch updates | A helper that appends text, plus raw API calls |
+| Edits in other people's files | Suggestions, anchored comments and revision guards, one flag each | Through batch updates | Through raw API requests |
+| Default output | Readable tables and text, `--json` on request | JSON, with Markdown for some reads | JSON |
+| Previewing writes | `--dry-run` | Not documented | `--dry-run` |
+| Sending email | Drafts only, so a person sends | Can send, reply and forward | Can send |
+| Admin controls | None. It acts as you, through your own OAuth app. | Workspace approval policies apply to sensitive agent actions | None built in |
+| Apps covered | Drive, Docs, Sheets, Slides, Calendar, Gmail | Gmail, Drive, Docs, Sheets, Slides, Calendar, Chat, Tasks, People | Every API in Google's Discovery Service |
 
-Choose gws when you need a Google API outside these six apps, service accounts, or Workspace admin tasks.
-Choose `goog` when you juggle several accounts or want an agent to edit documents safely.
-This comparison reflects the gws README and issue tracker as of November 2026.
+Choose gwscli when you want a tool Google supports, Workspace admin controls over agents, or Chat, Tasks and Contacts.
+Choose gws when you need an API that neither of the others covers, or service accounts.
+Choose `goog` when you juggle several accounts, want readable output, or want an agent to edit documents with previews, suggestions and revision guards.
+This comparison reflects Google's gwscli guide and the gws README and issue tracker as of November 2026.
 
 ## Install
 
