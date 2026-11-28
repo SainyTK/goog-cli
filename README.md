@@ -2,89 +2,117 @@
 
 ![goog CLI wallpaper](./public/goog-cli-wallpaper.png)
 
-`goog` is an Early Open-Source CLI for Google APIs.
-It is built first for power users and AI agents who want terminal-native access to Google Drive, Google Docs, Google Sheets, Google Slides, Google Calendar, and Gmail without getting forced down a browser UI path.
+**Google Workspace from your terminal, across every Google account you use.**
 
-Human-readable terminal workflows are the default experience.
-JSON is also supported for programmatic use, but it is not the primary product surface.
+`goog` is a command-line tool for Google Drive, Docs, Sheets, Slides, Calendar and Gmail.
+Log in to each of your Google accounts once, then point a command at any file and `goog` finds the account that can open it.
+It is built for power users and AI agents such as Claude Code and Codex.
 
-The CLI uses one OAuth App for all accounts, stores Accounts, the Active Account, Tokens, and Resource Account Mappings in `~/.goog/auth.json`, and requests every supported scope up front during `goog auth login` instead of acquiring them incrementally per command.
+Website: <https://goog.sainytk.com>
 
-## Current API Coverage
+> [!NOTE]
+> `goog` is an independent open-source project.
+> It is not made, endorsed or supported by Google.
+> Google, Google Workspace, Gmail, Google Drive, Google Docs, Google Sheets, Google Slides and Google Calendar are trademarks of Google LLC.
 
-`goog` currently includes:
+## Why goog
 
-- Google Drive file and folder listing, upload, download, Office Conversion, and recoverable trash commands.
-- Google Docs document listing, blank creation, template copying, semantic fidelity comparison, PDF export, mapping, text search, content lookup, high-level text/image/table/style/list edits, page and section breaks, headers, footers, footnotes, named ranges, comments anchored to text, suggested edits that the owner accepts or rejects, raw document reads, and raw batch updates.
-- Google Sheets spreadsheet listing, reads, values reads and writes, appends, clears, and structural batch updates.
-- Google Slides presentation listing, creation, raw reads, high-level slide/text/image/table/shape edits, and raw batch updates.
-- Google Calendar calendar listing, calendar metadata reads, free/busy lookup, and event list/read/create/update/delete commands.
-- Gmail message listing, search, raw message reads, attachment downloads, draft listing and reads, reply drafts, and in-place draft edits that keep untouched fields, attachments and the reply thread.
-- Multi-account OAuth setup, login, account listing, and active account switching.
+- Work, client and personal accounts stay logged in side by side. Point a command at a file and `goog` tries the account that opened it last, then your active account, then the rest, and remembers which one worked. Add `--account` when you want exactly one.
+- Commands match everyday tasks. Edit a document by heading or by the text you can see, fill a sheet from a CSV file, or draft a reply to an email. You only write Google API request bodies when you want to.
+- Edits in shared files are safe. Preview them with `--dry-run`, write them as suggestions the owner can accept, and anchor comments to the text they discuss. A revision guard refuses the edit when someone changed the file since you last read it.
+- Output is a readable table or text by default. Add `--json` for the full result. Progress and update notices go to stderr, so pipes and exit codes keep working.
+- You can hand it to an AI agent. Login opens a browser once per account, and ordinary commands never prompt. `goog` only drafts email, so a person always presses send. An agent skill teaches your agent the commands.
+- `goog` runs no server. Tokens stay in a private file on your machine, and you sign in through your own Google Cloud OAuth app.
 
-## Installation
+## goog compared with gws
 
-Install `goog` on macOS or Linux with:
+[gws](https://github.com/googleworkspace/cli) is a community Google Workspace CLI published under the `googleworkspace` GitHub organization.
+It builds one command for every Google API method from Google's Discovery Service.
+`goog` covers six apps with fewer commands, each built for one everyday task, and it is designed around multiple accounts.
+
+| | goog | gws |
+| --- | --- | --- |
+| Several Google accounts | Log in to each once. Commands find the account that can open the file you pass. | Built-in multi-account support was removed in v0.7.0. One account per config directory. |
+| Command style | `goog docs text replace URL --find draft --replace final` | `gws drive files list --params '{"pageSize": 10}'`, mirroring the raw API |
+| Editing Google Docs | Insert, replace, style, tables, images, page breaks, headers, footnotes, anchored comments and suggestions | A helper that appends text, plus raw API calls |
+| Default output | Readable tables and text, `--json` on request | JSON |
+| Edits in other people's files | Suggestions, comments anchored to text and revision guards, one flag each | Through raw API requests |
+| Sending email | Drafts only, so a person sends | Can send email |
+| Apps covered | Drive, Docs, Sheets, Slides, Calendar, Gmail | Every API in Google's Discovery Service |
+
+Choose gws when you need a Google API outside these six apps, service accounts, or Workspace admin tasks.
+Choose `goog` when you juggle several accounts or want an agent to edit documents safely.
+This comparison reflects the gws README and issue tracker as of November 2026.
+
+## Install
+
+macOS or Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh
 ```
 
-Install `goog` on Windows with:
+Windows (PowerShell):
 
 ```powershell
 irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1 | iex
 ```
 
-`goog` checks published versions for a newer release.
-Stable builds consider Canonical Releases.
-Preview builds consider both Preview Releases and newer Canonical Releases.
-When an update is available, every command prints the available version and the installer command on stderr.
-Known updates are cached for 24 hours, while no-update results are refreshed after 15 minutes.
-Update checks do not change command exit status or JSON output, and commands continue normally when GitHub is unavailable.
-
-## OAuth Setup
-
-Create a Google OAuth client for a desktop or web application, then configure `goog` once:
+Add the agent skill to Claude Code, Codex and other agents that read skills:
 
 ```sh
-goog auth setup
+npx skills add SainyTK/goog-cli
 ```
 
-### Google Cloud Console Setup Guide
+The installers download a published release and check its SHA-256 checksum before installing.
+`goog` tells you on stderr when a newer release is out, together with the command that updates it.
 
-Open <https://console.cloud.google.com>, create a project or select an existing one, then complete the setup below before running `goog auth setup`.
+## Get started
 
-#### 1. Enable the required APIs
+`goog` signs in through an OAuth app in your own Google Cloud project, so your tokens never pass through anyone else's server.
+Setting it up takes about ten minutes, once.
 
+1. Follow the [setup guide](https://goog.sainytk.com/setup/) to enable the six Google APIs and create a **Desktop app** OAuth client. Download its JSON file.
+2. Add the OAuth app to `goog`:
+
+   ```sh
+   goog auth setup --client-secret-file ~/Downloads/client_secret_*.json
+   ```
+
+3. Log in to each Google account you use. Each login opens one consent screen:
+
+   ```sh
+   goog auth login
+   ```
+
+4. Start working:
+
+   ```sh
+   goog drive ls --limit 20
+   goog docs map "https://docs.google.com/document/d/DOCUMENT_ID/edit"
+   ```
+
+<details>
+<summary>Google Cloud setup with screenshots</summary>
+
+Open <https://console.cloud.google.com>, create a project or select an existing one, then complete the steps below.
+
+**1. Enable the required APIs.**
 Go to **APIs & Services -> Library**.
 
 ![API Library](./public/readme/01-api-library.png)
 
-Enable these APIs:
-
-- Google Drive API
-- Google Docs API
-- Google Sheets API
-- Google Slides API
-- Google Calendar API
-- Gmail API
-
+Enable the Google Drive API, Google Docs API, Google Sheets API, Google Slides API, Google Calendar API and Gmail API.
 If an API already shows **Manage** with an **API Enabled** badge, skip it.
 
 ![API already enabled](./public/readme/02-apis-enabled.png)
 
-#### 2. Configure the OAuth consent screen
+**2. Configure the OAuth consent screen.**
+In a new project, go to **APIs & Services -> OAuth consent screen**.
+In the newer layout this may appear under **Google Auth Platform -> Branding**.
+Skip this step if the consent screen is already configured.
 
-If this is a brand-new project, go to **APIs & Services -> OAuth consent screen**.
-
-In the newer GCP layout, this may appear under **Google Auth Platform -> Branding**.
-
-If the consent screen is already configured, skip to the next step.
-
-Choose **External** for personal Google accounts.
-
-Fill in the required fields:
+Choose **External** for personal Google accounts and fill in the required fields:
 
 - **App name**: any descriptive name, such as `My Office Agent`
 - **User support email**: your email address
@@ -95,80 +123,68 @@ All other fields can stay blank.
 ![App information form](./public/readme/03-app-information.png)
 
 Click **Save and Continue**.
-
-Because the app stays in **Testing** mode by default, add your own Google account under **Test users** before finishing the flow.
+The app stays in **Testing** mode, so add each Google account you will log in with under **Test users**.
 
 ![Add test users](./public/readme/04-add-test-users.png)
 
-#### 3. Create OAuth credentials
-
-Go to **APIs & Services -> Credentials**.
-
-Click **+ Create credentials**.
+**3. Create OAuth credentials.**
+Go to **APIs & Services -> Credentials**, click **+ Create credentials** and select **OAuth client ID**.
 
 ![Credentials page](./public/readme/05-credentials-page.png)
 
-Select **OAuth client ID**.
-
 ![Create credentials dropdown](./public/readme/06-create-credential-menu.png)
 
-#### 4. Choose Desktop app
-
-On the client creation form, set **Application type** to **Desktop app**.
+**4. Choose Desktop app.**
+Set **Application type** to **Desktop app**, enter any name and click **Create**.
 
 ![Application type dropdown](./public/readme/07-app-type-dropdown.png)
 
-Enter any descriptive name, then click **Create**.
-
 ![Name filled in](./public/readme/08-name-filled.png)
 
-#### 5. Copy the client ID and client secret
-
-After the client is created, copy both values from the dialog:
-
-- **Client ID**: a long value ending in `.apps.googleusercontent.com`
-- **Client secret**: a shorter value usually starting with `GOCSPX-`
+**5. Save the client.**
+Click **Download JSON** and pass the file to `goog auth setup --client-secret-file`.
+You can also copy the **Client ID** (ending in `.apps.googleusercontent.com`) and **Client secret** (usually starting with `GOCSPX-`) and run `goog auth setup` to paste them.
 
 ![OAuth client created](./public/readme/09-oauth-client-created.png)
 
-Copy both values before closing the dialog.
+</details>
 
-You can also use **Download JSON** if you prefer the file-based `--client-secret-file` setup path.
-
-You can also import a downloaded Google client secret file:
-
-```sh
-goog auth setup --client-secret-file client_secret_123.apps.googleusercontent.com.json
-```
-
-Authorize a Google Account:
-
-```sh
-goog auth login
-```
-
-List authorized Accounts:
+### Working with several accounts
 
 ```sh
 goog auth list
-goog auth list --json
-```
-
-Switch the Active Account:
-
-```sh
 goog auth switch alice@example.com
-```
-
-Run one command against a different Account without switching:
-
-```sh
 goog --account bob@example.com drive ls
 ```
 
-## Examples
+`goog auth switch` changes the active account used by listing and search commands.
+`--account` runs one command as exactly that account, with no fallback to the others.
 
-### Drive
+## What you can do
+
+A few everyday commands:
+
+```sh
+goog drive upload ./report.pdf --folder FOLDER_ID
+goog docs text replace DOCUMENT_ID --find "Q2" --replace "Q3" --dry-run
+goog docs text insert DOCUMENT_ID "Reviewed draft. " --at "before-text:The quick" --suggest
+goog docs comment-create DOCUMENT_ID --text "Please check this number." --quote "revenue grew 12%"
+goog sheets values get-table SPREADSHEET_ID 'Sheet1!A1:D10' --format csv
+goog sheets values append-row SPREADSHEET_ID 'Sheet1!A:D' --value Ada --value Lovelace
+goog slides replace-text PRESENTATION_ID --find "{{client_name}}" --replace "Acme Co."
+goog calendar events quick-add primary "Lunch with Sam tomorrow at noon"
+goog mail list 'from:alerts@example.com newer_than:7d'
+goog mail draft --reply-to MESSAGE_ID --body 'Thanks, I will review it today.'
+```
+
+Docs, Slides and Gmail commands also accept the link you copied from the browser in place of an ID.
+Run `goog --help` or `goog <command> --help` for the full reference.
+The sections below list more examples for each app.
+
+### Examples by app
+
+<details>
+<summary>Google Drive</summary>
 
 ```sh
 goog drive ls --limit 20
@@ -212,7 +228,10 @@ Repeat `--mention EMAIL` to prefix email mentions.
 Include ordinary emoji directly in `--text` when desired.
 `comment-resolve` accepts an optional reply, while `comment-delete` permanently removes the comment.
 
-### Docs
+</details>
+
+<details>
+<summary>Google Docs</summary>
 
 ```sh
 goog docs list --limit 20
@@ -282,7 +301,10 @@ For JPEG images, EXIF orientations 5 through 8 swap the encoded width and height
 `goog docs map DOCUMENT_ID --type images --json` reports each image's native point dimensions in `layoutMetadata.size`.
 Local images use cleanup-aware Drive public staging by default, or a JSON stdin and stdout adapter when public Drive sharing is unavailable.
 
-### Sheets
+</details>
+
+<details>
+<summary>Google Sheets</summary>
 
 ```sh
 goog sheets create "Quarterly Plan"
@@ -383,7 +405,10 @@ goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --data ./rows.csv
 cat rows.tsv | goog sheets values append-table SPREADSHEET_ID 'Sheet1!A:D' --data - --format tsv
 ```
 
-### Slides
+</details>
+
+<details>
+<summary>Google Slides</summary>
 
 ```sh
 goog slides list --limit 20
@@ -432,7 +457,10 @@ goog slides object delete PRESENTATION_ID PAGE_OBJECT_ID
 goog slides batch-update PRESENTATION_ID --requests ./slides-requests.json
 ```
 
-### Calendar
+</details>
+
+<details>
+<summary>Google Calendar</summary>
 
 ```sh
 goog calendar calendars list --limit 20
@@ -476,7 +504,10 @@ goog calendar events move primary EVENT_ID --destination team@example.com
 goog calendar events delete primary EVENT_ID --send-updates all
 ```
 
-### Gmail
+</details>
+
+<details>
+<summary>Gmail</summary>
 
 ```sh
 goog mail list --limit 10
@@ -492,90 +523,30 @@ goog mail draft DRAFT_ID --add-cc lead@example.com --remove-attachment old-repor
 goog mail download MESSAGE_ID ATTACHMENT_ID --output invoice.pdf
 ```
 
-Use `goog help`, `goog <command> --help`, and nested command help for the full command reference.
+</details>
 
-### Additional Installation Options
+## Use with AI agents
 
-The installer script installs the latest Stable LTS Canonical Release by default.
-It installs to `/usr/local/bin` when that directory is writable.
-If `/usr/local/bin` is not writable, it installs to `$HOME/.local/bin` and prints a PATH warning if needed.
-The installer supports macOS arm64, macOS x64, Linux x64, Linux arm64, and Windows x64 Release Assets.
+Install the skill with `npx skills add SainyTK/goog-cli`, then ask your agent for the result you want, such as "summarize the open comments in this doc" or "add last week's numbers to the tracker sheet".
+The skill in [`skills/goog`](skills/goog) documents the same commands as the CLI and adds no hidden behavior.
 
-Install the latest preview pre-release with:
+A few things make `goog` predictable for agents:
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --channel preview
-```
+- Ordinary commands never open a browser or wait for input.
+- Progress bars and notices go to stderr, so stdout and `--json` output stay parseable.
+- Ambiguous targets are refused with the candidate matches listed, so an agent never edits the wrong paragraph.
+- `goog` creates and edits Gmail drafts but never sends them.
 
-Install a specific Canonical Release with:
+Treat anything an agent reads from a document or email as untrusted input, and review drafts and shared-file edits before they go out.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.2.3
-```
+## Privacy and security
 
-#### Windows
+- `goog` talks only to Google's APIs, GitHub (to check for new releases) and PostHog (usage counts, described below).
+- Tokens live in `~/.goog/auth.json` (`%USERPROFILE%\.goog\auth.json` on Windows), readable only by your user on macOS and Linux. Anyone who can read that file can act as your accounts, so never commit it or sync it to places you do not trust.
+- Login uses your own OAuth app with PKCE. No token passes through a `goog` server, because there is none.
+- Inserting a local image into a Google Doc uploads it to your Drive, shares it with anyone who has the link while Docs copies it, then deletes it. Use `--staging-command` to stage images on your own host instead.
 
-`install.ps1` installs to `$env:LOCALAPPDATA\Programs\goog\bin` and adds that directory to your user PATH.
-Open a new terminal after the first install so the PATH change takes effect.
-Windows Release Assets are `.zip` archives containing `goog.exe`, and the installer verifies the published `.sha256` checksum before installing.
-
-Piping into `iex` cannot forward arguments, so pass options through a script block:
-
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1))) -Channel preview
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1))) -Version v0.2.3
-```
-
-Or set the environment variables the installer reads, then pipe as usual:
-
-```powershell
-$env:GOOG_CHANNEL = 'preview'
-irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1 | iex
-```
-
-`install.ps1` also accepts `-InstallDir` and `-NoPathUpdate`, and reads `GOOG_VERSION`, `GOOG_INSTALL_DIR`, and `GOOG_NO_MODIFY_PATH`.
-
-Check which release source produced the installed binary with:
-
-```sh
-goog version --json
-```
-
-For a Canonical Release, compare `sourceTag` and `gitCommit` with the tag and commit on the corresponding GitHub Release.
-`releaseChannel` identifies a stable, preview, or development build, and `dirty` must be `false` for a published binary.
-
-Users outside the binary release support matrix can install from source with Cargo:
-
-```sh
-cargo install --git https://github.com/SainyTK/goog-cli goog
-```
-
-### Uninstall
-
-If you installed with the installer script, remove the binary from the supported install locations:
-
-```sh
-rm -f /usr/local/bin/goog "$HOME/.local/bin/goog"
-```
-
-On Windows, remove the install directory and drop it from your user PATH:
-
-```powershell
-Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\goog"
-```
-
-If you installed with Cargo, uninstall the Cargo package:
-
-```sh
-cargo uninstall goog
-```
-
-Those commands remove the executable only.
-To fully reset local `goog` state, delete `$HOME/.goog`, which is `%USERPROFILE%\.goog` on Windows.
-That directory contains OAuth App setup in `config.toml`, auth state in `auth.json`, and telemetry IDs in `telemetry.json`.
-The auth state file grants account access within authorized scopes, so do not commit it or sync it into places you do not trust.
-
-### Usage Telemetry
+### Usage telemetry
 
 Release builds send one usage event per command to PostHog so maintainers can see which commands people use.
 The first run prints a notice and sends nothing.
@@ -592,20 +563,101 @@ Turn telemetry off with any of these:
 - `DO_NOT_TRACK=1`
 - `telemetry = false` under `[settings]` in `~/.goog/config.toml`
 
-### Limitations
+## Limitations
 
-- **`goog` cannot write Office files (.xlsx, .docx) in Drive.** Writing to an Excel-format spreadsheet (`values update`, `values append`, `batch-update`) or a Word-format document (`batch-update`) is not supported. This is a Google Sheets/Docs API restriction, not a `goog` gap: neither API can write to `.xlsx` or `.docx` files at all. Convert the file to a native Google Sheet or Google Doc first (Drive UI: File > Save as Google Sheets/Docs) to edit it with `goog`.
+- `goog` cannot write to Office files (`.xlsx`, `.docx`) stored in Drive, because the Sheets and Docs APIs cannot write to them. Convert the file first with `goog drive convert FILE_ID --to google-sheet` or `--to google-doc`.
+- `goog` covers Drive, Docs, Sheets, Slides, Calendar and Gmail. Other Workspace apps and Workspace administration are out of scope for now.
+- When Google's API cannot do something, `goog` says so and leaves it undone. It never automates the browser.
 
-## Release Flow
+## More install options
 
-`goog` has two release channels.
-Preview releases are for opt-in validation before stable promotion.
-Stable LTS releases are the default install path.
+The installer script installs the latest stable release.
+It installs to `/usr/local/bin` when that directory is writable, otherwise to `$HOME/.local/bin`, and warns if that directory is missing from your PATH.
+Release builds cover macOS (Apple silicon and Intel), Linux (x64 and arm64) and Windows x64.
 
-### Preview Release
+Install the latest preview release or a specific version:
 
-Start from `develop` or the release-prep branch.
-Run the release checks:
+```sh
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --channel preview
+curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --version v0.2.17
+```
+
+On Windows, `install.ps1` installs to `$env:LOCALAPPDATA\Programs\goog\bin` and adds it to your user PATH, so open a new terminal after the first install.
+Piping into `iex` cannot forward arguments, so pass options through a script block:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1))) -Channel preview
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.ps1))) -Version v0.2.17
+```
+
+`install.ps1` also accepts `-InstallDir` and `-NoPathUpdate`, and reads `GOOG_CHANNEL`, `GOOG_VERSION`, `GOOG_INSTALL_DIR` and `GOOG_NO_MODIFY_PATH`.
+
+On other platforms, build from source with Cargo:
+
+```sh
+cargo install --git https://github.com/SainyTK/goog-cli goog
+```
+
+`goog version --json` shows which release produced the installed binary.
+For a published release, `sourceTag` and `gitCommit` match the GitHub Release, `releaseChannel` is `stable` or `preview`, and `dirty` is `false`.
+
+### Uninstall
+
+Remove the binary from wherever it was installed:
+
+```sh
+rm -f /usr/local/bin/goog "$HOME/.local/bin/goog"
+```
+
+```powershell
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Programs\goog"
+```
+
+If you installed with Cargo, run `cargo uninstall goog`.
+To remove your accounts and settings too, delete `~/.goog` (`%USERPROFILE%\.goog` on Windows).
+
+## Contributing
+
+Contributions are welcome.
+Read [VISION.md](VISION.md) before proposing a feature or opening a pull request.
+It explains which changes `goog` accepts and which it resists.
+
+### Development setup
+
+`goog` is a single Rust crate.
+Install a stable Rust toolchain, then:
+
+```sh
+git clone https://github.com/SainyTK/goog-cli
+cd goog-cli
+cargo build
+./target/debug/goog --help
+```
+
+Run the same checks as CI before opening a pull request:
+
+```sh
+cargo fmt --check
+cargo check --all-targets
+cargo test
+```
+
+The `CI` workflow runs them on Linux and Windows for every push and pull request.
+
+### Pull requests
+
+- Describe the user-facing change in a few lines.
+- Verify new or changed Google API behavior against a real Google account, using throwaway files you delete afterwards.
+- Add tests with recorded HTTP fixtures and obvious placeholder IDs. Never commit real document IDs, URLs or email addresses.
+- Update this README and the command help when commands, OAuth behavior or installation change.
+- Keep GitHub Releases as the only place binaries are published.
+
+### Releases
+
+Maintainers publish releases by pushing tags, and the `Canonical Release` workflow does the rest.
+It checks that the tag sits on the right branch, builds every platform, smoke-tests each archive, and uploads the archives with SHA-256 checksums.
+
+Before tagging, bump the version in `Cargo.toml`, let Cargo update `Cargo.lock`, and run:
 
 ```sh
 cargo fmt --check
@@ -613,79 +665,31 @@ cargo test
 cargo test --test distribution_artifacts_tests
 ```
 
-Bump `Cargo.toml` to a preview version such as `0.2.4-preview.2`, then let Cargo update `Cargo.lock`.
-Push the tested commit to `develop` and `preview`.
-Create and push a matching preview tag:
+A preview release comes from the `preview` branch:
 
 ```sh
 git push origin develop
 git push origin HEAD:preview
-git tag v0.2.4-preview.2
-git push origin v0.2.4-preview.2
+git tag v0.2.18-preview.1
+git push origin v0.2.18-preview.1
 ```
 
-The `Canonical Release` workflow requires preview tags to be reachable from `origin/preview`.
-It publishes a GitHub pre-release.
-After the workflow succeeds, verify the preview installer against a temporary directory:
+A stable release comes from `main` once the preview is tested and the version is bumped to the stable number:
 
 ```sh
-tmp="$(mktemp -d)"
-git show origin/preview:install.sh | sh -s -- --channel preview --install-dir "$tmp/bin"
-"$tmp/bin/goog" --version
-rm -rf "$tmp"
+git push origin HEAD:main
+git tag v0.2.18
+git push origin v0.2.18
 ```
 
-### Stable LTS Release
+After publishing, install the release into a temporary directory with the installer script and run `goog --version`.
 
-Promote a tested preview by merging or fast-forwarding the release commit into `main`.
-Replace the preview package version with the stable version in `Cargo.toml`, then let Cargo update `Cargo.lock`.
-Run the release checks again.
-Create and push a stable tag:
+## License
 
-```sh
-git checkout main
-git pull --ff-only origin main
-git tag v0.2.4
-git push origin v0.2.4
-```
+`goog` is released under the [MIT License](LICENSE).
 
-The `Canonical Release` workflow requires stable tags to be reachable from `origin/main`.
-It publishes the stable GitHub Release.
-After the workflow succeeds, verify the default installer against a temporary directory:
+## Disclaimer
 
-```sh
-tmp="$(mktemp -d)"
-curl -fsSL https://raw.githubusercontent.com/SainyTK/goog-cli/main/install.sh | sh -s -- --install-dir "$tmp/bin"
-"$tmp/bin/goog" --version
-rm -rf "$tmp"
-```
-
-## Contributor Workflow
-
-Read [VISION.md](VISION.md) before proposing a feature or opening a pull request.
-It says which changes `goog` accepts and which it resists.
-
-Install local dependencies:
-
-```sh
-cargo fetch
-```
-
-Run checks before opening a pull request:
-
-```sh
-cargo fmt --check
-cargo check
-cargo test
-```
-
-The `CI` workflow runs those same checks on Linux and Windows for every push and pull request.
-
-Pull requests should include:
-
-- A concise summary of user-facing behavior.
-- Tests or verification notes covering the changed behavior.
-- Documentation updates when commands, OAuth behavior, or distribution paths change.
-- Release-document updates when Canonical Release assets, installer behavior, or operator steps change.
-
-Distribution changes must keep GitHub Releases as the only Canonical Release authority.
+`goog` is an independent project and is not affiliated with, endorsed by or supported by Google LLC.
+Use it with Google accounts you are allowed to access, and follow your organization's policies for third-party tools.
+Google and the Google app names are trademarks of Google LLC.
