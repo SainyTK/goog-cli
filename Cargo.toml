@@ -2,6 +2,7 @@
 name = "goog"
 version = "0.2.17"
 edition = "2021"
+license = "MIT"
 
 [[bin]]
 name = "goog"

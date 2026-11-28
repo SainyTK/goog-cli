@@ -684,6 +684,10 @@ git push origin v0.2.18
 
 After publishing, install the release into a temporary directory with the installer script and run `goog --version`.
 
+## License
+
+`goog` is released under the [MIT License](LICENSE).
+
 ## Disclaimer
 
 `goog` is an independent project and is not affiliated with, endorsed by or supported by Google LLC.
