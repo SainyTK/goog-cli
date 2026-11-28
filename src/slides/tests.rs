@@ -32,6 +32,7 @@ fn test_client(store: &MemoryStore) -> AuthClient<'_, MemoryStore> {
             settings: Some(SettingsConfig {
                 active_account: Some("alice@example.com".into()),
                 output: None,
+                telemetry: None,
             }),
             accounts: vec!["alice@example.com".into()],
         },

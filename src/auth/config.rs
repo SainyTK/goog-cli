@@ -42,6 +42,8 @@ pub struct SettingsConfig {
     pub active_account: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<bool>,
 }
 
 impl Config {

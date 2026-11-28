@@ -26,6 +26,7 @@ fn test_config() -> Config {
         settings: Some(SettingsConfig {
             active_account: Some("alice@example.com".into()),
             output: None,
+            telemetry: None,
         }),
         accounts: vec!["alice@example.com".into()],
     }

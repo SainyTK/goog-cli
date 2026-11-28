@@ -91,6 +91,8 @@ jobs:
           GOOG_BUILD_GIT_DIRTY: "false"
           GOOG_BUILD_GIT_DISTANCE: "0"
           GOOG_BUILD_SOURCE_TAG: ${{ github.ref_name }}
+          GOOG_POSTHOG_PROJECT_KEY: ${{ vars.POSTHOG_PROJECT_KEY }}
+          GOOG_POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
         run: cargo build --release --locked --target "${{ matrix.target }}"
       - name: Package release asset
         shell: bash

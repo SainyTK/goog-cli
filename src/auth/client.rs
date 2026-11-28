@@ -81,7 +81,7 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
         let response = send_with_access_token(request, &token.access_token).await?;
 
         if response.status() != StatusCode::UNAUTHORIZED {
-            return Ok(response);
+            return Ok(self.record_acting_account(response));
         }
 
         let retry_request = retry_request.ok_or(AuthError::RequestNotRetryable)?;
@@ -94,7 +94,14 @@ impl<'a, S: AccountStore> AuthClient<'a, S> {
             ));
         }
 
-        Ok(response)
+        Ok(self.record_acting_account(response))
+    }
+
+    fn record_acting_account(&self, response: Response) -> Response {
+        if response.status().is_success() {
+            crate::telemetry::record_acting_account(&self.account_email);
+        }
+        response
     }
 
     async fn current_token_with_scopes(

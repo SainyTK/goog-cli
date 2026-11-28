@@ -29,6 +29,7 @@ fn config() -> Config {
         settings: Some(SettingsConfig {
             active_account: Some("active@example.com".to_string()),
             output: None,
+            telemetry: None,
         }),
         oauth_app: None,
     }

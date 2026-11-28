@@ -21,6 +21,7 @@ fn config_with_accounts(active_account: Option<&str>, accounts: &[&str]) -> Conf
         settings: active_account.map(|email| SettingsConfig {
             active_account: Some(email.to_string()),
             output: None,
+            telemetry: None,
         }),
         accounts: accounts.iter().copied().map(str::to_string).collect(),
     }
